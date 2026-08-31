@@ -1,8 +1,10 @@
 """
-UI PropertyGroups for LOD Tool with Rigging, Hierarchy & Live Simulator Settings.
+UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture & Live Simulator Settings.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 try:
     import bpy
@@ -21,25 +23,25 @@ except ImportError:
     bpy = None
     PropertyGroup = object
 
-    def StringProperty(**kw):
+    def StringProperty(**kw: Any) -> Any:
         return None
 
-    def BoolProperty(**kw):
+    def BoolProperty(**kw: Any) -> Any:
         return None
 
-    def IntProperty(**kw):
+    def IntProperty(**kw: Any) -> Any:
         return None
 
-    def FloatProperty(**kw):
+    def FloatProperty(**kw: Any) -> Any:
         return None
 
-    def EnumProperty(**kw):
+    def EnumProperty(**kw: Any) -> Any:
         return None
 
-    def CollectionProperty(**kw):
+    def CollectionProperty(**kw: Any) -> Any:
         return None
 
-    def PointerProperty(**kw):
+    def PointerProperty(**kw: Any) -> Any:
         return None
 
 
@@ -128,6 +130,29 @@ class LODPipelineProperties(PropertyGroup):
         description="Strip facial blendshapes / shape keys on LOD >= 2 to save GPU memory and prevent mesh tearing",
     )
 
+    # PBR Texture Channel Packing & Resolution
+    export_packed_textures: BoolProperty(
+        name="Pack PBR Textures",
+        default=True,
+        description="Automatically channel-pack and export engine PBR textures (_ORM, _MaskMap, _COMP) alongside meshes",
+    )
+    texture_max_resolution: EnumProperty(
+        name="Texture Resolution",
+        items=[
+            ("4096", "4K (4096x4096)", "4K texture resolution"),
+            ("2048", "2K (2048x2048)", "2K texture resolution"),
+            ("1024", "1K (1024x1024)", "1K texture resolution"),
+        ],
+        default="2048",
+    )
+
+    # Animation & Rig Baking
+    bake_animations: BoolProperty(
+        name="Bake Deform Animations",
+        default=True,
+        description="Evaluate depsgraph and bake deforming bone matrices (IK to FK) for pristine engine playback",
+    )
+
     # Real-Time LOD Simulator Controls
     simulator_mode: EnumProperty(
         name="Simulator Mode",
@@ -161,7 +186,7 @@ class LODPipelineProperties(PropertyGroup):
     export_base_name: StringProperty(name="Asset Base Name", default="")
 
 
-def register_properties():
+def register_properties() -> None:
     if not bpy:
         return
     bpy.utils.register_class(LODLevelItem)
@@ -169,7 +194,7 @@ def register_properties():
     bpy.types.Scene.lod_tool = PointerProperty(type=LODPipelineProperties)
 
 
-def unregister_properties():
+def unregister_properties() -> None:
     if not bpy:
         return
     if hasattr(bpy.types.Scene, "lod_tool"):

@@ -420,6 +420,17 @@ class LOD_PT_main_panel(Panel):
             box.prop(props, "virtual_screen_size_pct", slider=True)
             box.prop(props, "virtual_preview_dist_m")
 
+        # PBR Texture Packing & Animation Section
+        box = layout.box()
+        box.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
+        box.prop(props, "export_packed_textures")
+        if props.export_packed_textures:
+            box.prop(props, "texture_max_resolution")
+            box.operator("lod_tool.pack_pbr_textures", icon="IMAGE_DATA")
+        box.prop(props, "bake_animations")
+        if props.bake_animations:
+            box.operator("lod_tool.bake_rig_animation", icon="ACTION")
+
         box = layout.box()
         box.label(text="Multi-Engine Export", icon="EXPORT")
         box.prop(props, "export_directory")

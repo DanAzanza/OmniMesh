@@ -19,11 +19,33 @@ bl_info = {
 }
 
 if __package__:
-    from .core import decimator, hierarchy, materials, metrics, normals, rigging, sanitizer, simulator
+    from .core import (
+        animations,
+        decimator,
+        hierarchy,
+        materials,
+        metrics,
+        normals,
+        rigging,
+        sanitizer,
+        simulator,
+        textures,
+    )
     from .exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
     from .ui import hud, panel, properties, simulator_ops
 else:
-    from core import decimator, hierarchy, materials, metrics, normals, rigging, sanitizer, simulator
+    from core import (
+        animations,
+        decimator,
+        hierarchy,
+        materials,
+        metrics,
+        normals,
+        rigging,
+        sanitizer,
+        simulator,
+        textures,
+    )
     from exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
     from ui import hud, panel, properties, simulator_ops
 
@@ -36,6 +58,8 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(normals)
     importlib.reload(hierarchy)
     importlib.reload(rigging)
+    importlib.reload(textures)
+    importlib.reload(animations)
     importlib.reload(simulator)
     importlib.reload(properties)
     importlib.reload(panel)
@@ -62,7 +86,3 @@ def unregister():
     simulator_ops.unregister_simulator_ops()
     panel.unregister_panel()
     properties.unregister_properties()
-
-
-if __name__ == "__main__":
-    register()
