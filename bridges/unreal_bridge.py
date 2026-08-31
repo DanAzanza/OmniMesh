@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import pathlib
 import socket
 import urllib.error
 import urllib.request
@@ -17,6 +16,11 @@ from typing import Any, Dict, Optional, Tuple
 from .base import EngineBridgeBase
 
 logger = logging.getLogger(__name__)
+
+
+def _to_posix(path_str: str) -> str:
+    """Converts any OS path string to canonical POSIX format with forward slashes."""
+    return str(path_str).replace("\\", "/")
 
 
 class UnrealLiveBridge(EngineBridgeBase):
@@ -78,8 +82,8 @@ class UnrealLiveBridge(EngineBridgeBase):
 
         updates texture bindings non-destructively, and avoids collision hull destruction.
         """
-        fbx_posix = pathlib.Path(fbx_absolute_path).resolve().as_posix()
-        tex_json = json.dumps({k: pathlib.Path(v).resolve().as_posix() for k, v in (texture_dict or {}).items()})
+        fbx_posix = _to_posix(fbx_absolute_path)
+        tex_json = json.dumps({k: _to_posix(v) for k, v in (texture_dict or {}).items()})
 
         lines = [
             "import unreal",
