@@ -8,7 +8,7 @@
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5%20%7C%20Unity%206%20%7C%20Godot%204-purple.svg)]()
 
-**OmniMesh** is an enterprise-grade 3D mesh processing pipeline and LOD engine built natively inside Blender. It bridges the gap between raw, multi-million polygon photogrammetry/DCC models and game-ready production assets for **Microsoft Flight Simulator 2024**, **Unreal Engine 5**, **Unity 6**, and **Godot 4**.
+**OmniMesh** is an enterprise-grade 3D mesh processing pipeline and LOD engine developed by **Daniel** ([@DanAzanza](https://github.com/DanAzanza)) for Blender. It bridges the gap between raw, multi-million polygon photogrammetry/DCC models and game-ready production assets for **Microsoft Flight Simulator 2024**, **Unreal Engine 5**, **Unity 6**, and **Godot 4**.
 
 ---
 
@@ -108,6 +108,12 @@ python -m ruff format --check .
 # Run Pyright static type checker
 python -m pyright .
 ```
+
+---
+
+## 👤 Author & Maintainer
+
+Developed with ❤️ by **Daniel** ([@DanAzanza](https://github.com/DanAzanza)).
 
 ---
 

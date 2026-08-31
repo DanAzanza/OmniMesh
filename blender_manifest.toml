@@ -4,7 +4,7 @@ id = "omnimesh"
 version = "1.2.0"
 name = "OmniMesh"
 tagline = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigging, Real-Time LOD Simulation & Multi-Engine Pipeline"
-maintainer = "Daniel"
+maintainer = "Daniel <https://github.com/DanAzanza>"
 type = "add-on"
 
 website = "https://github.com/DanAzanza/OmniMesh"

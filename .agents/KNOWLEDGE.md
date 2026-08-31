@@ -1,4 +1,4 @@
-# OrdinFlow Domain & Runtime Knowledge Base
+# OmniMesh Domain & Runtime Knowledge Base
 
 > **Rule**: This repository knowledge base serves strictly as persistent memory for **non-obvious runtime quirks, hardware/model constraints, and hidden system behaviors** that cannot be inferred from reading source code, function signatures, or docstrings alone. Do NOT document standard component mappings, obvious file listings, or generic code patterns here.
 
@@ -9,13 +9,16 @@
   ```bash
   python -m pytest -q
   ```
-  *(Run ONLY when `.py`/`.js` code changed. Never run Ruff or Pyright during iterative steps).*
+  *(Run ONLY when `.py` code changed. Never run Ruff or Pyright during iterative steps).*
 
 * **Pre-Commit Quality Gate (Triggered strictly on explicit user commit request)**:
   ```bash
-  python scripts/verify_ci.py
+  python -m pytest -v
+  python -m ruff check .
+  python -m ruff format --check .
+  python -m pyright .
   ```
-  *(Runs Ruff linter, Pyright type checker on `core/` and `routes/`, and full test suite).*
+  *(Runs full test suite, Ruff linter/formatter check, and Pyright type checker across the entire codebase).*
 
 ---
 

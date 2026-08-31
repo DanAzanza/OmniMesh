@@ -10,7 +10,7 @@ import sys
 
 bl_info = {
     "name": "OmniMesh",
-    "author": "Pipeline Architect",
+    "author": "Daniel (DanAzanza)",
     "version": (1, 2, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > OmniMesh",
