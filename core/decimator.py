@@ -99,13 +99,11 @@ class MeshDecimator:
                     if angle > max_dihedral:
                         max_dihedral = angle
 
-            # Normalized curvature weight [0.0, 1.0]
-            w_curv = min(1.0, max_dihedral / math.pi)
-
-            # Extra protection for pinned boundaries / seams
-            w_boundary = 1.0 if vert.index in pinned_vert_indices else 0.0
-
-            final_weight = min(1.0, 0.7 * w_curv + 0.3 * w_boundary)
+            # Strict protection for pinned boundaries / seams (prevents UV seam collapse)
+            if vert.index in pinned_vert_indices:
+                final_weight = 1.0
+            else:
+                final_weight = min(1.0, max_dihedral / math.pi)
 
             dvert = vert[dvert_lay]
             dvert[vg.index] = final_weight

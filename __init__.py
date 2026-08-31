@@ -19,6 +19,7 @@ bl_info = {
 }
 
 if __package__:
+    from . import bridges
     from .core import (
         animations,
         decimator,
@@ -34,6 +35,7 @@ if __package__:
     from .exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
     from .ui import hud, panel, properties, simulator_ops
 else:
+    import bridges
     from core import (
         animations,
         decimator,
@@ -60,6 +62,7 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(rigging)
     importlib.reload(textures)
     importlib.reload(animations)
+    importlib.reload(bridges)
     importlib.reload(simulator)
     importlib.reload(properties)
     importlib.reload(panel)

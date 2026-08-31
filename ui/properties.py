@@ -1,5 +1,5 @@
 """
-UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture & Live Simulator Settings.
+UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture, Live Simulator & Engine Bridge Settings.
 """
 
 from __future__ import annotations
@@ -184,6 +184,23 @@ class LODPipelineProperties(PropertyGroup):
     active_lod_index: IntProperty(name="Active LOD Selection", default=0)
     export_directory: StringProperty(name="Export Directory", subtype="DIR_PATH", default="//Export/")
     export_base_name: StringProperty(name="Asset Base Name", default="")
+
+    # Live Engine Bridge Properties
+    engine_project_path: StringProperty(
+        name="Engine Project Path",
+        subtype="DIR_PATH",
+        default="",
+        description="Root path to active Unreal, Unity, MSFS Community, or Godot project folder",
+    )
+    enable_live_sync: BoolProperty(
+        name="Live Sync on Export",
+        default=True,
+        description="Automatically trigger engine re-import or compile package upon export",
+    )
+    bridge_status_text: StringProperty(
+        name="Bridge Status",
+        default="Bridge Ready",
+    )
 
 
 def register_properties() -> None:

@@ -1,5 +1,5 @@
 """
-Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture & Animation Integration.
+Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture, Animation & Live Bridge Integration.
 """
 
 from __future__ import annotations
@@ -16,9 +16,11 @@ except ImportError:
     Operator = object
 
 try:
+    from ..bridges.manager import BridgeManager
     from ..core.animations import AnimationRigSanitizer
     from ..core.textures import TextureChannelPacker
 except (ImportError, ValueError):
+    from bridges.manager import BridgeManager
     from core.animations import AnimationRigSanitizer
     from core.textures import TextureChannelPacker
 
@@ -85,7 +87,6 @@ class LOD_OT_pack_pbr_textures(Operator):
         target_size = (res, res)
         target_engine = props.target_engine
 
-        # Collect unique materials across active/selected objects
         materials: set[Any] = set()
         for obj in context.selected_objects:
             for slot in obj.material_slots:
@@ -160,6 +161,34 @@ class LOD_OT_bake_rig_animation(Operator):
             return {"CANCELLED"}
 
 
+class LOD_OT_sync_live_bridge(Operator):
+    bl_idname = "lod_tool.sync_live_bridge"
+    bl_label = "Sync to Engine"
+    bl_description = "Synchronize exported asset and textures with active game engine or project directory"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        return bool(bpy and hasattr(context.scene, "lod_tool"))
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy:
+            return {"CANCELLED"}
+        props = context.scene.lod_tool
+        export_dir = bpy.path.abspath(props.export_directory)
+        asset_name = props.export_base_name or "SM_Asset"
+        target = props.target_engine
+        proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
+
+        ok, msg = BridgeManager.sync_asset(context, target, export_dir, asset_name, proj_dir)
+        if ok:
+            self.report({"INFO"}, f"[Live Bridge] {msg}")
+            return {"FINISHED"}
+        else:
+            self.report({"WARNING"}, f"[Live Bridge] {msg}")
+            return {"CANCELLED"}
+
+
 class LOD_OT_export_engine_package(Operator):
     bl_idname = "lod_tool.export_engine_package"
     bl_label = "1-Click Export Asset"
@@ -185,14 +214,14 @@ class LOD_OT_export_engine_package(Operator):
         asset_name = props.export_base_name or "SM_Asset"
         target = props.target_engine
 
-        # Optional: Auto-pack PBR textures
+        # Auto-pack PBR textures if enabled
         if props.export_packed_textures:
             try:
                 bpy.ops.lod_tool.pack_pbr_textures()
             except (RuntimeError, AttributeError, OSError) as exc:
                 logger.warning("Auto PBR texture packing failed during export: %s", exc)
 
-        # Optional: Auto-bake Armature animation if present
+        # Auto-bake Armature animation if enabled
         if props.bake_animations and context.active_object:
             obj = context.active_object
             armature = (
@@ -220,6 +249,16 @@ class LOD_OT_export_engine_package(Operator):
 
         if success:
             self.report({"INFO"}, f"[LOD Export] {message}")
+
+            # Auto Live Bridge Trigger if enabled
+            if props.enable_live_sync:
+                proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
+                bridge_ok, bridge_msg = BridgeManager.sync_asset(context, target, export_dir, asset_name, proj_dir)
+                if bridge_ok:
+                    self.report({"INFO"}, f"[Live Bridge] {bridge_msg}")
+                else:
+                    self.report({"WARNING"}, f"[Live Bridge] {bridge_msg}")
+
             return {"FINISHED"}
         else:
             self.report({"ERROR"}, f"[LOD Export Failed] {message}")
@@ -231,6 +270,7 @@ def register_exporters() -> None:
         return
     bpy.utils.register_class(LOD_OT_pack_pbr_textures)
     bpy.utils.register_class(LOD_OT_bake_rig_animation)
+    bpy.utils.register_class(LOD_OT_sync_live_bridge)
     bpy.utils.register_class(LOD_OT_export_engine_package)
 
 
@@ -238,5 +278,6 @@ def unregister_exporters() -> None:
     if not bpy:
         return
     bpy.utils.unregister_class(LOD_OT_export_engine_package)
+    bpy.utils.unregister_class(LOD_OT_sync_live_bridge)
     bpy.utils.unregister_class(LOD_OT_bake_rig_animation)
     bpy.utils.unregister_class(LOD_OT_pack_pbr_textures)

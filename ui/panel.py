@@ -431,6 +431,26 @@ class LOD_PT_main_panel(Panel):
         if props.bake_animations:
             box.operator("lod_tool.bake_rig_animation", icon="ACTION")
 
+        # Live Engine Bridge Section
+        box = layout.box()
+        box.label(text="⚡ Live Engine Bridge", icon="LINKED")
+        box.prop(props, "engine_project_path", text="Project Path")
+        box.prop(props, "enable_live_sync")
+
+        try:
+            from ..bridges.manager import BridgeManager
+        except (ImportError, ValueError):
+            from bridges.manager import BridgeManager
+
+        _, status_msg = BridgeManager.ping_engine(
+            props.target_engine, bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
+        )
+        box.label(text=status_msg)
+
+        row = box.row(align=True)
+        row.scale_y = 1.2
+        row.operator("lod_tool.sync_live_bridge", text="Sync to Engine", icon="FILE_REFRESH")
+
         box = layout.box()
         box.label(text="Multi-Engine Export", icon="EXPORT")
         box.prop(props, "export_directory")
