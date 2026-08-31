@@ -34,7 +34,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install ruff pyright fake-bpy-module-latest pytest
+          python -m pip install -e .[dev]
 
       - name: Run Ruff Linter
         run: python -m ruff check .

@@ -10,11 +10,25 @@ readme = "README.md"
 authors = [{ name = "Daniel" }]
 license = { text = "GPL-3.0-or-later" }
 requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.22.0",
+    "Pillow>=9.0.0",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: OS Independent",
     "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.4.0",
+    "pyright>=1.1.0",
+    "fake-bpy-module-latest",
+    "numpy>=1.22.0",
+    "Pillow>=9.0.0",
 ]
 
 [tool.ruff]
@@ -35,7 +49,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 
 [tool.pyright]
-include = ["core", "ui", "exporters", "tests"]
+include = ["core", "ui", "exporters", "bridges", "tests"]
 exclude = ["**/__pycache__", ".pytest_cache"]
 pythonVersion = "3.10"
 reportMissingImports = false

@@ -13,12 +13,9 @@
 
 * **Pre-Commit Quality Gate (Triggered strictly on explicit user commit request)**:
   ```bash
-  python -m pytest -v
-  python -m ruff check .
-  python -m ruff format --check .
-  python -m pyright .
+  python scripts/verify_ci.py
   ```
-  *(Runs full test suite, Ruff linter/formatter check, and Pyright type checker across the entire codebase).*
+  *(Runs dependency parity check, full pytest test suite, Ruff linter, Ruff formatter check, and Pyright static type checker).*
 
 ---
 
@@ -48,5 +45,6 @@
 * **Zero Undo Pollution**: The modal simulation loop must omit `{'UNDO'}` from `bl_options` to keep the user's `Ctrl+Z` history clean.
 * **Differential Visibility Sets**: Only call `obj.hide_set()` if `obj.hide_get()` differs from the target state. This prevents rebuilding the dependency graph on frames where the camera moves within the same LOD zone.
 
-### 3.4 Linux CI Environment & Pytest Discovery
+### 3.4 Clean CI Matrix & Dependency Declaration Invariant
+* **Dependency Parity Invariant**: Blender bundles `numpy` and `Pillow` internally, but standalone test suites in clean CI environments (Ubuntu/Windows runners) require them declared in `pyproject.toml` and installed via `pip install -e .[dev]`. `scripts/verify_ci.py` automatically checks declared dependencies against requirements before any commit.
 * **Linux `sys.path` Quirk**: Unlike Windows, `pytest` on Ubuntu runners does NOT include the root working directory in `sys.path`. Always configure `pythonpath = .` in `pytest.ini` and declare `PYTHONPATH: .` in GitHub Actions workflows.
