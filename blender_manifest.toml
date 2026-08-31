@@ -1,0 +1,20 @@
+schema_version = "1.0.0"
+
+id = "omnimesh"
+version = "1.2.0"
+name = "OmniMesh"
+tagline = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigging, Real-Time LOD Simulation & Multi-Engine Pipeline"
+maintainer = "Daniel"
+type = "add-on"
+
+website = "https://github.com/danie/omnimesh"
+tags = ["Mesh", "Pipeline", "Export", "Game Engine", "Optimization", "Rigging"]
+
+blender_version_min = "4.2.0"
+license = [
+    "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+files = "Read and write geometry files, XML metadata, FBX, and glTF packages"
+network = "No network access required"

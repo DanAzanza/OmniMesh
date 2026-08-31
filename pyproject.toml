@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnimesh"
+version = "1.2.0"
+description = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigging, Real-Time LOD Simulation & Multi-Engine Pipeline"
+readme = "README.md"
+authors = [{ name = "Daniel" }]
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "RUF012",  # mutable class attributes (standard pattern in Blender Operator/Panel definitions)
+    "E402",    # module level import not at top of file (dynamic bl_info / reload logic)
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.pyright]
+include = ["core", "ui", "exporters", "tests"]
+exclude = ["**/__pycache__", ".pytest_cache"]
+pythonVersion = "3.10"
+reportMissingImports = false
+reportMissingModuleSource = false
+reportGeneralTypeIssues = false
+reportInvalidTypeForm = false
+reportAssignmentType = false
+reportAttributeAccessIssue = false
+reportOptionalMemberAccess = false
+reportOptionalCall = false
+reportArgumentType = false
+reportCallIssue = false
