@@ -7,7 +7,7 @@ tagline = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigg
 maintainer = "Daniel"
 type = "add-on"
 
-website = "https://github.com/danie/omnimesh"
+website = "https://github.com/DanAzanza/OmniMesh"
 tags = ["Mesh", "Pipeline", "Export", "Game Engine", "Optimization", "Rigging"]
 
 blender_version_min = "4.2.0"

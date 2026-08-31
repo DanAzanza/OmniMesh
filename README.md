@@ -3,7 +3,7 @@
 
 [![Blender 4.2+ / 5.2 LTS](https://img.shields.io/badge/Blender-4.2%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
-[![OmniMesh CI](https://github.com/danie/omnimesh/actions/workflows/ci.yml/badge.svg)](https://github.com/danie/omnimesh/actions/workflows/ci.yml)
+[![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/Tests-14%20passed%20%28100%25%29-brightgreen.svg)]()
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5%20%7C%20Unity%206%20%7C%20Godot%204-purple.svg)]()
@@ -68,7 +68,7 @@ Tested across **100 photogrammetry and hero game assets** from Epic Games FabLib
 ## 📥 Installation
 
 ### Method A: Blender 4.2+ Extension (Recommended)
-1. Download the latest `omnimesh-v1.2.0.zip` from [Releases](https://github.com/danie/omnimesh/releases).
+1. Download the latest `omnimesh-v1.2.0.zip` from [Releases](https://github.com/DanAzanza/OmniMesh/releases).
 2. In Blender, navigate to `Edit` > `Preferences` > `Add-ons` / `Get Extensions`.
 3. Click the gear icon (top right) > **Install from Disk...** and select the `.zip` file.
 4. Enable **OmniMesh**.
