@@ -18,18 +18,19 @@ classifiers = [
 ]
 
 [tool.ruff]
-line-length = 120
 target-version = "py310"
+line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP"]
-ignore = [
-    "E501",    # line too long (handled by formatter)
-    "RUF012",  # mutable class attributes (standard pattern in Blender Operator/Panel definitions)
-    "E402",    # module level import not at top of file (dynamic bl_info / reload logic)
-]
+select = ["E", "F", "W", "S", "B"]
+ignore = ["E501", "E402", "S603", "S607"]  # E501: line length, E402: logger/reload imports, S603/S607: controlled subprocess invocations
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S108", "S311", "S314"]
+"scripts/*" = ["S101", "S108", "S110", "S310", "S311", "S602", "S603", "S607"]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 

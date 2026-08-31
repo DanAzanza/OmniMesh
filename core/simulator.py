@@ -205,7 +205,7 @@ class LODSimulatorEngine:
         view_layer = context.view_layer
         updates = []
 
-        for coll_name, record in cls._tracked_assets.items():
+        for _coll_name, record in cls._tracked_assets.items():
             if not record.is_valid:
                 continue
 

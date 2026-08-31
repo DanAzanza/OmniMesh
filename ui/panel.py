@@ -399,7 +399,7 @@ class LOD_PT_main_panel(Panel):
             box = layout.box()
             box.label(text="Isolate Viewport LOD", icon="HIDE_OFF")
             row = box.row(align=True)
-            for i, tier in enumerate(props.lods):
+            for i, _tier in enumerate(props.lods):
                 op = row.operator("lod_tool.preview_tier", text=f"LOD{i}")
                 op.tier_index = i
 

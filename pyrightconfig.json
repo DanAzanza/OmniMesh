@@ -1,0 +1,15 @@
+{
+  "include": ["core", "ui", "exporters", "tests"],
+  "exclude": ["**/__pycache__", ".pytest_cache"],
+  "pythonVersion": "3.10",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportInvalidTypeForm": "none",
+  "reportAssignmentType": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportOptionalCall": "none",
+  "reportArgumentType": "none",
+  "reportCallIssue": "none"
+}
