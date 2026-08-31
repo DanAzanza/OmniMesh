@@ -16,7 +16,9 @@
 
 ### 1. 📐 Screen-Space Error Bound (SSE) Mathematics
 Instead of relying on arbitrary reduction percentages, OmniMesh couples every decimation and cleanup parameter directly to human eye perception and viewport resolution ($H = 1080\text{px}$):
+
 $$\delta_{\text{world}} = \frac{2 \cdot \tau_{\text{sse}} \cdot r_{\text{bound}}}{S_{\text{frac}} \cdot H}$$
+
 * **Coupled Tolerances**: Merge distance $\epsilon$, feature dissolution $w_{\text{crit}}$, planar angle $\theta_{\text{limit}}$, and QEM ratio are derived deterministically from the user's Visual Stability threshold $\tau_{\text{sse}}$ (0.2px to 3.0px).
 * **Perceptual Logarithmic Progression**: Automatically generates logarithmic screen-size tiers matching physical camera distance curves.
 
@@ -35,7 +37,8 @@ $$\delta_{\text{world}} = \frac{2 \cdot \tau_{\text{sse}} \cdot r_{\text{bound}}
 * **Mode A (`Preserve Hierarchy`)**: Preserves all submesh objects independently across all LOD tiers.
 * **Mode B (`Merge Distant Tiers`)**: Consolidates compatible submeshes into a single draw-call mesh at distant tiers (e.g. LOD3..LOD6).
 * **Rest-Pose Coordinate Inversion**: Seamlessly merges bone-parented static props into skinned meshes without pose baking distortion:
-  $$\mathbf{M}_{S \to M\_rest} = \mathbf{M}_{M\_rest\_world}^{-1} \cdot \mathbf{M}_{Arm\_world} \cdot \mathbf{M}_{B\_bone\_local} \cdot \mathbf{M}_{S\_parent\_inv} \cdot \mathbf{M}_{S\_basis}$$
+
+$$\mathbf{M}_{S \to M_{\text{rest}}} = \mathbf{M}_{M_{\text{rest\_world}}}^{-1} \cdot \mathbf{M}_{\text{Arm\_world}} \cdot \mathbf{M}_{B_{\text{bone\_local}}} \cdot \mathbf{M}_{S_{\text{parent\_inv}}} \cdot \mathbf{M}_{S_{\text{basis}}}$$
 
 ### 5. 🎮 Real-Time Viewport LOD Simulator
 * **Live Orbit Simulation**: Non-blocking modal loop (25 Hz) with mouse pass-through (`PASS_THROUGH`) that dynamically evaluates camera distance and switches all scene assets independently in real time.
@@ -107,6 +110,9 @@ python -m ruff format --check .
 
 # Run Pyright static type checker
 python -m pyright .
+
+# Build release extension zip
+python scripts/build_extension.py
 ```
 
 ---
