@@ -1,7 +1,7 @@
 """
 Blender PropertyGroups and Scene Settings for OmniMesh.
 Maintains data models for LOD tiers, screen metrics, collision hulls, rigging, PBR textures,
-engine presets, mesh cleanup, material cleanup, impostors, live simulation, and live engine bridges.
+engine presets, mesh cleanup, material cleanup, impostors, PBR importer, live simulation, and live engine bridges.
 Supports both Scene-Level project globals and Per-Object persistent geometric configurations.
 """
 
@@ -311,6 +311,27 @@ class LODToolSettings(PropertyGroup):
         description="Permanently delete unused zero-user materials from the Blender file (Critical)",
     )
     last_material_cleanup_summary: StringProperty(name="Material Cleanup Summary", default="")
+
+    # PBR Texture Set Importer Settings
+    pbr_import_ao_mode: EnumProperty(
+        name="AO Mode",
+        items=[
+            ("MULTIPLY", "Multiply into Base Color (EEVEE/Cycles)", "Multiply AO map directly into Base Color texture"),
+            (
+                "SEPARATE",
+                "Keep Separate (Game Engine Ready)",
+                "Do not blend AO into Base Color (preserves glTF/FBX parity)",
+            ),
+        ],
+        default="MULTIPLY",
+        description="How Ambient Occlusion maps are wired into the shader graph",
+    )
+    pbr_import_preserve_existing: BoolProperty(
+        name="Preserve Existing Nodes",
+        default=False,
+        description="Preserve existing non-PBR shader nodes in material when importing texture sets",
+    )
+    last_pbr_import_summary: StringProperty(name="PBR Import Summary", default="")
 
     # Billboard Impostor Generator Settings
     impostor_mode: EnumProperty(

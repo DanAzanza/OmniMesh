@@ -2,7 +2,7 @@
 Modular N-Panel User Interface Hierarchy for OmniMesh in Blender 4.2+ and 5.2 LTS.
 Structured into clean, workflow-oriented collapsible subpanels with responsive layouts.
 Supports Per-Object property persistence, Sub-LOD derivative inspection, multi-selection batch sync,
-and distinct safe vs critical mesh & material cleanup controls.
+safe vs critical mesh & material cleanup, and 1-click PBR Texture Set Importer.
 """
 
 from __future__ import annotations
@@ -185,7 +185,7 @@ class LOD_PT_inspection_panel(Panel):
 
 
 class LOD_PT_optimization_panel(Panel):
-    """Subpanel 3: Topology Cleanup, Material Cleanup, Collision Hulls, Impostors, Occlusion, Rigging & PBR Textures."""
+    """Subpanel 3: Topology Cleanup, Material Cleanup, PBR Importer, Collision, Impostors, Occlusion, Rigging & PBR Textures."""
 
     bl_label = "4. Advanced Optimization"
     bl_idname = "LOD_PT_optimization_panel"
@@ -264,7 +264,21 @@ class LOD_PT_optimization_panel(Panel):
         box_mat_crit.prop(props, "mat_cleanup_repair_missing_textures")
         box_mat_crit.prop(props, "mat_cleanup_purge_orphans_blendfile")
 
-        # 3. Multi-Convex Collision Hulls (Physics)
+        # 3. 1-Click PBR Texture Set Importer Suite
+        box_pbr = layout.box()
+        box_pbr.label(text="PBR Texture Set Importer", icon="IMAGE_DATA")
+        row_pbr = box_pbr.row(align=True)
+        row_pbr.scale_y = 1.25
+        row_pbr.operator("lod_tool.import_pbr_set", text="Import PBR Texture Set", icon="FILE_IMAGE")
+        row_pbr.operator("lod_tool.auto_match_pbr_folder", text="Auto-Match Folder", icon="FILE_FOLDER")
+
+        if props.last_pbr_import_summary:
+            box_pbr.label(text=props.last_pbr_import_summary, icon="CHECKMARK")
+
+        box_pbr.prop(props, "pbr_import_ao_mode", text="AO Routing")
+        box_pbr.prop(props, "pbr_import_preserve_existing", text="Preserve Other Nodes")
+
+        # 4. Multi-Convex Collision Hulls (Physics)
         box_col = layout.box()
         box_col.label(text="Convex Collision Hulls (Physics)", icon="PHYSICS")
         box_col.prop(props, "collision_decomposition_mode", text="")
@@ -283,7 +297,7 @@ class LOD_PT_optimization_panel(Panel):
                 icon="CHECKMARK",
             )
 
-        # 4. Billboard & Octahedral Impostor Generator
+        # 5. Billboard & Octahedral Impostor Generator
         box_imp = layout.box()
         box_imp.label(text="Billboard & Octahedral Impostor", icon="OUTLINER_OB_LIGHTPROBE")
         box_imp.prop(props, "impostor_mode", text="")
@@ -298,7 +312,7 @@ class LOD_PT_optimization_panel(Panel):
         if props.last_impostor_status:
             box_imp.label(text=props.last_impostor_status, icon="CHECKMARK")
 
-        # 5. Interior & Occlusion Geometry Culling
+        # 6. Interior & Occlusion Geometry Culling
         box_occ = layout.box()
         box_occ.label(text="Interior & Occlusion Culling", icon="MOD_MASK")
         box_occ.prop(props, "enable_occlusion_culling")
@@ -312,14 +326,14 @@ class LOD_PT_optimization_panel(Panel):
                     icon="CHECKMARK",
                 )
 
-        # 6. Hierarchy & Draw-Call Optimization
+        # 7. Hierarchy & Draw-Call Optimization
         box_h = layout.box()
         box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
         box_h.prop(props, "hierarchy_mode", text="")
         if props.hierarchy_mode == "MERGE_DISTANT":
             box_h.prop(props, "merge_lod_start")
 
-        # 7. Rigging & Skeletal Kinematics
+        # 8. Rigging & Skeletal Kinematics
         box_r = layout.box()
         box_r.label(text="Rigging & Skeletal Kinematics", icon="ARMATURE_DATA")
         has_skinning = bool(armature_obj or any(len(obj.vertex_groups) > 0 for obj in mesh_objs))
@@ -331,7 +345,7 @@ class LOD_PT_optimization_panel(Panel):
         col_rig.prop(props, "enable_leaf_bone_pruning")
         col_rig.prop(props, "purge_distant_shape_keys")
 
-        # 8. PBR Texture Channel Packing & Animation
+        # 9. PBR Texture Channel Packing & Animation
         box_tex = layout.box()
         box_tex.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
         box_tex.prop(props, "export_packed_textures")

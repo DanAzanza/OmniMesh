@@ -1,11 +1,12 @@
 """
-Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, Mesh Cleanup, Material Cleanup, Impostors, and Viewport Preview.
+Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, Mesh Cleanup, Material Cleanup, Impostors, PBR Textures Importer, and Viewport Preview.
 """
 
 from __future__ import annotations
 
 import logging
 import math
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -13,11 +14,20 @@ logger = logging.getLogger(__name__)
 try:
     import bmesh
     import bpy
-    from bpy.types import Operator
+    from bpy.props import CollectionProperty, StringProperty
+    from bpy.types import Operator, OperatorFileListElement
 except ImportError:
     bpy = None
     bmesh = None
     Operator = object
+    OperatorFileListElement = object
+
+    def StringProperty(**kwargs: Any) -> Any:
+        return None
+
+    def CollectionProperty(**kwargs: Any) -> Any:
+        return None
+
 
 try:
     from ..core.collision import CollisionManager
@@ -33,6 +43,11 @@ try:
         generate_logarithmic_screen_tiers,
     )
     from ..core.occlusion import HardenedOcclusionCuller
+    from ..core.pbr_importer import (
+        BatchMaterialSlotMatcher,
+        PBRSemanticClassifier,
+        ShaderGraphBuilder,
+    )
     from ..core.rigging import KinematicBonePruner, WeightSanitizer
     from ..core.sanitizer import MeshSanitizer
 except (ImportError, ValueError):
@@ -49,6 +64,11 @@ except (ImportError, ValueError):
         generate_logarithmic_screen_tiers,
     )
     from core.occlusion import HardenedOcclusionCuller
+    from core.pbr_importer import (
+        BatchMaterialSlotMatcher,
+        PBRSemanticClassifier,
+        ShaderGraphBuilder,
+    )
     from core.rigging import KinematicBonePruner, WeightSanitizer
     from core.sanitizer import MeshSanitizer
 
@@ -393,6 +413,148 @@ class LOD_OT_clean_and_repair_materials(Operator):
 
         props.last_material_cleanup_summary = summary_msg
         self.report({"INFO"}, f"✔ {summary_msg}")
+        return {"FINISHED"}
+
+
+class LOD_OT_import_pbr_set(Operator):
+    """Import multi-selected PBR texture files and construct a complete Principled BSDF node graph."""
+
+    bl_idname = "lod_tool.import_pbr_set"
+    bl_label = "Import PBR Texture Set"
+    bl_options = {"REGISTER", "UNDO"}
+
+    directory: StringProperty(subtype="DIR_PATH")  # type: ignore
+    files: CollectionProperty(type=OperatorFileListElement)  # type: ignore
+
+    def invoke(self, context: Any, event: Any) -> set[str]:
+        if not bpy:
+            return {"CANCELLED"}
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        if not self.directory or not self.files:
+            self.report({"WARNING"}, "No texture files selected.")
+            return {"CANCELLED"}
+
+        mesh_objs = get_selected_mesh_objects(context)
+        active_obj = (
+            context.active_object
+            if context.active_object and context.active_object.type == "MESH"
+            else (mesh_objs[0] if mesh_objs else None)
+        )
+
+        # Build texture map
+        texture_map: dict[str, str] = {}
+        sample_filename = ""
+        for file_elem in self.files:
+            fname = file_elem.name
+            if not fname:
+                continue
+            full_path = os.path.join(self.directory, fname)
+            sem_type = PBRSemanticClassifier.classify(fname)
+            if sem_type:
+                texture_map[sem_type] = full_path
+                if not sample_filename:
+                    sample_filename = fname
+
+        if not texture_map:
+            self.report({"WARNING"}, "Could not semantically classify any selected texture files.")
+            return {"CANCELLED"}
+
+        # Target material
+        mat = None
+        if active_obj and active_obj.active_material:
+            mat = active_obj.active_material
+        else:
+            base_stem = PBRSemanticClassifier.clean_stem(sample_filename) or "PBR_Material"
+            mat = bpy.data.materials.new(name=base_stem)
+            if active_obj:
+                if len(active_obj.material_slots) == 0:
+                    active_obj.data.materials.append(mat)
+                else:
+                    active_obj.material_slots[active_obj.active_material_index].material = mat
+
+        props = context.scene.lod_tool
+        ShaderGraphBuilder.build_pbr_graph(
+            material=mat,
+            texture_map=texture_map,
+            preserve_existing=props.pbr_import_preserve_existing,
+            ao_blend_mode=props.pbr_import_ao_mode,
+        )
+
+        channels_str = ", ".join(texture_map.keys())
+        msg = f"Configured material '{mat.name}' with {len(texture_map)} texture channels ({channels_str})."
+        props.last_pbr_import_summary = msg
+        self.report({"INFO"}, f"✔ {msg}")
+        return {"FINISHED"}
+
+
+class LOD_OT_auto_match_pbr_folder(Operator):
+    """Scan a folder and automatically match texture sets to all material slots of the active mesh object."""
+
+    bl_idname = "lod_tool.auto_match_pbr_folder"
+    bl_label = "Auto-Match PBR Folder to Slots"
+    bl_options = {"REGISTER", "UNDO"}
+
+    directory: StringProperty(subtype="DIR_PATH")  # type: ignore
+
+    def invoke(self, context: Any, event: Any) -> set[str]:
+        if not bpy:
+            return {"CANCELLED"}
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        if not self.directory or not os.path.isdir(self.directory):
+            self.report({"WARNING"}, "Valid texture folder not selected.")
+            return {"CANCELLED"}
+
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            self.report({"WARNING"}, "No mesh objects selected.")
+            return {"CANCELLED"}
+
+        target_obj = mesh_objs[0]
+        slot_matches = BatchMaterialSlotMatcher.match_directory_to_slots(target_obj, self.directory)
+
+        if not slot_matches or not any(len(texs) > 0 for texs in slot_matches.values()):
+            self.report({"WARNING"}, f"No matching textures found for material slots of '{target_obj.name}'.")
+            return {"CANCELLED"}
+
+        props = context.scene.lod_tool
+        configured_slots = 0
+        total_textures = 0
+
+        for slot in target_obj.material_slots:
+            s_name = slot.name
+            tex_map = slot_matches.get(s_name, {})
+            if not tex_map:
+                continue
+
+            mat = slot.material
+            if not mat:
+                mat = bpy.data.materials.new(name=s_name)
+                slot.material = mat
+
+            ShaderGraphBuilder.build_pbr_graph(
+                material=mat,
+                texture_map=tex_map,
+                preserve_existing=props.pbr_import_preserve_existing,
+                ao_blend_mode=props.pbr_import_ao_mode,
+            )
+            configured_slots += 1
+            total_textures += len(tex_map)
+
+        msg = (
+            f"Auto-matched {configured_slots} material slots ({total_textures} textures wired) for '{target_obj.name}'."
+        )
+        props.last_pbr_import_summary = msg
+        self.report({"INFO"}, f"✔ {msg}")
         return {"FINISHED"}
 
 
@@ -867,6 +1029,8 @@ OPERATOR_CLASSES = (
     LOD_OT_select_master_asset,
     LOD_OT_clean_and_repair_mesh,
     LOD_OT_clean_and_repair_materials,
+    LOD_OT_import_pbr_set,
+    LOD_OT_auto_match_pbr_folder,
     LOD_OT_generate_all,
     LOD_OT_generate_impostor,
     LOD_OT_remove_impostor,
