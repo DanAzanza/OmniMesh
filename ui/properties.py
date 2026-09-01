@@ -1,5 +1,7 @@
 """
-UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture, Live Simulator, Collision, Occlusion & Engine Bridge Settings.
+Blender PropertyGroups and Scene Settings for OmniMesh.
+Maintains data models for LOD tiers, screen metrics, collision hulls, rigging, PBR textures,
+engine presets, mesh cleanup, live simulation, and live engine bridges.
 """
 
 from __future__ import annotations
@@ -20,153 +22,264 @@ try:
         PointerProperty,
         StringProperty,
     )
-
-    PropertyGroup = bpy.types.PropertyGroup
+    from bpy.types import PropertyGroup
 except ImportError:
     bpy = None
     PropertyGroup = object
 
-    def StringProperty(**kw: Any) -> Any:
+    def BoolProperty(**kwargs: Any) -> Any:
         return None
 
-    def BoolProperty(**kw: Any) -> Any:
+    def CollectionProperty(**kwargs: Any) -> Any:
         return None
 
-    def IntProperty(**kw: Any) -> Any:
+    def EnumProperty(**kwargs: Any) -> Any:
         return None
 
-    def FloatProperty(**kw: Any) -> Any:
+    def FloatProperty(**kwargs: Any) -> Any:
         return None
 
-    def EnumProperty(**kw: Any) -> Any:
+    def IntProperty(**kwargs: Any) -> Any:
         return None
 
-    def CollectionProperty(**kw: Any) -> Any:
+    def PointerProperty(**kwargs: Any) -> Any:
         return None
 
-    def PointerProperty(**kw: Any) -> Any:
+    def StringProperty(**kwargs: Any) -> Any:
         return None
-
-
-def update_bridge_status_cached(self: Any, context: Any) -> None:
-    """Asynchronously update bridge status text without running blocking I/O inside draw()."""
-    if not bpy or not context:
-        return
-    try:
-        from ..bridges.manager import BridgeManager
-    except (ImportError, ValueError):
-        try:
-            from bridges.manager import BridgeManager
-        except (ImportError, ValueError):
-            return
-
-    engine_path = bpy.path.abspath(self.engine_project_path) if self.engine_project_path else ""
-    _, status_msg = BridgeManager.ping_engine(self.target_engine, engine_path)
-    self.bridge_status_text = status_msg
 
 
 class LODLevelItem(PropertyGroup):
-    name: StringProperty(name="LOD Name", default="LOD0")
-    lod_index: IntProperty(name="LOD Index", default=0, min=0, max=10)
+    """Data model representing a single generated or configured LOD tier."""
+
+    name: StringProperty(name="Tier Name", default="LOD0")
+    level_index: IntProperty(name="Level Index", default=0, min=0, max=7)
     screen_size_pct: FloatProperty(
-        name="Screen Size (%)", default=100.0, min=0.01, max=100.0, subtype="PERCENTAGE", precision=2
+        name="Screen Size %",
+        default=100.0,
+        min=0.01,
+        max=100.0,
+        subtype="PERCENTAGE",
+        precision=1,
+        description="On-screen coverage percentage before transitioning to the next tier",
     )
-    target_tris: IntProperty(name="Target Tris", default=0, min=0)
-    actual_tris: IntProperty(name="Actual Tris", default=0, min=0)
-    distance_m: FloatProperty(name="Switch Distance (m)", default=0.0, min=0.0, precision=2)
-    delta_world: FloatProperty(name="Allowed Error (m)", default=0.0, min=0.0, precision=4)
-    mat_slots_count: IntProperty(name="Material Slots", default=1, min=0)
+    distance_m: FloatProperty(
+        name="Switch Distance (m)",
+        default=0.0,
+        min=0.0,
+        precision=2,
+        description="Calculated camera distance for this tier transition",
+    )
+    triangle_target: IntProperty(name="Target Tris", default=0, min=0)
+    actual_triangles: IntProperty(name="Actual Tris", default=0, min=0)
+    reduction_pct: FloatProperty(name="Reduction %", default=0.0, precision=1)
+    mat_slots_count: IntProperty(name="Material Slots", default=0, min=0)
     generated_obj: PointerProperty(name="Mesh Object", type=bpy.types.Object if bpy else object)
 
 
-class LODPipelineProperties(PropertyGroup):
+def update_bridge_status_cached(self: Any, context: Any) -> None:
+    """Non-blocking status update hook for project directory changes."""
+    if not context or not hasattr(context, "scene"):
+        return
+    try:
+        if __package__:
+            from ..bridges.manager import BridgeManager
+        else:
+            from bridges.manager import BridgeManager
+
+        props = context.scene.lod_tool
+        engine = props.target_engine
+        proj_dir = props.engine_project_path
+        if not proj_dir:
+            props.bridge_status_text = "Project Path not set"
+            return
+
+        is_ready, msg = BridgeManager.ping_engine(engine, proj_dir)
+        props.bridge_status_text = msg if is_ready else f"Not Ready: {msg}"
+    except Exception as exc:
+        logger.debug("Bridge status refresh: %s", exc)
+
+
+class LODToolSettings(PropertyGroup):
+    """Central Scene PropertyGroup holding all OmniMesh configuration and state."""
+
+    # Target Engine Presets
     target_engine: EnumProperty(
         name="Target Engine",
         items=[
-            ("MSFS_2024", "MSFS 2024 (Strict SDK)", "Microsoft Flight Simulator 2020/2024 glTF + ModelInfo XML"),
-            ("UE5", "Unreal Engine 5.x", "Unreal Engine 5 FBX with LODGroup / Skeletal Hierarchy"),
-            ("UNITY_6", "Unity 6", "Unity FBX with _LOD0..N naming hierarchy"),
-            ("GODOT_4", "Godot 4.x", "Godot 4 glTF with visibility ranges"),
+            ("MSFS_2024", "MSFS 2024 (glTF + XML)", "Microsoft Flight Simulator 2024 glTF and ModelInfo XML standard"),
+            ("UE5", "Unreal Engine 5 (FBX)", "Epic Games Unreal Engine 5 LODGroup FBX hierarchy"),
+            ("UNITY_6", "Unity 6 (FBX)", "Unity Technologies LOD Group FBX naming standard"),
+            ("GODOT_4", "Godot 4 (glTF)", "Godot Engine 4.x visibility range glTF metadata standard"),
         ],
         default="MSFS_2024",
+        description="Target engine determines naming conventions, metadata hierarchy, texture packing, and export file formats",
         update=update_bridge_status_cached,
     )
+
+    # Asset Category Presets
     asset_category: EnumProperty(
-        name="Asset Role",
+        name="Asset Category",
         items=[
-            ("SCENERY", "Scenery / Large Structure", "Airports, buildings, bridges, large props"),
-            ("VEHICLE_AIRFRAME", "Aircraft / Vehicle Exterior", "Fuselage, wings, hull, exterior mechanical parts"),
-            ("CHARACTER_RIGGED", "Character / Rigged Asset", "Skeletal skinned meshes, creatures, characters"),
-            ("INTERIOR", "Cockpit / Interior", "Detailed instruments, cabin seating, controls"),
+            ("HERO_CHARACTER", "Hero Character / Aircraft", "Dense primary focus asset (Up to 6 LODs)"),
+            ("PROP", "General Prop / Machinery", "Standard environment prop (Up to 4 LODs)"),
+            ("FOLIAGE", "Foliage & Nature", "Aggressive planar simplification and alpha preserve (Up to 5 LODs)"),
+            (
+                "BUILDING",
+                "Building & Architecture",
+                "Planar dissolve with structural silhouette locking (Up to 4 LODs)",
+            ),
+            ("MICRO_DEBRIS", "Micro-Debris / Clutter", "Rapid decimation down to dissolution (Up to 2 LODs)"),
         ],
-        default="SCENERY",
-    )
-    lod_count: IntProperty(
-        name="LOD Count",
-        default=5,
-        min=2,
-        max=8,
-        description="Number of LOD levels to generate (LOD0 to LOD_N)",
-    )
-    progression_mode: EnumProperty(
-        name="Curve Profile",
-        items=[
-            ("LOGARITHMIC", "Logarithmic (Smooth Game Falloff)", "Exponential screen size progression"),
-            ("LINEAR", "Linear (Even Steps)", "Uniform distance steps across LOD stages"),
-            ("CUSTOM", "Custom Thresholds", "Manually configured screen percentage thresholds"),
-        ],
-        default="LOGARITHMIC",
-    )
-    protect_silhouettes: BoolProperty(
-        name="Protect Silhouettes & Outer Edges",
-        default=True,
-        description="Injects high dihedral boundary weights to retain outer contours at low screen sizes",
-    )
-    protect_uv_seams: BoolProperty(
-        name="Protect UV Seams & Texture Borders",
-        default=True,
-        description="Prevents UV seam vertex collapse and eliminates texture border tearing",
-    )
-    cull_subpixel_islands: BoolProperty(
-        name="Dissolve Sub-Pixel Mesh Islands",
-        default=True,
-        description="Automatically drops tiny disconnected geometry islands below projected screen threshold",
-    )
-    reproject_normals: BoolProperty(
-        name="Reproject Weighted Split Normals",
-        default=True,
-        description="Transfers custom CAD split normals from LOD0 to lower LOD tiers via Data Transfer modifier",
-    )
-    consolidate_materials: BoolProperty(
-        name="Consolidate Micro-Material Slots",
-        default=True,
-        description="Merges negligible surface material slots (< 0.5% total area) into the dominant material slot",
+        default="PROP",
+        description="Selects default error tolerances, decimation curve exponent, and island culling factors",
     )
 
-    # Occlusion & Interior Geometry Removal Settings
+    # Progression Curve Mode
+    progression_mode: EnumProperty(
+        name="Tier Progression",
+        items=[
+            ("EXPONENTIAL", "Exponential (Geometric)", "Standard engine curve (100% -> 50% -> 25% -> 12.5%)"),
+            ("LOGARITHMIC", "Logarithmic (Smooth)", "Preserves closer fidelity longer before rapid decay"),
+            ("AGGRESSIVE", "Aggressive (Performance)", "Rapid reduction for mobile, VR, or dense sim crowds"),
+            ("LINEAR", "Linear (Uniform)", "Uniform step distribution"),
+        ],
+        default="EXPONENTIAL",
+        description="Mathematical curve used to compute automatic screen size and triangle budgets",
+    )
+
+    lod_count: IntProperty(
+        name="LOD Count",
+        default=4,
+        min=2,
+        max=7,
+        description="Total number of LOD tiers to generate (including base LOD0)",
+    )
+
+    # Error Metrics and Screen Parameters
+    tau_sse: FloatProperty(
+        name="Error Bound Factor",
+        default=1.0,
+        min=0.1,
+        max=5.0,
+        precision=2,
+        description="Screen-Space Error tolerance multiplier",
+    )
+    preserve_silhouette: BoolProperty(
+        name="Preserve Silhouettes",
+        default=True,
+        description="Weight decimation to protect high-curvature silhouette and boundary edges",
+    )
+    pin_uv_seams: BoolProperty(
+        name="Pin UV Seams",
+        default=True,
+        description="Locks UV boundary edges from collapsing to eliminate texture seam popping",
+    )
+    pin_material_borders: BoolProperty(
+        name="Pin Material Borders",
+        default=True,
+        description="Prevents edges on material slot transitions from warping",
+    )
+
+    # Mesh Cleanup & Topology Repair Settings
+    auto_sanitize_before_lod: BoolProperty(
+        name="Auto-Sanitize Before LOD",
+        default=True,
+        description="Automatically run safe Tier 0 geometric hygiene before generating LOD tiers",
+    )
+    cleanup_enable_weld: BoolProperty(
+        name="Merge Close Vertices",
+        default=False,
+        description="Weld coincident vertices within tolerance (Disabled by default to protect intentional panel seams)",
+    )
+    cleanup_weld_distance: FloatProperty(
+        name="Weld Distance",
+        default=0.0005,
+        min=0.00001,
+        max=0.05,
+        precision=5,
+        unit="LENGTH",
+        description="Maximum distance between merged vertices",
+    )
+    cleanup_enable_split_non_manifold: BoolProperty(
+        name="Repair Non-Manifold & Bowties",
+        default=True,
+        description="Split non-manifold bowtie pinch points and edges with >2 linked faces",
+    )
+    cleanup_enable_fill_holes: BoolProperty(
+        name="Fill Small Holes",
+        default=False,
+        description="Detect and seal open boundary loops with <= Max Edges (with mandatory local beauty triangulation)",
+    )
+    cleanup_hole_max_edges: IntProperty(
+        name="Max Hole Edges",
+        default=4,
+        min=3,
+        max=16,
+        description="Maximum edge count of open loops to fill",
+    )
+    cleanup_enable_triangulate_ngons: BoolProperty(
+        name="Triangulate N-Gons",
+        default=False,
+        description="Triangulate polygons with >4 vertices during cleanup (Note: N-gons are automatically triangulated on engine export)",
+    )
+    cleanup_enable_cull_micro_islands: BoolProperty(
+        name="Cull Floating Micro-Islands",
+        default=False,
+        description="Remove tiny disconnected floating mesh pieces in world space",
+    )
+    cleanup_island_size_threshold: FloatProperty(
+        name="Island Size Threshold",
+        default=0.005,
+        min=0.0001,
+        max=0.5,
+        precision=4,
+        description="Bounding diagonal threshold in meters for culling small islands",
+    )
+    cleanup_normal_policy: EnumProperty(
+        name="Normal Alignment",
+        items=[
+            (
+                "MANIFOLD_ONLY",
+                "Manifold Shells Only (Safe)",
+                "Recalculate outward normals only on closed 2-manifold volumes (Safe for foliage/cards)",
+            ),
+            ("FORCE_ALL", "Force All Outward (Destructive)", "Force flood-fill recalculation across entire mesh"),
+            (
+                "OFF",
+                "Keep Intact (Safe for CAD)",
+                "Do not alter face normal winding (Safe for CAD custom split normals)",
+            ),
+        ],
+        default="MANIFOLD_ONLY",
+        description="Face normal orientation policy",
+    )
+    last_cleanup_summary: StringProperty(name="Cleanup Summary", default="")
+
+    # Interior & Occlusion Geometry Removal Settings
     enable_occlusion_culling: BoolProperty(
         name="Cull Interior Geometry",
         default=True,
-        description="Detect and delete interior/occluded polygons not visible from the exterior",
+        description="Automatically detect and delete non-visible internal polygons (cockpit innards, unseen machinery)",
     )
     occlusion_lod_start: IntProperty(
         name="Cull From LOD",
         default=1,
         min=1,
         max=6,
-        description="LOD tier from which occlusion culling begins (LOD0 is always preserved)",
+        description="LOD tier at which interior occlusion removal begins (LOD0 is strictly preserved)",
     )
     occlusion_ray_density: IntProperty(
         name="Ray Samples",
         default=16,
         min=4,
         max=64,
-        description="Visibility ray sampling density (higher = more accurate, lower = faster)",
+        description="Number of stratified ingress and egress raycast samples per surface cluster",
     )
     occlusion_evaluate_alpha: BoolProperty(
         name="Evaluate Transparency",
         default=True,
-        description="Evaluate material transparency and alpha cutouts to protect geometry visible through glass/windows",
+        description="Analyze glass shaders and alpha-cutout textures to allow rays to penetrate windows and see interiors",
     )
     last_culled_faces_count: IntProperty(name="Last Culled Faces", default=0)
     last_culled_islands_count: IntProperty(name="Last Culled Islands", default=0)
@@ -175,8 +288,16 @@ class LODPipelineProperties(PropertyGroup):
     collision_decomposition_mode: EnumProperty(
         name="Decomposition Mode",
         items=[
-            ("PER_OBJECT", "Per-Object (Area Weighted)", "Decomposes each selected submesh proportionally"),
-            ("CONSOLIDATED", "Consolidated Single Hull Set", "Merges selected objects into unified collision set"),
+            (
+                "PER_OBJECT",
+                "Per-Object Area Weighted",
+                "Decomposes each selected object with budget weighted by surface area",
+            ),
+            (
+                "CONSOLIDATED",
+                "Consolidated Assembly",
+                "Decomposes entire selection assembly into a unified convex hull cluster",
+            ),
         ],
         default="PER_OBJECT",
         description="How multi-mesh selections are decomposed into collision hulls",
@@ -348,58 +469,82 @@ class LODPipelineProperties(PropertyGroup):
     bridge_status_text: StringProperty(
         name="Bridge Status",
         default="Bridge Ready",
+        description="Cached status report from engine bridge connection handshake",
     )
 
-    # Batch Library Processor Properties
+    # A/B Split-Screen Comparison Preview Properties
+    is_split_active: BoolProperty(
+        name="Split View Active",
+        default=False,
+        description="Toggle dual-tier visual comparison overlay in 3D Viewport",
+    )
+    split_ratio: FloatProperty(
+        name="Divider Ratio",
+        default=0.5,
+        min=0.0,
+        max=1.0,
+        subtype="PERCENTAGE",
+        precision=2,
+        description="Horizontal screen split position (0.0 = Left only, 1.0 = Right only)",
+    )
+    split_compare_tier: EnumProperty(
+        name="Compare Tier",
+        items=[
+            ("LOD1", "LOD1", "Compare LOD0 against LOD1"),
+            ("LOD2", "LOD2", "Compare LOD0 against LOD2"),
+            ("LOD3", "LOD3", "Compare LOD0 against LOD3"),
+            ("LOD4", "LOD4", "Compare LOD0 against LOD4"),
+            ("LOD5", "LOD5", "Compare LOD0 against LOD5"),
+            ("LOD6", "LOD6", "Compare LOD0 against LOD6"),
+        ],
+        default="LOD1",
+        description="Which simplified LOD tier to show on the right side of the split screen",
+    )
+
+    # Batch Processing Properties
     batch_source_directory: StringProperty(
-        name="Source Assets Folder",
+        name="Source Folder",
         subtype="DIR_PATH",
         default="",
-        description="Directory containing .fbx, .obj, .gltf, or .glb assets to batch-process",
+        description="Directory containing 3D assets to process in batch",
     )
     batch_export_directory: StringProperty(
-        name="Batch Output Folder",
+        name="Export Folder",
         subtype="DIR_PATH",
         default="",
-        description="Destination folder for exported LOD packages and textures",
+        description="Destination folder for exported engine packages",
     )
     batch_recursive_scan: BoolProperty(
         name="Recursive Subfolders",
         default=True,
-        description="Scan nested subdirectories for 3D model files",
+        description="Scan nested subdirectories for 3D asset files",
     )
+    batch_file_formats: EnumProperty(
+        name="Formats",
+        items=[
+            ("ALL", "All Supported (*.fbx, *.gltf, *.glb, *.obj, *.blend)", "Process all 3D formats"),
+            ("FBX", "FBX (*.fbx)", "Process FBX files only"),
+            ("GLTF", "glTF / GLB (*.gltf, *.glb)", "Process glTF/GLB files only"),
+            ("BLEND", "Blender (*.blend)", "Process .blend files only"),
+        ],
+        default="ALL",
+    )
+    batch_status_text: StringProperty(name="Batch Status", default="Batch Ready")
     is_batch_running: BoolProperty(name="Batch Running", default=False)
-    batch_total_count: IntProperty(name="Total Assets", default=0)
-    batch_processed_count: IntProperty(name="Processed Assets", default=0)
-    batch_current_asset: StringProperty(name="Current Asset", default="")
-    batch_status_text: StringProperty(name="Batch Status", default="Batch Ingest Ready")
 
-    # Visual A/B Split-Screen Viewport Comparison Properties
-    is_split_active: BoolProperty(name="Split Screen Active", default=False)
-    split_ratio: FloatProperty(
-        name="Split Divider",
-        default=0.5,
-        min=0.05,
-        max=0.95,
-        subtype="FACTOR",
-        precision=2,
-        description="Position of the A/B comparison divider line",
-    )
-    split_compare_tier: IntProperty(
-        name="Compare Tier",
-        default=3,
-        min=1,
-        max=7,
-        description="LOD tier index to compare against LOD0 Master",
-    )
+
+CLASSES = (
+    LODLevelItem,
+    LODToolSettings,
+)
 
 
 def register_properties() -> None:
     if not bpy:
         return
-    bpy.utils.register_class(LODLevelItem)
-    bpy.utils.register_class(LODPipelineProperties)
-    bpy.types.Scene.lod_tool = PointerProperty(type=LODPipelineProperties)
+    for cls in CLASSES:
+        bpy.utils.register_class(cls)
+    bpy.types.Scene.lod_tool = PointerProperty(type=LODToolSettings)
 
 
 def unregister_properties() -> None:
@@ -407,5 +552,5 @@ def unregister_properties() -> None:
         return
     if hasattr(bpy.types.Scene, "lod_tool"):
         del bpy.types.Scene.lod_tool
-    bpy.utils.unregister_class(LODPipelineProperties)
-    bpy.utils.unregister_class(LODLevelItem)
+    for cls in reversed(CLASSES):
+        bpy.utils.unregister_class(cls)

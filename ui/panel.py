@@ -171,7 +171,7 @@ class LOD_PT_inspection_panel(Panel):
 
 
 class LOD_PT_optimization_panel(Panel):
-    """Subpanel 3: Hierarchy Draw-Call Merging, Occlusion Culling, Collision, Rigging & PBR Textures."""
+    """Subpanel 3: Topology Cleanup, Collision Hulls, Occlusion Culling, Rigging & PBR Textures."""
 
     bl_label = "4. Advanced Optimization"
     bl_idname = "LOD_PT_optimization_panel"
@@ -189,7 +189,40 @@ class LOD_PT_optimization_panel(Panel):
         mesh_objs = get_selected_mesh_objects(context)
         armature_obj = get_associated_armature(mesh_objs)
 
-        # 1. Multi-Convex Collision Hulls (Physics)
+        # 1. Mesh Topology Cleanup & Repair Suite
+        box_cl = layout.box()
+        box_cl.label(text="Mesh Topology Cleanup & Repair", icon="BRUSH_DATA")
+        row_cl = box_cl.row(align=True)
+        row_cl.scale_y = 1.25
+        row_cl.operator("lod_tool.clean_and_repair_mesh", text="Clean & Repair Meshes", icon="AUTO")
+
+        if props.last_cleanup_summary:
+            box_cl.label(text=props.last_cleanup_summary, icon="CHECKMARK")
+
+        box_cl.prop(props, "auto_sanitize_before_lod", text="Auto-Hygiene Before LOD")
+
+        # Critical & Opt-in Toggles Sub-Box
+        box_opt = box_cl.box()
+        box_opt.label(text="Critical & Opt-In Settings", icon="PREFERENCES")
+        box_opt.prop(props, "cleanup_enable_split_non_manifold")
+        box_opt.prop(props, "cleanup_normal_policy", text="Normals")
+
+        row_w = box_opt.row(align=True)
+        row_w.prop(props, "cleanup_enable_weld", text="Merge Close")
+        if props.cleanup_enable_weld:
+            row_w.prop(props, "cleanup_weld_distance", text="Dist")
+
+        row_h = box_opt.row(align=True)
+        row_h.prop(props, "cleanup_enable_fill_holes", text="Fill Holes")
+        if props.cleanup_enable_fill_holes:
+            row_h.prop(props, "cleanup_hole_max_edges", text="Max Edges")
+
+        row_i = box_opt.row(align=True)
+        row_i.prop(props, "cleanup_enable_cull_micro_islands", text="Cull Islands")
+        if props.cleanup_enable_cull_micro_islands:
+            row_i.prop(props, "cleanup_island_size_threshold", text="Size")
+
+        # 2. Multi-Convex Collision Hulls (Physics)
         box_col = layout.box()
         box_col.label(text="Convex Collision Hulls (Physics)", icon="PHYSICS")
         box_col.prop(props, "collision_decomposition_mode", text="")
@@ -208,7 +241,7 @@ class LOD_PT_optimization_panel(Panel):
                 icon="CHECKMARK",
             )
 
-        # 2. Interior & Occlusion Geometry Culling
+        # 3. Interior & Occlusion Geometry Culling
         box_occ = layout.box()
         box_occ.label(text="Interior & Occlusion Culling", icon="MOD_MASK")
         box_occ.prop(props, "enable_occlusion_culling")
@@ -222,14 +255,14 @@ class LOD_PT_optimization_panel(Panel):
                     icon="CHECKMARK",
                 )
 
-        # 3. Hierarchy & Draw-Call Optimization
+        # 4. Hierarchy & Draw-Call Optimization
         box_h = layout.box()
         box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
         box_h.prop(props, "hierarchy_mode", text="")
         if props.hierarchy_mode == "MERGE_DISTANT":
             box_h.prop(props, "merge_lod_start")
 
-        # 4. Rigging & Skeletal Kinematics
+        # 5. Rigging & Skeletal Kinematics
         box_r = layout.box()
         box_r.label(text="Rigging & Skeletal Kinematics", icon="ARMATURE_DATA")
         has_skinning = bool(armature_obj or any(len(obj.vertex_groups) > 0 for obj in mesh_objs))
@@ -241,7 +274,7 @@ class LOD_PT_optimization_panel(Panel):
         col_rig.prop(props, "enable_leaf_bone_pruning")
         col_rig.prop(props, "purge_distant_shape_keys")
 
-        # 5. PBR Texture Channel Packing & Animation
+        # 6. PBR Texture Channel Packing & Animation
         box_tex = layout.box()
         box_tex.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
         box_tex.prop(props, "export_packed_textures")

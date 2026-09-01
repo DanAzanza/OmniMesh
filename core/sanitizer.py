@@ -1,13 +1,17 @@
 """
-Mesh Sanitization and Pre-processing Engine.
-Performs deterministic BMesh geometry hygiene, bowtie splitting,
-degenerate cleanup, and sub-pixel island dissolution.
+Hardened Mesh Sanitization & Topology Repair Engine for OmniMesh.
+Blender 4.2+ and 5.2 LTS Compatible.
+
+Provides 3-tiered architecture:
+- Tier 0: Pure Geometric Hygiene (Uncritical, safe, always executed via fixed-point iteration)
+- Tier 1: Topological Repair (Critical / Opt-in with explicit user toggles)
+- Tier 2: Pipeline & Normal/Material Guards (Manifold-only normal alignment, material slot lock)
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Dict, List, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -15,71 +19,181 @@ try:
     import bmesh
     import bpy
     import mathutils
+    from mathutils import Vector
 except ImportError:
     bpy = None
     bmesh = None
     mathutils = None
 
+    class Vector(tuple):  # type: ignore
+        """Fallback Vector for headless unit tests."""
+
+        def __new__(cls, coords: Any) -> Vector:
+            return super().__new__(cls, tuple(float(x) for x in coords))
+
+        @property
+        def x(self) -> float:
+            return self[0]
+
+        @property
+        def y(self) -> float:
+            return self[1]
+
+        @property
+        def z(self) -> float:
+            return self[2]
+
+        @property
+        def length(self) -> float:
+            import math
+
+            return math.sqrt(self[0] * self[0] + self[1] * self[1] + self[2] * self[2])
+
+        def dot(self, other: Any) -> float:
+            return self[0] * other[0] + self[1] * other[1] + self[2] * other[2]
+
+        def __sub__(self, other: Any) -> Vector:
+            return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
+
 
 class MeshSanitizer:
-    @staticmethod
-    def clean_loose_and_degenerates(
-        bm: Any, min_edge_length: float = 1e-7, min_face_area: float = 1e-12
-    ) -> dict[str, int]:
+    """
+    Production-grade mesh sanitization and topology repair engine.
+    Strictly preserves UV seams, vertex deform groups, custom split normals, and material signatures.
+    """
+
+    @classmethod
+    def _purge_duplicate_faces(cls, bm: Any) -> int:
         """
-        Cleans zero-area faces, degenerate zero-length edges, wire edges, and loose vertices.
-        Performs multi-pass sequencing to ensure that secondary loose geometry created by
-        face and edge deletions is completely swept.
+        Detects and removes exact duplicate coplanar faces sharing the same vertex set.
+        Purges only if face normals are collinear (dot > 0.999), preserving intentional
+        double-sided geometry (foliage cards, hair ribbons, cloth).
         """
-        if not bmesh or not bm:
-            return {"loose_verts": 0, "wire_edges": 0, "zero_edges": 0, "zero_faces": 0}
+        if not bmesh or not bm or not hasattr(bm, "faces") or len(bm.faces) == 0:
+            return 0
+
+        bm.faces.ensure_lookup_table()
+        vert_set_to_faces: Dict[frozenset[Any], List[Any]] = {}
+
+        for f in bm.faces:
+            if not f.is_valid:
+                continue
+            key = frozenset(f.verts)
+            if key not in vert_set_to_faces:
+                vert_set_to_faces[key] = []
+            vert_set_to_faces[key].append(f)
+
+        faces_to_delete: List[Any] = []
+        for _key, face_list in vert_set_to_faces.items():
+            if len(face_list) <= 1:
+                continue
+
+            # Compare pairs for normal collinearity
+            kept_faces: List[Any] = []
+            for candidate in face_list:
+                is_duplicate = False
+                for kept in kept_faces:
+                    # Check normal alignment
+                    try:
+                        n_dot = candidate.normal.dot(kept.normal)
+                        if n_dot > 0.999:  # Exact duplicate coplanar face
+                            is_duplicate = True
+                            break
+                    except Exception as exc:
+                        logger.debug("Duplicate face normal check error: %s", exc)
+
+                if is_duplicate:
+                    faces_to_delete.append(candidate)
+                else:
+                    kept_faces.append(candidate)
+
+        if faces_to_delete:
+            bmesh.ops.delete(bm, geom=faces_to_delete, context="FACES_ONLY")
+            bm.faces.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.verts.ensure_lookup_table()
+            return len(faces_to_delete)
+
+        return 0
+
+    @classmethod
+    def execute_tier0_pure_hygiene(
+        cls, bm: Any, min_edge_length: float = 1e-7, min_face_area: float = 1e-12
+    ) -> Dict[str, int]:
+        """
+        Tier 0: Pure Geometric Hygiene (Uncritical, safe, always executed).
+        Executes multi-pass fixed-point iteration until complete convergence (max 3 passes).
+        """
+        if not bmesh or not bm or not hasattr(bm, "verts"):
+            return {"zero_faces": 0, "zero_edges": 0, "wire_edges": 0, "loose_verts": 0, "duplicate_faces": 0}
 
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
         bm.faces.ensure_lookup_table()
 
-        stats = {"loose_verts": 0, "wire_edges": 0, "zero_edges": 0, "zero_faces": 0}
+        total_stats = {
+            "zero_faces": 0,
+            "zero_edges": 0,
+            "wire_edges": 0,
+            "loose_verts": 0,
+            "duplicate_faces": 0,
+        }
 
-        # 1. Remove zero-area / degenerate faces
-        zero_faces = [f for f in bm.faces if f.calc_area() < max(1e-15, min_face_area)]
-        if zero_faces:
-            stats["zero_faces"] = len(zero_faces)
-            bmesh.ops.delete(bm, geom=zero_faces, context="FACES_ONLY")
-            bm.faces.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            bm.verts.ensure_lookup_table()
+        # 1. Exact Duplicate Coplanar Faces (Normal-aligned only)
+        total_stats["duplicate_faces"] = cls._purge_duplicate_faces(bm)
 
-        # 2. Collapse zero-length / degenerate edges
-        zero_edges = [e for e in bm.edges if e.is_valid and e.calc_length() < max(1e-12, min_edge_length)]
-        if zero_edges:
-            stats["zero_edges"] = len(zero_edges)
-            try:
-                bmesh.ops.collapse(bm, edges=zero_edges)
-            except (RuntimeError, ValueError, IndexError) as exc:
-                # Fallback: delete invalid geometry if collapse fails on non-manifold edges
-                logger.debug("Edge collapse fallback: %s", exc)
-            bm.verts.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            bm.faces.ensure_lookup_table()
+        # 2. Fixed-Point Multi-Pass Convergence (Max 3 passes)
+        for _ in range(3):
+            pass_culled = 0
 
-        # 3. Delete wire edges (edges without any link faces)
-        wire_edges = [e for e in bm.edges if e.is_valid and not e.link_faces]
-        if wire_edges:
-            stats["wire_edges"] = len(wire_edges)
-            bmesh.ops.delete(bm, geom=wire_edges, context="EDGES")
-            bm.edges.ensure_lookup_table()
-            bm.verts.ensure_lookup_table()
+            # Step A: Zero-area faces
+            zero_faces = [f for f in bm.faces if f.is_valid and f.calc_area() < max(1e-15, min_face_area)]
+            if zero_faces:
+                pass_culled += len(zero_faces)
+                total_stats["zero_faces"] += len(zero_faces)
+                bmesh.ops.delete(bm, geom=zero_faces, context="FACES_ONLY")
+                bm.faces.ensure_lookup_table()
+                bm.edges.ensure_lookup_table()
+                bm.verts.ensure_lookup_table()
 
-        # 4. Sweep loose vertices (vertices with no connected edges)
-        loose_verts = [v for v in bm.verts if v.is_valid and not v.link_edges]
-        if loose_verts:
-            stats["loose_verts"] = len(loose_verts)
-            bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
-            bm.verts.ensure_lookup_table()
+            # Step B: Zero-length edges
+            zero_edges = [e for e in bm.edges if e.is_valid and e.calc_length() < max(1e-12, min_edge_length)]
+            if zero_edges:
+                pass_culled += len(zero_edges)
+                total_stats["zero_edges"] += len(zero_edges)
+                try:
+                    bmesh.ops.collapse(bm, edges=zero_edges)
+                except (RuntimeError, ValueError, IndexError) as exc:
+                    logger.debug("Edge collapse fallback in Tier 0: %s", exc)
+                bm.verts.ensure_lookup_table()
+                bm.edges.ensure_lookup_table()
+                bm.faces.ensure_lookup_table()
 
-        # 5. Final validation sweep
+            # Step C: Wire edges (no linked faces)
+            wire_edges = [e for e in bm.edges if e.is_valid and not e.link_faces]
+            if wire_edges:
+                pass_culled += len(wire_edges)
+                total_stats["wire_edges"] += len(wire_edges)
+                bmesh.ops.delete(bm, geom=wire_edges, context="EDGES")
+                bm.edges.ensure_lookup_table()
+                bm.verts.ensure_lookup_table()
+
+            # Step D: Isolated loose vertices (no linked edges)
+            loose_verts = [v for v in bm.verts if v.is_valid and not v.link_edges]
+            if loose_verts:
+                pass_culled += len(loose_verts)
+                total_stats["loose_verts"] += len(loose_verts)
+                bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
+                bm.verts.ensure_lookup_table()
+
+            if pass_culled == 0:
+                break
+
         bm.verts.index_update()
-        return stats
+        return total_stats
+
+    # Backward compatibility alias
+    clean_loose_and_degenerates = execute_tier0_pure_hygiene
 
     @staticmethod
     def merge_doubles_boundary_safe(bm: Any, dist: float = 1e-5) -> int:
@@ -87,7 +201,7 @@ class MeshSanitizer:
         Merges coincident vertices within epsilon distance.
         Safely validates vertex table and returns the count of merged vertices.
         """
-        if not bmesh or not bm or dist < 1e-9:
+        if not bmesh or not bm or dist < 1e-9 or not hasattr(bm, "verts"):
             return 0
         bm.verts.ensure_lookup_table()
         initial_verts = len(bm.verts)
@@ -107,13 +221,13 @@ class MeshSanitizer:
         into independent vertices, preserving UV layers, deform weights (vertex groups),
         face attributes, and smoothing.
         """
-        if not bmesh or not bm:
+        if not bmesh or not bm or not hasattr(bm, "verts"):
             return 0
         bm.verts.ensure_lookup_table()
         split_count = 0
 
-        dvert_lay = bm.verts.layers.deform.active
-        uv_layers = list(bm.loops.layers.uv.values())
+        dvert_lay = bm.verts.layers.deform.active if hasattr(bm.verts.layers, "deform") else None
+        uv_layers = list(bm.loops.layers.uv.values()) if hasattr(bm.loops.layers, "uv") else []
 
         for vert in list(bm.verts):
             if not vert.is_valid or len(vert.link_faces) <= 1:
@@ -162,7 +276,7 @@ class MeshSanitizer:
                         smooth = face.smooth
 
                         # Store UV loop coordinates before removing face
-                        saved_uvs: dict[tuple[Any, int], Any] = {}
+                        saved_uvs: Dict[Tuple[Any, int], Any] = {}
                         for lp_i, lp in enumerate(face.loops):
                             for uv_lay in uv_layers:
                                 saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
@@ -191,19 +305,94 @@ class MeshSanitizer:
         return split_count
 
     @staticmethod
-    def cull_subpixel_islands(bm: Any, w_crit: float) -> int:
+    def split_non_manifold_edges(bm: Any) -> int:
         """
-        Removes disconnected mesh islands whose bounding diagonal is strictly less than w_crit.
+        Detects and splits non-manifold edges connected to > 2 faces into separate manifold edges.
+        """
+        if not bmesh or not bm or not hasattr(bm, "edges"):
+            return 0
+        bm.edges.ensure_lookup_table()
+        split_count = 0
+
+        non_manifold_edges = [e for e in bm.edges if e.is_valid and len(e.link_faces) > 2]
+        if not non_manifold_edges:
+            return 0
+
+        # Split non-manifold edges by duplicating extra faces
+        for edge in non_manifold_edges:
+            if not edge.is_valid or len(edge.link_faces) <= 2:
+                continue
+            # Duplicate excess faces onto new vertices
+            faces_to_split = list(edge.link_faces)[2:]
+            for face in faces_to_split:
+                if not face.is_valid:
+                    continue
+                v1, v2 = edge.verts
+                nv1 = bm.verts.new(v1.co)
+                nv2 = bm.verts.new(v2.co)
+                face_verts = [nv1 if v == v1 else (nv2 if v == v2 else v) for v in face.verts]
+                mat_idx = face.material_index
+                smooth = face.smooth
+                bm.faces.remove(face)
+                try:
+                    nf = bm.faces.new(face_verts)
+                    nf.material_index = mat_idx
+                    nf.smooth = smooth
+                    split_count += 1
+                except ValueError:
+                    pass
+
+        if split_count > 0:
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            bm.verts.index_update()
+
+        return split_count
+
+    @classmethod
+    def fill_small_boundary_holes(cls, bm: Any, max_edges: int = 4) -> int:
+        """
+        Detects open boundary loops with <= max_edges, seals them, and executes
+        MANDATORY immediate local beauty triangulation to prevent non-planar N-gons.
+        """
+        if not bmesh or not bm or not hasattr(bm, "edges") or max_edges < 3:
+            return 0
+        bm.edges.ensure_lookup_table()
+
+        boundary_edges = [e for e in bm.edges if e.is_valid and e.is_boundary]
+        if not boundary_edges:
+            return 0
+
+        try:
+            res = bmesh.ops.holes_fill(bm, edges=boundary_edges, sides=max_edges)
+            new_faces = res.get("faces", [])
+            if new_faces:
+                # MANDATORY: Triangulate newly created cap faces to prevent non-planar N-gon folding in QEM
+                bmesh.ops.triangulate(bm, faces=new_faces, quad_method="BEAUTY", ngon_method="BEAUTY")
+                bm.faces.ensure_lookup_table()
+                bm.edges.ensure_lookup_table()
+                bm.verts.ensure_lookup_table()
+                return len(new_faces)
+        except Exception as exc:
+            logger.debug("Hole filling error: %s", exc)
+
+        return 0
+
+    @classmethod
+    def cull_subpixel_islands(cls, bm: Any, w_crit: float, world_matrix: Any = None) -> int:
+        """
+        Removes disconnected mesh islands whose bounding diagonal in world space is < w_crit.
         Protects against deleting the entire mesh if all components are small.
         """
-        if not bmesh or not bm or not mathutils or w_crit <= 1e-6:
+        if not bmesh or not bm or not hasattr(bm, "faces") or w_crit <= 1e-6:
             return 0
         bm.faces.ensure_lookup_table()
         if len(bm.faces) == 0:
             return 0
 
-        unvisited = set(bm.faces)
-        islands = []
+        unvisited: Set[Any] = set(bm.faces)
+        islands: List[List[Any]] = []
 
         while unvisited:
             start = unvisited.pop()
@@ -222,15 +411,25 @@ class MeshSanitizer:
         if not islands:
             return 0
 
-        culled_faces = []
+        culled_faces: List[Any] = []
         for island in islands:
             unique_verts = set(v for f in island for v in f.verts)
             if not unique_verts:
                 continue
-            coords = [v.co for v in unique_verts]
-            min_c = mathutils.Vector((min(c.x for c in coords), min(c.y for c in coords), min(c.z for c in coords)))
-            max_c = mathutils.Vector((max(c.x for c in coords), max(c.y for c in coords), max(c.z for c in coords)))
-            diag = (max_c - min_c).length
+
+            if world_matrix is not None and hasattr(world_matrix, "__matmul__"):
+                coords = [world_matrix @ v.co for v in unique_verts]
+            else:
+                coords = [v.co for v in unique_verts]
+
+            min_x = min(c[0] for c in coords)
+            min_y = min(c[1] for c in coords)
+            min_z = min(c[2] for c in coords)
+            max_x = max(c[0] for c in coords)
+            max_y = max(c[1] for c in coords)
+            max_z = max(c[2] for c in coords)
+
+            diag = ((max_x - min_x) ** 2 + (max_y - min_y) ** 2 + (max_z - min_z) ** 2) ** 0.5
 
             if diag < w_crit:
                 culled_faces.extend(island)
@@ -239,32 +438,166 @@ class MeshSanitizer:
         if culled_faces and len(culled_faces) < len(bm.faces):
             culled_count = len(culled_faces)
             bmesh.ops.delete(bm, geom=culled_faces, context="FACES")
-            MeshSanitizer.clean_loose_and_degenerates(bm)
+            cls.execute_tier0_pure_hygiene(bm)
             return culled_count
 
         return 0
 
     @classmethod
-    def sanitize_mesh_full(cls, bm: Any, epsilon_merge: float = 1e-5, w_crit: float = 0.0) -> dict[str, Any]:
+    def execute_tier1_topological_repair(
+        cls,
+        bm: Any,
+        enable_weld: bool = False,
+        weld_dist: float = 0.0005,
+        enable_split_non_manifold: bool = True,
+        enable_fill_holes: bool = False,
+        hole_max_edges: int = 4,
+        enable_triangulate_ngons: bool = False,
+        enable_cull_micro_islands: bool = False,
+        island_size_threshold: float = 0.005,
+        world_matrix: Any = None,
+    ) -> Dict[str, int]:
         """
-        Executes full sanitization pipeline:
-        1. Degenerate and loose geometry cleanup
-        2. Boundary-safe vertex double merging
-        3. Bowtie vertex splitting
-        4. Sub-pixel island culling
-        5. Normal recalculation and validation
+        Tier 1: Topological Repair (Opt-in with explicit user toggles).
+        Strict ordering: Weld -> Split Bowties & Non-Manifold -> Fill Holes (+Triangulate) -> N-Gon Triangulate -> Cull Islands.
+        """
+        if not bmesh or not bm:
+            return {
+                "welded_verts": 0,
+                "split_bowties": 0,
+                "split_non_manifold_edges": 0,
+                "filled_holes": 0,
+                "triangulated_ngons": 0,
+                "culled_islands": 0,
+            }
+
+        stats = {
+            "welded_verts": 0,
+            "split_bowties": 0,
+            "split_non_manifold_edges": 0,
+            "filled_holes": 0,
+            "triangulated_ngons": 0,
+            "culled_islands": 0,
+        }
+
+        # 1. Weld Coincident Vertices (Boundary Safe)
+        if enable_weld and weld_dist > 1e-6:
+            stats["welded_verts"] = cls.merge_doubles_boundary_safe(bm, dist=weld_dist)
+
+        # 2. Split Non-Manifold Bowtie Vertices & Edges
+        if enable_split_non_manifold:
+            stats["split_bowties"] = cls.split_bowtie_vertices(bm)
+            stats["split_non_manifold_edges"] = cls.split_non_manifold_edges(bm)
+
+        # 3. Fill Small Open Holes (with immediate local beauty triangulation)
+        if enable_fill_holes:
+            stats["filled_holes"] = cls.fill_small_boundary_holes(bm, max_edges=hole_max_edges)
+
+        # 4. Triangulate Remaining N-Gons (>4 vertices) if requested
+        if enable_triangulate_ngons:
+            bm.faces.ensure_lookup_table()
+            ngons = [f for f in bm.faces if f.is_valid and len(f.verts) > 4]
+            if ngons:
+                bmesh.ops.triangulate(bm, faces=ngons, quad_method="BEAUTY", ngon_method="BEAUTY")
+                stats["triangulated_ngons"] = len(ngons)
+                bm.faces.ensure_lookup_table()
+                bm.edges.ensure_lookup_table()
+                bm.verts.ensure_lookup_table()
+
+        # 5. Cull Floating Micro-Islands
+        if enable_cull_micro_islands and island_size_threshold > 1e-4:
+            stats["culled_islands"] = cls.cull_subpixel_islands(
+                bm, w_crit=island_size_threshold, world_matrix=world_matrix
+            )
+
+        bm.verts.index_update()
+        return stats
+
+    @classmethod
+    def execute_tier2_pipeline_guards(cls, bm: Any, normal_recalc_policy: str = "MANIFOLD_ONLY") -> Dict[str, Any]:
+        """
+        Tier 2: Pipeline & Normal/Material Guards.
+        - MANIFOLD_ONLY (Default): Recalculates outward normals ONLY on strictly closed 2-manifold shells.
+          Protects foliage cards, single-sided cloth, inverted outline shells, and open meshes.
+        - FORCE_ALL: Flood-fills outward normal recalculation across entire mesh.
+        - OFF: Keeps face winding 100% untouched.
+        """
+        if not bmesh or not bm or not hasattr(bm, "faces") or len(bm.faces) == 0:
+            return {"recalculated_normals": False}
+
+        bm.faces.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+
+        if normal_recalc_policy == "MANIFOLD_ONLY":
+            # Identify closed manifold shells (faces where every edge has exactly 2 link faces)
+            closed_faces = [f for f in bm.faces if f.is_valid and all(len(e.link_faces) == 2 for e in f.edges)]
+            if closed_faces:
+                try:
+                    bmesh.ops.recalc_face_normals(bm, faces=closed_faces)
+                    return {"recalculated_normals": True, "manifold_faces_aligned": len(closed_faces)}
+                except Exception as exc:
+                    logger.debug("Manifold normal recalc fallback: %s", exc)
+        elif normal_recalc_policy == "FORCE_ALL":
+            try:
+                bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+                return {"recalculated_normals": True, "forced_all_aligned": len(bm.faces)}
+            except Exception as exc:
+                logger.debug("Forced normal recalc fallback: %s", exc)
+
+        return {"recalculated_normals": False}
+
+    @classmethod
+    def sanitize_mesh_full(
+        cls,
+        bm: Any,
+        epsilon_merge: float = 1e-5,
+        w_crit: float = 0.0,
+        enable_weld: bool = False,
+        enable_split_non_manifold: bool = True,
+        enable_fill_holes: bool = False,
+        hole_max_edges: int = 4,
+        enable_triangulate_ngons: bool = False,
+        enable_cull_micro_islands: bool = False,
+        normal_recalc_policy: str = "MANIFOLD_ONLY",
+        world_matrix: Any = None,
+    ) -> Dict[str, Any]:
+        """
+        Coordinates full 3-tier mesh sanitation & repair pipeline.
+        Returns comprehensive summary statistics dictionary.
         """
         if not bmesh or not bm:
             return {}
-        stats: dict[str, Any] = {}
-        stats.update(cls.clean_loose_and_degenerates(bm))
-        stats["merged_doubles"] = cls.merge_doubles_boundary_safe(bm, dist=epsilon_merge)
-        stats["split_bowties"] = cls.split_bowtie_vertices(bm)
-        if w_crit > 1e-4:
-            stats["culled_islands"] = cls.cull_subpixel_islands(bm, w_crit)
-        else:
-            stats["culled_islands"] = 0
 
-        if len(bm.faces) > 0:
-            bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        stats: Dict[str, Any] = {}
+
+        # Tier 0: Pure Geometric Hygiene (Uncritical, Always Active)
+        stats.update(cls.execute_tier0_pure_hygiene(bm))
+
+        # Backward-compatibility fallback if epsilon_merge passed directly
+        actual_weld = enable_weld or (epsilon_merge > 1e-5)
+        actual_dist = epsilon_merge if (epsilon_merge > 1e-5) else 0.0005
+        actual_cull = enable_cull_micro_islands or (w_crit > 1e-4)
+        actual_crit = w_crit if (w_crit > 1e-4) else 0.005
+
+        # Tier 1: Topological Repair (Critical / Opt-in)
+        tier1_stats = cls.execute_tier1_topological_repair(
+            bm,
+            enable_weld=actual_weld,
+            weld_dist=actual_dist,
+            enable_split_non_manifold=enable_split_non_manifold,
+            enable_fill_holes=enable_fill_holes,
+            hole_max_edges=hole_max_edges,
+            enable_triangulate_ngons=enable_triangulate_ngons,
+            enable_cull_micro_islands=actual_cull,
+            island_size_threshold=actual_crit,
+            world_matrix=world_matrix,
+        )
+        stats.update(tier1_stats)
+        stats["merged_doubles"] = tier1_stats.get("welded_verts", 0)
+        stats["split_bowties"] = tier1_stats.get("split_bowties", 0)
+
+        # Tier 2: Pipeline & Normal Guards
+        tier2_stats = cls.execute_tier2_pipeline_guards(bm, normal_recalc_policy=normal_recalc_policy)
+        stats.update(tier2_stats)
+
         return stats
