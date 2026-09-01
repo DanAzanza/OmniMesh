@@ -28,6 +28,7 @@ try:
         generate_logarithmic_screen_tiers,
     )
     from ..core.normals import NormalManager
+    from ..core.occlusion import HardenedOcclusionCuller
     from ..core.rigging import KinematicBonePruner, WeightSanitizer
     from ..core.sanitizer import MeshSanitizer
 except (ImportError, ValueError):
@@ -42,6 +43,7 @@ except (ImportError, ValueError):
         generate_logarithmic_screen_tiers,
     )
     from core.normals import NormalManager
+    from core.occlusion import HardenedOcclusionCuller
     from core.rigging import KinematicBonePruner, WeightSanitizer
     from core.sanitizer import MeshSanitizer
 
@@ -59,140 +61,136 @@ def is_object_valid(obj: Any) -> bool:
 
 
 def get_selected_mesh_objects(context: Any) -> list[Any]:
-    """Retrieve all selected source mesh objects, filtering out derivative _LOD1..N objects."""
+    """Retrieves all selected mesh objects, or falls back to active object."""
     if not context:
         return []
-    raw_meshes = [
-        obj
-        for obj in getattr(context, "selected_objects", [])
-        if is_object_valid(obj) and getattr(obj, "type", "") == "MESH"
-    ]
-    if (
-        not raw_meshes
-        and getattr(context, "active_object", None)
-        and is_object_valid(context.active_object)
-        and getattr(context.active_object, "type", "") == "MESH"
-    ):
-        raw_meshes = [context.active_object]
-
-    # Prefer base source meshes over derivative LOD tiers if both are selected
-    base_meshes = [obj for obj in raw_meshes if not any(f"_LOD{n}" in getattr(obj, "name", "") for n in range(1, 11))]
-    return base_meshes if base_meshes else raw_meshes
+    selected = [obj for obj in getattr(context, "selected_objects", []) if getattr(obj, "type", "") == "MESH"]
+    if not selected and getattr(context, "active_object", None) and context.active_object.type == "MESH":
+        selected = [context.active_object]
+    return selected
 
 
 def get_associated_armature(mesh_objs: list[Any]) -> Any:
-    """Find armature parent or modifier attached to any of the provided mesh objects."""
+    """Finds the shared armature modifier or parent across selected meshes."""
     for obj in mesh_objs:
-        if not is_object_valid(obj):
-            continue
-        if (
-            getattr(obj, "parent", None)
-            and is_object_valid(obj.parent)
-            and getattr(obj.parent, "type", "") == "ARMATURE"
-        ):
+        if obj.parent and getattr(obj.parent, "type", "") == "ARMATURE":
             return obj.parent
         for mod in getattr(obj, "modifiers", []):
-            if getattr(mod, "type", "") == "ARMATURE" and is_object_valid(getattr(mod, "object", None)):
+            if getattr(mod, "type", "") == "ARMATURE" and getattr(mod, "object", None):
                 return mod.object
     return None
 
 
 class LOD_OT_analyze_and_configure(Operator):
-    """Analyze active mesh geometry and automatically calculate screen-space error LOD thresholds."""
+    """Analyze selected mesh bounding metrics and auto-populate recommended LOD screen tiers."""
 
     bl_idname = "lod_tool.analyze_and_configure"
-    bl_label = "Auto-Configure Tiers"
+    bl_label = "Auto-Configure LOD Tiers"
     bl_options = {"REGISTER", "UNDO"}
 
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bpy is not None and len(get_selected_mesh_objects(context)) > 0
-
     def execute(self, context: Any) -> set[str]:
-        props = context.scene.lod_tool
+        if not bpy or not context:
+            return {"CANCELLED"}
         mesh_objs = get_selected_mesh_objects(context)
         if not mesh_objs:
             self.report({"WARNING"}, "No mesh objects selected.")
             return {"CANCELLED"}
 
+        props = context.scene.lod_tool
         all_coords = []
-        base_tris = 0
-        total_mat_slots = 0
-
         for obj in mesh_objs:
-            m_w = obj.matrix_world
-            all_coords.extend([m_w @ v.co for v in obj.data.vertices])
-            base_tris += len(obj.data.polygons)
-            total_mat_slots += len(obj.material_slots)
+            all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
 
-        _, radius = compute_bounding_sphere(all_coords)
+        if not all_coords:
+            self.report({"ERROR"}, "Selected meshes have no vertices.")
+            return {"CANCELLED"}
 
-        if not props.export_base_name:
-            primary_name = context.active_object.name if context.active_object else mesh_objs[0].name
-            props.export_base_name = primary_name.split("_LOD")[0]
+        center, radius = compute_bounding_sphere(all_coords)
 
         render = context.scene.render
-        aspect_ratio = render.resolution_x / max(1, render.resolution_y)
         cam = context.scene.camera
         cam_angle = cam.data.angle if cam and cam.type == "CAMERA" else math.radians(60.0)
         sensor_fit = cam.data.sensor_fit if cam and cam.type == "CAMERA" else "AUTO"
+        aspect_ratio = render.resolution_x / max(1, render.resolution_y)
         fov_v = compute_vertical_fov(cam_angle, aspect_ratio, sensor_fit)
 
-        if props.target_engine == "MSFS_2024":
-            props.num_lods = 7
-            screen_tiers = [100.0, 50.0, 25.0, 10.0, 5.0, 2.0, 0.5]
+        total_base_tris = sum(len(obj.data.polygons) for obj in mesh_objs)
+
+        if props.progression_mode == "LOGARITHMIC":
+            tiers_data = generate_logarithmic_screen_tiers(
+                lod_count=props.lod_count,
+                base_screen_pct=100.0,
+                min_screen_pct=5.0,
+                base_tris=total_base_tris,
+                gamma=1.5,
+            )
         else:
-            screen_tiers = generate_logarithmic_screen_tiers(props.num_lods, props.cull_screen_size_pct)
+            step = 95.0 / max(1, props.lod_count - 1)
+            tiers_data = []
+            for i in range(props.lod_count):
+                s_pct = max(5.0, 100.0 - (i * step))
+                s_frac = s_pct / 100.0
+                t_tris = int(round(total_base_tris * (s_frac**1.5)))
+                tiers_data.append((f"LOD{i}", s_pct, t_tris))
 
         props.lods.clear()
-        for i, s_pct in enumerate(screen_tiers):
+        for i, (name, s_pct, t_tris) in enumerate(tiers_data):
             item = props.lods.add()
-            item.name = f"LOD{i}"
+            item.name = name
             item.lod_index = i
             item.screen_size_pct = s_pct
+            item.target_tris = t_tris
+            item.actual_tris = total_base_tris if i == 0 else 0
 
             s_frac = s_pct / 100.0
             dist = compute_distance_from_screen_size(radius, s_frac, fov_v)
-            tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
+            tolerances = compute_coupled_tolerances(radius, s_frac, 1.5, render.resolution_y)
 
             item.distance_m = dist
             item.delta_world = tolerances["delta_world"]
-            item.target_tris = max(12, int(base_tris * tolerances["qem_ratio"]))
-            item.mat_slots_count = total_mat_slots if i < 2 else max(1, total_mat_slots - (i - 1))
+            item.mat_slots_count = sum(len(obj.material_slots) for obj in mesh_objs)
 
-        props.active_lod_index = 0
+        if not props.export_base_name:
+            props.export_base_name = mesh_objs[0].name.split("_LOD")[0]
+
         self.report(
             {"INFO"},
-            f"Configured {len(props.lods)} LOD tiers for {len(mesh_objs)} meshes (Radius: {radius:.2f}m, Base Tris: {base_tris:,})",
+            f"Configured {len(props.lods)} LOD tiers for '{props.export_base_name}' ({total_base_tris:,} base tris, radius={radius:.2f}m)",
         )
         return {"FINISHED"}
 
 
 class LOD_OT_generate_all(Operator):
-    """Generate all configured LOD tiers in scene collection with QEM simplification and normal reprojection."""
+    """Execute complete LOD generation pipeline across all configured tiers."""
 
     bl_idname = "lod_tool.generate_all"
     bl_label = "Generate All LODs"
     bl_options = {"REGISTER", "UNDO"}
 
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bpy is not None and len(get_selected_mesh_objects(context)) > 0 and len(context.scene.lod_tool.lods) > 0
-
     def execute(self, context: Any) -> set[str]:
-        props = context.scene.lod_tool
+        if not bpy or not context:
+            return {"CANCELLED"}
         mesh_objs = get_selected_mesh_objects(context)
-        armature_obj = get_associated_armature(mesh_objs)
+        if not mesh_objs:
+            self.report({"WARNING"}, "No mesh objects selected.")
+            return {"CANCELLED"}
 
+        props = context.scene.lod_tool
+        if not props.lods:
+            self.report({"ERROR"}, "No LOD tiers configured. Run Auto-Configure first.")
+            return {"CANCELLED"}
+
+        armature_obj = get_associated_armature(mesh_objs)
         orig_pose_pos = None
         if armature_obj and hasattr(armature_obj.data, "pose_position"):
             orig_pose_pos = armature_obj.data.pose_position
             armature_obj.data.pose_position = "REST"
 
+        total_culled_faces = 0
+        total_culled_islands = 0
+
         try:
-            base_name = props.export_base_name or (
-                context.active_object.name if context.active_object else mesh_objs[0].name
-            )
+            base_name = props.export_base_name or mesh_objs[0].name.split("_LOD")[0]
             coll_name = f"{base_name}_LODs"
             target_coll = bpy.data.collections.get(coll_name)
             if not target_coll:
@@ -222,8 +220,8 @@ class LOD_OT_generate_all(Operator):
 
             for i, tier in enumerate(props.lods):
                 s_frac = tier.screen_size_pct / 100.0
-                tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
-                should_merge = props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier
+                tolerances = compute_coupled_tolerances(radius, s_frac, 1.5, render.resolution_y)
+                should_merge = props.hierarchy_mode == "MERGE_DISTANT" and i >= props.merge_lod_start
 
                 if should_merge and len(mesh_objs) > 1:
                     merged_name = f"{base_name}_LOD{i}"
@@ -237,6 +235,19 @@ class LOD_OT_generate_all(Operator):
                     bm = bmesh.new()
                     bm.from_mesh(tier_obj.data)
                     MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
+
+                    # Occlusion & Interior Geometry Culling
+                    if props.enable_occlusion_culling and i >= props.occlusion_lod_start:
+                        cull_res = HardenedOcclusionCuller.cull_interior_faces(
+                            tier_obj,
+                            bm,
+                            ray_density=props.occlusion_ray_density,
+                            evaluate_alpha=props.occlusion_evaluate_alpha,
+                            delta_world=tolerances["delta_world"],
+                        )
+                        total_culled_faces += cull_res.get("culled_faces", 0)
+                        total_culled_islands += cull_res.get("culled_islands", 0)
+
                     pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
                     MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
                     MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
@@ -246,11 +257,11 @@ class LOD_OT_generate_all(Operator):
 
                     MeshDecimator.execute_decimate_qem(tier_obj, tolerances["qem_ratio"], use_curvature_weight=True)
 
-                    if props.purge_shape_keys and i >= 2:
+                    if props.purge_distant_shape_keys and i >= 2:
                         MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
 
                     if armature_obj and len(tier_obj.vertex_groups) > 0:
-                        if props.enable_bone_pruning and i >= 2:
+                        if props.enable_leaf_bone_pruning and i >= props.leaf_bone_lod_start:
                             KinematicBonePruner.prune_kinematic_subtrees(
                                 tier_obj,
                                 armature_obj,
@@ -288,12 +299,25 @@ class LOD_OT_generate_all(Operator):
                             bm.to_mesh(lod_obj.data)
                             bm.free()
                         else:
-                            if props.purge_shape_keys and i >= 2:
+                            if props.purge_distant_shape_keys and i >= 2:
                                 MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
 
                             bm = bmesh.new()
                             bm.from_mesh(lod_obj.data)
                             MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
+
+                            # Occlusion & Interior Geometry Culling
+                            if props.enable_occlusion_culling and i >= props.occlusion_lod_start:
+                                cull_res = HardenedOcclusionCuller.cull_interior_faces(
+                                    lod_obj,
+                                    bm,
+                                    ray_density=props.occlusion_ray_density,
+                                    evaluate_alpha=props.occlusion_evaluate_alpha,
+                                    delta_world=tolerances["delta_world"],
+                                )
+                                total_culled_faces += cull_res.get("culled_faces", 0)
+                                total_culled_islands += cull_res.get("culled_islands", 0)
+
                             pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
                             MeshDecimator.apply_planar_limited_dissolve(
                                 bm, math.radians(tolerances["planar_angle_deg"])
@@ -307,16 +331,19 @@ class LOD_OT_generate_all(Operator):
                                 lod_obj, tolerances["qem_ratio"], use_curvature_weight=True
                             )
 
-                            MaterialOptimizer.consolidate_micro_materials(
-                                lod_obj,
-                                area_crit=tolerances["area_crit"],
-                                preserve_slot_indexing=props.preserve_slot_indexing,
-                            )
+                            if props.consolidate_materials:
+                                MaterialOptimizer.consolidate_micro_materials(
+                                    lod_obj,
+                                    area_crit=tolerances["area_crit"],
+                                )
 
-                            NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"])
+                            if props.reproject_normals:
+                                NormalManager.reproject_custom_split_normals(
+                                    lod_obj, source_obj, tolerances["delta_world"]
+                                )
 
                             if armature_obj and len(lod_obj.vertex_groups) > 0:
-                                if props.enable_bone_pruning and i >= 2:
+                                if props.enable_leaf_bone_pruning and i >= props.leaf_bone_lod_start:
                                     KinematicBonePruner.prune_kinematic_subtrees(
                                         lod_obj,
                                         armature_obj,
@@ -335,6 +362,9 @@ class LOD_OT_generate_all(Operator):
 
                     tier.actual_tris = tier_tris
                     tier.mat_slots_count = tier_mats
+
+            props.last_culled_faces_count = total_culled_faces
+            props.last_culled_islands_count = total_culled_islands
 
             # Compute and record summary metrics
             if len(props.lods) > 0:
@@ -360,45 +390,118 @@ class LOD_OT_preview_tier(Operator):
     """Isolate and display selected LOD tier geometry in 3D Viewport."""
 
     bl_idname = "lod_tool.preview_tier"
-    bl_label = "Preview Selected Tier"
+    bl_label = "Preview Tier"
     bl_options = {"REGISTER", "UNDO"}
 
-    tier_index: bpy.props.IntProperty(default=0) if bpy else 0
+    tier_index: bpy.props.IntProperty(name="Tier Index", default=0, min=0) if bpy else 0  # type: ignore
 
     def execute(self, context: Any) -> set[str]:
-        if not bpy:
-            return {"FINISHED"}
+        if not bpy or not context:
+            return {"CANCELLED"}
         props = context.scene.lod_tool
-        target_idx = self.tier_index
-        base_name = props.export_base_name
+        if not props.lods or self.tier_index >= len(props.lods):
+            self.report({"WARNING"}, f"LOD tier {self.tier_index} not generated.")
+            return {"CANCELLED"}
 
-        coll = bpy.data.collections.get(f"{base_name}_LODs")
-        if coll:
-            for obj in coll.objects:
-                is_this_tier = f"_LOD{target_idx}" in obj.name
-                obj.hide_viewport = not is_this_tier
-                obj.hide_render = not is_this_tier
+        mesh_objs = get_selected_mesh_objects(context)
+        base_name = props.export_base_name or (mesh_objs[0].name.split("_LOD")[0] if mesh_objs else "")
+        coll_name = f"{base_name}_LODs"
+        target_coll = bpy.data.collections.get(coll_name)
+        if not target_coll:
+            self.report({"WARNING"}, f"LOD collection '{coll_name}' not found.")
+            return {"CANCELLED"}
 
-        props.active_lod_index = max(0, min(target_idx, len(props.lods) - 1)) if props.lods else 0
+        for obj in target_coll.objects:
+            if "_LOD" in obj.name:
+                is_target = f"_LOD{self.tier_index}" in obj.name
+                obj.hide_viewport = not is_target
+                obj.hide_render = not is_target
+
+        self.report({"INFO"}, f"Previewing LOD{self.tier_index}")
         return {"FINISHED"}
 
 
-classes = (
+class LOD_OT_toggle_simulator(Operator):
+    """Toggle real-time distance-based Viewport LOD simulator loop."""
+
+    bl_idname = "lod_tool.toggle_simulator"
+    bl_label = "Toggle LOD Simulator"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        props = context.scene.lod_tool
+
+        try:
+            from ..core.simulator import RealTimeLODSimulator
+        except (ImportError, ValueError):
+            from core.simulator import RealTimeLODSimulator
+
+        if props.is_simulator_active:
+            RealTimeLODSimulator.stop()
+            props.is_simulator_active = False
+            self.report({"INFO"}, "Real-Time LOD Simulator stopped.")
+        else:
+            started = RealTimeLODSimulator.start(context)
+            if started:
+                props.is_simulator_active = True
+                self.report({"INFO"}, "Real-Time LOD Simulator active.")
+            else:
+                self.report({"WARNING"}, "Failed to start simulator. Ensure LODs are generated.")
+        return {"FINISHED"}
+
+
+class LOD_OT_toggle_split_preview(Operator):
+    """Toggle interactive A/B split-screen viewport preview."""
+
+    bl_idname = "lod_tool.toggle_split_preview"
+    bl_label = "Toggle Split Preview"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        props = context.scene.lod_tool
+
+        try:
+            from .hud import ViewportSplitPreview
+        except (ImportError, ValueError):
+            from ui.hud import ViewportSplitPreview
+
+        if props.is_split_active:
+            ViewportSplitPreview.stop()
+            props.is_split_active = False
+            self.report({"INFO"}, "Split-screen preview disabled.")
+        else:
+            started = ViewportSplitPreview.start(context)
+            if started:
+                props.is_split_active = True
+                self.report({"INFO"}, "Split-screen A/B preview enabled.")
+            else:
+                self.report({"WARNING"}, "Split-screen preview requires generated LODs.")
+        return {"FINISHED"}
+
+
+# Registration Order
+OPERATOR_CLASSES = (
     LOD_OT_analyze_and_configure,
     LOD_OT_generate_all,
     LOD_OT_preview_tier,
+    LOD_OT_toggle_simulator,
+    LOD_OT_toggle_split_preview,
 )
 
 
 def register_operators() -> None:
     if not bpy:
         return
-    for cls in classes:
+    for cls in OPERATOR_CLASSES:
         bpy.utils.register_class(cls)
 
 
 def unregister_operators() -> None:
     if not bpy:
         return
-    for cls in reversed(classes):
+    for cls in reversed(OPERATOR_CLASSES):
         bpy.utils.unregister_class(cls)

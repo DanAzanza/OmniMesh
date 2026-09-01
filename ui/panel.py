@@ -57,10 +57,8 @@ class LOD_PT_main_panel(Panel):
         # 2. Quality & Screen-Space Error Card
         box_q = layout.box()
         box_q.label(text="Quality & Tolerance", icon="RESTRICT_VIEW_OFF")
-        box_q.prop(props, "tau_sse", slider=True, text="Visual Stability (SSE)")
-        box_q.prop(props, "cull_screen_size_pct", slider=True, text="Cull Screen Size (%)")
-        if props.target_engine != "MSFS_2024":
-            box_q.prop(props, "num_lods", text="LOD Tier Count")
+        box_q.prop(props, "progression_mode", text="Curve")
+        box_q.prop(props, "lod_count", text="LOD Count")
 
         # Step 1 Primary CTA
         col_cta = layout.column(align=True)
@@ -141,33 +139,31 @@ class LOD_PT_inspection_panel(Panel):
         layout = self.layout
         props = context.scene.lod_tool
 
-        # Real-Time LOD Simulator
+        # Real-Time Distance Simulator Loop
         box_sim = layout.box()
-        box_sim.label(text="Real-Time Viewport Simulator", icon="PLAY")
-        row = box_sim.row(align=True)
-        row.scale_y = 1.2
-        if props.is_simulator_running:
-            row.operator("lod_tool.toggle_live_simulator", text="Stop Simulation", icon="CANCEL")
+        box_sim.label(text="Live Distance Simulator", icon="CAMERA_DATA")
+        row_sim = box_sim.row(align=True)
+        row_sim.scale_y = 1.25
+        if props.is_simulator_active:
+            row_sim.operator("lod_tool.toggle_simulator", text="Stop Live Simulator", icon="CANCEL")
         else:
-            row.operator("lod_tool.toggle_live_simulator", text="Start Live Simulator", icon="PLAY")
+            row_sim.operator("lod_tool.toggle_simulator", text="Start Live Simulator", icon="PLAY")
 
-        box_sim.prop(props, "simulator_mode", text="Mode")
-        if props.simulator_mode == "VIRTUAL_SLIDER":
-            box_sim.prop(props, "virtual_screen_size_pct", slider=True)
-            box_sim.prop(props, "virtual_preview_dist_m")
+        if props.is_simulator_active:
+            box_sim.prop(props, "simulator_camera_mode", text="Camera")
+            box_sim.prop(props, "virtual_distance_override", slider=True, text="Virtual Slider (m)")
 
-        # A/B Split-Screen Viewport Comparison
+        # Visual A/B Split-Screen Viewport Preview
         box_split = layout.box()
-        box_split.label(text="A/B Split-Screen Comparison", icon="UV_SYNC_SELECT")
-        row = box_split.row(align=True)
-        row.scale_y = 1.2
+        box_split.label(text="A/B Split-Screen Comparison", icon="SPLITVIEW")
+        row_split = box_split.row(align=True)
+        row_split.scale_y = 1.2
         if props.is_split_active:
-            row.operator("lod_tool.toggle_split_preview", text="Exit Split Preview", icon="CANCEL")
-            box_split.prop(props, "split_ratio", text="Split Line", slider=True)
-            box_split.prop(props, "split_compare_tier", text="Compare Tier")
+            row_split.operator("lod_tool.toggle_split_preview", text="Exit Split Preview", icon="CANCEL")
+            box_split.prop(props, "split_ratio", slider=True, text="Divider Position")
         else:
-            row.operator("lod_tool.toggle_split_preview", text="Start Split Preview", icon="VIEW_CAMERA")
-            box_split.prop(props, "split_compare_tier", text="Compare Tier")
+            row_split.operator("lod_tool.toggle_split_preview", text="Start Split Preview", icon="VIEW_CAMERA")
+        box_split.prop(props, "split_compare_tier", text="Compare Tier")
 
         # Viewport HUD Toggle
         box_hud = layout.box()
@@ -175,7 +171,7 @@ class LOD_PT_inspection_panel(Panel):
 
 
 class LOD_PT_optimization_panel(Panel):
-    """Subpanel 3: Hierarchy Draw-Call Merging, Rigging Kinematics & PBR Texture Baking."""
+    """Subpanel 3: Hierarchy Draw-Call Merging, Occlusion Culling, Rigging & PBR Textures."""
 
     bl_label = "4. Advanced Optimization"
     bl_idname = "LOD_PT_optimization_panel"
@@ -193,15 +189,28 @@ class LOD_PT_optimization_panel(Panel):
         mesh_objs = get_selected_mesh_objects(context)
         armature_obj = get_associated_armature(mesh_objs)
 
-        # Hierarchy & Draw-Call Optimization
+        # 1. Interior & Occlusion Geometry Culling
+        box_occ = layout.box()
+        box_occ.label(text="Interior & Occlusion Culling", icon="MOD_MASK")
+        box_occ.prop(props, "enable_occlusion_culling")
+        if props.enable_occlusion_culling:
+            box_occ.prop(props, "occlusion_lod_start")
+            box_occ.prop(props, "occlusion_ray_density")
+            box_occ.prop(props, "occlusion_evaluate_alpha")
+            if props.last_culled_faces_count > 0:
+                box_occ.label(
+                    text=f"Culled {props.last_culled_faces_count:,} interior faces ({props.last_culled_islands_count} islands)",
+                    icon="CHECKMARK",
+                )
+
+        # 2. Hierarchy & Draw-Call Optimization
         box_h = layout.box()
         box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
         box_h.prop(props, "hierarchy_mode", text="")
-        if props.hierarchy_mode == "MERGE_AT_TIER":
-            box_h.prop(props, "merge_start_tier")
-        box_h.prop(props, "preserve_slot_indexing")
+        if props.hierarchy_mode == "MERGE_DISTANT":
+            box_h.prop(props, "merge_lod_start")
 
-        # Rigging & Skeletal Kinematics
+        # 3. Rigging & Skeletal Kinematics
         box_r = layout.box()
         box_r.label(text="Rigging & Skeletal Kinematics", icon="ARMATURE_DATA")
         has_skinning = bool(armature_obj or any(len(obj.vertex_groups) > 0 for obj in mesh_objs))
@@ -210,10 +219,10 @@ class LOD_PT_optimization_panel(Panel):
         col_rig = box_r.column()
         col_rig.active = has_skinning
         col_rig.prop(props, "max_bone_influences")
-        col_rig.prop(props, "enable_bone_pruning")
-        col_rig.prop(props, "purge_shape_keys")
+        col_rig.prop(props, "enable_leaf_bone_pruning")
+        col_rig.prop(props, "purge_distant_shape_keys")
 
-        # PBR Texture Channel Packing & Animation
+        # 4. PBR Texture Channel Packing & Animation
         box_tex = layout.box()
         box_tex.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
         box_tex.prop(props, "export_packed_textures")

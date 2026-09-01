@@ -1,5 +1,5 @@
 """
-UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture, Live Simulator & Engine Bridge Settings.
+UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture, Live Simulator, Occlusion Culling & Engine Bridge Settings.
 """
 
 from __future__ import annotations
@@ -98,105 +98,184 @@ class LODPipelineProperties(PropertyGroup):
             ("VEHICLE_AIRFRAME", "Aircraft / Vehicle Exterior", "Fuselage, wings, hull, exterior mechanical parts"),
             ("CHARACTER_RIGGED", "Character / Rigged Asset", "Skeletal skinned meshes, creatures, characters"),
             ("INTERIOR", "Cockpit / Interior", "Detailed instruments, cabin seating, controls"),
-            ("PROP_CLUTTER", "Prop / Airport Clutter", "Cargo carts, luggage, signs, small props"),
-            ("FOLIAGE", "Vegetation / Foliage", "Trees, shrubs, grass clusters"),
         ],
         default="SCENERY",
     )
-    tau_sse: FloatProperty(name="Visual Stability (SSE)", default=0.8, min=0.2, max=3.0, precision=2)
-    cull_screen_size_pct: FloatProperty(
-        name="Cull Screen Size (%)", default=0.5, min=0.01, max=10.0, precision=2, subtype="PERCENTAGE"
+    lod_count: IntProperty(
+        name="LOD Count",
+        default=5,
+        min=2,
+        max=8,
+        description="Number of LOD levels to generate (LOD0 to LOD_N)",
     )
-    num_lods: IntProperty(name="LOD Count", default=7, min=2, max=8)
-    preserve_slot_indexing: BoolProperty(name="Preserve Slot Indices", default=True)
+    progression_mode: EnumProperty(
+        name="Curve Profile",
+        items=[
+            ("LOGARITHMIC", "Logarithmic (Smooth Game Falloff)", "Exponential screen size progression"),
+            ("LINEAR", "Linear (Even Steps)", "Uniform distance steps across LOD stages"),
+            ("CUSTOM", "Custom Thresholds", "Manually configured screen percentage thresholds"),
+        ],
+        default="LOGARITHMIC",
+    )
+    protect_silhouettes: BoolProperty(
+        name="Protect Silhouettes & Outer Edges",
+        default=True,
+        description="Injects high dihedral boundary weights to retain outer contours at low screen sizes",
+    )
+    protect_uv_seams: BoolProperty(
+        name="Protect UV Seams & Texture Borders",
+        default=True,
+        description="Prevents UV seam vertex collapse and eliminates texture border tearing",
+    )
+    cull_subpixel_islands: BoolProperty(
+        name="Dissolve Sub-Pixel Mesh Islands",
+        default=True,
+        description="Automatically drops tiny disconnected geometry islands below projected screen threshold",
+    )
+    reproject_normals: BoolProperty(
+        name="Reproject Weighted Split Normals",
+        default=True,
+        description="Transfers custom CAD split normals from LOD0 to lower LOD tiers via Data Transfer modifier",
+    )
+    consolidate_materials: BoolProperty(
+        name="Consolidate Micro-Material Slots",
+        default=True,
+        description="Merges negligible surface material slots (< 0.5% total area) into the dominant material slot",
+    )
 
-    # Multi-Object & Hierarchy Settings
+    # Occlusion & Interior Geometry Removal Settings
+    enable_occlusion_culling: BoolProperty(
+        name="Cull Interior Geometry",
+        default=True,
+        description="Detect and delete interior/occluded polygons not visible from the exterior",
+    )
+    occlusion_lod_start: IntProperty(
+        name="Cull From LOD",
+        default=1,
+        min=1,
+        max=6,
+        description="LOD tier from which occlusion culling begins (LOD0 is always preserved)",
+    )
+    occlusion_ray_density: IntProperty(
+        name="Ray Samples",
+        default=16,
+        min=4,
+        max=64,
+        description="Visibility ray sampling density (higher = more accurate, lower = faster)",
+    )
+    occlusion_evaluate_alpha: BoolProperty(
+        name="Evaluate Transparency",
+        default=True,
+        description="Evaluate material transparency and alpha cutouts to protect geometry visible through glass/windows",
+    )
+    last_culled_faces_count: IntProperty(name="Last Culled Faces", default=0)
+    last_culled_islands_count: IntProperty(name="Last Culled Islands", default=0)
+
+    # Multi-Object Hierarchy & Merging Settings
     hierarchy_mode: EnumProperty(
         name="Hierarchy Mode",
         items=[
-            ("PRESERVE_HIERARCHY", "Preserve Hierarchy", "Keep all submesh objects separate across all LOD tiers"),
+            ("PRESERVE", "Preserve Sub-Meshes", "Each selected object generates individual LOD copies"),
             (
-                "MERGE_AT_TIER",
-                "Merge Distant Tiers",
-                "Consolidate compatible submeshes into a single draw call at distant tiers",
+                "MERGE_DISTANT",
+                "Merge at Distant Tiers",
+                "Joins compatible sub-meshes into a single draw-call mesh at lower LODs",
             ),
         ],
-        default="PRESERVE_HIERARCHY",
+        default="PRESERVE",
+        description="How multi-mesh hierarchies and accessories are structured across LOD tiers",
     )
-    merge_start_tier: IntProperty(
-        name="Merge Start Tier",
-        default=3,
+    merge_lod_start: IntProperty(
+        name="Merge From LOD",
+        default=2,
         min=1,
         max=6,
-        description="LOD tier index from which compatible meshes are merged into a single draw call",
+        description="LOD tier at which compatible submeshes are merged into single draw-call meshes",
     )
 
-    # Rigging & Skinning Optimization
-    max_bone_influences: EnumProperty(
-        name="Max GPU Bone Influences",
-        items=[
-            ("4", "4 Influences (Standard GPU)", "Standard GPU vertex shader register limit (glTF, Mobile, Unity)"),
-            ("8", "8 Influences (High-End)", "Unreal Engine 5 high-precision skinning"),
-        ],
-        default="4",
-    )
-    enable_bone_pruning: BoolProperty(
-        name="Prune Sub-Pixel Bones",
+    # Skeletal Rigging & Bone Pruning Settings
+    normalize_bone_weights: BoolProperty(
+        name="Normalize Bone Weights (Sum = 1.0)",
         default=True,
-        description="Recursively collapse sub-pixel leaf bones (fingers, facial bones) into parent bones on distant LODs",
+        description="Ensures all vertex deform weights strictly sum to 1.0",
     )
-    purge_shape_keys: BoolProperty(
-        name="Purge Shape Keys on Distance LODs",
+    max_bone_influences: IntProperty(
+        name="Max Influences / Vertex",
+        default=4,
+        min=1,
+        max=8,
+        description="Clamps maximum active bone influences per vertex (4 for standard game engines)",
+    )
+    prune_micro_weights: BoolProperty(
+        name="Prune Micro-Weights (< 0.01)",
         default=True,
-        description="Strip facial blendshapes / shape keys on LOD >= 2 to save GPU memory and prevent mesh tearing",
+        description="Removes negligible bone influences to reduce GPU shader register bloat",
+    )
+    enable_leaf_bone_pruning: BoolProperty(
+        name="Screen-Space Leaf-Bone Pruning",
+        default=True,
+        description="Reassigns sub-pixel leaf bone weights to parent bones on distant LODs",
+    )
+    leaf_bone_lod_start: IntProperty(
+        name="Prune Bones From LOD",
+        default=2,
+        min=1,
+        max=6,
+        description="LOD tier from which leaf bone pruning begins",
+    )
+    purge_distant_shape_keys: BoolProperty(
+        name="Purge Shape Keys on Distant LODs",
+        default=True,
+        description="Removes shape keys / morph targets on lower LODs to prevent decimation tearing",
     )
 
-    # PBR Texture Channel Packing & Resolution
+    # PBR Texture Channel Packing & Animation Baking Settings
     export_packed_textures: BoolProperty(
-        name="Pack PBR Textures",
+        name="Pack Engine PBR Textures",
         default=True,
-        description="Automatically channel-pack and export engine PBR textures (_ORM, _MaskMap, _COMP) alongside meshes",
+        description="Extracts and packs PBR texture channels (_ORM for UE5/Godot, _MaskMap for Unity, _COMP for MSFS)",
     )
     texture_max_resolution: EnumProperty(
-        name="Texture Resolution",
+        name="Max Resolution",
         items=[
-            ("4096", "4K (4096x4096)", "4K texture resolution"),
-            ("2048", "2K (2048x2048)", "2K texture resolution"),
-            ("1024", "1K (1024x1024)", "1K texture resolution"),
+            ("ORIGINAL", "Original Source Res", "Keep original texture dimensions"),
+            ("4096", "4096 x 4096 (4K)", "Clamp maximum resolution to 4K"),
+            ("2048", "2048 x 2048 (2K)", "Clamp maximum resolution to 2K"),
+            ("1024", "1024 x 1024 (1K)", "Clamp maximum resolution to 1K"),
+            ("512", "512 x 512", "Clamp maximum resolution to 512px"),
         ],
-        default="2048",
+        default="ORIGINAL",
+        description="Maximum texture resolution for exported PBR channel sets",
     )
-
-    # Animation & Rig Baking
     bake_animations: BoolProperty(
-        name="Bake Deform Animations",
+        name="Bake Deform Rig Animations",
         default=True,
-        description="Evaluate depsgraph and bake deforming bone matrices (IK to FK) for pristine engine playback",
+        description="Evaluates constraints and bakes deform bone matrices via depsgraph for engine export",
     )
 
-    # Real-Time LOD Simulator Controls
-    simulator_mode: EnumProperty(
-        name="Simulator Mode",
+    # Live Viewport LOD Simulator Settings
+    is_simulator_active: BoolProperty(
+        name="Live Distance Simulator",
+        default=False,
+        description="Real-time automatic LOD switching based on viewport and scene camera distance",
+    )
+    simulator_camera_mode: EnumProperty(
+        name="Camera Source",
         items=[
-            ("LIVE_ORBIT", "Live Viewport Orbit", "Evaluate LOD distances dynamically as you orbit/zoom in Viewport"),
-            (
-                "VIRTUAL_SLIDER",
-                "Virtual Distance Slider",
-                "Interactive Unity-style distance/screen size slider override",
-            ),
-            ("CAMERA_LOCKED", "Lock to Scene Camera", "Evaluate LOD distances strictly from active Scene Camera"),
+            ("VIEWPORT", "3D Viewport Camera", "Tracks active 3D Viewport orbit/fly navigation camera"),
+            ("ACTIVE_SCENE", "Active Scene Camera", "Tracks scene camera (bpy.context.scene.camera)"),
         ],
-        default="LIVE_ORBIT",
+        default="VIEWPORT",
+        description="Camera position reference used to calculate live switch distances",
     )
-    virtual_preview_dist_m: FloatProperty(
-        name="Virtual Distance (m)", default=10.0, min=0.1, max=5000.0, precision=1, subtype="DISTANCE"
+    virtual_distance_override: FloatProperty(
+        name="Virtual Distance (m)",
+        default=0.0,
+        min=0.0,
+        max=5000.0,
+        precision=2,
+        description="Interactive distance slider to preview LOD transitions without moving the camera",
     )
-    virtual_screen_size_pct: FloatProperty(
-        name="Virtual Screen Size (%)", default=100.0, min=0.01, max=100.0, precision=1, subtype="PERCENTAGE"
-    )
-    is_simulator_running: BoolProperty(name="Simulator Running", default=False)
-
-    # Viewport HUD Overlay & Controls
     show_viewport_hud: BoolProperty(
         name="Show Viewport HUD",
         default=True,
