@@ -1,7 +1,8 @@
 """
 Blender PropertyGroups and Scene Settings for OmniMesh.
 Maintains data models for LOD tiers, screen metrics, collision hulls, rigging, PBR textures,
-engine presets, mesh cleanup, live simulation, and live engine bridges.
+engine presets, mesh cleanup, impostors, live simulation, and live engine bridges.
+Supports both Scene-Level project globals and Per-Object persistent geometric configurations.
 """
 
 from __future__ import annotations
@@ -101,7 +102,16 @@ def update_bridge_status_cached(self: Any, context: Any) -> None:
 
 
 class LODToolSettings(PropertyGroup):
-    """Central Scene PropertyGroup holding all OmniMesh configuration and state."""
+    """
+    Central PropertyGroup holding OmniMesh configuration and state.
+    Attached to both Scene (for project-wide pipeline globals) and Object (for per-asset geometry persistence).
+    """
+
+    # Per-Object Metadata & Root Linkage
+    is_configured: BoolProperty(name="Is Configured", default=False)
+    is_generated_lod: BoolProperty(name="Is Generated Derivative", default=False)
+    lod_root_object: PointerProperty(name="Root Master Asset", type=bpy.types.Object if bpy else object)
+    lod_index: IntProperty(name="Derivative Tier Index", default=0, min=0, max=7)
 
     # Target Engine Presets
     target_engine: EnumProperty(
@@ -255,6 +265,51 @@ class LODToolSettings(PropertyGroup):
         description="Face normal orientation policy",
     )
     last_cleanup_summary: StringProperty(name="Cleanup Summary", default="")
+
+    # Billboard Impostor Generator Settings
+    impostor_mode: EnumProperty(
+        name="Impostor Mode",
+        items=[
+            (
+                "CROSS_QUADS",
+                "Cross-Quads (2-Plane '+', 4 Tris)",
+                "Universal zero-shader billboard standard for all engines (MSFS, UE5, Unity, Godot)",
+            ),
+            (
+                "STAR_QUADS",
+                "Star-Quads (3-Plane '*', 6 Tris)",
+                "High-fidelity 3D volume for dense trees and round props",
+            ),
+            (
+                "OCTAHEDRAL_HEMI",
+                "Octahedral (Upper Hemisphere)",
+                "1 Quad camera billboard with 8x8 / 12x12 upper-hemisphere atlas",
+            ),
+            (
+                "OCTAHEDRAL_SPHERE",
+                "Octahedral (Full Sphere)",
+                "1 Quad camera billboard with 8x8 / 12x12 full 360 degree sphere atlas",
+            ),
+        ],
+        default="CROSS_QUADS",
+        description="Billboard geometry type and multi-angle projection layout",
+    )
+    impostor_resolution: EnumProperty(
+        name="Atlas Resolution",
+        items=[
+            ("1024", "1024 x 1024 (1K)", "1024px square atlas"),
+            ("2048", "2048 x 2048 (2K)", "2048px square atlas"),
+            ("4096", "4096 x 4096 (4K)", "4096px square atlas"),
+        ],
+        default="2048",
+        description="Texture resolution for baked Impostor PBR atlas maps",
+    )
+    impostor_replace_last_lod: BoolProperty(
+        name="Use as Final LOD Tier",
+        default=True,
+        description="Automatically assign the generated Impostor billboard as the final LOD tier in the scene",
+    )
+    last_impostor_status: StringProperty(name="Last Impostor Status", default="")
 
     # Interior & Occlusion Geometry Removal Settings
     enable_occlusion_culling: BoolProperty(
@@ -545,6 +600,7 @@ def register_properties() -> None:
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.lod_tool = PointerProperty(type=LODToolSettings)
+    bpy.types.Object.lod_tool = PointerProperty(type=LODToolSettings)
 
 
 def unregister_properties() -> None:
@@ -552,5 +608,7 @@ def unregister_properties() -> None:
         return
     if hasattr(bpy.types.Scene, "lod_tool"):
         del bpy.types.Scene.lod_tool
+    if hasattr(bpy.types.Object, "lod_tool"):
+        del bpy.types.Object.lod_tool
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)

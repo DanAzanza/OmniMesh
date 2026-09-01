@@ -14,7 +14,7 @@ bl_info = {
     "version": (1, 2, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > OmniMesh",
-    "description": "Screen-Space Error driven LOD generation, topology sanitization, occlusion culling, collision hulls, multi-mesh hierarchies, skeletal rigging, bone pruning, real-time viewport simulator, and multi-engine export (MSFS 2024, UE5, Unity 6, Godot 4)",
+    "description": "Screen-Space Error driven LOD generation, topology sanitization, occlusion culling, collision hulls, multi-mesh hierarchies, skeletal rigging, bone pruning, billboard impostors, real-time viewport simulator, and multi-engine export (MSFS 2024, UE5, Unity 6, Godot 4)",
     "category": "Mesh",
 }
 
@@ -26,6 +26,7 @@ if __package__:
         collision,
         decimator,
         hierarchy,
+        impostor,
         materials,
         metrics,
         normals,
@@ -45,6 +46,7 @@ else:
         collision,
         decimator,
         hierarchy,
+        impostor,
         materials,
         metrics,
         normals,
@@ -63,6 +65,7 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(sanitizer)
     importlib.reload(occlusion)
     importlib.reload(collision)
+    importlib.reload(impostor)
     importlib.reload(decimator)
     importlib.reload(materials)
     importlib.reload(normals)

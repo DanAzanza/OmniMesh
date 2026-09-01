@@ -8,7 +8,12 @@ from unittest.mock import MagicMock
 
 from ui.hud import LODViewportHUD
 from ui.lists import LOD_UL_tier_list, register_lists, unregister_lists
-from ui.operators import get_associated_armature, get_selected_mesh_objects, is_object_valid
+from ui.operators import (
+    get_associated_armature,
+    get_selected_mesh_objects,
+    is_object_valid,
+    resolve_lod_context,
+)
 from ui.panel import (
     PANEL_CLASSES,
     LOD_PT_batch_panel,
@@ -78,6 +83,78 @@ def test_operator_helpers_mocked():
     mock_mesh2.modifiers = [mock_mod]
 
     assert get_associated_armature([mock_mesh2]) == mock_armature
+
+
+def test_resolve_lod_context_none_and_non_mesh():
+    """Verify resolve_lod_context safe fallbacks for None, missing scene, or non-mesh objects."""
+    assert resolve_lod_context(None) == (None, None, None, False)
+
+    mock_scene = MagicMock()
+    mock_scene_props = MagicMock()
+    mock_scene.lod_tool = mock_scene_props
+
+    mock_context = MagicMock()
+    mock_context.scene = mock_scene
+    mock_context.active_object = None
+
+    s_props, o_props, m_obj, is_der = resolve_lod_context(mock_context)
+    assert s_props is mock_scene_props
+    assert o_props is mock_scene_props
+    assert m_obj is None
+    assert is_der is False
+
+    # Non-mesh active object (e.g. Camera or Light)
+    mock_cam = MagicMock()
+    mock_cam.type = "CAMERA"
+    mock_context.active_object = mock_cam
+
+    s_props, o_props, m_obj, is_der = resolve_lod_context(mock_context)
+    assert s_props is mock_scene_props
+    assert o_props is mock_scene_props
+    assert m_obj is mock_cam
+    assert is_der is False
+
+
+def test_resolve_lod_context_master_and_derivative():
+    """Verify resolve_lod_context correctly distinguishes Master LOD0 from sub-LOD derivatives."""
+    mock_scene = MagicMock()
+    mock_scene_props = MagicMock()
+    mock_scene.lod_tool = mock_scene_props
+
+    mock_context = MagicMock()
+    mock_context.scene = mock_scene
+
+    # Master LOD0 Mesh
+    mock_master = MagicMock()
+    mock_master.name = "SM_Tree"
+    mock_master.type = "MESH"
+    mock_master_props = MagicMock()
+    mock_master_props.is_generated_lod = False
+    mock_master_props.lod_root_object = None
+    mock_master.lod_tool = mock_master_props
+    mock_context.active_object = mock_master
+
+    s_props, o_props, m_obj, is_der = resolve_lod_context(mock_context)
+    assert s_props is mock_scene_props
+    assert o_props is mock_master_props
+    assert m_obj is mock_master
+    assert is_der is False
+
+    # Generated Derivative (SM_Tree_LOD2) pointing to SM_Tree
+    mock_der = MagicMock()
+    mock_der.name = "SM_Tree_LOD2"
+    mock_der.type = "MESH"
+    mock_der_props = MagicMock()
+    mock_der_props.is_generated_lod = True
+    mock_der_props.lod_root_object = mock_master
+    mock_der.lod_tool = mock_der_props
+    mock_context.active_object = mock_der
+
+    s_props, o_props, m_obj, is_der = resolve_lod_context(mock_context)
+    assert s_props is mock_scene_props
+    assert o_props is mock_master_props
+    assert m_obj is mock_master
+    assert is_der is True
 
 
 def test_ui_list_draw_item_mock():

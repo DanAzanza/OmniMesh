@@ -1,5 +1,5 @@
 """
-Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, Mesh Cleanup, and Viewport Preview.
+Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, Mesh Cleanup, Impostors, and Viewport Preview.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ try:
     from ..core.collision import CollisionManager
     from ..core.decimator import MeshDecimator
     from ..core.hierarchy import MeshMergeEngine
+    from ..core.impostor import ImpostorManager
     from ..core.metrics import (
         compute_bounding_sphere,
         compute_coupled_tolerances,
@@ -37,6 +38,7 @@ except (ImportError, ValueError):
     from core.collision import CollisionManager
     from core.decimator import MeshDecimator
     from core.hierarchy import MeshMergeEngine
+    from core.impostor import ImpostorManager
     from core.metrics import (
         compute_bounding_sphere,
         compute_coupled_tolerances,
@@ -82,6 +84,51 @@ def get_associated_armature(mesh_objs: list[Any]) -> Any:
     return None
 
 
+def resolve_lod_context(context: Any) -> tuple[Any, Any, Any, bool]:
+    """
+    Robust Context Resolver:
+    Returns: (scene_props, obj_props, master_object, is_derivative)
+
+    Guarantees:
+    1. Returns valid Scene-level Project Settings.
+    2. If active object is a generated sub-LOD (e.g. Tree_LOD2), resolves upward to the Master LOD0.
+    3. Handles name changes via native PointerProperty references with fallback to suffix parsing.
+    4. Never triggers recursive decimation on derivative objects.
+    """
+    if not context or not hasattr(context, "scene") or not context.scene:
+        return None, None, None, False
+
+    scene_props = getattr(context.scene, "lod_tool", None)
+    active_obj = getattr(context, "active_object", None)
+
+    if not active_obj or getattr(active_obj, "type", "") != "MESH":
+        return scene_props, scene_props, active_obj, False
+
+    obj_props = getattr(active_obj, "lod_tool", None)
+    if not obj_props:
+        return scene_props, scene_props, active_obj, False
+
+    # Check 1: Explicit pointer to root master
+    if obj_props.is_generated_lod and obj_props.lod_root_object and is_object_valid(obj_props.lod_root_object):
+        master_obj = obj_props.lod_root_object
+        master_props = getattr(master_obj, "lod_tool", obj_props)
+        return scene_props, master_props, master_obj, True
+
+    # Check 2: Name pattern fallback if unlinked or imported (_LOD1.._LOD7 or _Impostor)
+    name = active_obj.name
+    if "_LOD" in name:
+        base_name, _, suffix = name.rpartition("_LOD")
+        if (suffix.isdigit() and int(suffix) > 0) or suffix.lower().startswith("_impostor") or suffix == "_Impostor":
+            if bpy:
+                root_obj = bpy.data.objects.get(base_name) or bpy.data.objects.get(f"{base_name}_LOD0")
+                if root_obj and root_obj != active_obj:
+                    root_props = getattr(root_obj, "lod_tool", obj_props)
+                    return scene_props, root_props, root_obj, True
+
+    # Active object is the true Master LOD0
+    return scene_props, obj_props, active_obj, False
+
+
 class LOD_OT_analyze_and_configure(Operator):
     """Analyze selected mesh bounding metrics and auto-populate recommended LOD screen tiers."""
 
@@ -106,7 +153,8 @@ class LOD_OT_analyze_and_configure(Operator):
             return {"CANCELLED"}
 
         center, radius = compute_bounding_sphere(all_coords)
-        props = context.scene.lod_tool
+        scene_props, obj_props, master_obj, _ = resolve_lod_context(context)
+        props = obj_props or scene_props
 
         render = context.scene.render
         cam = context.scene.camera
@@ -122,31 +170,110 @@ class LOD_OT_analyze_and_configure(Operator):
         )
 
         total_tris = sum(len(obj.data.polygons) for obj in mesh_objs)
-        props.lods.clear()
 
-        for i, s_pct in enumerate(screen_tiers):
-            item = props.lods.add()
-            item.name = f"LOD{i}"
-            item.level_index = i
-            item.screen_size_pct = s_pct
+        target_props_list = [props]
+        if scene_props and scene_props != props:
+            target_props_list.append(scene_props)
 
-            s_frac = max(0.001, s_pct / 100.0)
-            item.distance_m = compute_distance_from_screen_size(radius, s_frac, fov_v)
+        for p in target_props_list:
+            p.lods.clear()
+            for i, s_pct in enumerate(screen_tiers):
+                item = p.lods.add()
+                item.name = f"LOD{i}"
+                item.level_index = i
+                item.screen_size_pct = s_pct
 
-            qem_ratio = max(0.01, min(1.0, math.pow(s_frac, 1.5)))
-            item.triangle_target = max(12, int(round(total_tris * qem_ratio)))
-            item.actual_triangles = total_tris if i == 0 else 0
-            item.reduction_pct = 0.0 if i == 0 else (1.0 - qem_ratio) * 100.0
-            item.mat_slots_count = len(mesh_objs[0].material_slots) if mesh_objs else 0
+                s_frac = max(0.001, s_pct / 100.0)
+                item.distance_m = compute_distance_from_screen_size(radius, s_frac, fov_v)
+
+                qem_ratio = max(0.01, min(1.0, math.pow(s_frac, 1.5)))
+                item.triangle_target = max(12, int(round(total_tris * qem_ratio)))
+                item.actual_triangles = total_tris if i == 0 else 0
+                item.reduction_pct = 0.0 if i == 0 else (1.0 - qem_ratio) * 100.0
+                item.mat_slots_count = len(mesh_objs[0].material_slots) if mesh_objs else 0
 
         first_name = mesh_objs[0].name.split("_LOD")[0]
         if not props.export_base_name:
             props.export_base_name = first_name
+        if scene_props and not scene_props.export_base_name:
+            scene_props.export_base_name = first_name
 
+        props.is_configured = True
         self.report(
             {"INFO"},
             f"Configured {len(screen_tiers)} LODs for '{first_name}' (Radius: {radius:.2f}m, Base: {total_tris:,} tris).",
         )
+        return {"FINISHED"}
+
+
+class LOD_OT_sync_selection_settings(Operator):
+    """Apply the active master mesh's LOD settings across all selected mesh objects."""
+
+    bl_idname = "lod_tool.sync_selection_settings"
+    bl_label = "Copy LOD Settings to Selected"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        _, src_props, master_obj, _ = resolve_lod_context(context)
+        if not master_obj or not src_props:
+            self.report({"WARNING"}, "No valid active master mesh object.")
+            return {"CANCELLED"}
+
+        selected_meshes = [
+            obj
+            for obj in get_selected_mesh_objects(context)
+            if obj != master_obj and not getattr(getattr(obj, "lod_tool", None), "is_generated_lod", False)
+        ]
+
+        if not selected_meshes:
+            self.report({"INFO"}, "No additional unconfigured meshes in selection.")
+            return {"FINISHED"}
+
+        for target in selected_meshes:
+            dst_props = target.lod_tool
+            dst_props.asset_category = src_props.asset_category
+            dst_props.progression_mode = src_props.progression_mode
+            dst_props.lod_count = src_props.lod_count
+            dst_props.tau_sse = src_props.tau_sse
+            dst_props.preserve_silhouette = src_props.preserve_silhouette
+            dst_props.pin_uv_seams = src_props.pin_uv_seams
+            dst_props.pin_material_borders = src_props.pin_material_borders
+            dst_props.enable_occlusion_culling = src_props.enable_occlusion_culling
+            dst_props.impostor_mode = src_props.impostor_mode
+            dst_props.collision_hull_count = src_props.collision_hull_count
+            dst_props.is_configured = True
+
+        self.report({"INFO"}, f"Synchronized LOD settings to {len(selected_meshes)} selected mesh objects.")
+        return {"FINISHED"}
+
+
+class LOD_OT_select_master_asset(Operator):
+    """Select and activate the root master asset for the active sub-LOD derivative."""
+
+    bl_idname = "lod_tool.select_master_asset"
+    bl_label = "Select Root Master Asset"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        _, _, master_obj, _ = resolve_lod_context(context)
+        if not master_obj:
+            self.report({"WARNING"}, "No master asset found.")
+            return {"CANCELLED"}
+
+        bpy.ops.object.select_all(action="DESELECT")
+        try:
+            master_obj.hide_set(False, view_layer=context.view_layer)
+            master_obj.hide_viewport = False
+        except (RuntimeError, AttributeError):
+            pass
+
+        master_obj.select_set(True)
+        context.view_layer.objects.active = master_obj
+        self.report({"INFO"}, f"Selected root master asset: '{master_obj.name}'")
         return {"FINISHED"}
 
 
@@ -165,7 +292,9 @@ class LOD_OT_clean_and_repair_mesh(Operator):
             self.report({"WARNING"}, "No mesh objects selected.")
             return {"CANCELLED"}
 
-        props = context.scene.lod_tool
+        _, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or context.scene.lod_tool
+
         total_zero_faces = 0
         total_zero_edges = 0
         total_wire_edges = 0
@@ -233,7 +362,9 @@ class LOD_OT_generate_all(Operator):
             self.report({"WARNING"}, "No mesh objects selected.")
             return {"CANCELLED"}
 
-        props = context.scene.lod_tool
+        scene_props, obj_props, master_obj, _ = resolve_lod_context(context)
+        props = obj_props or scene_props
+
         if not props.lods:
             self.report({"ERROR"}, "No LOD tiers configured. Run Auto-Configure first.")
             return {"CANCELLED"}
@@ -288,6 +419,9 @@ class LOD_OT_generate_all(Operator):
                         bpy.data.objects.remove(existing, do_unlink=True)
 
                     tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(mesh_objs, merged_name, armature_obj)
+                    tier_obj.lod_tool.is_generated_lod = True
+                    tier_obj.lod_tool.lod_root_object = mesh_objs[0]
+                    tier_obj.lod_tool.lod_index = i
                     target_coll.objects.link(tier_obj)
 
                     bm = bmesh.new()
@@ -336,7 +470,6 @@ class LOD_OT_generate_all(Operator):
                     generated_tier_objects.append(tier_obj)
 
                 else:
-                    # Individual Sub-Mesh Branch
                     tier_sub_objs = []
                     for src_obj in mesh_objs:
                         src_base = src_obj.name.split("_LOD")[0]
@@ -355,7 +488,10 @@ class LOD_OT_generate_all(Operator):
                             tier_obj.name = tier_name
                             tier_obj.data = tier_mesh
 
-                            # Inherit hierarchy
+                            tier_obj.lod_tool.is_generated_lod = True
+                            tier_obj.lod_tool.lod_root_object = src_obj
+                            tier_obj.lod_tool.lod_index = i
+
                             if src_obj.parent:
                                 tier_obj.parent = src_obj.parent
                                 tier_obj.parent_type = src_obj.parent_type
@@ -366,7 +502,6 @@ class LOD_OT_generate_all(Operator):
                             if tier_obj.name not in target_coll.objects:
                                 target_coll.objects.link(tier_obj)
 
-                        # Non-destructive LOD generation
                         if i > 0:
                             bm = bmesh.new()
                             bm.from_mesh(tier_obj.data)
@@ -374,7 +509,6 @@ class LOD_OT_generate_all(Operator):
                             if props.auto_sanitize_before_lod:
                                 MeshSanitizer.execute_tier0_pure_hygiene(bm)
 
-                            # Interior & Occlusion Removal
                             if props.enable_occlusion_culling and i >= props.occlusion_lod_start:
                                 cull_res = HardenedOcclusionCuller.cull_interior_faces(
                                     tier_obj,
@@ -421,7 +555,6 @@ class LOD_OT_generate_all(Operator):
                     tier.generated_obj = tier_sub_objs[0]
                     generated_tier_objects.extend(tier_sub_objs)
 
-            # Store summary metrics
             base_tris = props.lods[0].actual_tris
             final_tris = props.lods[-1].actual_tris
             red_pct = ((base_tris - final_tris) / max(1, base_tris)) * 100.0 if base_tris > 0 else 0.0
@@ -433,6 +566,14 @@ class LOD_OT_generate_all(Operator):
             props.last_culled_faces_count = total_culled_faces
             props.last_culled_islands_count = total_culled_islands
 
+            if scene_props and scene_props != props:
+                scene_props.last_generated_base_tris = base_tris
+                scene_props.last_generated_final_tris = final_tris
+                scene_props.last_generated_reduction_pct = red_pct
+                scene_props.last_generated_tier_count = len(props.lods)
+                scene_props.last_culled_faces_count = total_culled_faces
+                scene_props.last_culled_islands_count = total_culled_islands
+
             self.report(
                 {"INFO"},
                 f"Successfully generated {len(props.lods)} LOD tiers: {base_tris:,} -> {final_tris:,} tris (-{red_pct:.1f}% reduction).",
@@ -441,6 +582,79 @@ class LOD_OT_generate_all(Operator):
         finally:
             if armature_obj and orig_pose_pos:
                 armature_obj.data.pose_position = orig_pose_pos
+
+
+class LOD_OT_generate_impostor(Operator):
+    """Generate 8-way Cross-Quad or Octahedral Billboard Impostor for selected meshes."""
+
+    bl_idname = "lod_tool.generate_impostor"
+    bl_label = "Generate Impostor Billboard"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            self.report({"WARNING"}, "No mesh objects selected.")
+            return {"CANCELLED"}
+
+        scene_props, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or scene_props
+        target_engine = scene_props.target_engine if scene_props else props.target_engine
+        base_name = props.export_base_name or mesh_objs[0].name.split("_LOD")[0]
+
+        impostor_obj = ImpostorManager.generate_impostor_for_objects(
+            mesh_objs=mesh_objs,
+            base_name=base_name,
+            mode=props.impostor_mode,
+            target_engine=target_engine,
+        )
+
+        if not impostor_obj:
+            self.report({"ERROR"}, "Failed to generate impostor geometry.")
+            return {"CANCELLED"}
+
+        impostor_obj.lod_tool.is_generated_lod = True
+        impostor_obj.lod_tool.lod_root_object = mesh_objs[0]
+
+        if props.impostor_replace_last_lod and props.lods:
+            last_tier = props.lods[-1]
+            last_tier.generated_obj = impostor_obj
+            last_tier.actual_triangles = len(impostor_obj.data.polygons)
+
+        tris_count = len(impostor_obj.data.polygons)
+        status_msg = f"Generated {props.impostor_mode} Impostor ({tris_count} tris) for '{base_name}'."
+        props.last_impostor_status = status_msg
+        self.report({"INFO"}, f"✔ {status_msg}")
+        return {"FINISHED"}
+
+
+class LOD_OT_remove_impostor(Operator):
+    """Remove and purge generated Impostor billboard object."""
+
+    bl_idname = "lod_tool.remove_impostor"
+    bl_label = "Remove Impostor"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        mesh_objs = get_selected_mesh_objects(context)
+        _, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or context.scene.lod_tool
+        base_name = props.export_base_name or (mesh_objs[0].name.split("_LOD")[0] if mesh_objs else "")
+
+        impostor_name = f"{base_name}_LOD_Impostor"
+        existing = bpy.data.objects.get(impostor_name)
+        if existing:
+            bpy.data.objects.remove(existing, do_unlink=True)
+            props.last_impostor_status = ""
+            self.report({"INFO"}, f"Removed Impostor object '{impostor_name}'.")
+            return {"FINISHED"}
+
+        self.report({"WARNING"}, f"No Impostor found named '{impostor_name}'.")
+        return {"CANCELLED"}
 
 
 class LOD_OT_generate_collision_hulls(Operator):
@@ -458,7 +672,8 @@ class LOD_OT_generate_collision_hulls(Operator):
             self.report({"WARNING"}, "No mesh objects selected.")
             return {"CANCELLED"}
 
-        props = context.scene.lod_tool
+        _, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or context.scene.lod_tool
         base_name = props.export_base_name or mesh_objs[0].name.split("_LOD")[0]
 
         colliders = CollisionManager.generate_colliders_for_objects(
@@ -489,7 +704,8 @@ class LOD_OT_remove_collision_hulls(Operator):
         if not bpy or not context:
             return {"CANCELLED"}
         mesh_objs = get_selected_mesh_objects(context)
-        props = context.scene.lod_tool
+        _, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or context.scene.lod_tool
         base_name = props.export_base_name or (mesh_objs[0].name.split("_LOD")[0] if mesh_objs else "")
 
         removed = CollisionManager.remove_colliders_for_objects(mesh_objs, base_name)
@@ -510,7 +726,8 @@ class LOD_OT_preview_tier(Operator):
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context:
             return {"CANCELLED"}
-        props = context.scene.lod_tool
+        _, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or context.scene.lod_tool
         props.active_lod_index = self.tier_index
 
         base_name = props.export_base_name
@@ -597,8 +814,12 @@ class LOD_OT_toggle_split_preview(Operator):
 # Registration Order
 OPERATOR_CLASSES = (
     LOD_OT_analyze_and_configure,
+    LOD_OT_sync_selection_settings,
+    LOD_OT_select_master_asset,
     LOD_OT_clean_and_repair_mesh,
     LOD_OT_generate_all,
+    LOD_OT_generate_impostor,
+    LOD_OT_remove_impostor,
     LOD_OT_generate_collision_hulls,
     LOD_OT_remove_collision_hulls,
     LOD_OT_preview_tier,

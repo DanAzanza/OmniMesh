@@ -1,6 +1,7 @@
 """
 Modular N-Panel User Interface Hierarchy for OmniMesh in Blender 4.2+ and 5.2 LTS.
 Structured into clean, workflow-oriented collapsible subpanels with responsive layouts.
+Supports Per-Object property persistence, Sub-LOD derivative inspection, and multi-selection batch sync.
 """
 
 from __future__ import annotations
@@ -15,9 +16,9 @@ except ImportError:
     Panel = object
 
 try:
-    from .operators import get_associated_armature, get_selected_mesh_objects
+    from .operators import get_associated_armature, get_selected_mesh_objects, resolve_lod_context
 except (ImportError, ValueError):
-    from ui.operators import get_associated_armature, get_selected_mesh_objects
+    from ui.operators import get_associated_armature, get_selected_mesh_objects, resolve_lod_context
 
 
 class LOD_PT_main_panel(Panel):
@@ -33,28 +34,39 @@ class LOD_PT_main_panel(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        scene_props, obj_props, master_obj, is_derivative = resolve_lod_context(context)
+        props = obj_props or scene_props
 
-        # Selection vs Configured Asset mismatch alert
-        active_obj = context.active_object
-        if active_obj and props.export_base_name:
-            curr_base = active_obj.name.split("_LOD")[0]
-            if curr_base != props.export_base_name:
-                box_alert = layout.box()
-                box_alert.alert = True
-                box_alert.label(
-                    text=f"Selected: '{curr_base}' (Configured: '{props.export_base_name}')",
-                    icon="INFO",
-                )
+        # Sub-LOD Derivative Inspection Mode Banner
+        if is_derivative and master_obj:
+            box_der = layout.box()
+            box_der.alert = True
+            box_der.label(text=f"Inspection: Generated Sub-LOD of '{master_obj.name}'", icon="INFO")
+            box_der.operator(
+                "lod_tool.select_master_asset",
+                text=f"Select Master Asset ({master_obj.name})",
+                icon="OBJECT_DATA",
+            )
 
-        # 1. Project & Target Engine Setup Card
+        # Multi-Selection Sync CTA
+        selected_meshes = get_selected_mesh_objects(context)
+        if len(selected_meshes) > 1:
+            box_sync = layout.box()
+            row_sync = box_sync.row(align=True)
+            row_sync.operator(
+                "lod_tool.sync_selection_settings",
+                text=f"Copy Settings to {len(selected_meshes) - 1} Selected",
+                icon="DUPLICATE",
+            )
+
+        # 1. Project & Target Engine Setup Card (Scene-Level)
         box = layout.box()
         box.label(text="1. Target Engine & Preset", icon="SCENE_DATA")
-        box.prop(props, "target_engine", text="")
+        box.prop(scene_props, "target_engine", text="")
         box.prop(props, "asset_category", text="")
         box.prop(props, "export_base_name", text="Asset Name")
 
-        # 2. Quality & Screen-Space Error Card
+        # 2. Quality & Screen-Space Error Card (Object-Level)
         box_q = layout.box()
         box_q.label(text="Quality & Tolerance", icon="RESTRICT_VIEW_OFF")
         box_q.prop(props, "progression_mode", text="Curve")
@@ -80,7 +92,8 @@ class LOD_PT_tiers_panel(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        _, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or context.scene.lod_tool
 
         if not props.lods:
             box = layout.box()
@@ -171,7 +184,7 @@ class LOD_PT_inspection_panel(Panel):
 
 
 class LOD_PT_optimization_panel(Panel):
-    """Subpanel 3: Topology Cleanup, Collision Hulls, Occlusion Culling, Rigging & PBR Textures."""
+    """Subpanel 3: Topology Cleanup, Collision Hulls, Impostors, Occlusion, Rigging & PBR Textures."""
 
     bl_label = "4. Advanced Optimization"
     bl_idname = "LOD_PT_optimization_panel"
@@ -185,7 +198,8 @@ class LOD_PT_optimization_panel(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        scene_props, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or scene_props
         mesh_objs = get_selected_mesh_objects(context)
         armature_obj = get_associated_armature(mesh_objs)
 
@@ -241,7 +255,22 @@ class LOD_PT_optimization_panel(Panel):
                 icon="CHECKMARK",
             )
 
-        # 3. Interior & Occlusion Geometry Culling
+        # 3. Billboard & Octahedral Impostor Generator
+        box_imp = layout.box()
+        box_imp.label(text="Billboard & Octahedral Impostor", icon="OUTLINER_OB_LIGHTPROBE")
+        box_imp.prop(props, "impostor_mode", text="")
+        box_imp.prop(props, "impostor_resolution")
+        box_imp.prop(props, "impostor_replace_last_lod")
+
+        row_imp = box_imp.row(align=True)
+        row_imp.scale_y = 1.2
+        row_imp.operator("lod_tool.generate_impostor", text="Generate Impostor", icon="MESH_PLANE")
+        row_imp.operator("lod_tool.remove_impostor", text="", icon="TRASH")
+
+        if props.last_impostor_status:
+            box_imp.label(text=props.last_impostor_status, icon="CHECKMARK")
+
+        # 4. Interior & Occlusion Geometry Culling
         box_occ = layout.box()
         box_occ.label(text="Interior & Occlusion Culling", icon="MOD_MASK")
         box_occ.prop(props, "enable_occlusion_culling")
@@ -255,14 +284,14 @@ class LOD_PT_optimization_panel(Panel):
                     icon="CHECKMARK",
                 )
 
-        # 4. Hierarchy & Draw-Call Optimization
+        # 5. Hierarchy & Draw-Call Optimization
         box_h = layout.box()
         box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
         box_h.prop(props, "hierarchy_mode", text="")
         if props.hierarchy_mode == "MERGE_DISTANT":
             box_h.prop(props, "merge_lod_start")
 
-        # 5. Rigging & Skeletal Kinematics
+        # 6. Rigging & Skeletal Kinematics
         box_r = layout.box()
         box_r.label(text="Rigging & Skeletal Kinematics", icon="ARMATURE_DATA")
         has_skinning = bool(armature_obj or any(len(obj.vertex_groups) > 0 for obj in mesh_objs))
@@ -274,7 +303,7 @@ class LOD_PT_optimization_panel(Panel):
         col_rig.prop(props, "enable_leaf_bone_pruning")
         col_rig.prop(props, "purge_distant_shape_keys")
 
-        # 6. PBR Texture Channel Packing & Animation
+        # 7. PBR Texture Channel Packing & Animation
         box_tex = layout.box()
         box_tex.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
         box_tex.prop(props, "export_packed_textures")

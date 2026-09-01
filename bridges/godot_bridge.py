@@ -33,7 +33,7 @@ class GodotLiveBridge(EngineBridgeBase):
 
     @classmethod
     def generate_post_import_gdscript(cls) -> str:
-        """Generates Godot 4 EditorScenePostImport GDScript."""
+        """Generates Godot 4 EditorScenePostImport GDScript with Impostor Material routing."""
         lines = [
             "@tool",
             "extends EditorScenePostImport",
@@ -48,7 +48,7 @@ class GodotLiveBridge(EngineBridgeBase):
             "    if node is MeshInstance3D:",
             "        var node_name: String = node.name.to_lower()",
             "        var regex = RegEx.new()",
-            '        regex.compile("_lod(\\\\d+)$")',
+            '        regex.compile("(_lod(\\\\d+)$|_impostor)")',
             "        var result = regex.search(node_name)",
             "",
             "        if result:",
@@ -61,6 +61,17 @@ class GodotLiveBridge(EngineBridgeBase):
             "                node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF",
             "                node.visibility_range_begin_margin = FADE_MARGIN_METERS",
             "                node.visibility_range_end_margin = FADE_MARGIN_METERS",
+            "",
+            '        if "impostor" in node_name:',
+            "            var mesh_res = node.mesh",
+            "            if mesh_res:",
+            "                for surf_idx in range(mesh_res.get_surface_count()):",
+            "                    var mat = mesh_res.surface_get_material(surf_idx)",
+            "                    if mat is StandardMaterial3D or mat is ORMMaterial3D:",
+            "                        mat.cull_mode = BaseMaterial3D.CULL_DISABLED",
+            "                        mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR",
+            "                        mat.alpha_scissor_threshold = 0.33",
+            "                        mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS",
             "",
             "    for child in node.get_children():",
             "        _process_lod_nodes(child)",
@@ -96,28 +107,30 @@ class GodotLiveBridge(EngineBridgeBase):
             return False, "Target Godot project directory not configured."
 
         if not export_dir or not os.path.exists(export_dir):
-            return False, f"Export directory not found: {export_dir}"
+            return False, f"Export directory not found: '{export_dir}'"
+
+        gltf_files = [f for f in os.listdir(export_dir) if f.lower().endswith((".gltf", ".glb"))]
+        if not gltf_files:
+            return False, f"No glTF/GLB models found in export directory: '{export_dir}'"
+
+        target_dir = os.path.join(project_dir, "OmniMesh_Exports", asset_name)
+        os.makedirs(target_dir, exist_ok=True)
+
+        copied = 0
+        for item in os.listdir(export_dir):
+            s = os.path.join(export_dir, item)
+            d = os.path.join(target_dir, item)
+            if os.path.isdir(s):
+                if os.path.exists(d):
+                    shutil.rmtree(d)
+                shutil.copytree(s, d)
+                copied += 1
+            else:
+                shutil.copy2(s, d)
+                copied += 1
 
         cls.install_companion_scripts(project_dir)
-
-        target_import_dir = os.path.join(project_dir, "OmniMesh_Exports", asset_name)
-        os.makedirs(target_import_dir, exist_ok=True)
-
-        copied_models = 0
-        for f in os.listdir(export_dir):
-            if f.endswith((".gltf", ".glb", ".bin")):
-                shutil.copy2(os.path.join(export_dir, f), os.path.join(target_import_dir, f))
-                if f.endswith((".gltf", ".glb")):
-                    copied_models += 1
-
-        if copied_models == 0:
-            return False, f"No glTF/GLB models found in export directory: {export_dir}"
-
-        src_tex = os.path.join(export_dir, "Textures")
-        if os.path.exists(src_tex):
-            dest_tex = os.path.join(target_import_dir, "Textures")
-            os.makedirs(dest_tex, exist_ok=True)
-            for f in os.listdir(src_tex):
-                shutil.copy2(os.path.join(src_tex, f), os.path.join(dest_tex, f))
-
-        return True, f"Synced glTF asset ({copied_models} models) and textures to Godot project at {target_import_dir}"
+        return (
+            True,
+            f"Synced glTF asset '{asset_name}' ({copied} files) to Godot: res://OmniMesh_Exports/{asset_name}/",
+        )
