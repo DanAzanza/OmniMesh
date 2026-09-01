@@ -1,7 +1,8 @@
 """
 Modular N-Panel User Interface Hierarchy for OmniMesh in Blender 4.2+ and 5.2 LTS.
 Structured into clean, workflow-oriented collapsible subpanels with responsive layouts.
-Supports Per-Object property persistence, Sub-LOD derivative inspection, and multi-selection batch sync.
+Supports Per-Object property persistence, Sub-LOD derivative inspection, multi-selection batch sync,
+and distinct safe vs critical mesh & material cleanup controls.
 """
 
 from __future__ import annotations
@@ -184,7 +185,7 @@ class LOD_PT_inspection_panel(Panel):
 
 
 class LOD_PT_optimization_panel(Panel):
-    """Subpanel 3: Topology Cleanup, Collision Hulls, Impostors, Occlusion, Rigging & PBR Textures."""
+    """Subpanel 3: Topology Cleanup, Material Cleanup, Collision Hulls, Impostors, Occlusion, Rigging & PBR Textures."""
 
     bl_label = "4. Advanced Optimization"
     bl_idname = "LOD_PT_optimization_panel"
@@ -215,7 +216,7 @@ class LOD_PT_optimization_panel(Panel):
 
         box_cl.prop(props, "auto_sanitize_before_lod", text="Auto-Hygiene Before LOD")
 
-        # Critical & Opt-in Toggles Sub-Box
+        # Mesh Critical & Opt-in Toggles Sub-Box
         box_opt = box_cl.box()
         box_opt.label(text="Critical & Opt-In Settings", icon="PREFERENCES")
         box_opt.prop(props, "cleanup_enable_split_non_manifold")
@@ -236,7 +237,34 @@ class LOD_PT_optimization_panel(Panel):
         if props.cleanup_enable_cull_micro_islands:
             row_i.prop(props, "cleanup_island_size_threshold", text="Size")
 
-        # 2. Multi-Convex Collision Hulls (Physics)
+        # 2. Material Cleanup & Slot Consolidation Suite
+        box_mat = layout.box()
+        box_mat.label(text="Material Cleanup & Consolidation", icon="MATERIAL")
+        row_mat = box_mat.row(align=True)
+        row_mat.scale_y = 1.25
+        row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
+
+        if props.last_material_cleanup_summary:
+            box_mat.label(text=props.last_material_cleanup_summary, icon="CHECKMARK")
+
+        # Safe Material Toggles
+        box_mat_safe = box_mat.box()
+        box_mat_safe.label(text="Safe Operations (Default ON)", icon="CHECKMARK")
+        box_mat_safe.prop(props, "mat_cleanup_purge_unused_slots")
+        box_mat_safe.prop(props, "mat_cleanup_deduplicate_slots")
+        box_mat_safe.prop(props, "mat_cleanup_merge_duplicate_datablocks")
+        box_mat_safe.prop(props, "mat_cleanup_remove_orphan_nodes")
+
+        # Critical / Opt-In Material Toggles
+        box_mat_crit = box_mat.box()
+        box_mat_crit.label(text="Critical Operations (Opt-In)", icon="ERROR")
+        box_mat_crit.prop(props, "mat_cleanup_enable_micro_consolidation")
+        if props.mat_cleanup_enable_micro_consolidation:
+            box_mat_crit.prop(props, "mat_cleanup_micro_area_pct", text="Threshold %")
+        box_mat_crit.prop(props, "mat_cleanup_repair_missing_textures")
+        box_mat_crit.prop(props, "mat_cleanup_purge_orphans_blendfile")
+
+        # 3. Multi-Convex Collision Hulls (Physics)
         box_col = layout.box()
         box_col.label(text="Convex Collision Hulls (Physics)", icon="PHYSICS")
         box_col.prop(props, "collision_decomposition_mode", text="")
@@ -255,7 +283,7 @@ class LOD_PT_optimization_panel(Panel):
                 icon="CHECKMARK",
             )
 
-        # 3. Billboard & Octahedral Impostor Generator
+        # 4. Billboard & Octahedral Impostor Generator
         box_imp = layout.box()
         box_imp.label(text="Billboard & Octahedral Impostor", icon="OUTLINER_OB_LIGHTPROBE")
         box_imp.prop(props, "impostor_mode", text="")
@@ -270,7 +298,7 @@ class LOD_PT_optimization_panel(Panel):
         if props.last_impostor_status:
             box_imp.label(text=props.last_impostor_status, icon="CHECKMARK")
 
-        # 4. Interior & Occlusion Geometry Culling
+        # 5. Interior & Occlusion Geometry Culling
         box_occ = layout.box()
         box_occ.label(text="Interior & Occlusion Culling", icon="MOD_MASK")
         box_occ.prop(props, "enable_occlusion_culling")
@@ -284,14 +312,14 @@ class LOD_PT_optimization_panel(Panel):
                     icon="CHECKMARK",
                 )
 
-        # 5. Hierarchy & Draw-Call Optimization
+        # 6. Hierarchy & Draw-Call Optimization
         box_h = layout.box()
         box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
         box_h.prop(props, "hierarchy_mode", text="")
         if props.hierarchy_mode == "MERGE_DISTANT":
             box_h.prop(props, "merge_lod_start")
 
-        # 6. Rigging & Skeletal Kinematics
+        # 7. Rigging & Skeletal Kinematics
         box_r = layout.box()
         box_r.label(text="Rigging & Skeletal Kinematics", icon="ARMATURE_DATA")
         has_skinning = bool(armature_obj or any(len(obj.vertex_groups) > 0 for obj in mesh_objs))
@@ -303,7 +331,7 @@ class LOD_PT_optimization_panel(Panel):
         col_rig.prop(props, "enable_leaf_bone_pruning")
         col_rig.prop(props, "purge_distant_shape_keys")
 
-        # 7. PBR Texture Channel Packing & Animation
+        # 8. PBR Texture Channel Packing & Animation
         box_tex = layout.box()
         box_tex.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
         box_tex.prop(props, "export_packed_textures")

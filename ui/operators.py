@@ -1,5 +1,5 @@
 """
-Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, Mesh Cleanup, Impostors, and Viewport Preview.
+Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, Mesh Cleanup, Material Cleanup, Impostors, and Viewport Preview.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ try:
     from ..core.decimator import MeshDecimator
     from ..core.hierarchy import MeshMergeEngine
     from ..core.impostor import ImpostorManager
+    from ..core.materials import MaterialOptimizer
     from ..core.metrics import (
         compute_bounding_sphere,
         compute_coupled_tolerances,
@@ -39,6 +40,7 @@ except (ImportError, ValueError):
     from core.decimator import MeshDecimator
     from core.hierarchy import MeshMergeEngine
     from core.impostor import ImpostorManager
+    from core.materials import MaterialOptimizer
     from core.metrics import (
         compute_bounding_sphere,
         compute_coupled_tolerances,
@@ -343,6 +345,53 @@ class LOD_OT_clean_and_repair_mesh(Operator):
             f"Repaired: {total_welded_verts} welded, {total_split_bowties} bowties, {total_filled_holes} holes."
         )
         props.last_cleanup_summary = summary_msg
+        self.report({"INFO"}, f"✔ {summary_msg}")
+        return {"FINISHED"}
+
+
+class LOD_OT_clean_and_repair_materials(Operator):
+    """Execute material slot compaction, deduplication, AST hash merging, and micro-material consolidation."""
+
+    bl_idname = "lod_tool.clean_and_repair_materials"
+    bl_label = "Clean & Consolidate Materials"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            self.report({"WARNING"}, "No mesh objects selected.")
+            return {"CANCELLED"}
+
+        _, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or context.scene.lod_tool
+
+        stats = MaterialOptimizer.clean_materials_full(
+            mesh_objs=mesh_objs,
+            purge_unused_slots=props.mat_cleanup_purge_unused_slots,
+            deduplicate_slots=props.mat_cleanup_deduplicate_slots,
+            merge_duplicate_datablocks=props.mat_cleanup_merge_duplicate_datablocks,
+            remove_orphan_nodes=props.mat_cleanup_remove_orphan_nodes,
+            enable_micro_consolidation=props.mat_cleanup_enable_micro_consolidation,
+            micro_area_pct=props.mat_cleanup_micro_area_pct,
+            repair_missing_textures=props.mat_cleanup_repair_missing_textures,
+            purge_orphans_blendfile=props.mat_cleanup_purge_orphans_blendfile,
+        )
+
+        summary_msg = (
+            f"Removed {stats['slots_removed']} unused/dup slots ({stats['faces_remapped']} faces remapped), "
+            f"merged {stats['merged_datablocks']} duplicate materials, "
+            f"cleaned {stats['orphan_nodes_removed']} dead nodes."
+        )
+        if stats["consolidated_slots"] > 0:
+            summary_msg += f" Consolidated {stats['consolidated_slots']} micro-materials."
+        if stats["repaired_textures"] > 0:
+            summary_msg += f" Repaired {stats['repaired_textures']} missing textures."
+        if stats["purged_orphans"] > 0:
+            summary_msg += f" Purged {stats['purged_orphans']} orphan materials."
+
+        props.last_material_cleanup_summary = summary_msg
         self.report({"INFO"}, f"✔ {summary_msg}")
         return {"FINISHED"}
 
@@ -817,6 +866,7 @@ OPERATOR_CLASSES = (
     LOD_OT_sync_selection_settings,
     LOD_OT_select_master_asset,
     LOD_OT_clean_and_repair_mesh,
+    LOD_OT_clean_and_repair_materials,
     LOD_OT_generate_all,
     LOD_OT_generate_impostor,
     LOD_OT_remove_impostor,

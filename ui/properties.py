@@ -1,7 +1,7 @@
 """
 Blender PropertyGroups and Scene Settings for OmniMesh.
 Maintains data models for LOD tiers, screen metrics, collision hulls, rigging, PBR textures,
-engine presets, mesh cleanup, impostors, live simulation, and live engine bridges.
+engine presets, mesh cleanup, material cleanup, impostors, live simulation, and live engine bridges.
 Supports both Scene-Level project globals and Per-Object persistent geometric configurations.
 """
 
@@ -265,6 +265,52 @@ class LODToolSettings(PropertyGroup):
         description="Face normal orientation policy",
     )
     last_cleanup_summary: StringProperty(name="Cleanup Summary", default="")
+
+    # Material Cleanup & Slot Consolidation Settings
+    mat_cleanup_purge_unused_slots: BoolProperty(
+        name="Purge Empty & Unused Slots",
+        default=True,
+        description="Remove slots with no material assigned or zero polygon references (Safe)",
+    )
+    mat_cleanup_deduplicate_slots: BoolProperty(
+        name="Deduplicate Repeated Slots",
+        default=True,
+        description="Merge duplicate slots pointing to identical materials on the same mesh (Safe)",
+    )
+    mat_cleanup_merge_duplicate_datablocks: BoolProperty(
+        name="Merge Duplicate Materials (AST Hash)",
+        default=True,
+        description="Merge identical material datablocks (e.g. Mat.001) using deep SHA-256 node graph hashing (Safe)",
+    )
+    mat_cleanup_remove_orphan_nodes: BoolProperty(
+        name="Remove Dead Shader Nodes",
+        default=True,
+        description="Remove disconnected and unused image texture nodes in material graphs (Safe)",
+    )
+    mat_cleanup_enable_micro_consolidation: BoolProperty(
+        name="Consolidate Micro-Materials",
+        default=False,
+        description="Reassign surfaces < threshold % into dominant material (Exempts Emissive, Glass, Decals)",
+    )
+    mat_cleanup_micro_area_pct: FloatProperty(
+        name="Micro Threshold %",
+        default=0.5,
+        min=0.01,
+        max=5.0,
+        precision=2,
+        description="Surface area threshold percentage for micro-material consolidation",
+    )
+    mat_cleanup_repair_missing_textures: BoolProperty(
+        name="Repair Missing Textures",
+        default=False,
+        description="Replace missing/broken image filepaths with safe procedural PBR defaults (Critical)",
+    )
+    mat_cleanup_purge_orphans_blendfile: BoolProperty(
+        name="Purge Orphan Materials from .blend",
+        default=False,
+        description="Permanently delete unused zero-user materials from the Blender file (Critical)",
+    )
+    last_material_cleanup_summary: StringProperty(name="Material Cleanup Summary", default="")
 
     # Billboard Impostor Generator Settings
     impostor_mode: EnumProperty(
