@@ -83,3 +83,26 @@ def test_tier_evaluation_edge_cases():
     # Zero hysteresis
     assert evaluate_lod_tier_index_pure(50.0, thresholds, current_tier=0, hysteresis_pct=0.0) == 0
     assert evaluate_lod_tier_index_pure(49.99, thresholds, current_tier=0, hysteresis_pct=0.0) == 1
+
+
+def test_nan_and_inf_robustness():
+    # NaN and Infinity screen percentages
+    thresholds = [100.0, 50.0, 25.0, 10.0]
+    assert evaluate_lod_tier_index_pure(float("nan"), thresholds) == 3
+    assert evaluate_lod_tier_index_pure(float("inf"), thresholds) == 0
+    assert evaluate_lod_tier_index_pure(float("-inf"), thresholds) == 3
+
+    # Distance calculation with NaN or Inf
+    assert calculate_effective_distance_pure((float("nan"), 0.0, 0.0), (0.0, 0.0, 0.0), 1.0) == 0.01
+    assert calculate_effective_distance_pure((0.0, 0.0, 0.0), (float("inf"), 0.0, 0.0), 1.0) == 0.01
+    assert calculate_effective_distance_pure((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), float("nan")) == 0.01
+    assert calculate_effective_distance_pure((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), float("inf")) == 0.01
+
+
+def test_non_numeric_and_none_coercion():
+    thresholds = [100.0, 50.0, 25.0, 10.0]
+    # None or invalid input coercion
+    assert evaluate_lod_tier_index_pure("invalid", thresholds) == 3  # type: ignore
+    assert evaluate_lod_tier_index_pure(None, thresholds) == 3  # type: ignore
+    assert calculate_effective_distance_pure(None, (0.0, 0.0, 0.0), 1.0) == 0.01  # type: ignore
+    assert calculate_effective_distance_pure((0.0, 0.0, 0.0), None, 1.0) == 0.01  # type: ignore

@@ -23,20 +23,40 @@ def calculate_effective_distance_pure(
     Near-point conservative distance solver:
     d_eff = max(0.01, ||P_cam - C_A|| - 0.5 * r_A)
     """
-    safe_radius = max(0.0, float(radius))
-    cx = center[0] if isinstance(center, (list, tuple)) else getattr(center, "x", 0.0)
-    cy = center[1] if isinstance(center, (list, tuple)) else getattr(center, "y", 0.0)
-    cz = center[2] if isinstance(center, (list, tuple)) else getattr(center, "z", 0.0)
+    try:
+        r_val = float(radius)
+        if math.isnan(r_val) or math.isinf(r_val):
+            r_val = 0.0
+    except (TypeError, ValueError):
+        r_val = 0.0
+    safe_radius = max(0.0, r_val)
 
-    px = cam_pos[0] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "x", 0.0)
-    py = cam_pos[1] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "y", 0.0)
-    pz = cam_pos[2] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "z", 0.0)
+    try:
+        cx = center[0] if isinstance(center, (list, tuple)) else getattr(center, "x", 0.0)
+        cy = center[1] if isinstance(center, (list, tuple)) else getattr(center, "y", 0.0)
+        cz = center[2] if isinstance(center, (list, tuple)) else getattr(center, "z", 0.0)
+    except (IndexError, TypeError, AttributeError):
+        cx, cy, cz = 0.0, 0.0, 0.0
 
-    dx = px - cx
-    dy = py - cy
-    dz = pz - cz
-    d_center = math.sqrt(dx * dx + dy * dy + dz * dz)
-    return max(0.01, d_center - 0.5 * safe_radius)
+    try:
+        px = cam_pos[0] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "x", 0.0)
+        py = cam_pos[1] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "y", 0.0)
+        pz = cam_pos[2] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "z", 0.0)
+    except (IndexError, TypeError, AttributeError):
+        px, py, pz = 0.0, 0.0, 0.0
+
+    try:
+        dx = float(px) - float(cx)
+        dy = float(py) - float(cy)
+        dz = float(pz) - float(cz)
+        if not (math.isfinite(dx) and math.isfinite(dy) and math.isfinite(dz)):
+            return 0.01
+        d_center = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if not math.isfinite(d_center):
+            return 0.01
+        return max(0.01, d_center - 0.5 * safe_radius)
+    except (ValueError, TypeError, OverflowError):
+        return 0.01
 
 
 def evaluate_lod_tier_index_pure(
@@ -51,12 +71,25 @@ def evaluate_lod_tier_index_pure(
     if not tier_thresholds_pct or len(tier_thresholds_pct) <= 1:
         return 0
 
+    try:
+        s_pct = float(screen_size_pct)
+        if math.isnan(s_pct):
+            s_pct = 0.0
+    except (TypeError, ValueError):
+        s_pct = 0.0
+
     num_tiers = len(tier_thresholds_pct)
-    clamped_tier = max(0, min(num_tiers - 1, current_tier))
-    safe_hysteresis = max(0.0, float(hysteresis_pct))
+    clamped_tier = max(0, min(num_tiers - 1, int(current_tier)))
+    try:
+        h_pct = float(hysteresis_pct)
+        if math.isnan(h_pct) or math.isinf(h_pct):
+            h_pct = 0.0
+    except (TypeError, ValueError):
+        h_pct = 0.0
+    safe_hysteresis = max(0.0, min(50.0, h_pct))
 
     for i in range(num_tiers - 1):
-        switch_threshold = tier_thresholds_pct[i + 1]
+        switch_threshold = float(tier_thresholds_pct[i + 1])
 
         if clamped_tier == i:
             effective_threshold = switch_threshold * (1.0 - safe_hysteresis / 100.0)
@@ -65,7 +98,7 @@ def evaluate_lod_tier_index_pure(
         else:
             effective_threshold = switch_threshold
 
-        if screen_size_pct >= effective_threshold:
+        if s_pct >= effective_threshold:
             return i
 
     return num_tiers - 1

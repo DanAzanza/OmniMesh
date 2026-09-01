@@ -86,7 +86,10 @@ class UnrealLiveBridge(EngineBridgeBase):
         if not dest_posix.startswith("/"):
             dest_posix = "/" + dest_posix
         master_mat_posix = _to_posix(master_material_path)
-        sanitized_asset_name = asset_name.replace('"', '\\"')
+        import re
+
+        clean_asset = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
+        sanitized_asset_name = clean_asset.replace('"', '\\"')
 
         textures_literal = json.dumps({k: _to_posix(v) for k, v in (texture_dict or {}).items()})
 

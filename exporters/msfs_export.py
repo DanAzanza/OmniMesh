@@ -11,6 +11,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+import re
+
 try:
     import bpy
 except ImportError:
@@ -20,6 +22,7 @@ except ImportError:
 class MSFSExporter:
     @staticmethod
     def generate_model_info_xml(asset_name: str, tiers: list[dict], guid_str: str = "") -> str:
+        clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
         clean_guid = (
             guid_str.strip().strip("{}").upper() if guid_str and guid_str.strip() else str(uuid.uuid4()).upper()
         )
@@ -27,8 +30,7 @@ class MSFSExporter:
 
         # XML attribute escaping
         escaped_asset_name = (
-            str(asset_name)
-            .replace("&", "&amp;")
+            clean_name.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace('"', "&quot;")
@@ -63,8 +65,14 @@ class MSFSExporter:
         if not props or len(props.lods) == 0:
             return False, "No LOD tiers configured on scene."
 
-        os.makedirs(export_dir, exist_ok=True)
-        coll = bpy.data.collections.get(f"{asset_name}_LODs") or bpy.data.collections.get(
+        clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
+
+        try:
+            os.makedirs(export_dir, exist_ok=True)
+        except OSError as exc:
+            return False, f"Failed creating export directory '{export_dir}': {exc}"
+
+        coll = bpy.data.collections.get(f"{clean_name}_LODs") or bpy.data.collections.get(
             f"{props.export_base_name}_LODs"
         )
 

@@ -47,6 +47,17 @@ def test_get_rest_world_matrix_for_static_no_armature():
     assert res == m
 
 
+def test_get_rest_world_matrix_for_static_missing_bone():
+    bones = {"Root": DummyBone("Root")}
+    arm = DummyArmature(bones)
+    m = [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [0, 0, 0, 1]]
+    obj = DummyObject(m)
+    # Target bone 'Hand' not in armature, fallback to static_obj.matrix_world
+    res = get_rest_world_matrix_for_static(obj, arm, "Hand")
+    assert res == m
+
+
 def test_consolidate_and_merge_meshes_null_or_empty():
     assert MeshMergeEngine.consolidate_and_merge_meshes([], "Merged") is None
     assert MeshMergeEngine.consolidate_and_merge_meshes(None, "Merged") is None
+    assert MeshMergeEngine.consolidate_and_merge_meshes([None, object()], "Merged") is None

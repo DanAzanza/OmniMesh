@@ -1,7 +1,7 @@
 """
 OmniMesh PBR Texture Extractor, Engine Channel Packer & Zero-Copy LOD Resampler.
 Guarantees strict Color Space isolation, UDIM multi-tile support, SIMD uint8 streaming,
-and DirectX/OpenGL normal conversion.
+thread pool worker exception safety, and DirectX/OpenGL normal conversion.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import logging
 import math
 import os
 import sys
+import threading
 from typing import Any, Optional, Tuple
 import numpy as np
 
@@ -30,40 +31,77 @@ logger = logging.getLogger(__name__)
 
 
 class TexturePoolManager:
-    """Manages background multi-threaded texture compression and disk writes."""
+    """Manages background multi-threaded texture compression and disk writes with thread safety."""
 
     _executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+    _lock: threading.Lock = threading.Lock()
 
     @classmethod
     def get_executor(cls) -> concurrent.futures.ThreadPoolExecutor:
-        if cls._executor is None:
-            max_w = min(4, max(1, os.cpu_count() or 2))
-            cls._executor = concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_w, thread_name_prefix="OmniMesh_TexPool"
-            )
-        return cls._executor
+        with cls._lock:
+            if cls._executor is None:
+                max_w = min(4, max(1, os.cpu_count() or 2))
+                cls._executor = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=max_w, thread_name_prefix="OmniMesh_TexPool"
+                )
+            return cls._executor
 
     @classmethod
     def submit_save(cls, arr_u8: np.ndarray, filepath: str) -> concurrent.futures.Future[bool]:
         """Submits uint8 array for parallel PNG compression and saving."""
-        executor = cls.get_executor()
-        return executor.submit(TextureChannelPacker._save_array_to_disk, arr_u8, filepath)
+        if arr_u8 is None or not isinstance(arr_u8, np.ndarray) or arr_u8.size == 0 or not filepath:
+            f: concurrent.futures.Future[bool] = concurrent.futures.Future()
+            f.set_result(False)
+            return f
+
+        try:
+            executor = cls.get_executor()
+            return executor.submit(TextureChannelPacker._save_array_to_disk, arr_u8, filepath)
+        except RuntimeError:
+            # Executor might have been shut down; re-initialize and retry once
+            with cls._lock:
+                cls._executor = None
+            executor = cls.get_executor()
+            return executor.submit(TextureChannelPacker._save_array_to_disk, arr_u8, filepath)
 
     @classmethod
     def wait_all(cls, futures: list[concurrent.futures.Future[bool]], timeout: float = 60.0) -> list[bool]:
-        """Synchronous barrier ensuring all background texture writes are completed."""
+        """Synchronous barrier ensuring all background texture writes are completed safely."""
         if not futures:
             return []
-        done, _ = concurrent.futures.wait(futures, timeout=timeout, return_when=concurrent.futures.ALL_COMPLETED)
-        results = [f.result() for f in futures if f in done]
-        TextureChannelPacker.compact_memory()
+
+        results: list[bool] = []
+        try:
+            done, not_done = concurrent.futures.wait(
+                futures, timeout=timeout, return_when=concurrent.futures.ALL_COMPLETED
+            )
+            for f in futures:
+                if f in done:
+                    try:
+                        res = f.result(timeout=0.01)
+                        results.append(bool(res))
+                    except Exception as exc:
+                        logger.error("Texture pool worker raised exception: %s", exc)
+                        results.append(False)
+                else:
+                    logger.warning("Texture pool worker timed out before completion.")
+                    results.append(False)
+        except Exception as exc:
+            logger.error("Exception in TexturePoolManager.wait_all: %s", exc)
+        finally:
+            TextureChannelPacker.compact_memory()
+
         return results
 
     @classmethod
     def shutdown(cls) -> None:
-        if cls._executor:
-            cls._executor.shutdown(wait=True)
-            cls._executor = None
+        with cls._lock:
+            if cls._executor:
+                try:
+                    cls._executor.shutdown(wait=True)
+                except Exception as exc:
+                    logger.debug("Texture pool shutdown exception: %s", exc)
+                cls._executor = None
 
 
 class TextureChannelPacker:
@@ -86,7 +124,7 @@ class TextureChannelPacker:
 
     @classmethod
     def get_material_normal_image(cls, material: Any) -> Optional[Any]:
-        """Finds image datablock connected to Principled BSDF Normal socket."""
+        """Finds image datablock connected to Principled BSDF Normal socket, guarding against reroute cycles."""
         if not material or not getattr(material, "use_nodes", False) or not material.node_tree:
             return None
         bsdf = next((n for n in material.node_tree.nodes if getattr(n, "type", None) == "BSDF_PRINCIPLED"), None)
@@ -96,31 +134,46 @@ class TextureChannelPacker:
         link = bsdf.inputs["Normal"].links[0]
         from_node = link.from_node
 
-        # Resolve any reroute nodes
+        # Resolve any reroute nodes with cycle prevention
+        visited_nodes = {id(from_node)}
         while getattr(from_node, "type", None) == "REROUTE" and from_node.inputs and from_node.inputs[0].is_linked:
             from_node = from_node.inputs[0].links[0].from_node
+            if id(from_node) in visited_nodes:
+                logger.warning(
+                    "Reroute cycle detected in material '%s' normal tree.", getattr(material, "name", "unknown")
+                )
+                break
+            visited_nodes.add(id(from_node))
 
         if getattr(from_node, "type", None) == "NORMAL_MAP":
             if "Color" in from_node.inputs and from_node.inputs["Color"].is_linked:
                 norm_link = from_node.inputs["Color"].links[0]
                 norm_source = norm_link.from_node
+                norm_visited = {id(norm_source)}
                 while (
                     getattr(norm_source, "type", None) == "REROUTE"
                     and norm_source.inputs
                     and norm_source.inputs[0].is_linked
                 ):
                     norm_source = norm_source.inputs[0].links[0].from_node
+                    if id(norm_source) in norm_visited:
+                        break
+                    norm_visited.add(id(norm_source))
                 if getattr(norm_source, "type", None) == "TEX_IMAGE":
                     return getattr(norm_source, "image", None)
         elif getattr(from_node, "type", None) == "BUMP":
             if "Height" in from_node.inputs and from_node.inputs["Height"].is_linked:
                 bump_source = from_node.inputs["Height"].links[0].from_node
+                bump_visited = {id(bump_source)}
                 while (
                     getattr(bump_source, "type", None) == "REROUTE"
                     and bump_source.inputs
                     and bump_source.inputs[0].is_linked
                 ):
                     bump_source = bump_source.inputs[0].links[0].from_node
+                    if id(bump_source) in bump_visited:
+                        break
+                    bump_visited.add(id(bump_source))
                 if getattr(bump_source, "type", None) == "TEX_IMAGE":
                     return getattr(bump_source, "image", None)
         elif getattr(from_node, "type", None) == "TEX_IMAGE":
@@ -139,18 +192,29 @@ class TextureChannelPacker:
         """Extracts single-channel data from a Principled BSDF socket into a 2D uint8 numpy array.
 
         Handles ShaderNodeTexImage connections, default constant float fallbacks, and SIMD resizing.
-        Guarantees protection against NaN / Inf float values.
+        Guarantees protection against NaN / Inf float values and reroute cycle recursion.
         """
-        target_w = max(1, int(target_size[0]))
-        target_h = max(1, int(target_size[1]))
+        target_w = (
+            max(1, int(target_size[0]))
+            if isinstance(target_size[0], (int, float)) and math.isfinite(target_size[0])
+            else 2048
+        )
+        target_h = (
+            max(1, int(target_size[1]))
+            if isinstance(target_size[1], (int, float)) and math.isfinite(target_size[1])
+            else 2048
+        )
+        safe_channel_idx = max(0, min(3, int(channel_index)))
 
-        safe_default = float(default_val) if math.isfinite(default_val) else 0.0
+        safe_default = (
+            float(default_val) if isinstance(default_val, (int, float)) and math.isfinite(default_val) else 0.0
+        )
         fallback = np.full((target_h, target_w), int(np.clip(safe_default, 0.0, 1.0) * 255.0), dtype=np.uint8)
 
         if not material or not getattr(material, "use_nodes", False) or not material.node_tree:
             return fallback
 
-        nodes = material.node_tree.nodes
+        nodes = getattr(material.node_tree, "nodes", [])
         bsdf = next((n for n in nodes if getattr(n, "type", None) == "BSDF_PRINCIPLED"), None)
         if not bsdf:
             return fallback
@@ -164,14 +228,14 @@ class TextureChannelPacker:
                     break
 
         # If socket is absent or disconnected
-        if not socket or not socket.is_linked:
+        if not socket or not getattr(socket, "is_linked", False):
             if socket and hasattr(socket, "default_value"):
                 val = socket.default_value
                 if isinstance(val, (float, int)) and math.isfinite(val):
                     return np.full((target_h, target_w), int(np.clip(val, 0.0, 1.0) * 255.0), dtype=np.uint8)
                 elif not isinstance(val, (float, int, str, bytes)):
                     try:
-                        ch_val = val[channel_index]  # type: ignore[index]
+                        ch_val = val[safe_channel_idx]  # type: ignore[index]
                         if isinstance(ch_val, (float, int)) and math.isfinite(ch_val):
                             return np.full((target_h, target_w), int(np.clip(ch_val, 0.0, 1.0) * 255.0), dtype=np.uint8)
                     except (IndexError, TypeError, KeyError):
@@ -181,13 +245,13 @@ class TextureChannelPacker:
             if socket_name in ("Ambient Occlusion", "AO", "Occlusion"):
                 for node in nodes:
                     if getattr(node, "type", None) == "TEX_IMAGE" and getattr(node, "image", None):
-                        img_name = node.image.name.lower()
+                        img_name = getattr(node.image, "name", "").lower()
                         node_name = getattr(node, "name", "").lower()
                         if any(
                             k in img_name or k in node_name for k in ("_ao", "ambient_occlusion", "occlusion", "_orm")
                         ):
                             # Found ambient occlusion / ORM texture node
-                            return cls._extract_from_image(node.image, (target_w, target_h), channel_index, fallback)
+                            return cls._extract_from_image(node.image, (target_w, target_h), safe_channel_idx, fallback)
 
             return fallback
 
@@ -196,9 +260,13 @@ class TextureChannelPacker:
         link = socket.links[0]
         from_node = link.from_node
 
-        # Resolve reroutes
+        # Resolve reroutes with cycle prevention
+        visited_nodes = {id(from_node)}
         while getattr(from_node, "type", None) == "REROUTE" and from_node.inputs and from_node.inputs[0].is_linked:
             from_node = from_node.inputs[0].links[0].from_node
+            if id(from_node) in visited_nodes:
+                break
+            visited_nodes.add(id(from_node))
 
         if getattr(from_node, "type", None) == "TEX_IMAGE":
             tex_node = from_node
@@ -209,19 +277,23 @@ class TextureChannelPacker:
         ):
             norm_link = from_node.inputs["Color"].links[0]
             norm_source = norm_link.from_node
+            norm_visited = {id(norm_source)}
             while (
                 getattr(norm_source, "type", None) == "REROUTE"
                 and norm_source.inputs
                 and norm_source.inputs[0].is_linked
             ):
                 norm_source = norm_source.inputs[0].links[0].from_node
+                if id(norm_source) in norm_visited:
+                    break
+                norm_visited.add(id(norm_source))
             if getattr(norm_source, "type", None) == "TEX_IMAGE":
                 tex_node = norm_source
 
         if not tex_node or not getattr(tex_node, "image", None):
             return fallback
 
-        return cls._extract_from_image(tex_node.image, (target_w, target_h), channel_index, fallback)
+        return cls._extract_from_image(tex_node.image, (target_w, target_h), safe_channel_idx, fallback)
 
     @classmethod
     def _extract_from_image(
@@ -365,8 +437,9 @@ class TextureChannelPacker:
         """Converts OpenGL (+Y) Normal map to DirectX (-Y) Normal map for Unreal Engine 5.
 
         Inverts Green channel: G' = 255 - G.
+        Sanitizes non-finite floats and preserves neutral normal basis (128, 128, 255).
         """
-        if not source_img or getattr(source_img, "size", (0, 0))[0] == 0:
+        if not source_img or getattr(source_img, "size", (0, 0))[0] == 0 or getattr(source_img, "size", (0, 0))[1] == 0:
             return False
 
         src_w, src_h = source_img.size[0], source_img.size[1]
@@ -383,13 +456,21 @@ class TextureChannelPacker:
             )
             return False
 
-        # Clean NaN/Inf in normal textures
-        np.nan_to_num(raw_floats, copy=False, nan=0.5, posinf=1.0, neginf=0.0)
+        # Clean NaN/Inf with channel-specific defaults (R=0.5, G=0.5, B=1.0, A=1.0)
+        r_floats = raw_floats[0::4]
+        g_floats = raw_floats[1::4]
+        b_floats = raw_floats[2::4]
+        a_floats = raw_floats[3::4]
 
-        r = (np.clip(raw_floats[0::4], 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).reshape((src_h, src_w))
-        g = (np.clip(raw_floats[1::4], 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).reshape((src_h, src_w))
-        b = (np.clip(raw_floats[2::4], 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).reshape((src_h, src_w))
-        a = (np.clip(raw_floats[3::4], 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).reshape((src_h, src_w))
+        np.nan_to_num(r_floats, copy=False, nan=0.5, posinf=1.0, neginf=0.0)
+        np.nan_to_num(g_floats, copy=False, nan=0.5, posinf=1.0, neginf=0.0)
+        np.nan_to_num(b_floats, copy=False, nan=1.0, posinf=1.0, neginf=0.0)
+        np.nan_to_num(a_floats, copy=False, nan=1.0, posinf=1.0, neginf=0.0)
+
+        r = (np.clip(r_floats, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).reshape((src_h, src_w))
+        g = (np.clip(g_floats, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).reshape((src_h, src_w))
+        b = (np.clip(b_floats, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).reshape((src_h, src_w))
+        a = (np.clip(a_floats, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).reshape((src_h, src_w))
         del raw_floats
 
         # Invert Green channel for DirectX
@@ -427,27 +508,75 @@ class TextureChannelPacker:
 
     @staticmethod
     def _save_array_to_disk(arr_u8: np.ndarray, filepath: str) -> bool:
-        """Saves uint8 numpy image buffer directly to disk via Pillow or bpy fallback."""
+        """Saves uint8 numpy image buffer directly to disk via Pillow or bpy fallback.
+
+        Supports 2D (Grayscale/L), 3D 1-channel, 3D 3-channel (RGB), and 3D 4-channel (RGBA) arrays.
+        Guarantees no orphaned Blender image datablocks on exception.
+        """
+        if arr_u8 is None or not isinstance(arr_u8, np.ndarray) or arr_u8.size == 0 or not filepath:
+            return False
+
         try:
             os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
             if Image:
-                pil_img = Image.fromarray(arr_u8, mode="RGBA")
+                # Dynamic mode selection based on dimensionality
+                if arr_u8.ndim == 2:
+                    mode = "L"
+                    save_arr = arr_u8
+                elif arr_u8.ndim == 3:
+                    channels = arr_u8.shape[2]
+                    if channels == 1:
+                        mode = "L"
+                        save_arr = arr_u8.squeeze(axis=-1)
+                    elif channels == 3:
+                        mode = "RGB"
+                        save_arr = arr_u8
+                    elif channels == 4:
+                        mode = "RGBA"
+                        save_arr = arr_u8
+                    else:
+                        logger.error("Unsupported channel count in _save_array_to_disk: %s", channels)
+                        return False
+                else:
+                    logger.error("Unsupported array ndim in _save_array_to_disk: %s", arr_u8.ndim)
+                    return False
+
+                pil_img = Image.fromarray(save_arr, mode=mode)
                 try:
                     pil_img.save(filepath, format="PNG", compress_level=4)
                     return True
                 finally:
                     pil_img.close()
             elif bpy:
-                h, w, _ = arr_u8.shape
+                if arr_u8.ndim == 2:
+                    h, w = arr_u8.shape
+                    # Expand 2D grayscale to RGBA for Blender image buffer
+                    rgba_arr = np.dstack([arr_u8, arr_u8, arr_u8, np.full((h, w), 255, dtype=np.uint8)])
+                elif arr_u8.ndim == 3:
+                    h, w, c = arr_u8.shape
+                    if c == 1:
+                        sq = arr_u8.squeeze(axis=-1)
+                        rgba_arr = np.dstack([sq, sq, sq, np.full((h, w), 255, dtype=np.uint8)])
+                    elif c == 3:
+                        rgba_arr = np.dstack([arr_u8, np.full((h, w), 255, dtype=np.uint8)])
+                    elif c == 4:
+                        rgba_arr = arr_u8
+                    else:
+                        return False
+                else:
+                    return False
+
                 temp_img = bpy.data.images.new("TEMP_PACKED_EXPORT", width=w, height=h, alpha=True)
-                temp_img.colorspace_settings.name = "Non-Color"
-                float_data = (arr_u8.astype(np.float32) / 255.0).ravel()
-                temp_img.pixels.foreach_set(float_data)
-                temp_img.filepath_raw = filepath
-                temp_img.file_format = "PNG"
-                temp_img.save()
-                bpy.data.images.remove(temp_img, do_unlink=True)
-                return True
+                try:
+                    temp_img.colorspace_settings.name = "Non-Color"
+                    float_data = (rgba_arr.astype(np.float32) / 255.0).ravel()
+                    temp_img.pixels.foreach_set(float_data)
+                    temp_img.filepath_raw = filepath
+                    temp_img.file_format = "PNG"
+                    temp_img.save()
+                    return True
+                finally:
+                    bpy.data.images.remove(temp_img, do_unlink=True)
         except Exception as exc:
             logger.error("Failed to save texture array to disk at '%s': %s", filepath, exc)
             return False

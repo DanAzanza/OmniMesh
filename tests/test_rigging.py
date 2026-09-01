@@ -1,5 +1,5 @@
 """
-Unit tests for Rigging & Skinning Weight Sanitization.
+Unit tests for Rigging & Skinning Weight Sanitization, Matrix Math Traps & Kinematic Bone Pruning.
 """
 
 import numpy as np
@@ -8,6 +8,7 @@ import pytest
 from core.rigging import (
     KinematicBonePruner,
     WeightSanitizer,
+    _safe_invert_matrix,
     armature_rest_pose_context,
     compute_rest_pose_inverted_matrix,
     normalize_weights_pure,
@@ -96,6 +97,30 @@ def test_nan_inf_and_negative_weight_sanitization():
     assert normalize_weights_pure("invalid", anchor_idx=2) == {2: 1.0}  # type: ignore
 
 
+def test_negative_bone_index_sanitization():
+    # Negative bone indices are illegal and must be pruned
+    raw_neg_indices = {-1: 0.5, -2: 0.3, 0: 0.8}
+    normalized = normalize_weights_pure(raw_neg_indices, anchor_idx=0)
+    assert -1 not in normalized
+    assert -2 not in normalized
+    assert normalized == {0: 1.0}
+
+
+def test_invalid_and_non_finite_parameter_guards():
+    raw = {0: 0.5, 1: 0.5}
+    # Non-finite max_influences
+    norm_nan_inf = normalize_weights_pure(raw, max_influences=float("nan"))  # type: ignore
+    assert abs(sum(norm_nan_inf.values()) - 1.0) < 1e-5
+
+    # Non-finite micro_epsilon
+    norm_nan_eps = normalize_weights_pure(raw, micro_epsilon=float("nan"))  # type: ignore
+    assert abs(sum(norm_nan_eps.values()) - 1.0) < 1e-5
+
+    # Negative anchor index
+    norm_neg_anchor = normalize_weights_pure({}, anchor_idx=-10)
+    assert norm_neg_anchor == {0: 1.0}
+
+
 def test_exact_one_sum_rounding_absorption():
     # 3 equal weights 1/3 (0.333333, 0.333333, 0.333333) normally sum to 0.999999
     raw = {0: 1.0, 1: 1.0, 2: 1.0}
@@ -106,7 +131,6 @@ def test_exact_one_sum_rounding_absorption():
 
 
 def test_compute_rest_pose_inverted_matrix():
-    # Mock 4x4 transform matrices using numpy arrays with matrix multiplication @
     class MockMatrix:
         def __init__(self, arr: np.ndarray):
             self.arr = arr
@@ -114,7 +138,16 @@ def test_compute_rest_pose_inverted_matrix():
         def __matmul__(self, other):
             return MockMatrix(self.arr @ other.arr)
 
+        def determinant(self):
+            return float(np.linalg.det(self.arr))
+
+        def copy(self):
+            return MockMatrix(self.arr.copy())
+
         def inverted(self):
+            det = np.linalg.det(self.arr)
+            if abs(det) < 1e-8:
+                raise ValueError("Singular matrix cannot be inverted")
             return MockMatrix(np.linalg.inv(self.arr))
 
         def __eq__(self, other):
@@ -138,6 +171,43 @@ def test_compute_rest_pose_inverted_matrix():
     )
     # Target inverted should have translation X = -10
     assert np.isclose(res_local.arr[0, 3], -10.0)
+
+
+def test_singular_matrix_inversion_guard():
+    class SingularMatrix:
+        def __init__(self, arr: np.ndarray):
+            self.arr = arr
+
+        def __matmul__(self, other):
+            return SingularMatrix(self.arr @ other.arr)
+
+        def determinant(self):
+            return float(np.linalg.det(self.arr))
+
+        def copy(self):
+            return SingularMatrix(self.arr.copy())
+
+        def inverted(self):
+            raise ValueError("Singular matrix invert failed")
+
+    # Singular matrix with 0 scale on X axis
+    zero_scale_mat = np.eye(4)
+    zero_scale_mat[0, 0] = 0.0
+    singular_target = SingularMatrix(zero_scale_mat)
+
+    m_arm = SingularMatrix(np.eye(4))
+    m_bone = SingularMatrix(np.eye(4))
+    m_parent = SingularMatrix(np.eye(4))
+    m_basis = SingularMatrix(np.eye(4))
+
+    # Should not throw ValueError; falls back gracefully
+    res = compute_rest_pose_inverted_matrix(m_arm, m_bone, m_parent, m_basis, target_mesh_rest_world=singular_target)
+    assert res is not None
+
+    # Safe invert helper directly
+    assert _safe_invert_matrix(None) is None
+    inv_sing = _safe_invert_matrix(singular_target)
+    assert inv_sing is not None
 
 
 def test_armature_rest_pose_context_manager():
@@ -175,4 +245,15 @@ def test_weight_sanitizer_and_pruner_guards():
         "singularities_fixed": 0,
         "purged_vgs": 0,
     }
+
+    class NonMesh:
+        type = "CAMERA"
+
+    assert WeightSanitizer.normalize_and_clamp_weights(NonMesh()) == {
+        "normalized": 0,
+        "singularities_fixed": 0,
+        "purged_vgs": 0,
+    }
+
     assert KinematicBonePruner.prune_kinematic_subtrees(None, None, 10.0, 1.0, 1080) == 0
+    assert KinematicBonePruner.prune_kinematic_subtrees(NonMesh(), None, float("nan"), float("inf"), -100) == 0

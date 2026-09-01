@@ -104,14 +104,18 @@ class OMNIMESH_OT_batch_process(Operator):
                 else bpy.path.abspath(props.export_directory)
             )
 
+            num_lods_val = getattr(props, "lod_count", getattr(props, "num_lods", 4))
+            tau_sse_val = getattr(props, "tau_sse", 0.8)
+            cull_pct_val = getattr(props, "cull_screen_size_pct", 0.5)
+
             res = BatchProcessorEngine.process_single_asset(
                 context=context,
                 filepath=filepath,
                 export_base_dir=export_dir,
                 target_engine=props.target_engine,
-                num_lods=props.num_lods,
-                tau_sse=props.tau_sse,
-                cull_screen_size_pct=props.cull_screen_size_pct,
+                num_lods=num_lods_val,
+                tau_sse=tau_sse_val,
+                cull_screen_size_pct=cull_pct_val,
             )
 
             if res["success"]:

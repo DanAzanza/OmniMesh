@@ -54,7 +54,7 @@ def test_msfs_xml_special_character_escaping():
     assert lods is not None
     lod_elements = lods.findall("LOD")
     assert len(lod_elements) == 2
-    assert lod_elements[0].attrib["ModelFile"] == f"{asset_name}_LOD0.gltf"
+    assert lod_elements[0].attrib["ModelFile"] == "Building & _Hangar_ _Tower_ 'Radar'_LOD0.gltf"
     assert lod_elements[1].attrib["minSize"] == "0"
 
 

@@ -351,14 +351,18 @@ class MaterialOptimizer:
             return True
 
         if hasattr(mat, "node_tree") and mat.node_tree:
-            for node in mat.node_tree.nodes:
+            nodes = getattr(mat.node_tree, "nodes", [])
+            for node in nodes:
                 ntype = getattr(node, "type", "")
                 if ntype in ("EMISSION", "BSDF_GLASS", "BSDF_TRANSPARENT", "BSDF_TRANSLUCENT"):
                     return True
                 if ntype == "BSDF_PRINCIPLED":
                     # Check emission strength
                     for sock in getattr(node, "inputs", []):
-                        if sock.name == "Emission Strength" and getattr(sock, "default_value", 0.0) > 0.001:
+                        if (
+                            getattr(sock, "name", "") == "Emission Strength"
+                            and getattr(sock, "default_value", 0.0) > 0.001
+                        ):
                             return True
         return False
 
@@ -368,12 +372,15 @@ class MaterialOptimizer:
         obj: Any,
         area_threshold_pct: float = 0.5,
         protect_semantic_materials: bool = True,
+        area_crit: float = 0.0,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Reassigns surface regions occupying < area_threshold_pct of total surface area
-        to the dominant material slot, preserving semantically protected shaders.
+        (or absolute area < area_crit in m²) to the dominant material slot,
+        preserving semantically protected shaders.
         """
-        if not bpy or not bmesh or not obj or len(obj.material_slots) <= 1:
+        if not bpy or not bmesh or not obj or not hasattr(obj, "material_slots") or len(obj.material_slots) <= 1:
             return {"consolidated_slots": 0, "faces_reassigned": 0}
 
         areas = cls.calculate_material_areas(obj)
@@ -383,7 +390,12 @@ class MaterialOptimizer:
 
         dominant_idx = cls.get_dominant_material_index(areas)
         reassigned_slots: set[int] = set()
-        threshold_frac = max(0.0001, area_threshold_pct / 100.0)
+
+        # Handle absolute area threshold (area_crit) if provided
+        if area_crit > 0.0:
+            effective_threshold_frac = max(0.0001, area_crit / total_area)
+        else:
+            effective_threshold_frac = max(0.0001, area_threshold_pct / 100.0)
 
         for slot_idx, area in areas.items():
             if slot_idx == dominant_idx:
@@ -391,7 +403,7 @@ class MaterialOptimizer:
             mat = obj.material_slots[slot_idx].material
             if protect_semantic_materials and cls.is_material_protected(mat):
                 continue
-            if (area / total_area) < threshold_frac:
+            if (area / total_area) < effective_threshold_frac:
                 reassigned_slots.add(slot_idx)
 
         if not reassigned_slots:
@@ -412,6 +424,13 @@ class MaterialOptimizer:
 
         obj.data.update()
         return {"consolidated_slots": len(reassigned_slots), "faces_reassigned": faces_reassigned}
+
+    @classmethod
+    def purge_unused_materials(cls, obj: Any) -> dict[str, int]:
+        """
+        Compacts and removes unassigned/empty material slots from the target object.
+        """
+        return HeadlessSlotCompactor.compact_slots(obj, purge_empty=True, deduplicate_identical=False)
 
     @classmethod
     def merge_duplicate_materials_scene(cls) -> int:

@@ -44,20 +44,28 @@ def compute_bounding_sphere(coords: list[Any]) -> tuple[Any, float]:
     Works with mathutils.Vector or list/tuple of (x, y, z).
     """
     if not coords:
-        if mathutils:
+        if mathutils and hasattr(mathutils, "Vector"):
             return mathutils.Vector((0.0, 0.0, 0.0)), 1.0
         return (0.0, 0.0, 0.0), 1.0
 
-    n = len(coords)
-    if mathutils and isinstance(coords[0], mathutils.Vector):
-        center = sum(coords, mathutils.Vector((0.0, 0.0, 0.0))) / n
-        radius = max((v - center).length for v in coords)
+    valid_coords = [c for c in coords if c is not None]
+    if not valid_coords:
+        if mathutils and hasattr(mathutils, "Vector"):
+            return mathutils.Vector((0.0, 0.0, 0.0)), 1.0
+        return (0.0, 0.0, 0.0), 1.0
+
+    n = len(valid_coords)
+    if mathutils and hasattr(mathutils, "Vector") and isinstance(valid_coords[0], mathutils.Vector):
+        center = sum(valid_coords, mathutils.Vector((0.0, 0.0, 0.0))) / n
+        radius = max((v - center).length for v in valid_coords)
     else:
-        cx = sum(c[0] for c in coords) / n
-        cy = sum(c[1] for c in coords) / n
-        cz = sum(c[2] for c in coords) / n
-        center = (cx, cy, cz) if not mathutils else mathutils.Vector((cx, cy, cz))
-        radius = max(math.sqrt((c[0] - cx) ** 2 + (c[1] - cy) ** 2 + (c[2] - cz) ** 2) for c in coords)
+        cx = sum(float(c[0]) for c in valid_coords) / n
+        cy = sum(float(c[1]) for c in valid_coords) / n
+        cz = sum(float(c[2]) for c in valid_coords) / n
+        center = (cx, cy, cz) if not (mathutils and hasattr(mathutils, "Vector")) else mathutils.Vector((cx, cy, cz))
+        radius = max(
+            math.sqrt((float(c[0]) - cx) ** 2 + (float(c[1]) - cy) ** 2 + (float(c[2]) - cz) ** 2) for c in valid_coords
+        )
 
     return center, max(1e-4, radius)
 

@@ -54,3 +54,14 @@ def test_batch_processor_single_asset_no_bpy():
     )
     assert res["success"] is False
     assert "Blender" in res["message"] or "not available" in res["message"]
+
+
+def test_batch_processor_import_asset_file_guards():
+    assert BatchProcessorEngine.import_asset_file("") == []
+    assert BatchProcessorEngine.import_asset_file("non_existent_path.fbx") == []
+
+
+def test_batch_processor_cleanup_imported_objects():
+    # Should not throw on empty/None
+    BatchProcessorEngine.cleanup_imported_objects([])
+    BatchProcessorEngine.cleanup_imported_objects([None, object()])

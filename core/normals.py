@@ -30,14 +30,14 @@ class NormalManager:
         """
         if not bpy or not mesh or not hasattr(mesh, "attributes"):
             return None
-        sharp_attr = mesh.attributes.get("sharp_edge")
-        if not sharp_attr:
-            try:
+        try:
+            sharp_attr = mesh.attributes.get("sharp_edge")
+            if not sharp_attr:
                 sharp_attr = mesh.attributes.new(name="sharp_edge", type="BOOLEAN", domain="EDGE")
-            except (RuntimeError, ValueError) as exc:
-                logger.debug("Failed to create sharp_edge attribute: %s", exc)
-                sharp_attr = None
-        return sharp_attr
+            return sharp_attr
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            logger.debug("Failed to create sharp_edge attribute: %s", exc)
+            return None
 
     @classmethod
     def reproject_custom_split_normals(
@@ -55,13 +55,17 @@ class NormalManager:
         if getattr(lod_obj, "type", "") != "MESH" or getattr(source_lod0, "type", "") != "MESH":
             return False
 
-        if not lod_obj.data or not source_lod0.data:
+        if not hasattr(lod_obj, "data") or not lod_obj.data or not hasattr(source_lod0, "data") or not source_lod0.data:
             return False
 
-        if len(lod_obj.data.vertices) == 0 or len(source_lod0.data.vertices) == 0:
+        src_verts = getattr(source_lod0.data, "vertices", [])
+        tgt_verts = getattr(lod_obj.data, "vertices", [])
+        if len(src_verts) == 0 or len(tgt_verts) == 0:
             return False
 
-        if len(lod_obj.data.polygons) == 0 or len(source_lod0.data.polygons) == 0:
+        src_polys = getattr(source_lod0.data, "polygons", [])
+        tgt_polys = getattr(lod_obj.data, "polygons", [])
+        if len(src_polys) == 0 or len(tgt_polys) == 0:
             return False
 
         # Detect armature if not explicitly passed
@@ -77,32 +81,41 @@ class NormalManager:
             arm.data.pose_position = "REST"
 
         mod_name = "__LOD_NORMAL_TRANSFER__"
-        existing_mod = lod_obj.modifiers.get(mod_name)
-        if existing_mod:
-            lod_obj.modifiers.remove(existing_mod)
+        dt_mod: Any = None
+        if hasattr(lod_obj, "modifiers"):
+            existing_mod = lod_obj.modifiers.get(mod_name)
+            if existing_mod:
+                lod_obj.modifiers.remove(existing_mod)
 
-        dt_mod = lod_obj.modifiers.new(name=mod_name, type="DATA_TRANSFER")
-        dt_mod.object = source_lod0
-        dt_mod.use_loop_data = True
-        dt_mod.data_types_loops = {"CUSTOM_NORMAL"}
-        dt_mod.loop_mapping = "POLYINTERP_LNORPROJ"
-        d = max(1e-4, delta_world)
-        dt_mod.max_distance = max(2.0 * d, 0.05)
-        dt_mod.ray_radius = max(d, 0.02)
+            try:
+                dt_mod = lod_obj.modifiers.new(name=mod_name, type="DATA_TRANSFER")
+                dt_mod.object = source_lod0
+                dt_mod.use_loop_data = True
+                dt_mod.data_types_loops = {"CUSTOM_NORMAL"}
+                dt_mod.loop_mapping = "POLYINTERP_LNORPROJ"
+                d = max(1e-4, delta_world)
+                dt_mod.max_distance = max(2.0 * d, 0.05)
+                dt_mod.ray_radius = max(d, 0.02)
+            except Exception as exc:
+                logger.debug("Failed to initialize DATA_TRANSFER modifier: %s", exc)
+                return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)
+
+        if dt_mod is None:
+            return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)
 
         try:
             if hasattr(bpy.context, "temp_override"):
                 with bpy.context.temp_override(active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj]):
                     bpy.ops.object.modifier_apply(modifier=dt_mod.name)
-            else:
+            elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
                 bpy.context.view_layer.objects.active = lod_obj
                 bpy.ops.object.modifier_apply(modifier=dt_mod.name)
             cls.ensure_sharp_edge_attribute(lod_obj.data)
             lod_obj.data.update()
             return True
-        except (RuntimeError, ValueError) as exc:
+        except Exception as exc:
             logger.debug("DATA_TRANSFER modifier failed (%s), attempting KDTree normal transfer fallback", exc)
-            if dt_mod.name in lod_obj.modifiers:
+            if hasattr(lod_obj, "modifiers") and dt_mod.name in lod_obj.modifiers:
                 lod_obj.modifiers.remove(dt_mod)
 
             # Fallback: Spatial KDTree nearest-normal transfer
@@ -117,31 +130,39 @@ class NormalManager:
         if not KDTree or not lod_obj or not source_lod0:
             return False
         try:
-            src_mesh = source_lod0.data
-            tgt_mesh = lod_obj.data
-            num_src_verts = len(src_mesh.vertices)
-            if num_src_verts == 0 or len(tgt_mesh.loops) == 0:
+            src_mesh = getattr(source_lod0, "data", None)
+            tgt_mesh = getattr(lod_obj, "data", None)
+            if not src_mesh or not tgt_mesh:
+                return False
+
+            src_verts = getattr(src_mesh, "vertices", [])
+            tgt_loops = getattr(tgt_mesh, "loops", [])
+            tgt_verts = getattr(tgt_mesh, "vertices", [])
+
+            num_src_verts = len(src_verts)
+            if num_src_verts == 0 or len(tgt_loops) == 0:
                 return False
 
             kd = KDTree(num_src_verts)
-            for i, v in enumerate(src_mesh.vertices):
+            for i, v in enumerate(src_verts):
                 kd.insert(v.co, i)
             kd.balance()
 
-            # Build custom loop normals from nearest source vertex normals
+            # Build custom loop normals directly in loop order
             custom_normals = []
-            for poly in tgt_mesh.polygons:
-                for loop_idx in poly.loop_indices:
-                    v_idx = tgt_mesh.loops[loop_idx].vertex_index
-                    v_co = tgt_mesh.vertices[v_idx].co
-                    _, src_idx, _ = kd.find(v_co)
-                    src_norm = src_mesh.vertices[src_idx].normal
-                    custom_normals.append(src_norm)
+            for loop in tgt_loops:
+                v_idx = loop.vertex_index
+                v_co = tgt_verts[v_idx].co
+                _, src_idx, _ = kd.find(v_co)
+                src_norm = src_verts[src_idx].normal
+                custom_normals.append(src_norm)
 
-            tgt_mesh.normals_split_custom_set(custom_normals)
-            cls.ensure_sharp_edge_attribute(tgt_mesh)
-            tgt_mesh.update()
-            return True
-        except (RuntimeError, ValueError, IndexError, AttributeError) as exc:
+            if hasattr(tgt_mesh, "normals_split_custom_set"):
+                tgt_mesh.normals_split_custom_set(custom_normals)
+                cls.ensure_sharp_edge_attribute(tgt_mesh)
+                tgt_mesh.update()
+                return True
+            return False
+        except Exception as exc:
             logger.error("KDTree normal fallback failed: %s", exc)
             return False

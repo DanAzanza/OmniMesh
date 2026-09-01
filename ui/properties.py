@@ -55,6 +55,7 @@ class LODLevelItem(PropertyGroup):
 
     name: StringProperty(name="Tier Name", default="LOD0")
     level_index: IntProperty(name="Level Index", default=0, min=0, max=7)
+    lod_index: IntProperty(name="LOD Index", default=0, min=0, max=7)
     screen_size_pct: FloatProperty(
         name="Screen Size %",
         default=100.0,
@@ -71,8 +72,17 @@ class LODLevelItem(PropertyGroup):
         precision=2,
         description="Calculated camera distance for this tier transition",
     )
+    delta_world: FloatProperty(
+        name="Delta World (m)",
+        default=0.0,
+        min=0.0,
+        precision=4,
+        description="Screen-space error tolerance in world units",
+    )
     triangle_target: IntProperty(name="Target Tris", default=0, min=0)
+    target_tris: IntProperty(name="Target Tris", default=0, min=0)
     actual_triangles: IntProperty(name="Actual Tris", default=0, min=0)
+    actual_tris: IntProperty(name="Actual Tris", default=0, min=0)
     reduction_pct: FloatProperty(name="Reduction %", default=0.0, precision=1)
     mat_slots_count: IntProperty(name="Material Slots", default=0, min=0)
     generated_obj: PointerProperty(name="Mesh Object", type=bpy.types.Object if bpy else object)
@@ -536,6 +546,11 @@ class LODToolSettings(PropertyGroup):
         default=False,
         description="Real-time automatic LOD switching based on viewport and scene camera distance",
     )
+    is_simulator_running: BoolProperty(
+        name="Live Simulator Running",
+        default=False,
+        description="Internal execution state flag for the viewport LOD simulator modal timer",
+    )
     simulator_camera_mode: EnumProperty(
         name="Camera Source",
         items=[
@@ -545,6 +560,11 @@ class LODToolSettings(PropertyGroup):
         default="VIEWPORT",
         description="Camera position reference used to calculate live switch distances",
     )
+    simulator_mode: StringProperty(
+        name="Simulator Mode Tag",
+        default="LIVE",
+        description="Current operational mode identifier for simulator HUD",
+    )
     virtual_distance_override: FloatProperty(
         name="Virtual Distance (m)",
         default=0.0,
@@ -552,6 +572,14 @@ class LODToolSettings(PropertyGroup):
         max=5000.0,
         precision=2,
         description="Interactive distance slider to preview LOD transitions without moving the camera",
+    )
+    virtual_screen_size_pct: FloatProperty(
+        name="Virtual Screen %",
+        default=50.0,
+        min=0.01,
+        max=100.0,
+        precision=1,
+        description="Virtual screen-space coverage percentage override for simulation testing",
     )
     show_viewport_hud: BoolProperty(
         name="Show Viewport HUD",
@@ -653,6 +681,11 @@ class LODToolSettings(PropertyGroup):
     )
     batch_status_text: StringProperty(name="Batch Status", default="Batch Ready")
     is_batch_running: BoolProperty(name="Batch Running", default=False)
+    batch_total_count: IntProperty(name="Batch Total", default=0, min=0)
+    batch_processed_count: IntProperty(name="Batch Processed", default=0, min=0)
+    batch_current_asset: StringProperty(name="Batch Current Asset", default="")
+    num_lods: IntProperty(name="Num LODs", default=4, min=2, max=7)
+    cull_screen_size_pct: FloatProperty(name="Cull Screen Size %", default=0.5, min=0.0, max=10.0)
 
 
 CLASSES = (

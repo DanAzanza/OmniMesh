@@ -203,14 +203,19 @@ class LOD_OT_analyze_and_configure(Operator):
                 item = p.lods.add()
                 item.name = f"LOD{i}"
                 item.level_index = i
+                item.lod_index = i
                 item.screen_size_pct = s_pct
 
                 s_frac = max(0.001, s_pct / 100.0)
                 item.distance_m = compute_distance_from_screen_size(radius, s_frac, fov_v)
 
                 qem_ratio = max(0.01, min(1.0, math.pow(s_frac, 1.5)))
-                item.triangle_target = max(12, int(round(total_tris * qem_ratio)))
-                item.actual_triangles = total_tris if i == 0 else 0
+                target_tris_calc = max(12, int(round(total_tris * qem_ratio)))
+                item.triangle_target = target_tris_calc
+                item.target_tris = target_tris_calc
+                actual_tris_calc = total_tris if i == 0 else 0
+                item.actual_triangles = actual_tris_calc
+                item.actual_tris = actual_tris_calc
                 item.reduction_pct = 0.0 if i == 0 else (1.0 - qem_ratio) * 100.0
                 item.mat_slots_count = len(mesh_objs[0].material_slots) if mesh_objs else 0
 
@@ -675,7 +680,9 @@ class LOD_OT_generate_all(Operator):
                             )
                         WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
 
-                    tier.actual_tris = len(tier_obj.data.polygons)
+                    tris_count = len(tier_obj.data.polygons)
+                    tier.actual_tris = tris_count
+                    tier.actual_triangles = tris_count
                     tier.mat_slots_count = len(tier_obj.material_slots)
                     tier.generated_obj = tier_obj
                     generated_tier_objects.append(tier_obj)
@@ -761,7 +768,9 @@ class LOD_OT_generate_all(Operator):
 
                         tier_sub_objs.append(tier_obj)
 
-                    tier.actual_tris = sum(len(o.data.polygons) for o in tier_sub_objs)
+                    sub_tris_count = sum(len(o.data.polygons) for o in tier_sub_objs)
+                    tier.actual_tris = sub_tris_count
+                    tier.actual_triangles = sub_tris_count
                     tier.mat_slots_count = sum(len(o.material_slots) for o in tier_sub_objs)
                     tier.generated_obj = tier_sub_objs[0]
                     generated_tier_objects.extend(tier_sub_objs)
@@ -960,68 +969,6 @@ class LOD_OT_preview_tier(Operator):
         return {"FINISHED"}
 
 
-class LOD_OT_toggle_simulator(Operator):
-    """Toggle real-time distance-based LOD simulator."""
-
-    bl_idname = "lod_tool.toggle_simulator"
-    bl_label = "Toggle Real-Time Simulator"
-    bl_options = {"REGISTER"}
-
-    def execute(self, context: Any) -> set[str]:
-        if not bpy or not context:
-            return {"CANCELLED"}
-        props = context.scene.lod_tool
-
-        try:
-            from ..core.simulator import RealTimeLODSimulator
-        except (ImportError, ValueError):
-            from core.simulator import RealTimeLODSimulator
-
-        if props.is_simulator_active:
-            RealTimeLODSimulator.stop()
-            props.is_simulator_active = False
-            self.report({"INFO"}, "Real-Time LOD Simulator stopped.")
-        else:
-            started = RealTimeLODSimulator.start(context)
-            if started:
-                props.is_simulator_active = True
-                self.report({"INFO"}, "Real-Time LOD Simulator active.")
-            else:
-                self.report({"WARNING"}, "Failed to start simulator. Ensure LODs are generated.")
-        return {"FINISHED"}
-
-
-class LOD_OT_toggle_split_preview(Operator):
-    """Toggle interactive A/B split-screen viewport preview."""
-
-    bl_idname = "lod_tool.toggle_split_preview"
-    bl_label = "Toggle Split Preview"
-    bl_options = {"REGISTER"}
-
-    def execute(self, context: Any) -> set[str]:
-        if not bpy or not context:
-            return {"CANCELLED"}
-        props = context.scene.lod_tool
-
-        try:
-            from .hud import ViewportSplitPreview
-        except (ImportError, ValueError):
-            from ui.hud import ViewportSplitPreview
-
-        if props.is_split_active:
-            ViewportSplitPreview.stop()
-            props.is_split_active = False
-            self.report({"INFO"}, "Split-screen preview disabled.")
-        else:
-            started = ViewportSplitPreview.start(context)
-            if started:
-                props.is_split_active = True
-                self.report({"INFO"}, "Split-screen A/B preview enabled.")
-            else:
-                self.report({"WARNING"}, "Split-screen preview requires generated LODs.")
-        return {"FINISHED"}
-
-
 # Registration Order
 OPERATOR_CLASSES = (
     LOD_OT_analyze_and_configure,
@@ -1037,8 +984,6 @@ OPERATOR_CLASSES = (
     LOD_OT_generate_collision_hulls,
     LOD_OT_remove_collision_hulls,
     LOD_OT_preview_tier,
-    LOD_OT_toggle_simulator,
-    LOD_OT_toggle_split_preview,
 )
 
 

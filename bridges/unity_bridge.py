@@ -213,9 +213,18 @@ class UnityLiveBridge(EngineBridgeBase):
         if not export_dir or not os.path.exists(export_dir):
             return False, f"Export directory not found: '{export_dir}'"
 
-        fbx_path = os.path.join(export_dir, f"{asset_name}.fbx")
+        import re
+
+        clean_name = os.path.basename(str(asset_name))
+        clean_asset = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", clean_name).strip() or "SM_Asset"
+
+        fbx_path = os.path.join(export_dir, f"{clean_asset}.fbx")
         if not os.path.exists(fbx_path):
-            return False, f"Exported FBX not found: '{fbx_path}'"
+            fbx_files = [f for f in os.listdir(export_dir) if f.lower().endswith(".fbx")]
+            if fbx_files:
+                fbx_path = os.path.join(export_dir, fbx_files[0])
+            else:
+                return False, f"Exported FBX not found: '{fbx_path}'"
 
         is_valid, msg = cls.ping_engine(target_dir)
         if not is_valid:
@@ -224,24 +233,30 @@ class UnityLiveBridge(EngineBridgeBase):
         # Ensure companion script is installed
         cls.install_companion_scripts(target_dir)
 
-        dest_folder = os.path.join(target_dir, "Assets", "OmniMesh_Exports", asset_name)
-        os.makedirs(dest_folder, exist_ok=True)
+        resolved_proj = os.path.abspath(target_dir)
+        dest_folder = os.path.abspath(os.path.join(resolved_proj, "Assets", "OmniMesh_Exports", clean_asset))
+        if not dest_folder.startswith(resolved_proj):
+            return False, "Directory traversal detected in asset name."
 
-        copied_count = 0
-        if os.path.isdir(export_dir):
-            for item in os.listdir(export_dir):
-                s = os.path.join(export_dir, item)
-                d = os.path.join(dest_folder, item)
-                if os.path.isdir(s):
-                    if os.path.exists(d):
-                        shutil.rmtree(d)
-                    shutil.copytree(s, d)
-                    copied_count += 1
-                elif os.path.isfile(s):
-                    shutil.copy2(s, d)
-                    copied_count += 1
+        try:
+            os.makedirs(dest_folder, exist_ok=True)
+            copied_count = 0
+            if os.path.isdir(export_dir):
+                for item in os.listdir(export_dir):
+                    s = os.path.join(export_dir, item)
+                    d = os.path.join(dest_folder, item)
+                    if os.path.isdir(s):
+                        if os.path.exists(d):
+                            shutil.rmtree(d)
+                        shutil.copytree(s, d)
+                        copied_count += 1
+                    elif os.path.isfile(s):
+                        shutil.copy2(s, d)
+                        copied_count += 1
+        except (OSError, shutil.Error) as exc:
+            return False, f"Failed copying asset files to Unity project: {exc}"
 
-        return True, f"Synced {asset_name} ({copied_count} items) to Unity: Assets/OmniMesh_Exports/{asset_name}/"
+        return True, f"Synced {clean_asset} ({copied_count} items) to Unity: Assets/OmniMesh_Exports/{clean_asset}/"
 
 
 # Class alias for backward compatibility

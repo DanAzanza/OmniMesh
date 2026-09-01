@@ -1,10 +1,13 @@
 """
-Unit tests for OmniMesh Animation Rig Sanitizer & Action Validator.
+Unit tests for OmniMesh Animation Rig Sanitizer, Action Validator & Blender 5.2+ Action Slots.
 """
 
 from __future__ import annotations
 
-from core.animations import AnimationRigSanitizer
+import math
+import numpy as np
+
+from core.animations import AnimationRigSanitizer, _safe_invert_matrix
 
 
 class DummyKeyframePoint:
@@ -20,12 +23,15 @@ class DummyKeyframePoint:
 
 
 class DummyFCurve:
-    def __init__(self, data_path: str, key_x_list: list[float]):
+    def __init__(self, data_path: str, key_x_list: list[float], index: int = 0):
         self.data_path = data_path
+        self.array_index = index
         self.keyframe_points = [DummyKeyframePoint(x, 0.0) for x in key_x_list]
 
     def range(self) -> tuple[float, float]:
-        xs = [kp.co.x for kp in self.keyframe_points]
+        xs = [kp.co.x for kp in self.keyframe_points if math.isfinite(kp.co.x)]
+        if not xs:
+            return (0.0, 0.0)
         return min(xs), max(xs)
 
     def update(self):
@@ -139,6 +145,139 @@ def test_snap_action_to_integer_frames():
     # Handles should have shifted by dx
     assert fc.keyframe_points[1].handle_left.x == 9.0
     assert fc.keyframe_points[1].handle_right.x == 11.0
+
+
+def test_blender_52_slotted_actions():
+    # Mock Blender 5.2+ layered and slotted action data structures
+    class DummyChannelBag:
+        def __init__(self, slot=None):
+            self.slot = slot
+            self.fcurves_list = []
+
+        @property
+        def fcurves(self):
+            class FCurvesContainer:
+                def __init__(self, parent):
+                    self.parent = parent
+
+                def __iter__(self):
+                    return iter(self.parent.fcurves_list)
+
+                def new(self, data_path, index=0):
+                    fc = DummyFCurve(data_path, [0.0, 10.0, 20.0], index=index)
+                    self.parent.fcurves_list.append(fc)
+                    return fc
+
+            return FCurvesContainer(self)
+
+    class DummyStrip:
+        def __init__(self):
+            self.channelbags = []
+
+        def channelbag_for_slot(self, slot):
+            for cb in self.channelbags:
+                if cb.slot == slot:
+                    return cb
+            cb = DummyChannelBag(slot=slot)
+            self.channelbags.append(cb)
+            return cb
+
+    class DummyLayer:
+        def __init__(self, name="BaseLayer"):
+            self.name = name
+            self.strips = [DummyStrip()]
+
+    class DummySlot:
+        def __init__(self, name="ArmatureSlot"):
+            self.name = name
+
+    class DummySlotsCollection:
+        def __init__(self):
+            self._slots = []
+
+        def __iter__(self):
+            return iter(self._slots)
+
+        def __getitem__(self, idx):
+            return self._slots[idx]
+
+        def __bool__(self):
+            return bool(self._slots)
+
+        def new(self, id_type="OBJECT", name="ArmatureSlot"):
+            s = DummySlot(name)
+            self._slots.append(s)
+            return s
+
+    class DummyLayersCollection:
+        def __init__(self):
+            self._layers = []
+
+        def __iter__(self):
+            return iter(self._layers)
+
+        def __getitem__(self, idx):
+            return self._layers[idx]
+
+        def __bool__(self):
+            return bool(self._layers)
+
+        def new(self, name="BaseLayer"):
+            layer = DummyLayer(name)
+            self._layers.append(layer)
+            return layer
+
+    class DummySlottedAction:
+        def __init__(self, name="Slotted_Action"):
+            self.name = name
+            self.fcurves = None  # Blender 5.2 layered actions may have None fcurves
+            self.slots = DummySlotsCollection()
+            self.layers = DummyLayersCollection()
+
+    action = DummySlottedAction("Test_52_Slotted")
+
+    # Create F-Curve in slotted action
+    fc = AnimationRigSanitizer.create_action_fcurve(
+        action, data_path='pose.bones["Root"].location', index=0, slot_name="TestSlot"
+    )
+    assert fc is not None
+    assert fc.data_path == 'pose.bones["Root"].location'
+    assert fc.array_index == 0
+
+    # Extract F-Curves
+    extracted = AnimationRigSanitizer.get_action_fcurves(action)
+    assert len(extracted) == 1
+    assert extracted[0] is fc
+
+    # Bounds validation on slotted action
+    bounds = AnimationRigSanitizer.validate_action_bounds(action)
+    assert bounds["valid"] is True
+    assert bounds["start_frame"] == 0
+    assert bounds["end_frame"] == 20
+
+
+def test_safe_invert_matrix_singularity():
+    class SingularMatrix:
+        def __init__(self, arr: np.ndarray):
+            self.arr = arr
+
+        def determinant(self):
+            return float(np.linalg.det(self.arr))
+
+        def copy(self):
+            return SingularMatrix(self.arr.copy())
+
+        def inverted(self):
+            raise ValueError("Inversion failed")
+
+    # Zero scale matrix
+    zero_mat = np.zeros((4, 4))
+    mat = SingularMatrix(zero_mat)
+
+    # Must safely return copy without crashing
+    inv = _safe_invert_matrix(mat)
+    assert inv is not None
+    assert _safe_invert_matrix(None) is None
 
 
 def test_bake_and_nla_guards():

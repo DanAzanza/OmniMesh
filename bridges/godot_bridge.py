@@ -113,24 +113,34 @@ class GodotLiveBridge(EngineBridgeBase):
         if not gltf_files:
             return False, f"No glTF/GLB models found in export directory: '{export_dir}'"
 
-        target_dir = os.path.join(project_dir, "OmniMesh_Exports", asset_name)
-        os.makedirs(target_dir, exist_ok=True)
+        import re
 
-        copied = 0
-        for item in os.listdir(export_dir):
-            s = os.path.join(export_dir, item)
-            d = os.path.join(target_dir, item)
-            if os.path.isdir(s):
-                if os.path.exists(d):
-                    shutil.rmtree(d)
-                shutil.copytree(s, d)
-                copied += 1
-            else:
-                shutil.copy2(s, d)
-                copied += 1
+        clean_name = os.path.basename(str(asset_name))
+        clean_asset = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", clean_name).strip() or "SM_Asset"
+        resolved_proj = os.path.abspath(project_dir)
+        target_dir = os.path.abspath(os.path.join(resolved_proj, "OmniMesh_Exports", clean_asset))
+        if not target_dir.startswith(resolved_proj):
+            return False, "Directory traversal detected in asset name."
+
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            copied = 0
+            for item in os.listdir(export_dir):
+                s = os.path.join(export_dir, item)
+                d = os.path.join(target_dir, item)
+                if os.path.isdir(s):
+                    if os.path.exists(d):
+                        shutil.rmtree(d)
+                    shutil.copytree(s, d)
+                    copied += 1
+                else:
+                    shutil.copy2(s, d)
+                    copied += 1
+        except (OSError, shutil.Error) as exc:
+            return False, f"Failed copying asset files to Godot project: {exc}"
 
         cls.install_companion_scripts(project_dir)
         return (
             True,
-            f"Synced glTF asset '{asset_name}' ({copied} files) to Godot: res://OmniMesh_Exports/{asset_name}/",
+            f"Synced glTF asset '{clean_asset}' ({copied} files) to Godot: res://OmniMesh_Exports/{clean_asset}/",
         )

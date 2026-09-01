@@ -10,6 +10,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+import re
+
 try:
     import bpy
 except ImportError:
@@ -22,9 +24,14 @@ class GodotExporter:
         if not bpy or not context:
             return False, "Blender bpy not available."
         props = getattr(context.scene, "lod_tool", None)
-        os.makedirs(export_dir, exist_ok=True)
+        clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
 
-        coll = bpy.data.collections.get(f"{asset_name}_LODs") or (
+        try:
+            os.makedirs(export_dir, exist_ok=True)
+        except OSError as exc:
+            return False, f"Failed creating export directory '{export_dir}': {exc}"
+
+        coll = bpy.data.collections.get(f"{clean_name}_LODs") or (
             bpy.data.collections.get(f"{props.export_base_name}_LODs") if props else None
         )
 

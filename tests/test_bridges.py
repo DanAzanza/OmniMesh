@@ -208,3 +208,33 @@ def test_godot_sync_asset_validation():
             assert os.path.exists(dest_gltf)
             dest_script = os.path.join(proj_dir, "addons", "omnimesh", "OmniMeshPostImport.gd")
             assert os.path.exists(dest_script)
+
+
+def test_directory_traversal_prevention():
+    with tempfile.TemporaryDirectory() as proj_dir:
+        with tempfile.TemporaryDirectory() as exp_dir:
+            os.makedirs(os.path.join(proj_dir, "Assets"))
+            fbx_path = os.path.join(exp_dir, "test.fbx")
+            with open(fbx_path, "w") as f:
+                f.write("fbx")
+
+            # Unity traversal attempt with ../../
+            # Because asset name is sanitized using os.path.basename, traversal components are stripped safely
+            ok, msg = UnityLiveBridge.sync_asset(None, exp_dir, "../../../traversal_test", proj_dir)
+            assert ok is True
+            # Verified that destination is inside project dir and safely stripped
+            dest = os.path.join(proj_dir, "Assets", "OmniMesh_Exports", "traversal_test")
+            assert os.path.exists(dest)
+
+
+def test_godot_directory_traversal_prevention():
+    with tempfile.TemporaryDirectory() as proj_dir:
+        with tempfile.TemporaryDirectory() as exp_dir:
+            gltf_file = os.path.join(exp_dir, "model.gltf")
+            with open(gltf_file, "w") as f:
+                f.write("{}")
+
+            ok, msg = GodotLiveBridge.sync_asset(None, exp_dir, "../../../traversal_test", proj_dir)
+            assert ok is True
+            dest = os.path.join(proj_dir, "OmniMesh_Exports", "traversal_test")
+            assert os.path.exists(dest)

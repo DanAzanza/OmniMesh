@@ -62,31 +62,52 @@ class PreFlightValidator:
 
         # Empty geometry check
         for i, obj in enumerate(valid_objs):
-            if obj.type == "MESH" and hasattr(obj.data, "polygons") and len(obj.data.polygons) == 0:
+            if (
+                getattr(obj, "type", "") == "MESH"
+                and getattr(obj, "data", None)
+                and hasattr(obj.data, "polygons")
+                and len(obj.data.polygons) == 0
+            ):
                 errors.append(f"LOD{i} ('{obj.name}') has 0 polygons (empty geometry).")
 
         # Pivot / origin matching
-        lod0_pivot = valid_objs[0].matrix_world.translation
+        lod0_pivot = valid_objs[0].matrix_world.translation if hasattr(valid_objs[0], "matrix_world") else None
         for i, obj in enumerate(valid_objs):
-            if (obj.matrix_world.translation - lod0_pivot).length > 1e-4:
-                errors.append(f"LOD{i} origin does not match LOD0 pivot.")
+            if lod0_pivot and hasattr(obj, "matrix_world"):
+                if (obj.matrix_world.translation - lod0_pivot).length > 1e-4:
+                    errors.append(f"LOD{i} origin does not match LOD0 pivot.")
 
-            scale = obj.scale
-            if abs(scale.x - 1.0) > 1e-4 or abs(scale.y - 1.0) > 1e-4 or abs(scale.z - 1.0) > 1e-4:
-                errors.append(f"LOD{i} has unapplied scale {tuple(round(s, 2) for s in scale)}. Apply transforms.")
+            scale = getattr(obj, "scale", None)
+            if scale:
+                sx = getattr(scale, "x", scale[0] if isinstance(scale, (list, tuple)) else 1.0)
+                sy = getattr(scale, "y", scale[1] if isinstance(scale, (list, tuple)) else 1.0)
+                sz = getattr(scale, "z", scale[2] if isinstance(scale, (list, tuple)) else 1.0)
+                if abs(sx - 1.0) > 1e-4 or abs(sy - 1.0) > 1e-4 or abs(sz - 1.0) > 1e-4:
+                    errors.append(
+                        f"LOD{i} has unapplied scale ({round(sx, 2)}, {round(sy, 2)}, {round(sz, 2)}). Apply transforms."
+                    )
 
         # Material checks
         for i, obj in enumerate(valid_objs):
-            if len(obj.material_slots) == 0 and len(valid_objs[0].material_slots) > 0:
+            if len(getattr(obj, "material_slots", [])) == 0 and len(getattr(valid_objs[0], "material_slots", [])) > 0:
                 errors.append(f"LOD{i} is missing material slots.")
-            for slot_idx, slot in enumerate(obj.material_slots):
+            for slot_idx, slot in enumerate(getattr(obj, "material_slots", [])):
                 if slot.material is None:
                     errors.append(f"LOD{i} has unassigned material in slot {slot_idx}.")
+
+        # Asset name validation
+        if props.export_base_name:
+            import re
+
+            if re.search(r'[<>:"/\\|?*\x00-\x1f]', props.export_base_name):
+                errors.append(f"Export asset name '{props.export_base_name}' contains invalid characters.")
 
         # Export directory validation
         export_dir_str = props.export_directory.strip() if props.export_directory else ""
         if not export_dir_str:
             errors.append("Export directory path is empty.")
+        elif "\x00" in export_dir_str:
+            errors.append("Export directory path contains invalid null bytes.")
 
         return errors
 
@@ -117,8 +138,13 @@ class LOD_OT_pack_pbr_textures(Operator):
         tex_dir = os.path.join(export_dir, "Textures")
         os.makedirs(tex_dir, exist_ok=True)
 
-        res = int(props.texture_max_resolution)
-        target_size = (res, res)
+        res_str = str(getattr(props, "texture_max_resolution", "2048"))
+        if res_str.isdigit():
+            res = int(res_str)
+            target_size = (res, res)
+        else:
+            target_size = (2048, 2048)
+
         target_engine = props.target_engine
 
         materials: set[Any] = set()
@@ -139,9 +165,11 @@ class LOD_OT_pack_pbr_textures(Operator):
             self.report({"WARNING"}, "No materials found on selected or LOD objects.")
             return {"CANCELLED"}
 
+        import re
+
         packed_count = 0
         for mat in materials:
-            mat_name = mat.name.replace(" ", "_")
+            mat_name = re.sub(r"[^\w\-_\.]", "_", mat.name)
             try:
                 if target_engine == "UE5":
                     orm_path = os.path.join(tex_dir, f"T_{mat_name}_ORM.png")
@@ -256,7 +284,10 @@ class LOD_OT_export_engine_package(Operator):
             return {"CANCELLED"}
 
         export_dir = bpy.path.abspath(props.export_directory)
-        asset_name = props.export_base_name or "SM_Asset"
+        import re
+
+        raw_name = props.export_base_name.strip() if props.export_base_name else "SM_Asset"
+        asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name) or "SM_Asset"
         target = props.target_engine
 
         # Auto-pack PBR textures if enabled

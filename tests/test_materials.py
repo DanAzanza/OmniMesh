@@ -232,3 +232,31 @@ def test_clean_materials_full_null_and_summary():
     assert stats["orphan_nodes_removed"] == 0
     assert stats["merged_datablocks"] == 0
     assert stats["purged_orphans"] == 0
+
+
+def test_material_optimizer_purge_unused_materials():
+    mat_gold = DummyMaterial("Gold")
+    slots = [DummyMaterialSlot(mat_gold), DummyMaterialSlot(None)]
+    polys = [DummyPolygon(0, 10.0)]
+    obj = DummyMeshObject(slots, polys)
+
+    res = MaterialOptimizer.purge_unused_materials(obj)
+    assert res["slots_removed"] == 1
+    assert len(obj.data.materials) == 1
+    assert obj.data.materials[0] == mat_gold
+
+
+def test_material_optimizer_consolidate_micro_materials_null_and_area_crit():
+    assert MaterialOptimizer.consolidate_micro_materials(None) == {"consolidated_slots": 0, "faces_reassigned": 0}
+
+    # Empty slots
+    empty_obj = DummyMeshObject([], [])
+    assert MaterialOptimizer.consolidate_micro_materials(empty_obj) == {"consolidated_slots": 0, "faces_reassigned": 0}
+
+    # Area crit argument handling
+    slots = [DummyMaterialSlot(DummyMaterial("Mat0")), DummyMaterialSlot(DummyMaterial("Mat1"))]
+    polys = [DummyPolygon(0, 100.0), DummyPolygon(1, 0.001)]
+    obj = DummyMeshObject(slots, polys)
+    # BMesh not available in standalone mock, returns early safely
+    res = MaterialOptimizer.consolidate_micro_materials(obj, area_crit=0.01)
+    assert "consolidated_slots" in res

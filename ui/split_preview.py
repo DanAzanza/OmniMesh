@@ -197,43 +197,63 @@ class OMNIMESH_OT_toggle_split_preview(Operator):
         return {"PASS_THROUGH"}
 
     def update_split_state(self, context: Any) -> None:
+        if not context or not hasattr(context, "scene") or not hasattr(context.scene, "lod_tool"):
+            return
         props = context.scene.lod_tool
-        target_idx = min(props.split_compare_tier, len(props.lods) - 1)
+        if not props.lods or len(props.lods) < 2:
+            return
+
+        try:
+            compare_str = str(props.split_compare_tier)
+            if compare_str.startswith("LOD"):
+                target_idx = int(compare_str.replace("LOD", ""))
+            else:
+                target_idx = int(compare_str)
+        except (ValueError, TypeError):
+            target_idx = 1
+
+        target_idx = max(1, min(target_idx, len(props.lods) - 1))
         target_tier = props.lods[target_idx]
         lod0_tier = props.lods[0]
 
-        lod0_tris = lod0_tier.actual_tris or (
+        lod0_tris = getattr(lod0_tier, "actual_tris", 0) or (
             len(lod0_tier.generated_obj.data.polygons)
-            if lod0_tier.generated_obj and lod0_tier.generated_obj.data
+            if getattr(lod0_tier, "generated_obj", None) and getattr(lod0_tier.generated_obj, "data", None)
             else 0
         )
-        target_tris = target_tier.actual_tris or (
+        target_tris = getattr(target_tier, "actual_tris", 0) or (
             len(target_tier.generated_obj.data.polygons)
-            if target_tier.generated_obj and target_tier.generated_obj.data
+            if getattr(target_tier, "generated_obj", None) and getattr(target_tier.generated_obj, "data", None)
             else 0
         )
+
+        tier_name = getattr(target_tier, "name", f"LOD{target_idx}")
+        screen_pct = getattr(target_tier, "screen_size_pct", 50.0)
 
         SplitPreviewEngine.update_overlay_cache(
             is_active=props.is_split_active,
             split_ratio=props.split_ratio,
             left_label="LOD0 (Master)",
-            right_label=f"{target_tier.name} ({target_tier.screen_size_pct:.1f}%)",
+            right_label=f"{tier_name} ({screen_pct:.1f}%)",
             left_tris=lod0_tris,
             right_tris=target_tris,
         )
 
     def cancel_split(self, context: Any) -> set[str]:
-        props = context.scene.lod_tool
-        props.is_split_active = False
+        if context and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
+            props = context.scene.lod_tool
+            props.is_split_active = False
         self._is_dragging = False
         SplitPreviewEngine.update_overlay_cache(False, 0.5, "", "", 0, 0)
         SplitPreviewEngine.unregister_draw_handler()
 
-        for area in context.screen.areas:
-            if area.type == "VIEW_3D":
-                area.tag_redraw()
+        if context and hasattr(context, "screen") and context.screen:
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    area.tag_redraw()
 
-        self.report({"INFO"}, "A/B Split-Screen comparison closed.")
+        if hasattr(self, "report"):
+            self.report({"INFO"}, "A/B Split-Screen comparison closed.")
         return {"FINISHED"}
 
 

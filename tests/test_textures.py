@@ -1,15 +1,16 @@
 """
-Unit tests for OmniMesh PBR Texture Channel Packer & Normal Map Converter.
+Unit tests for OmniMesh PBR Texture Channel Packer, Thread Safety & Normal Map Converter.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import tempfile
 import numpy as np
 from PIL import Image
 
-from core.textures import TextureChannelPacker
+from core.textures import TextureChannelPacker, TexturePoolManager
 
 
 class DummySocket:
@@ -34,9 +35,9 @@ class DummyTexImageNode:
 
 
 class DummyRerouteNode:
-    def __init__(self, target_node: object):
+    def __init__(self, target_node: object | None = None):
         self.type = "REROUTE"
-        self.inputs = [DummySocket(0.0, linked_node=target_node)]
+        self.inputs = [DummySocket(0.0, linked_node=target_node)] if target_node else []
 
 
 class DummyNormalMapNode:
@@ -155,6 +156,17 @@ def test_get_material_normal_image_reroute_and_bump():
     assert TextureChannelPacker.get_material_normal_image(DummyMaterial(use_nodes=False)) is None
 
 
+def test_reroute_cycle_protection():
+    # Create cyclic reroutes A -> B -> A
+    reroute_a = DummyRerouteNode(None)
+    reroute_b = DummyRerouteNode(reroute_a)
+    reroute_a.inputs = [DummySocket(0.0, linked_node=reroute_b)]
+
+    mat_cycle = DummyMaterial(normal_node=reroute_a)
+    # Should safely break cycle and return None without hanging in infinite loop
+    assert TextureChannelPacker.get_material_normal_image(mat_cycle) is None
+
+
 def test_pack_orm_ue5():
     mat = DummyMaterial()
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -255,13 +267,106 @@ def test_convert_normal_directx():
     assert TextureChannelPacker.convert_normal_directx(None, "dummy.png") is False
 
 
+def test_convert_normal_directx_nan_inf_sanitization():
+    class CorruptNormalImage:
+        def __init__(self):
+            self.size = (32, 32)
+            self.name = "T_Corrupt_Normal"
+            floats = np.zeros(32 * 32 * 4, dtype=np.float32)
+            floats[0::4] = float("nan")
+            floats[1::4] = float("inf")
+            floats[2::4] = float("-inf")
+            floats[3::4] = float("nan")
+            self._pixels = floats
+
+        @property
+        def pixels(self):
+            class PixelsWrapper:
+                def __init__(self, data):
+                    self.data = data
+
+                def foreach_get(self, dest):
+                    np.copyto(dest, self.data)
+
+            return PixelsWrapper(self._pixels)
+
+    src_img = CorruptNormalImage()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "T_Normal_Sanitized.png")
+        success = TextureChannelPacker.convert_normal_directx(src_img, out_path, (32, 32))
+        assert success is True
+        assert os.path.exists(out_path)
+
+        img = Image.open(out_path)
+        arr = np.asarray(img)
+        # NaN in Red -> 0.5 -> 128
+        assert np.allclose(arr[:, :, 0], 128, atol=1)
+        # Inf in Green -> 1.0 -> inverted for DirectX (255 - 255 = 0)
+        assert np.allclose(arr[:, :, 1], 0, atol=1)
+        # -Inf in Blue -> 0.0 -> 0
+        assert np.all(arr[:, :, 2] == 0)
+        img.close()
+
+
+def test_save_array_to_disk_dimensions():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # 2D Grayscale
+        arr_2d = np.full((32, 32), 100, dtype=np.uint8)
+        p_2d = os.path.join(tmpdir, "test_2d.png")
+        assert TextureChannelPacker._save_array_to_disk(arr_2d, p_2d) is True
+        img_2d = Image.open(p_2d)
+        assert img_2d.mode == "L"
+        img_2d.close()
+
+        # 3D 1-channel
+        arr_3d_1 = np.full((32, 32, 1), 150, dtype=np.uint8)
+        p_3d_1 = os.path.join(tmpdir, "test_3d_1.png")
+        assert TextureChannelPacker._save_array_to_disk(arr_3d_1, p_3d_1) is True
+        img_3d_1 = Image.open(p_3d_1)
+        assert img_3d_1.mode == "L"
+        img_3d_1.close()
+
+        # 3D 3-channel RGB
+        arr_rgb = np.full((32, 32, 3), 200, dtype=np.uint8)
+        p_rgb = os.path.join(tmpdir, "test_rgb.png")
+        assert TextureChannelPacker._save_array_to_disk(arr_rgb, p_rgb) is True
+        img_rgb = Image.open(p_rgb)
+        assert img_rgb.mode == "RGB"
+        img_rgb.close()
+
+        # 3D 4-channel RGBA
+        arr_rgba = np.full((32, 32, 4), 255, dtype=np.uint8)
+        p_rgba = os.path.join(tmpdir, "test_rgba.png")
+        assert TextureChannelPacker._save_array_to_disk(arr_rgba, p_rgba) is True
+        img_rgba = Image.open(p_rgba)
+        assert img_rgba.mode == "RGBA"
+        img_rgba.close()
+
+        # Invalid arrays
+        assert TextureChannelPacker._save_array_to_disk(None, p_rgba) is False  # type: ignore
+        assert TextureChannelPacker._save_array_to_disk(np.empty((0, 0), dtype=np.uint8), p_rgba) is False
+
+
+def test_texture_pool_manager_worker_exception_handling():
+    # Future that raises an exception
+    f_err: concurrent.futures.Future[bool] = concurrent.futures.Future()
+    f_err.set_exception(IOError("Simulated disk error"))
+
+    # Future that succeeds
+    f_ok: concurrent.futures.Future[bool] = concurrent.futures.Future()
+    f_ok.set_result(True)
+
+    results = TexturePoolManager.wait_all([f_err, f_ok], timeout=5.0)
+    assert len(results) == 2
+    assert results[0] is False  # Handled without throwing unhandled exception
+    assert results[1] is True
+
+
 def test_memory_compaction():
     TextureChannelPacker.compact_memory()
 
 
 def test_texture_pool_manager_submit_and_wait_all():
-    from core.textures import TexturePoolManager
-
     with tempfile.TemporaryDirectory() as tmpdir:
         arr1 = np.full((32, 32, 4), 128, dtype=np.uint8)
         arr2 = np.full((32, 32, 4), 255, dtype=np.uint8)
@@ -279,6 +384,5 @@ def test_texture_pool_manager_submit_and_wait_all():
 
 
 def test_texture_pool_manager_wait_empty():
-    from core.textures import TexturePoolManager
-
     assert TexturePoolManager.wait_all([]) == []
+    TexturePoolManager.shutdown()

@@ -154,3 +154,24 @@ def test_validator_all_checks_pass():
     ctx = MockContext(props)
     errors = PreFlightValidator.run_checks(ctx)
     assert len(errors) == 0
+
+
+def test_validator_invalid_asset_name():
+    obj0 = MockObject("LOD0")
+    obj1 = MockObject("LOD1")
+    props = MockLODToolProps()
+    props.export_base_name = "Invalid:Name*?"
+    props.lods = [MockLODTier(obj0), MockLODTier(obj1)]
+    ctx = MockContext(props)
+    errors = PreFlightValidator.run_checks(ctx)
+    assert any("contains invalid characters" in e for e in errors)
+
+
+def test_validator_null_byte_in_path():
+    obj0 = MockObject("LOD0")
+    obj1 = MockObject("LOD1")
+    props = MockLODToolProps(export_dir="//Export/\x00/Test")
+    props.lods = [MockLODTier(obj0), MockLODTier(obj1)]
+    ctx = MockContext(props)
+    errors = PreFlightValidator.run_checks(ctx)
+    assert any("null bytes" in e for e in errors)

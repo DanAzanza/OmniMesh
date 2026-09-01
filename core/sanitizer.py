@@ -72,11 +72,16 @@ class MeshSanitizer:
         if not bmesh or not bm or not hasattr(bm, "faces") or len(bm.faces) == 0:
             return 0
 
-        bm.faces.ensure_lookup_table()
+        try:
+            bm.faces.ensure_lookup_table()
+        except Exception as exc:
+            logger.debug("Lookup table init error: %s", exc)
+            return 0
+
         vert_set_to_faces: Dict[frozenset[Any], List[Any]] = {}
 
         for f in bm.faces:
-            if not f.is_valid:
+            if not getattr(f, "is_valid", False):
                 continue
             key = frozenset(f.verts)
             if key not in vert_set_to_faces:
@@ -95,10 +100,20 @@ class MeshSanitizer:
                 for kept in kept_faces:
                     # Check normal alignment
                     try:
-                        n_dot = candidate.normal.dot(kept.normal)
-                        if n_dot > 0.999:  # Exact duplicate coplanar face
-                            is_duplicate = True
-                            break
+                        n1 = candidate.normal
+                        n2 = kept.normal
+                        n1_sq = n1[0] * n1[0] + n1[1] * n1[1] + n1[2] * n1[2]
+                        n2_sq = n2[0] * n2[0] + n2[1] * n2[1] + n2[2] * n2[2]
+                        if n1_sq > 1e-8 and n2_sq > 1e-8:
+                            if hasattr(n1, "dot"):
+                                n_dot = n1.dot(n2)
+                            else:
+                                n_dot = (n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) / (
+                                    mathutils.sqrt(n1_sq * n2_sq) if mathutils else (n1_sq * n2_sq) ** 0.5
+                                )
+                            if n_dot > 0.999:  # Exact duplicate coplanar face
+                                is_duplicate = True
+                                break
                     except Exception as exc:
                         logger.debug("Duplicate face normal check error: %s", exc)
 
@@ -108,11 +123,14 @@ class MeshSanitizer:
                     kept_faces.append(candidate)
 
         if faces_to_delete:
-            bmesh.ops.delete(bm, geom=faces_to_delete, context="FACES_ONLY")
-            bm.faces.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            bm.verts.ensure_lookup_table()
-            return len(faces_to_delete)
+            try:
+                bmesh.ops.delete(bm, geom=faces_to_delete, context="FACES_ONLY")
+                bm.faces.ensure_lookup_table()
+                bm.edges.ensure_lookup_table()
+                bm.verts.ensure_lookup_table()
+                return len(faces_to_delete)
+            except Exception as exc:
+                logger.debug("Delete duplicate faces error: %s", exc)
 
         return 0
 
@@ -127,9 +145,13 @@ class MeshSanitizer:
         if not bmesh or not bm or not hasattr(bm, "verts"):
             return {"zero_faces": 0, "zero_edges": 0, "wire_edges": 0, "loose_verts": 0, "duplicate_faces": 0}
 
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
+        try:
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+        except Exception as exc:
+            logger.debug("Lookup table init error in tier0: %s", exc)
+            return {"zero_faces": 0, "zero_edges": 0, "wire_edges": 0, "loose_verts": 0, "duplicate_faces": 0}
 
         total_stats = {
             "zero_faces": 0,
@@ -147,17 +169,36 @@ class MeshSanitizer:
             pass_culled = 0
 
             # Step A: Zero-area faces
-            zero_faces = [f for f in bm.faces if f.is_valid and f.calc_area() < max(1e-15, min_face_area)]
+            zero_faces = []
+            for f in bm.faces:
+                if getattr(f, "is_valid", False):
+                    try:
+                        if f.calc_area() < max(1e-15, min_face_area):
+                            zero_faces.append(f)
+                    except Exception:
+                        zero_faces.append(f)
+
             if zero_faces:
                 pass_culled += len(zero_faces)
                 total_stats["zero_faces"] += len(zero_faces)
-                bmesh.ops.delete(bm, geom=zero_faces, context="FACES_ONLY")
-                bm.faces.ensure_lookup_table()
-                bm.edges.ensure_lookup_table()
-                bm.verts.ensure_lookup_table()
+                try:
+                    bmesh.ops.delete(bm, geom=zero_faces, context="FACES_ONLY")
+                    bm.faces.ensure_lookup_table()
+                    bm.edges.ensure_lookup_table()
+                    bm.verts.ensure_lookup_table()
+                except Exception as exc:
+                    logger.debug("Delete zero faces error: %s", exc)
 
             # Step B: Zero-length edges
-            zero_edges = [e for e in bm.edges if e.is_valid and e.calc_length() < max(1e-12, min_edge_length)]
+            zero_edges = []
+            for e in bm.edges:
+                if getattr(e, "is_valid", False):
+                    try:
+                        if e.calc_length() < max(1e-12, min_edge_length):
+                            zero_edges.append(e)
+                    except Exception:
+                        zero_edges.append(e)
+
             if zero_edges:
                 pass_culled += len(zero_edges)
                 total_stats["zero_edges"] += len(zero_edges)
@@ -165,31 +206,43 @@ class MeshSanitizer:
                     bmesh.ops.collapse(bm, edges=zero_edges)
                 except (RuntimeError, ValueError, IndexError) as exc:
                     logger.debug("Edge collapse fallback in Tier 0: %s", exc)
-                bm.verts.ensure_lookup_table()
-                bm.edges.ensure_lookup_table()
-                bm.faces.ensure_lookup_table()
+                try:
+                    bm.verts.ensure_lookup_table()
+                    bm.edges.ensure_lookup_table()
+                    bm.faces.ensure_lookup_table()
+                except Exception as exc:
+                    logger.debug("Lookup table ensure error: %s", exc)
 
             # Step C: Wire edges (no linked faces)
-            wire_edges = [e for e in bm.edges if e.is_valid and not e.link_faces]
+            wire_edges = [e for e in bm.edges if getattr(e, "is_valid", False) and not getattr(e, "link_faces", [])]
             if wire_edges:
                 pass_culled += len(wire_edges)
                 total_stats["wire_edges"] += len(wire_edges)
-                bmesh.ops.delete(bm, geom=wire_edges, context="EDGES")
-                bm.edges.ensure_lookup_table()
-                bm.verts.ensure_lookup_table()
+                try:
+                    bmesh.ops.delete(bm, geom=wire_edges, context="EDGES")
+                    bm.edges.ensure_lookup_table()
+                    bm.verts.ensure_lookup_table()
+                except Exception as exc:
+                    logger.debug("Delete wire edges error: %s", exc)
 
             # Step D: Isolated loose vertices (no linked edges)
-            loose_verts = [v for v in bm.verts if v.is_valid and not v.link_edges]
+            loose_verts = [v for v in bm.verts if getattr(v, "is_valid", False) and not getattr(v, "link_edges", [])]
             if loose_verts:
                 pass_culled += len(loose_verts)
                 total_stats["loose_verts"] += len(loose_verts)
-                bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
-                bm.verts.ensure_lookup_table()
+                try:
+                    bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
+                    bm.verts.ensure_lookup_table()
+                except Exception as exc:
+                    logger.debug("Delete loose verts error: %s", exc)
 
             if pass_culled == 0:
                 break
 
-        bm.verts.index_update()
+        try:
+            bm.verts.index_update()
+        except Exception as exc:
+            logger.debug("Index update error: %s", exc)
         return total_stats
 
     # Backward compatibility alias
@@ -203,16 +256,20 @@ class MeshSanitizer:
         """
         if not bmesh or not bm or dist < 1e-9 or not hasattr(bm, "verts"):
             return 0
-        bm.verts.ensure_lookup_table()
-        initial_verts = len(bm.verts)
-        if initial_verts <= 1:
+        try:
+            bm.verts.ensure_lookup_table()
+            initial_verts = len(bm.verts)
+            if initial_verts <= 1:
+                return 0
+            bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=max(1e-8, dist))
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            bm.verts.index_update()
+            return max(0, initial_verts - len(bm.verts))
+        except Exception as exc:
+            logger.debug("Merge doubles error: %s", exc)
             return 0
-        bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=max(1e-8, dist))
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
-        bm.verts.index_update()
-        return max(0, initial_verts - len(bm.verts))
 
     @staticmethod
     def split_bowtie_vertices(bm: Any) -> int:
@@ -223,14 +280,26 @@ class MeshSanitizer:
         """
         if not bmesh or not bm or not hasattr(bm, "verts"):
             return 0
-        bm.verts.ensure_lookup_table()
-        split_count = 0
+        try:
+            bm.verts.ensure_lookup_table()
+        except Exception as exc:
+            logger.debug("Lookup table init error in split_bowtie_vertices: %s", exc)
+            return 0
 
-        dvert_lay = bm.verts.layers.deform.active if hasattr(bm.verts.layers, "deform") else None
-        uv_layers = list(bm.loops.layers.uv.values()) if hasattr(bm.loops.layers, "uv") else []
+        split_count = 0
+        dvert_lay = (
+            bm.verts.layers.deform.active
+            if (hasattr(bm.verts, "layers") and hasattr(bm.verts.layers, "deform"))
+            else None
+        )
+        uv_layers = (
+            list(bm.loops.layers.uv.values())
+            if (hasattr(bm, "loops") and hasattr(bm.loops, "layers") and hasattr(bm.loops.layers, "uv"))
+            else []
+        )
 
         for vert in list(bm.verts):
-            if not vert.is_valid or len(vert.link_faces) <= 1:
+            if not getattr(vert, "is_valid", False) or len(getattr(vert, "link_faces", [])) <= 1:
                 continue
 
             face_set = set(vert.link_faces)
@@ -243,10 +312,10 @@ class MeshSanitizer:
 
                 while queue:
                     curr_face = queue.pop(0)
-                    for edge in curr_face.edges:
-                        if vert not in edge.verts:
+                    for edge in getattr(curr_face, "edges", []):
+                        if vert not in getattr(edge, "verts", []):
                             continue
-                        for nbr_face in edge.link_faces:
+                        for nbr_face in getattr(edge, "link_faces", []):
                             if nbr_face in face_set:
                                 face_set.remove(nbr_face)
                                 fan.append(nbr_face)
@@ -256,30 +325,42 @@ class MeshSanitizer:
             if len(fans) > 1:
                 # Capture deform weights from original vertex
                 orig_weights = {}
-                if dvert_lay and vert[dvert_lay]:
-                    orig_weights = dict(vert[dvert_lay])
+                if dvert_lay:
+                    try:
+                        if vert[dvert_lay]:
+                            orig_weights = dict(vert[dvert_lay])
+                    except Exception:
+                        orig_weights = {}
 
                 for extra_fan in fans[1:]:
                     new_vert = bm.verts.new(vert.co)
                     if dvert_lay and orig_weights:
-                        dvert = new_vert[dvert_lay]
-                        for g_idx, w in orig_weights.items():
-                            dvert[g_idx] = w
+                        try:
+                            dvert = new_vert[dvert_lay]
+                            for g_idx, w in orig_weights.items():
+                                dvert[g_idx] = w
+                        except Exception as exc:
+                            logger.debug("Deform weight assign error: %s", exc)
 
                     for face in extra_fan:
-                        if not face.is_valid:
+                        if not getattr(face, "is_valid", False):
                             continue
                         face_verts = list(face.verts)
+                        if vert not in face_verts:
+                            continue
                         idx = face_verts.index(vert)
                         face_verts[idx] = new_vert
-                        mat_idx = face.material_index
-                        smooth = face.smooth
+                        mat_idx = getattr(face, "material_index", 0)
+                        smooth = getattr(face, "smooth", True)
 
                         # Store UV loop coordinates before removing face
                         saved_uvs: Dict[Tuple[Any, int], Any] = {}
                         for lp_i, lp in enumerate(face.loops):
                             for uv_lay in uv_layers:
-                                saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
+                                try:
+                                    saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
+                                except Exception as exc:
+                                    logger.debug("Loop UV copy error: %s", exc)
 
                         bm.faces.remove(face)
                         try:
@@ -291,62 +372,120 @@ class MeshSanitizer:
                             for lp_i, new_lp in enumerate(new_face.loops):
                                 for uv_lay in uv_layers:
                                     if (uv_lay, lp_i) in saved_uvs:
-                                        new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
-                        except ValueError:
-                            pass
+                                        try:
+                                            new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
+                                        except Exception as exc:
+                                            logger.debug("Reapply UV error: %s", exc)
+                        except ValueError as exc:
+                            logger.debug("New face creation error: %s", exc)
                     split_count += 1
 
         if split_count > 0:
-            bm.verts.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            bm.faces.ensure_lookup_table()
-            bm.verts.index_update()
+            try:
+                bm.verts.ensure_lookup_table()
+                bm.edges.ensure_lookup_table()
+                bm.faces.ensure_lookup_table()
+                bm.verts.index_update()
+            except Exception as exc:
+                logger.debug("Lookup table ensure error: %s", exc)
 
         return split_count
 
     @staticmethod
     def split_non_manifold_edges(bm: Any) -> int:
         """
-        Detects and splits non-manifold edges connected to > 2 faces into separate manifold edges.
+        Detects and splits non-manifold edges connected to > 2 faces into separate manifold edges,
+        preserving UV layers, deform weights (vertex groups), face attributes, and smoothing.
         """
         if not bmesh or not bm or not hasattr(bm, "edges"):
             return 0
-        bm.edges.ensure_lookup_table()
-        split_count = 0
+        try:
+            bm.edges.ensure_lookup_table()
+        except Exception as exc:
+            logger.debug("Lookup table init error in split_non_manifold_edges: %s", exc)
+            return 0
 
-        non_manifold_edges = [e for e in bm.edges if e.is_valid and len(e.link_faces) > 2]
+        split_count = 0
+        non_manifold_edges = [
+            e for e in bm.edges if getattr(e, "is_valid", False) and len(getattr(e, "link_faces", [])) > 2
+        ]
         if not non_manifold_edges:
             return 0
 
+        dvert_lay = (
+            bm.verts.layers.deform.active
+            if (hasattr(bm.verts, "layers") and hasattr(bm.verts.layers, "deform"))
+            else None
+        )
+        uv_layers = (
+            list(bm.loops.layers.uv.values())
+            if (hasattr(bm, "loops") and hasattr(bm.loops, "layers") and hasattr(bm.loops.layers, "uv"))
+            else []
+        )
+
         # Split non-manifold edges by duplicating extra faces
         for edge in non_manifold_edges:
-            if not edge.is_valid or len(edge.link_faces) <= 2:
+            if not getattr(edge, "is_valid", False) or len(getattr(edge, "link_faces", [])) <= 2:
                 continue
             # Duplicate excess faces onto new vertices
             faces_to_split = list(edge.link_faces)[2:]
             for face in faces_to_split:
-                if not face.is_valid:
+                if not getattr(face, "is_valid", False):
                     continue
                 v1, v2 = edge.verts
                 nv1 = bm.verts.new(v1.co)
                 nv2 = bm.verts.new(v2.co)
+
+                if dvert_lay:
+                    try:
+                        if v1[dvert_lay]:
+                            dvert1 = nv1[dvert_lay]
+                            for g_idx, w in dict(v1[dvert_lay]).items():
+                                dvert1[g_idx] = w
+                        if v2[dvert_lay]:
+                            dvert2 = nv2[dvert_lay]
+                            for g_idx, w in dict(v2[dvert_lay]).items():
+                                dvert2[g_idx] = w
+                    except Exception as exc:
+                        logger.debug("Deform weight copy error in split_non_manifold_edges: %s", exc)
+
                 face_verts = [nv1 if v == v1 else (nv2 if v == v2 else v) for v in face.verts]
-                mat_idx = face.material_index
-                smooth = face.smooth
+                mat_idx = getattr(face, "material_index", 0)
+                smooth = getattr(face, "smooth", True)
+
+                saved_uvs: Dict[Tuple[Any, int], Any] = {}
+                for lp_i, lp in enumerate(face.loops):
+                    for uv_lay in uv_layers:
+                        try:
+                            saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
+                        except Exception as exc:
+                            logger.debug("Loop UV copy error: %s", exc)
+
                 bm.faces.remove(face)
                 try:
                     nf = bm.faces.new(face_verts)
                     nf.material_index = mat_idx
                     nf.smooth = smooth
+
+                    for lp_i, new_lp in enumerate(nf.loops):
+                        for uv_lay in uv_layers:
+                            if (uv_lay, lp_i) in saved_uvs:
+                                try:
+                                    new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
+                                except Exception as exc:
+                                    logger.debug("Loop UV restoration failed: %s", exc)
                     split_count += 1
-                except ValueError:
-                    pass
+                except ValueError as exc:
+                    logger.debug("Face creation failed: %s", exc)
 
         if split_count > 0:
-            bm.verts.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            bm.faces.ensure_lookup_table()
-            bm.verts.index_update()
+            try:
+                bm.verts.ensure_lookup_table()
+                bm.edges.ensure_lookup_table()
+                bm.faces.ensure_lookup_table()
+                bm.verts.index_update()
+            except Exception as exc:
+                logger.debug("Lookup table update failed: %s", exc)
 
         return split_count
 
@@ -358,9 +497,13 @@ class MeshSanitizer:
         """
         if not bmesh or not bm or not hasattr(bm, "edges") or max_edges < 3:
             return 0
-        bm.edges.ensure_lookup_table()
+        try:
+            bm.edges.ensure_lookup_table()
+        except Exception as exc:
+            logger.debug("Lookup table init error in fill_small_boundary_holes: %s", exc)
+            return 0
 
-        boundary_edges = [e for e in bm.edges if e.is_valid and e.is_boundary]
+        boundary_edges = [e for e in bm.edges if getattr(e, "is_valid", False) and getattr(e, "is_boundary", False)]
         if not boundary_edges:
             return 0
 
@@ -387,11 +530,16 @@ class MeshSanitizer:
         """
         if not bmesh or not bm or not hasattr(bm, "faces") or w_crit <= 1e-6:
             return 0
-        bm.faces.ensure_lookup_table()
+        try:
+            bm.faces.ensure_lookup_table()
+        except Exception as exc:
+            logger.debug("Lookup table init error in cull_subpixel_islands: %s", exc)
+            return 0
+
         if len(bm.faces) == 0:
             return 0
 
-        unvisited: Set[Any] = set(bm.faces)
+        unvisited: Set[Any] = set(f for f in bm.faces if getattr(f, "is_valid", False))
         islands: List[List[Any]] = []
 
         while unvisited:
@@ -400,8 +548,8 @@ class MeshSanitizer:
             queue = [start]
             while queue:
                 curr = queue.pop(0)
-                for edge in curr.edges:
-                    for nbr in edge.link_faces:
+                for edge in getattr(curr, "edges", []):
+                    for nbr in getattr(edge, "link_faces", []):
                         if nbr in unvisited:
                             unvisited.remove(nbr)
                             island.append(nbr)
@@ -413,33 +561,39 @@ class MeshSanitizer:
 
         culled_faces: List[Any] = []
         for island in islands:
-            unique_verts = set(v for f in island for v in f.verts)
+            unique_verts = set(v for f in island for v in getattr(f, "verts", []))
             if not unique_verts:
                 continue
 
-            if world_matrix is not None and hasattr(world_matrix, "__matmul__"):
-                coords = [world_matrix @ v.co for v in unique_verts]
-            else:
-                coords = [v.co for v in unique_verts]
+            try:
+                if world_matrix is not None and hasattr(world_matrix, "__matmul__"):
+                    coords = [world_matrix @ v.co for v in unique_verts]
+                else:
+                    coords = [v.co for v in unique_verts]
 
-            min_x = min(c[0] for c in coords)
-            min_y = min(c[1] for c in coords)
-            min_z = min(c[2] for c in coords)
-            max_x = max(c[0] for c in coords)
-            max_y = max(c[1] for c in coords)
-            max_z = max(c[2] for c in coords)
+                min_x = min(c[0] for c in coords)
+                min_y = min(c[1] for c in coords)
+                min_z = min(c[2] for c in coords)
+                max_x = max(c[0] for c in coords)
+                max_y = max(c[1] for c in coords)
+                max_z = max(c[2] for c in coords)
 
-            diag = ((max_x - min_x) ** 2 + (max_y - min_y) ** 2 + (max_z - min_z) ** 2) ** 0.5
+                diag = ((max_x - min_x) ** 2 + (max_y - min_y) ** 2 + (max_z - min_z) ** 2) ** 0.5
 
-            if diag < w_crit:
-                culled_faces.extend(island)
+                if diag < w_crit:
+                    culled_faces.extend(island)
+            except Exception as exc:
+                logger.debug("Island bounding box calculation error: %s", exc)
 
         # Safeguard: never delete the entire mesh
         if culled_faces and len(culled_faces) < len(bm.faces):
             culled_count = len(culled_faces)
-            bmesh.ops.delete(bm, geom=culled_faces, context="FACES")
-            cls.execute_tier0_pure_hygiene(bm)
-            return culled_count
+            try:
+                bmesh.ops.delete(bm, geom=culled_faces, context="FACES")
+                cls.execute_tier0_pure_hygiene(bm)
+                return culled_count
+            except Exception as exc:
+                logger.debug("Delete island faces error: %s", exc)
 
         return 0
 
@@ -494,15 +648,18 @@ class MeshSanitizer:
             stats["filled_holes"] = cls.fill_small_boundary_holes(bm, max_edges=hole_max_edges)
 
         # 4. Triangulate Remaining N-Gons (>4 vertices) if requested
-        if enable_triangulate_ngons:
-            bm.faces.ensure_lookup_table()
-            ngons = [f for f in bm.faces if f.is_valid and len(f.verts) > 4]
-            if ngons:
-                bmesh.ops.triangulate(bm, faces=ngons, quad_method="BEAUTY", ngon_method="BEAUTY")
-                stats["triangulated_ngons"] = len(ngons)
+        if enable_triangulate_ngons and hasattr(bm, "faces"):
+            try:
                 bm.faces.ensure_lookup_table()
-                bm.edges.ensure_lookup_table()
-                bm.verts.ensure_lookup_table()
+                ngons = [f for f in bm.faces if getattr(f, "is_valid", False) and len(getattr(f, "verts", [])) > 4]
+                if ngons:
+                    bmesh.ops.triangulate(bm, faces=ngons, quad_method="BEAUTY", ngon_method="BEAUTY")
+                    stats["triangulated_ngons"] = len(ngons)
+                    bm.faces.ensure_lookup_table()
+                    bm.edges.ensure_lookup_table()
+                    bm.verts.ensure_lookup_table()
+            except Exception as exc:
+                logger.debug("N-gon triangulation error: %s", exc)
 
         # 5. Cull Floating Micro-Islands
         if enable_cull_micro_islands and island_size_threshold > 1e-4:
@@ -510,7 +667,10 @@ class MeshSanitizer:
                 bm, w_crit=island_size_threshold, world_matrix=world_matrix
             )
 
-        bm.verts.index_update()
+        try:
+            bm.verts.index_update()
+        except Exception as exc:
+            logger.debug("Index update failed: %s", exc)
         return stats
 
     @classmethod
@@ -525,12 +685,21 @@ class MeshSanitizer:
         if not bmesh or not bm or not hasattr(bm, "faces") or len(bm.faces) == 0:
             return {"recalculated_normals": False}
 
-        bm.faces.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
+        try:
+            bm.faces.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+        except Exception as exc:
+            logger.debug("Lookup table init error in tier2: %s", exc)
+            return {"recalculated_normals": False}
 
         if normal_recalc_policy == "MANIFOLD_ONLY":
             # Identify closed manifold shells (faces where every edge has exactly 2 link faces)
-            closed_faces = [f for f in bm.faces if f.is_valid and all(len(e.link_faces) == 2 for e in f.edges)]
+            closed_faces = [
+                f
+                for f in bm.faces
+                if getattr(f, "is_valid", False)
+                and all(len(getattr(e, "link_faces", [])) == 2 for e in getattr(f, "edges", []))
+            ]
             if closed_faces:
                 try:
                     bmesh.ops.recalc_face_normals(bm, faces=closed_faces)

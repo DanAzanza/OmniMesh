@@ -76,23 +76,23 @@ class BatchProcessorEngine:
         resolved_source = os.path.abspath(source_dir)
         discovered_files: list[str] = []
 
-        if recursive:
-            for root, _dirs, files in os.walk(resolved_source, followlinks=False):
-                for f in files:
-                    ext = os.path.splitext(f)[1].lower()
-                    if ext in extensions:
-                        full_p = os.path.join(root, f)
-                        discovered_files.append(full_p)
-        else:
-            try:
+        try:
+            if recursive:
+                for root, _dirs, files in os.walk(resolved_source, followlinks=False):
+                    for f in files:
+                        ext = os.path.splitext(f)[1].lower()
+                        if ext in extensions:
+                            full_p = os.path.join(root, f)
+                            discovered_files.append(full_p)
+            else:
                 for item in os.listdir(resolved_source):
                     full_p = os.path.join(resolved_source, item)
                     if os.path.isfile(full_p):
                         ext = os.path.splitext(item)[1].lower()
                         if ext in extensions:
                             discovered_files.append(full_p)
-            except OSError as exc:
-                logger.error("Failed to list source directory '%s': %s", resolved_source, exc)
+        except OSError as exc:
+            logger.error("Failed during asset discovery in '%s': %s", resolved_source, exc)
 
         return sorted(discovered_files)
 
@@ -160,7 +160,7 @@ class BatchProcessorEngine:
             result["message"] = f"Failed to import '{filepath}'"
             return result
 
-        mesh_objs = [o for o in imported_objs if o.type == "MESH"]
+        mesh_objs = [o for o in imported_objs if getattr(o, "type", "") == "MESH"]
         if not mesh_objs:
             cls.cleanup_imported_objects(imported_objs)
             result["message"] = f"No valid mesh geometry found in '{filepath}'"
@@ -172,7 +172,8 @@ class BatchProcessorEngine:
         try:
             # Primary mesh object selection
             primary_obj = mesh_objs[0]
-            context.view_layer.objects.active = primary_obj
+            if hasattr(context, "view_layer") and hasattr(context.view_layer, "objects"):
+                context.view_layer.objects.active = primary_obj
 
             # 1. Sanitize Master Mesh
             initial_tris = 0
@@ -181,15 +182,26 @@ class BatchProcessorEngine:
                     import bmesh
 
                     bm = bmesh.new()
-                    bm.from_mesh(obj.data)
-                    MeshSanitizer.sanitize_mesh_full(bm)
-                    bm.to_mesh(obj.data)
-                    bm.free()
+                    try:
+                        bm.from_mesh(obj.data)
+                        MeshSanitizer.sanitize_mesh_full(bm)
+                        bm.to_mesh(obj.data)
+                    finally:
+                        bm.free()
                     initial_tris += len(obj.data.polygons)
             result["initial_tris"] = initial_tris
 
             # 2. Compute Metric Extents & Tiers
-            coords = [primary_obj.matrix_world @ v.co for v in primary_obj.data.vertices]
+            coords = []
+            if hasattr(primary_obj.data, "vertices"):
+                for v in primary_obj.data.vertices:
+                    try:
+                        coords.append(
+                            primary_obj.matrix_world @ v.co if hasattr(primary_obj.matrix_world, "__matmul__") else v.co
+                        )
+                    except Exception:
+                        coords.append(v.co)
+
             center, radius = compute_bounding_sphere(coords)
             screen_tiers = generate_logarithmic_screen_tiers(
                 num_lods=num_lods, cull_screen_size_pct=cull_screen_size_pct
@@ -200,10 +212,11 @@ class BatchProcessorEngine:
             coll = bpy.data.collections.get(coll_name)
             if not coll:
                 coll = bpy.data.collections.new(coll_name)
-                context.scene.collection.children.link(coll)
+                if hasattr(context, "scene") and hasattr(context.scene, "collection"):
+                    context.scene.collection.children.link(coll)
 
-            props = getattr(context.scene, "lod_tool", None)
-            if props:
+            props = getattr(getattr(context, "scene", None), "lod_tool", None)
+            if props and hasattr(props, "lods"):
                 props.lods.clear()
 
             generated_lod_objs = []
@@ -223,7 +236,8 @@ class BatchProcessorEngine:
                 lod_mesh.name = f"{lod_obj_name}_Mesh"
                 lod_obj = bpy.data.objects.new(lod_obj_name, lod_mesh)
                 lod_obj.matrix_world = primary_obj.matrix_world.copy()
-                coll.objects.link(lod_obj)
+                if coll:
+                    coll.objects.link(lod_obj)
                 generated_lod_objs.append(lod_obj)
 
                 # Decimate geometry
@@ -231,12 +245,14 @@ class BatchProcessorEngine:
                     import bmesh
 
                     bm = bmesh.new()
-                    bm.from_mesh(lod_obj.data)
-                    pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
-                    MeshDecimator.apply_planar_limited_dissolve(bm, tolerances["planar_angle_deg"] * 0.0174533)
-                    MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
-                    bm.to_mesh(lod_obj.data)
-                    bm.free()
+                    try:
+                        bm.from_mesh(lod_obj.data)
+                        pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
+                        MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
+                        MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
+                        bm.to_mesh(lod_obj.data)
+                    finally:
+                        bm.free()
 
                     MeshDecimator.execute_decimate_qem(lod_obj, tolerances["qem_ratio"], use_curvature_weight=True)
                     NormalManager.reproject_custom_split_normals(lod_obj, primary_obj, delta_world=delta_w)
@@ -247,11 +263,15 @@ class BatchProcessorEngine:
                         )
                         MaterialOptimizer.purge_unused_materials(lod_obj)
 
-                current_tris = len(lod_obj.data.polygons)
+                current_tris = (
+                    len(lod_obj.data.polygons)
+                    if (hasattr(lod_obj, "data") and hasattr(lod_obj.data, "polygons"))
+                    else 0
+                )
                 if i == len(screen_tiers) - 1:
                     final_lod_tris = current_tris
 
-                if props:
+                if props and hasattr(props, "lods"):
                     item = props.lods.add()
                     item.name = tier_name
                     item.lod_index = i
@@ -260,7 +280,7 @@ class BatchProcessorEngine:
                     item.delta_world = delta_w
                     item.target_tris = int(initial_tris * tolerances["qem_ratio"])
                     item.actual_tris = current_tris
-                    item.mat_slots_count = len(lod_obj.material_slots)
+                    item.mat_slots_count = len(getattr(lod_obj, "material_slots", []))
                     item.generated_obj = lod_obj
 
             # 4. Pack PBR Textures
@@ -270,12 +290,12 @@ class BatchProcessorEngine:
 
             unique_mats = set()
             for o in mesh_objs:
-                for slot in o.material_slots:
+                for slot in getattr(o, "material_slots", []):
                     if slot.material:
                         unique_mats.add(slot.material)
 
             for mat in unique_mats:
-                m_name = mat.name.replace(" ", "_")
+                m_name = getattr(mat, "name", "Mat").replace(" ", "_")
                 if target_engine == "UE5":
                     TextureChannelPacker.pack_orm_ue5(mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048))
                     norm_img = TextureChannelPacker.get_material_normal_image(mat)
@@ -327,18 +347,21 @@ class BatchProcessorEngine:
             if coll and bpy:
                 try:
                     bpy.data.collections.remove(coll)
-                except (RuntimeError, ReferenceError):
-                    pass
+                except (RuntimeError, ReferenceError, Exception) as exc:
+                    logger.debug("Collection cleanup failed: %s", exc)
 
             # Purge orphan datablocks
             if bpy:
                 try:
                     bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=False)
-                except (RuntimeError, ValueError, AttributeError) as exc:
+                except (RuntimeError, ValueError, AttributeError, Exception) as exc:
                     logger.debug("Orphan purge bypassed: %s", exc)
 
             gc.collect()
-            TextureChannelPacker.compact_memory()
+            try:
+                TextureChannelPacker.compact_memory()
+            except Exception as exc:
+                logger.debug("Texture packer memory compact bypassed: %s", exc)
 
         result["duration_sec"] = round(time.time() - start_time, 2)
         return result
@@ -352,15 +375,15 @@ class BatchProcessorEngine:
         for obj in objects:
             if not obj:
                 continue
-            if getattr(obj, "type", "") == "MESH" and obj.data:
+            if getattr(obj, "type", "") == "MESH" and getattr(obj, "data", None):
                 meshes_to_remove.add(obj.data)
             try:
                 bpy.data.objects.remove(obj, do_unlink=True)
-            except (RuntimeError, ReferenceError):
-                pass
+            except (RuntimeError, ReferenceError, Exception) as exc:
+                logger.debug("Object remove error: %s", exc)
 
         for mesh in meshes_to_remove:
             try:
                 bpy.data.meshes.remove(mesh, do_unlink=True)
-            except (RuntimeError, ReferenceError):
-                pass
+            except (RuntimeError, ReferenceError, Exception) as exc:
+                logger.debug("Mesh remove error: %s", exc)
