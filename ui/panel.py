@@ -171,7 +171,7 @@ class LOD_PT_inspection_panel(Panel):
 
 
 class LOD_PT_optimization_panel(Panel):
-    """Subpanel 3: Hierarchy Draw-Call Merging, Occlusion Culling, Rigging & PBR Textures."""
+    """Subpanel 3: Hierarchy Draw-Call Merging, Occlusion Culling, Collision, Rigging & PBR Textures."""
 
     bl_label = "4. Advanced Optimization"
     bl_idname = "LOD_PT_optimization_panel"
@@ -189,7 +189,26 @@ class LOD_PT_optimization_panel(Panel):
         mesh_objs = get_selected_mesh_objects(context)
         armature_obj = get_associated_armature(mesh_objs)
 
-        # 1. Interior & Occlusion Geometry Culling
+        # 1. Multi-Convex Collision Hulls (Physics)
+        box_col = layout.box()
+        box_col.label(text="Convex Collision Hulls (Physics)", icon="PHYSICS")
+        box_col.prop(props, "collision_decomposition_mode", text="")
+        box_col.prop(props, "collision_hull_count")
+        box_col.prop(props, "collision_max_verts_per_hull")
+        box_col.prop(props, "collision_concavity_threshold")
+
+        row_c = box_col.row(align=True)
+        row_c.scale_y = 1.2
+        row_c.operator("lod_tool.generate_collision_hulls", text="Generate Colliders", icon="MESH_ICOSPHERE")
+        row_c.operator("lod_tool.remove_collision_hulls", text="", icon="TRASH")
+
+        if props.last_generated_collider_count > 0:
+            box_col.label(
+                text=f"✔ Active: {props.last_generated_collider_count} Convex Hulls (Wire)",
+                icon="CHECKMARK",
+            )
+
+        # 2. Interior & Occlusion Geometry Culling
         box_occ = layout.box()
         box_occ.label(text="Interior & Occlusion Culling", icon="MOD_MASK")
         box_occ.prop(props, "enable_occlusion_culling")
@@ -203,14 +222,14 @@ class LOD_PT_optimization_panel(Panel):
                     icon="CHECKMARK",
                 )
 
-        # 2. Hierarchy & Draw-Call Optimization
+        # 3. Hierarchy & Draw-Call Optimization
         box_h = layout.box()
         box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
         box_h.prop(props, "hierarchy_mode", text="")
         if props.hierarchy_mode == "MERGE_DISTANT":
             box_h.prop(props, "merge_lod_start")
 
-        # 3. Rigging & Skeletal Kinematics
+        # 4. Rigging & Skeletal Kinematics
         box_r = layout.box()
         box_r.label(text="Rigging & Skeletal Kinematics", icon="ARMATURE_DATA")
         has_skinning = bool(armature_obj or any(len(obj.vertex_groups) > 0 for obj in mesh_objs))
@@ -222,7 +241,7 @@ class LOD_PT_optimization_panel(Panel):
         col_rig.prop(props, "enable_leaf_bone_pruning")
         col_rig.prop(props, "purge_distant_shape_keys")
 
-        # 4. PBR Texture Channel Packing & Animation
+        # 5. PBR Texture Channel Packing & Animation
         box_tex = layout.box()
         box_tex.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
         box_tex.prop(props, "export_packed_textures")

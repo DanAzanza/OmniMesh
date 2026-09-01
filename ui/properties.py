@@ -1,5 +1,5 @@
 """
-UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture, Live Simulator, Occlusion Culling & Engine Bridge Settings.
+UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture, Live Simulator, Collision, Occlusion & Engine Bridge Settings.
 """
 
 from __future__ import annotations
@@ -170,6 +170,40 @@ class LODPipelineProperties(PropertyGroup):
     )
     last_culled_faces_count: IntProperty(name="Last Culled Faces", default=0)
     last_culled_islands_count: IntProperty(name="Last Culled Islands", default=0)
+
+    # Multi-Convex Collision Hull Generator Settings
+    collision_decomposition_mode: EnumProperty(
+        name="Decomposition Mode",
+        items=[
+            ("PER_OBJECT", "Per-Object (Area Weighted)", "Decomposes each selected submesh proportionally"),
+            ("CONSOLIDATED", "Consolidated Single Hull Set", "Merges selected objects into unified collision set"),
+        ],
+        default="PER_OBJECT",
+        description="How multi-mesh selections are decomposed into collision hulls",
+    )
+    collision_hull_count: IntProperty(
+        name="Hull Count",
+        default=4,
+        min=1,
+        max=16,
+        description="Target number of convex collision hulls to generate for concave assets",
+    )
+    collision_max_verts_per_hull: IntProperty(
+        name="Max Verts / Hull",
+        default=32,
+        min=8,
+        max=64,
+        description="Clamps maximum vertices per convex hull for sub-millisecond physics ticks (PhysX/Jolt)",
+    )
+    collision_concavity_threshold: FloatProperty(
+        name="Concavity Tolerance (m)",
+        default=0.05,
+        min=0.001,
+        max=1.0,
+        precision=3,
+        description="Surface distance threshold to stop bisecting already convex sub-regions",
+    )
+    last_generated_collider_count: IntProperty(name="Last Collider Count", default=0)
 
     # Multi-Object Hierarchy & Merging Settings
     hierarchy_mode: EnumProperty(

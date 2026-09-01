@@ -1,5 +1,5 @@
 """
-Godot 4.x glTF Exporter.
+Godot 4.x glTF Exporter for LOD Meshes and -convcol Collision Shapes.
 """
 
 from __future__ import annotations
@@ -37,6 +37,21 @@ class GodotExporter:
         if not all_objs:
             return False, "No generated LOD objects found to export."
 
+        # Collect optional collision hull objects
+        coll_coll = bpy.data.collections.get(f"{asset_name}_Colliders") or (
+            bpy.data.collections.get(f"{props.export_base_name}_Colliders") if props else None
+        )
+        collider_objects: list[Any] = []
+        if coll_coll and len(coll_coll.objects) > 0:
+            collider_objects = list(coll_coll.objects)
+        else:
+            base_search = asset_name.split("_LOD")[0]
+            collider_objects = [
+                obj
+                for obj in bpy.data.objects
+                if obj.get("_is_collider", False) or f"{base_search}_Collider_" in obj.name
+            ]
+
         bpy.ops.object.select_all(action="DESELECT")
 
         for obj in all_objs:
@@ -62,6 +77,19 @@ class GodotExporter:
             obj["visibility_range_end"] = dist_end
             obj.select_set(True)
 
+        # Prepare and select collider objects with -convcol suffix
+        orig_collider_names: dict[Any, str] = {}
+        for idx, c_obj in enumerate(collider_objects, start=1):
+            try:
+                c_obj.hide_set(False, view_layer=context.view_layer)
+                c_obj.hide_viewport = False
+                orig_collider_names[c_obj] = c_obj.name
+                if not c_obj.name.endswith("-convcol"):
+                    c_obj.name = f"{asset_name}_Collider_{idx:02d}-convcol"
+                c_obj.select_set(True)
+            except (RuntimeError, AttributeError) as exc:
+                logger.debug("Could not prepare collider %s: %s", getattr(c_obj, "name", "unknown"), exc)
+
         context.view_layer.objects.active = all_objs[0]
 
         gltf_path = os.path.join(export_dir, f"{asset_name}.gltf")
@@ -76,3 +104,10 @@ class GodotExporter:
             return True, f"Godot 4 glTF exported to: {gltf_path}"
         except Exception as e:
             return False, f"Failed to export Godot glTF: {str(e)}"
+        finally:
+            # Restore original collider names
+            for c_obj, orig_name in orig_collider_names.items():
+                try:
+                    c_obj.name = orig_name
+                except Exception as exc:
+                    logger.debug("Restoring collider name failed: %s", exc)

@@ -1,5 +1,5 @@
 """
-Master Pipeline Operators for OmniMesh LOD Analysis, Generation, and Viewport Preview.
+Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, and Viewport Preview.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ except ImportError:
     Operator = object
 
 try:
+    from ..core.collision import CollisionManager
     from ..core.decimator import MeshDecimator
     from ..core.hierarchy import MeshMergeEngine
     from ..core.materials import MaterialOptimizer
@@ -32,6 +33,7 @@ try:
     from ..core.rigging import KinematicBonePruner, WeightSanitizer
     from ..core.sanitizer import MeshSanitizer
 except (ImportError, ValueError):
+    from core.collision import CollisionManager
     from core.decimator import MeshDecimator
     from core.hierarchy import MeshMergeEngine
     from core.materials import MaterialOptimizer
@@ -386,6 +388,61 @@ class LOD_OT_generate_all(Operator):
                 armature_obj.data.pose_position = orig_pose_pos
 
 
+class LOD_OT_generate_collision_hulls(Operator):
+    """Generate multi-convex physics collision hulls for selected mesh objects."""
+
+    bl_idname = "lod_tool.generate_collision_hulls"
+    bl_label = "Generate Collision Hulls"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            self.report({"WARNING"}, "No mesh objects selected for collision generation.")
+            return {"CANCELLED"}
+
+        props = context.scene.lod_tool
+        base_name = props.export_base_name or mesh_objs[0].name.split("_LOD")[0]
+
+        colliders = CollisionManager.generate_colliders_for_objects(
+            mesh_objs=mesh_objs,
+            base_name=base_name,
+            hull_count=int(props.collision_hull_count),
+            max_verts_per_hull=int(props.collision_max_verts_per_hull),
+            concavity_threshold=float(props.collision_concavity_threshold),
+            mode=props.collision_decomposition_mode,
+        )
+
+        props.last_generated_collider_count = len(colliders)
+        self.report(
+            {"INFO"},
+            f"Generated {len(colliders)} convex collision hulls in collection '{base_name}_Colliders'",
+        )
+        return {"FINISHED"}
+
+
+class LOD_OT_remove_collision_hulls(Operator):
+    """Remove and purge all collision hulls for active asset."""
+
+    bl_idname = "lod_tool.remove_collision_hulls"
+    bl_label = "Remove Collision Hulls"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        mesh_objs = get_selected_mesh_objects(context)
+        props = context.scene.lod_tool
+        base_name = props.export_base_name or (mesh_objs[0].name.split("_LOD")[0] if mesh_objs else "")
+
+        removed = CollisionManager.remove_colliders_for_objects(mesh_objs, base_name)
+        props.last_generated_collider_count = 0
+        self.report({"INFO"}, f"Removed {removed} collision objects for '{base_name}'")
+        return {"FINISHED"}
+
+
 class LOD_OT_preview_tier(Operator):
     """Isolate and display selected LOD tier geometry in 3D Viewport."""
 
@@ -487,6 +544,8 @@ class LOD_OT_toggle_split_preview(Operator):
 OPERATOR_CLASSES = (
     LOD_OT_analyze_and_configure,
     LOD_OT_generate_all,
+    LOD_OT_generate_collision_hulls,
+    LOD_OT_remove_collision_hulls,
     LOD_OT_preview_tier,
     LOD_OT_toggle_simulator,
     LOD_OT_toggle_split_preview,

@@ -1,5 +1,5 @@
 """
-Unity 6 Exporter for LOD Meshes.
+Unity 6 Exporter for LOD Meshes and Collision Hulls.
 """
 
 from __future__ import annotations
@@ -37,8 +37,23 @@ class UnityExporter:
         if not export_objects:
             return False, f"No generated LOD objects found for '{asset_name}'"
 
+        # Collect optional collision hull objects
+        coll_coll = bpy.data.collections.get(f"{asset_name}_Colliders") or (
+            bpy.data.collections.get(f"{props.export_base_name}_Colliders") if props else None
+        )
+        collider_objects: list[Any] = []
+        if coll_coll and len(coll_coll.objects) > 0:
+            collider_objects = list(coll_coll.objects)
+        else:
+            base_search = asset_name.split("_LOD")[0]
+            collider_objects = [
+                obj
+                for obj in bpy.data.objects
+                if obj.get("_is_collider", False) or f"{base_search}_Collider_" in obj.name
+            ]
+
         # Unhide all objects in view layer
-        for obj in export_objects:
+        for obj in export_objects + collider_objects:
             try:
                 obj.hide_set(False, view_layer=context.view_layer)
                 obj.hide_viewport = False
@@ -48,6 +63,8 @@ class UnityExporter:
         bpy.ops.object.select_all(action="DESELECT")
         for obj in export_objects:
             obj.select_set(True)
+        for c_obj in collider_objects:
+            c_obj.select_set(True)
 
         context.view_layer.objects.active = export_objects[0]
 
