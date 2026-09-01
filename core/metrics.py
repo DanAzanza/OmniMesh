@@ -20,18 +20,20 @@ def compute_vertical_fov(camera_angle_rad: float, aspect_ratio: float, sensor_fi
     Computes the exact vertical field of view (in radians) from camera angle,
     aspect ratio (width / height), and sensor fit setting.
     """
-    if aspect_ratio <= 0:
+    if aspect_ratio <= 0.0:
         aspect_ratio = 16.0 / 9.0
+
+    angle_clamped = max(1e-4, min(math.pi - 1e-4, camera_angle_rad))
 
     resolved_fit = sensor_fit
     if resolved_fit == "AUTO":
         resolved_fit = "HORIZONTAL" if aspect_ratio >= 1.0 else "VERTICAL"
 
     if resolved_fit == "VERTICAL":
-        return max(1e-4, min(math.pi - 1e-4, camera_angle_rad))
+        return angle_clamped
     else:  # HORIZONTAL
         # tan(theta_v / 2) = tan(theta_h / 2) / aspect_ratio
-        half_h = camera_angle_rad / 2.0
+        half_h = angle_clamped / 2.0
         tan_v = math.tan(half_h) / aspect_ratio
         return 2.0 * math.atan(max(1e-4, tan_v))
 
@@ -67,7 +69,8 @@ def compute_distance_from_screen_size(radius: float, screen_size_fraction: float
     """
     s_clamped = max(0.001, min(1.0, screen_size_fraction))
     half_fov = max(1e-4, min(math.pi / 2.0 - 1e-4, vertical_fov_rad / 2.0))
-    return radius / (s_clamped * math.tan(half_fov))
+    r = max(1e-4, radius)
+    return r / (s_clamped * math.tan(half_fov))
 
 
 def compute_screen_size_from_distance(radius: float, distance: float, vertical_fov_rad: float) -> float:
@@ -77,7 +80,8 @@ def compute_screen_size_from_distance(radius: float, distance: float, vertical_f
     """
     dist_clamped = max(1e-4, distance)
     half_fov = max(1e-4, min(math.pi / 2.0 - 1e-4, vertical_fov_rad / 2.0))
-    s = radius / (dist_clamped * math.tan(half_fov))
+    r = max(0.0, radius)
+    s = r / (dist_clamped * math.tan(half_fov))
     return max(0.0, min(1.0, s))
 
 
@@ -92,7 +96,8 @@ def compute_screen_space_error_bound(
     s_clamped = max(0.001, min(1.0, screen_size_fraction))
     h = max(240, screen_height_px)
     tau = max(0.1, tau_sse_pixels)
-    return (2.0 * tau * radius) / (s_clamped * h)
+    r = max(1e-4, radius)
+    return (2.0 * tau * r) / (s_clamped * h)
 
 
 def compute_coupled_tolerances(
@@ -106,18 +111,20 @@ def compute_coupled_tolerances(
     Derives all decimation and cleanup tolerances from the master Screen-Space Error bound.
     """
     s = max(0.001, min(1.0, screen_size_fraction))
-    delta_world = compute_screen_space_error_bound(radius, s, tau_sse_pixels, screen_height_px)
+    r = max(1e-4, radius)
+    delta_world = compute_screen_space_error_bound(r, s, tau_sse_pixels, screen_height_px)
 
     # 1. Epsilon Merge Distance (clamped between 1µm and 5% of radius)
-    epsilon_merge = max(1e-6, min(radius * 0.05, delta_world / 8.0))
+    epsilon_merge = max(1e-6, min(r * 0.05, delta_world / 8.0))
 
     # 2. Sub-pixel Feature Dissolution threshold
     w_crit = delta_world
 
     # 3. Planar Bevel Angle Limit (degrees, clamped to max 45°)
     r_char = max(1e-3, local_curvature_radius)
-    ratio_h = min(1.0, delta_world / r_char)
-    planar_angle_deg = math.degrees(2.0 * math.acos(max(0.0, 1.0 - ratio_h)))
+    ratio_h = min(1.0, max(0.0, delta_world / r_char))
+    cos_val = max(-1.0, min(1.0, 1.0 - ratio_h))
+    planar_angle_deg = math.degrees(2.0 * math.acos(cos_val))
     planar_angle_clamped = max(0.5, min(45.0, planar_angle_deg))
 
     # 4. Critical Surface Area for Material Consolidation (m²)
@@ -147,7 +154,7 @@ def generate_logarithmic_screen_tiers(num_lods: int, cull_screen_size_pct: float
     if num_lods <= 1:
         return [100.0]
 
-    cull_pct = max(0.01, min(20.0, cull_screen_size_pct))
+    cull_pct = max(0.01, min(50.0, cull_screen_size_pct))
     tiers = []
     for k in range(num_lods):
         if k == 0:

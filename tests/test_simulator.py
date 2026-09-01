@@ -52,3 +52,34 @@ def test_hysteresis_band_switching():
     # It requires 50.0 * 1.02 = 51.0% to switch back up to LOD0
     assert evaluate_lod_tier_index_pure(50.5, thresholds, current_tier=1, hysteresis_pct=2.0) == 1
     assert evaluate_lod_tier_index_pure(51.5, thresholds, current_tier=1, hysteresis_pct=2.0) == 0
+
+
+def test_effective_distance_edge_cases():
+    # Camera at center
+    d1 = calculate_effective_distance_pure((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 10.0)
+    assert d1 == pytest.approx(0.01)
+
+    # 0 radius
+    d2 = calculate_effective_distance_pure((0.0, 5.0, 0.0), (0.0, 0.0, 0.0), 0.0)
+    assert d2 == pytest.approx(5.0)
+
+    # Negative radius clamped
+    d3 = calculate_effective_distance_pure((0.0, 5.0, 0.0), (0.0, 0.0, 0.0), -2.0)
+    assert d3 == pytest.approx(5.0)
+
+
+def test_tier_evaluation_edge_cases():
+    # Empty thresholds
+    assert evaluate_lod_tier_index_pure(50.0, []) == 0
+
+    # Single threshold
+    assert evaluate_lod_tier_index_pure(50.0, [100.0]) == 0
+
+    # Negative or extreme screen sizes
+    thresholds = [100.0, 50.0, 10.0]
+    assert evaluate_lod_tier_index_pure(-5.0, thresholds) == 2
+    assert evaluate_lod_tier_index_pure(200.0, thresholds) == 0
+
+    # Zero hysteresis
+    assert evaluate_lod_tier_index_pure(50.0, thresholds, current_tier=0, hysteresis_pct=0.0) == 0
+    assert evaluate_lod_tier_index_pure(49.99, thresholds, current_tier=0, hysteresis_pct=0.0) == 1

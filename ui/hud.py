@@ -4,7 +4,10 @@ Viewport HUD and Statistics Overlay for OmniMesh & Real-Time Simulator.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import blf
@@ -81,92 +84,103 @@ class LODViewportHUD:
         if not cls._cached_data or not cls._cached_data.get("is_active") or not gpu or not blf:
             return
 
-        font_id = 0
-        x_offset = 40
-        y_offset = 120
-        box_w = 340
-        box_h = 100
+        try:
+            font_id = 0
+            x_offset = 40
+            y_offset = 120
+            box_w = 340
+            box_h = 100
 
-        vertices = (
-            (x_offset - 10, y_offset + 10),
-            (x_offset + box_w, y_offset + 10),
-            (x_offset - 10, y_offset - box_h),
-            (x_offset + box_w, y_offset - box_h),
-        )
-        indices = ((0, 1, 2), (2, 1, 3))
-
-        shader = gpu.shader.from_builtin("UNIFORM_COLOR")
-        batch = batch_for_shader(shader, "TRIS", {"pos": vertices}, indices=indices)
-
-        gpu.state.blend_set("ALPHA")
-        shader.bind()
-        shader.uniform_float("color", (0.04, 0.07, 0.11, 0.88))
-        batch.draw(shader)
-        gpu.state.blend_set("NONE")
-
-        is_sim = cls._cached_data.get("is_simulating", False)
-
-        if is_sim:
-            blf.size(font_id, 13)
-            blf.color(font_id, 0.2, 1.0, 0.6, 1.0)
-            blf.position(font_id, x_offset, y_offset - 15, 0)
-            blf.draw(font_id, f"● OMNIMESH SIMULATOR ACTIVE ({cls._cached_data.get('sim_mode', 'LIVE')})")
-
-            blf.size(font_id, 11)
-            blf.color(font_id, 1.0, 1.0, 1.0, 0.9)
-            blf.position(font_id, x_offset, y_offset - 35, 0)
-            blf.draw(
-                font_id, f"Target: {cls._cached_data['active_name']}  (Screen: {cls._cached_data['screen_pct']:.1f}%)"
+            vertices = (
+                (x_offset - 10, y_offset + 10),
+                (x_offset + box_w, y_offset + 10),
+                (x_offset - 10, y_offset - box_h),
+                (x_offset + box_w, y_offset - box_h),
             )
+            indices = ((0, 1, 2), (2, 1, 3))
 
-            blf.position(font_id, x_offset, y_offset - 55, 0)
-            blf.draw(
-                font_id,
-                f"Distance: {cls._cached_data['distance_m']:.1f}m | Assets: {cls._cached_data['tracked_count']}",
-            )
+            shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+            batch = batch_for_shader(shader, "TRIS", {"pos": vertices}, indices=indices)
 
-            blf.color(font_id, 0.3, 0.9, 1.0, 1.0)
-            blf.position(font_id, x_offset, y_offset - 75, 0)
-            blf.draw(font_id, f"Active Geometry : {cls._cached_data['curr_tris']:,} tris")
+            gpu.state.blend_set("ALPHA")
+            shader.bind()
+            shader.uniform_float("color", (0.04, 0.07, 0.11, 0.88))
+            batch.draw(shader)
+            gpu.state.blend_set("NONE")
 
-        else:
-            blf.size(font_id, 13)
-            blf.color(font_id, 0.2, 0.8, 1.0, 1.0)
-            blf.position(font_id, x_offset, y_offset - 15, 0)
-            blf.draw(font_id, f"OMNIMESH MONITOR ({cls._cached_data.get('engine', 'MSFS')})")
+            is_sim = cls._cached_data.get("is_simulating", False)
 
-            blf.size(font_id, 11)
-            blf.color(font_id, 1.0, 1.0, 1.0, 0.9)
-            blf.position(font_id, x_offset, y_offset - 35, 0)
-            blf.draw(
-                font_id,
-                f"Active Tier: {cls._cached_data['active_name']}  (Screen: {cls._cached_data['screen_pct']:.1f}%)",
-            )
+            if is_sim:
+                blf.size(font_id, 13)
+                blf.color(font_id, 0.2, 1.0, 0.6, 1.0)
+                blf.position(font_id, x_offset, y_offset - 15, 0)
+                blf.draw(font_id, f"● OMNIMESH SIMULATOR ACTIVE ({cls._cached_data.get('sim_mode', 'LIVE')})")
 
-            blf.position(font_id, x_offset, y_offset - 55, 0)
-            blf.draw(
-                font_id,
-                f"Switch Dist: {cls._cached_data['distance_m']:.1f}m | Mat Slots: {cls._cached_data.get('mat_slots', 1)}",
-            )
+                blf.size(font_id, 11)
+                blf.color(font_id, 1.0, 1.0, 1.0, 0.9)
+                blf.position(font_id, x_offset, y_offset - 35, 0)
+                blf.draw(
+                    font_id,
+                    f"Target: {cls._cached_data['active_name']}  (Screen: {cls._cached_data['screen_pct']:.1f}%)",
+                )
 
-            blf.color(font_id, 0.3, 1.0, 0.4, 1.0)
-            blf.position(font_id, x_offset, y_offset - 75, 0)
-            blf.draw(
-                font_id,
-                f"Triangles  : {cls._cached_data['curr_tris']:,}  (-{cls._cached_data.get('reduction_pct', 0.0):.1f}%)",
-            )
+                blf.position(font_id, x_offset, y_offset - 55, 0)
+                blf.draw(
+                    font_id,
+                    f"Distance: {cls._cached_data['distance_m']:.1f}m | Assets: {cls._cached_data['tracked_count']}",
+                )
+
+                blf.color(font_id, 0.3, 0.9, 1.0, 1.0)
+                blf.position(font_id, x_offset, y_offset - 75, 0)
+                blf.draw(font_id, f"Active Geometry : {cls._cached_data['curr_tris']:,} tris")
+
+            else:
+                blf.size(font_id, 13)
+                blf.color(font_id, 0.2, 0.8, 1.0, 1.0)
+                blf.position(font_id, x_offset, y_offset - 15, 0)
+                blf.draw(font_id, f"OMNIMESH MONITOR ({cls._cached_data.get('engine', 'MSFS')})")
+
+                blf.size(font_id, 11)
+                blf.color(font_id, 1.0, 1.0, 1.0, 0.9)
+                blf.position(font_id, x_offset, y_offset - 35, 0)
+                blf.draw(
+                    font_id,
+                    f"Active Tier: {cls._cached_data['active_name']}  (Screen: {cls._cached_data['screen_pct']:.1f}%)",
+                )
+
+                blf.position(font_id, x_offset, y_offset - 55, 0)
+                blf.draw(
+                    font_id,
+                    f"Switch Dist: {cls._cached_data['distance_m']:.1f}m | Mat Slots: {cls._cached_data.get('mat_slots', 1)}",
+                )
+
+                blf.color(font_id, 0.3, 1.0, 0.4, 1.0)
+                blf.position(font_id, x_offset, y_offset - 75, 0)
+                blf.draw(
+                    font_id,
+                    f"Triangles  : {cls._cached_data['curr_tris']:,}  (-{cls._cached_data.get('reduction_pct', 0.0):.1f}%)",
+                )
+        except (RuntimeError, KeyError, TypeError, ValueError) as exc:
+            logger.debug("HUD draw callback exception: %s", exc)
 
     @classmethod
     def register(cls):
         if not bpy:
             return
         if cls._handler is None:
-            cls._handler = bpy.types.SpaceView3D.draw_handler_add(cls.draw_callback_px, (), "WINDOW", "POST_PIXEL")
+            try:
+                cls._handler = bpy.types.SpaceView3D.draw_handler_add(cls.draw_callback_px, (), "WINDOW", "POST_PIXEL")
+            except (RuntimeError, AttributeError, ValueError) as exc:
+                logger.debug("HUD register failed: %s", exc)
+                cls._handler = None
 
     @classmethod
     def unregister(cls):
         if not bpy:
             return
         if cls._handler is not None:
-            bpy.types.SpaceView3D.draw_handler_remove(cls._handler, "WINDOW")
+            try:
+                bpy.types.SpaceView3D.draw_handler_remove(cls._handler, "WINDOW")
+            except (RuntimeError, ValueError) as exc:
+                logger.debug("HUD draw handler removal exception: %s", exc)
             cls._handler = None

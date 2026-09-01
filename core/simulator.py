@@ -17,17 +17,26 @@ except ImportError:
 
 
 def calculate_effective_distance_pure(
-    cam_pos: tuple[float, float, float], center: tuple[float, float, float], radius: float
+    cam_pos: tuple[float, float, float] | Any, center: tuple[float, float, float] | Any, radius: float
 ) -> float:
     """
     Near-point conservative distance solver:
     d_eff = max(0.01, ||P_cam - C_A|| - 0.5 * r_A)
     """
-    dx = cam_pos[0] - center[0]
-    dy = cam_pos[1] - center[1]
-    dz = cam_pos[2] - center[2]
+    safe_radius = max(0.0, float(radius))
+    cx = center[0] if isinstance(center, (list, tuple)) else getattr(center, "x", 0.0)
+    cy = center[1] if isinstance(center, (list, tuple)) else getattr(center, "y", 0.0)
+    cz = center[2] if isinstance(center, (list, tuple)) else getattr(center, "z", 0.0)
+
+    px = cam_pos[0] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "x", 0.0)
+    py = cam_pos[1] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "y", 0.0)
+    pz = cam_pos[2] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "z", 0.0)
+
+    dx = px - cx
+    dy = py - cy
+    dz = pz - cz
     d_center = math.sqrt(dx * dx + dy * dy + dz * dz)
-    return max(0.01, d_center - 0.5 * radius)
+    return max(0.01, d_center - 0.5 * safe_radius)
 
 
 def evaluate_lod_tier_index_pure(
@@ -43,14 +52,16 @@ def evaluate_lod_tier_index_pure(
         return 0
 
     num_tiers = len(tier_thresholds_pct)
+    clamped_tier = max(0, min(num_tiers - 1, current_tier))
+    safe_hysteresis = max(0.0, float(hysteresis_pct))
 
     for i in range(num_tiers - 1):
         switch_threshold = tier_thresholds_pct[i + 1]
 
-        if current_tier == i:
-            effective_threshold = switch_threshold * (1.0 - hysteresis_pct / 100.0)
-        elif current_tier == i + 1:
-            effective_threshold = switch_threshold * (1.0 + hysteresis_pct / 100.0)
+        if clamped_tier == i:
+            effective_threshold = switch_threshold * (1.0 - safe_hysteresis / 100.0)
+        elif clamped_tier == i + 1:
+            effective_threshold = switch_threshold * (1.0 + safe_hysteresis / 100.0)
         else:
             effective_threshold = switch_threshold
 
@@ -66,7 +77,12 @@ def extract_viewport_camera_params(space_3d: Any, region_3d: Any, region: Any, s
     Supports Perspective Free Viewport, Orthographic Free Viewport, and Scene Camera.
     """
     if not region_3d:
-        cam_pos = scene.camera.matrix_world.translation.copy() if (scene and scene.camera) else Vector((0, -5, 2))
+        if scene and getattr(scene, "camera", None):
+            cam_pos = scene.camera.matrix_world.translation.copy()
+        elif Vector:
+            cam_pos = Vector((0.0, -5.0, 2.0))
+        else:
+            cam_pos = (0.0, -5.0, 2.0)
         return cam_pos, math.radians(60.0), True
 
     is_perspective = region_3d.is_perspective

@@ -4,6 +4,10 @@ Modal Operators and Live Handlers for Viewport LOD Simulator.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 try:
     import bpy
     from bpy.types import Operator
@@ -34,24 +38,35 @@ class LOD_OT_toggle_live_simulator(Operator):
         return bpy is not None
 
     def modal(self, context, event):
-        props = getattr(context.scene, "lod_tool", None)
+        props = getattr(context.scene, "lod_tool", None) if (context and context.scene) else None
         if not props or not self._is_running:
             return self.cancel_simulation(context)
 
         if not props.is_simulator_running:
             return self.cancel_simulation(context)
 
+        if event.type in {"ESC", "RIGHTMOUSE"} and event.value == "PRESS":
+            return self.cancel_simulation(context)
+
         if event.type == "TIMER":
-            self.tick_simulation(context, props)
+            try:
+                self.tick_simulation(context, props)
+            except Exception:
+                return self.cancel_simulation(context)
 
         return {"PASS_THROUGH"}
 
     def tick_simulation(self, context, props):
+        if not context or not context.window_manager:
+            return
+
         space_3d = None
         region_3d = None
         region = None
 
         for window in context.window_manager.windows:
+            if not window.screen:
+                continue
             for area in window.screen.areas:
                 if area.type == "VIEW_3D":
                     for space in area.spaces:
@@ -92,9 +107,13 @@ class LOD_OT_toggle_live_simulator(Operator):
             )
 
     def execute(self, context):
-        props = context.scene.lod_tool
+        if not context or not context.scene:
+            return {"CANCELLED"}
+        props = getattr(context.scene, "lod_tool", None)
+        if not props:
+            return {"CANCELLED"}
 
-        if self._is_running:
+        if self._is_running or props.is_simulator_running:
             props.is_simulator_running = False
             return self.cancel_simulation(context)
 
@@ -116,15 +135,19 @@ class LOD_OT_toggle_live_simulator(Operator):
 
     def cancel_simulation(self, context):
         self._is_running = False
-        if hasattr(context.scene, "lod_tool"):
+        if context and hasattr(context.scene, "lod_tool"):
             context.scene.lod_tool.is_simulator_running = False
 
-        if self._timer:
-            context.window_manager.event_timer_remove(self._timer)
+        if self._timer and context and context.window_manager:
+            try:
+                context.window_manager.event_timer_remove(self._timer)
+            except (RuntimeError, ValueError, AttributeError) as exc:
+                logger.debug("Timer removal exception: %s", exc)
             self._timer = None
 
-        LODSimulatorEngine.restore_all_visibility(context)
-        LODViewportHUD.clear_simulation_hud()
+        if context:
+            LODSimulatorEngine.restore_all_visibility(context)
+            LODViewportHUD.clear_simulation_hud()
         self.report({"INFO"}, "LOD Simulator stopped. Restored scene visibility.")
         return {"FINISHED"}
 

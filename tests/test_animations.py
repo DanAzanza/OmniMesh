@@ -11,10 +11,12 @@ class DummyKeyframePoint:
     def __init__(self, x: float, y: float):
         class Co:
             def __init__(self, x: float, y: float):
-                self.x = x
-                self.y = y
+                self.x = float(x)
+                self.y = float(y)
 
         self.co = Co(x, y)
+        self.handle_left = Co(x - 1.0, y)
+        self.handle_right = Co(x + 1.0, y)
 
 
 class DummyFCurve:
@@ -25,6 +27,9 @@ class DummyFCurve:
     def range(self) -> tuple[float, float]:
         xs = [kp.co.x for kp in self.keyframe_points]
         return min(xs), max(xs)
+
+    def update(self):
+        pass
 
 
 class DummyAction:
@@ -54,6 +59,10 @@ def test_sanitize_action_name():
     assert AnimationRigSanitizer.sanitize_action_name("Run Cycle! 01") == "Run_Cycle__01"
     assert AnimationRigSanitizer.sanitize_action_name("Walk-Forward.001") == "Walk_Forward_001"
     assert AnimationRigSanitizer.sanitize_action_name("___") == "Anim_Action"
+    assert AnimationRigSanitizer.sanitize_action_name("") == "Anim_Action"
+    assert AnimationRigSanitizer.sanitize_action_name(None) == "Anim_Action"  # type: ignore
+    assert AnimationRigSanitizer.sanitize_action_name("!@#$%^&*()") == "Anim_Action"
+    assert AnimationRigSanitizer.sanitize_action_name("Attack_01") == "Attack_01"
 
 
 def test_get_deform_bone_names():
@@ -67,6 +76,15 @@ def test_get_deform_bone_names():
     )
     deforms = AnimationRigSanitizer.get_deform_bone_names(arm)
     assert deforms == ["DEF-spine", "DEF-head"]
+
+    # Edge cases
+    assert AnimationRigSanitizer.get_deform_bone_names(None) == []
+    assert AnimationRigSanitizer.get_deform_bone_names(object()) == []
+
+    class NonArmature:
+        type = "MESH"
+
+    assert AnimationRigSanitizer.get_deform_bone_names(NonArmature()) == []
 
 
 def test_validate_action_bounds_integer_frames():
@@ -91,3 +109,39 @@ def test_validate_action_bounds_subframe_drift():
     assert result["valid"] is True
     assert result["has_subframe_drift"] is True
     assert result["subframe_drift_keys"] == 2
+
+
+def test_validate_action_bounds_empty_and_invalid():
+    assert AnimationRigSanitizer.validate_action_bounds(None)["valid"] is False
+    assert AnimationRigSanitizer.validate_action_bounds(DummyAction("Empty", []))["valid"] is False
+
+    fc_empty = DummyFCurve("dummy", [])
+    assert AnimationRigSanitizer.validate_action_bounds(DummyAction("NoKeys", [fc_empty]))["valid"] is False
+
+
+def test_snap_action_to_integer_frames():
+    fc = DummyFCurve('pose.bones["DEF-spine"].location', [0.0, 10.2, 20.4, 30.05])
+    action = DummyAction("Mocap_Drift", [fc])
+
+    assert AnimationRigSanitizer.validate_action_bounds(action)["has_subframe_drift"] is True
+
+    snapped = AnimationRigSanitizer.snap_action_to_integer_frames(action, drift_threshold=0.5)
+    assert snapped == 3
+
+    # All keys should now be exact integer frames: 0, 10, 20, 30
+    post_check = AnimationRigSanitizer.validate_action_bounds(action)
+    assert post_check["has_subframe_drift"] is False
+    assert post_check["subframe_drift_keys"] == 0
+    assert fc.keyframe_points[1].co.x == 10.0
+    assert fc.keyframe_points[2].co.x == 20.0
+    assert fc.keyframe_points[3].co.x == 30.0
+
+    # Handles should have shifted by dx
+    assert fc.keyframe_points[1].handle_left.x == 9.0
+    assert fc.keyframe_points[1].handle_right.x == 11.0
+
+
+def test_bake_and_nla_guards():
+    # Calling bake / nla with null arguments returns None / False gracefully
+    assert AnimationRigSanitizer.bake_deform_animation(None, None, None) is None
+    assert AnimationRigSanitizer.setup_clean_nla_export(None, None) is False

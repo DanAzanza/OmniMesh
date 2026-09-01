@@ -22,6 +22,7 @@ if __package__:
     from . import bridges
     from .core import (
         animations,
+        batch,
         decimator,
         hierarchy,
         materials,
@@ -33,11 +34,12 @@ if __package__:
         textures,
     )
     from .exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
-    from .ui import hud, panel, properties, simulator_ops
+    from .ui import batch_panel, hud, panel, properties, simulator_ops, split_preview
 else:
     import bridges
     from core import (
         animations,
+        batch,
         decimator,
         hierarchy,
         materials,
@@ -49,7 +51,7 @@ else:
         textures,
     )
     from exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
-    from ui import hud, panel, properties, simulator_ops
+    from ui import batch_panel, hud, panel, properties, simulator_ops, split_preview
 
 # Dynamic reloading for live development sessions
 if "bpy" in locals() and "bpy" in sys.modules:
@@ -62,11 +64,14 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(rigging)
     importlib.reload(textures)
     importlib.reload(animations)
+    importlib.reload(batch)
     importlib.reload(bridges)
     importlib.reload(simulator)
     importlib.reload(properties)
     importlib.reload(panel)
     importlib.reload(simulator_ops)
+    importlib.reload(batch_panel)
+    importlib.reload(split_preview)
     importlib.reload(hud)
     importlib.reload(msfs_export)
     importlib.reload(ue5_export)
@@ -79,6 +84,8 @@ def register():
     properties.register_properties()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
+    batch_panel.register_batch_ops()
+    split_preview.register_split_ops()
     engine_export.register_exporters()
     hud.LODViewportHUD.register()
 
@@ -86,6 +93,8 @@ def register():
 def unregister():
     hud.LODViewportHUD.unregister()
     engine_export.unregister_exporters()
+    split_preview.unregister_split_ops()
+    batch_panel.unregister_batch_ops()
     simulator_ops.unregister_simulator_ops()
     panel.unregister_panel()
     properties.unregister_properties()

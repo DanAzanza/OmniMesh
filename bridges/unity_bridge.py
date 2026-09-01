@@ -159,14 +159,19 @@ class UnityLiveBridge(EngineBridgeBase):
         if not project_dir or not os.path.exists(project_dir):
             return False, "Target Unity project directory not configured."
 
+        if not export_dir or not os.path.exists(export_dir):
+            return False, f"Export directory not found: {export_dir}"
+
         cls.install_companion_scripts(project_dir)
 
         target_import_dir = os.path.join(project_dir, "Assets", "OmniMesh_Exports", asset_name)
         os.makedirs(target_import_dir, exist_ok=True)
 
         src_fbx = os.path.join(export_dir, f"{asset_name}.fbx")
-        if os.path.exists(src_fbx):
-            shutil.copy2(src_fbx, os.path.join(target_import_dir, f"{asset_name}.fbx"))
+        if not os.path.exists(src_fbx):
+            return False, f"Exported FBX not found at: {src_fbx}"
+
+        shutil.copy2(src_fbx, os.path.join(target_import_dir, f"{asset_name}.fbx"))
 
         src_tex_dir = os.path.join(export_dir, "Textures")
         if os.path.exists(src_tex_dir):

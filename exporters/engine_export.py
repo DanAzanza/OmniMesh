@@ -18,11 +18,11 @@ except ImportError:
 try:
     from ..bridges.manager import BridgeManager
     from ..core.animations import AnimationRigSanitizer
-    from ..core.textures import TextureChannelPacker
+    from ..core.textures import TextureChannelPacker, TexturePoolManager
 except (ImportError, ValueError):
     from bridges.manager import BridgeManager
     from core.animations import AnimationRigSanitizer
-    from core.textures import TextureChannelPacker
+    from core.textures import TextureChannelPacker, TexturePoolManager
 
 from .godot_export import GodotExporter
 from .msfs_export import MSFSExporter
@@ -35,20 +35,37 @@ logger = logging.getLogger(__name__)
 class PreFlightValidator:
     @staticmethod
     def run_checks(context: Any) -> list[str]:
-        if not bpy or not context:
+        if not context or not getattr(context, "scene", None):
             return ["Blender context not available."]
-        props = context.scene.lod_tool
+        props = getattr(context.scene, "lod_tool", None)
+        if not props:
+            return ["LOD tool properties not initialized on scene."]
         errors: list[str] = []
 
         if len(props.lods) == 0:
             errors.append("No LOD tiers configured.")
             return errors
 
-        valid_objs = [tier.generated_obj for tier in props.lods if tier.generated_obj]
+        valid_objs = []
+        for tier in props.lods:
+            try:
+                obj = tier.generated_obj
+                obj_name = getattr(obj, "name", None)
+                if obj and (not bpy or (isinstance(obj_name, str) and obj_name in bpy.data.objects)):
+                    valid_objs.append(obj)
+            except (ReferenceError, AttributeError, KeyError) as exc:
+                logger.debug("Failed to resolve tier generated_obj: %s", exc)
+
         if len(valid_objs) != len(props.lods):
             errors.append("Some configured LOD tiers have not been generated yet. Run 'Generate All LODs' first.")
             return errors
 
+        # Empty geometry check
+        for i, obj in enumerate(valid_objs):
+            if obj.type == "MESH" and hasattr(obj.data, "polygons") and len(obj.data.polygons) == 0:
+                errors.append(f"LOD{i} ('{obj.name}') has 0 polygons (empty geometry).")
+
+        # Pivot / origin matching
         lod0_pivot = valid_objs[0].matrix_world.translation
         for i, obj in enumerate(valid_objs):
             if (obj.matrix_world.translation - lod0_pivot).length > 1e-4:
@@ -58,9 +75,18 @@ class PreFlightValidator:
             if abs(scale.x - 1.0) > 1e-4 or abs(scale.y - 1.0) > 1e-4 or abs(scale.z - 1.0) > 1e-4:
                 errors.append(f"LOD{i} has unapplied scale {tuple(round(s, 2) for s in scale)}. Apply transforms.")
 
+        # Material checks
         for i, obj in enumerate(valid_objs):
             if len(obj.material_slots) == 0 and len(valid_objs[0].material_slots) > 0:
                 errors.append(f"LOD{i} is missing material slots.")
+            for slot_idx, slot in enumerate(obj.material_slots):
+                if slot.material is None:
+                    errors.append(f"LOD{i} has unassigned material in slot {slot_idx}.")
+
+        # Export directory validation
+        export_dir_str = props.export_directory.strip() if props.export_directory else ""
+        if not export_dir_str:
+            errors.append("Export directory path is empty.")
 
         return errors
 
@@ -73,13 +99,21 @@ class LOD_OT_pack_pbr_textures(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(bpy and context and getattr(context, "active_object", None))
+        return bool(
+            bpy and context and (getattr(context, "active_object", None) or getattr(context.scene, "lod_tool", None))
+        )
 
     def execute(self, context: Any) -> set[str]:
-        if not bpy:
+        if not bpy or not context:
             return {"CANCELLED"}
-        props = context.scene.lod_tool
-        export_dir = bpy.path.abspath(props.export_directory)
+        props = getattr(context.scene, "lod_tool", None)
+        if not props:
+            self.report({"ERROR"}, "LOD tool scene properties not found.")
+            return {"CANCELLED"}
+
+        export_dir = (
+            bpy.path.abspath(props.export_directory) if props.export_directory else bpy.path.abspath("//Export/")
+        )
         tex_dir = os.path.join(export_dir, "Textures")
         os.makedirs(tex_dir, exist_ok=True)
 
@@ -88,38 +122,49 @@ class LOD_OT_pack_pbr_textures(Operator):
         target_engine = props.target_engine
 
         materials: set[Any] = set()
-        for obj in context.selected_objects:
-            for slot in obj.material_slots:
+        objs_to_check = list(context.selected_objects) if getattr(context, "selected_objects", None) else []
+        if not objs_to_check and getattr(context, "active_object", None):
+            objs_to_check.append(context.active_object)
+        if not objs_to_check and len(props.lods) > 0:
+            for tier in props.lods:
+                if tier.generated_obj:
+                    objs_to_check.append(tier.generated_obj)
+
+        for obj in objs_to_check:
+            for slot in getattr(obj, "material_slots", []):
                 if slot.material:
                     materials.add(slot.material)
 
         if not materials:
-            self.report({"WARNING"}, "No materials found on selected objects.")
+            self.report({"WARNING"}, "No materials found on selected or LOD objects.")
             return {"CANCELLED"}
 
         packed_count = 0
         for mat in materials:
             mat_name = mat.name.replace(" ", "_")
-            if target_engine == "UE5":
-                orm_path = os.path.join(tex_dir, f"T_{mat_name}_ORM.png")
-                TextureChannelPacker.pack_orm_ue5(mat, orm_path, target_size)
-                norm_img = TextureChannelPacker.get_material_normal_image(mat)
-                if norm_img:
-                    norm_path = os.path.join(tex_dir, f"T_{mat_name}_Normal_DirectX.png")
-                    TextureChannelPacker.convert_normal_directx(norm_img, norm_path, target_size)
-                packed_count += 1
-            elif target_engine == "UNITY_6":
-                mask_path = os.path.join(tex_dir, f"T_{mat_name}_MaskMap.png")
-                TextureChannelPacker.pack_maskmap_unity(mat, mask_path, target_size)
-                packed_count += 1
-            elif target_engine == "MSFS_2024":
-                comp_path = os.path.join(tex_dir, f"T_{mat_name}_COMP.png")
-                TextureChannelPacker.pack_comp_msfs(mat, comp_path, target_size)
-                packed_count += 1
-            elif target_engine == "GODOT_4":
-                orm_path = os.path.join(tex_dir, f"T_{mat_name}_ORM.png")
-                TextureChannelPacker.pack_orm_godot(mat, orm_path, target_size)
-                packed_count += 1
+            try:
+                if target_engine == "UE5":
+                    orm_path = os.path.join(tex_dir, f"T_{mat_name}_ORM.png")
+                    TextureChannelPacker.pack_orm_ue5(mat, orm_path, target_size)
+                    norm_img = TextureChannelPacker.get_material_normal_image(mat)
+                    if norm_img:
+                        norm_path = os.path.join(tex_dir, f"T_{mat_name}_Normal_DirectX.png")
+                        TextureChannelPacker.convert_normal_directx(norm_img, norm_path, target_size)
+                    packed_count += 1
+                elif target_engine == "UNITY_6":
+                    mask_path = os.path.join(tex_dir, f"T_{mat_name}_MaskMap.png")
+                    TextureChannelPacker.pack_maskmap_unity(mat, mask_path, target_size)
+                    packed_count += 1
+                elif target_engine == "MSFS_2024":
+                    comp_path = os.path.join(tex_dir, f"T_{mat_name}_COMP.png")
+                    TextureChannelPacker.pack_comp_msfs(mat, comp_path, target_size)
+                    packed_count += 1
+                elif target_engine == "GODOT_4":
+                    orm_path = os.path.join(tex_dir, f"T_{mat_name}_ORM.png")
+                    TextureChannelPacker.pack_orm_godot(mat, orm_path, target_size)
+                    packed_count += 1
+            except Exception as exc:
+                logger.error("Failed packing texture set for material '%s': %s", mat.name, exc)
 
         self.report(
             {"INFO"}, f"Successfully packed {packed_count} PBR texture set(s) for {target_engine} into {tex_dir}"
@@ -218,6 +263,7 @@ class LOD_OT_export_engine_package(Operator):
         if props.export_packed_textures:
             try:
                 bpy.ops.lod_tool.pack_pbr_textures()
+                TexturePoolManager.wait_all([], timeout=30.0)
             except (RuntimeError, AttributeError, OSError) as exc:
                 logger.warning("Auto PBR texture packing failed during export: %s", exc)
 

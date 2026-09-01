@@ -202,6 +202,49 @@ class LODPipelineProperties(PropertyGroup):
         default="Bridge Ready",
     )
 
+    # Batch Library Processor Properties
+    batch_source_directory: StringProperty(
+        name="Source Assets Folder",
+        subtype="DIR_PATH",
+        default="",
+        description="Directory containing .fbx, .obj, .gltf, or .glb assets to batch-process",
+    )
+    batch_export_directory: StringProperty(
+        name="Batch Output Folder",
+        subtype="DIR_PATH",
+        default="",
+        description="Destination folder for exported LOD packages and textures",
+    )
+    batch_recursive_scan: BoolProperty(
+        name="Recursive Subfolders",
+        default=True,
+        description="Scan nested subdirectories for 3D model files",
+    )
+    is_batch_running: BoolProperty(name="Batch Running", default=False)
+    batch_total_count: IntProperty(name="Total Assets", default=0)
+    batch_processed_count: IntProperty(name="Processed Assets", default=0)
+    batch_current_asset: StringProperty(name="Current Asset", default="")
+    batch_status_text: StringProperty(name="Batch Status", default="Batch Ingest Ready")
+
+    # Visual A/B Split-Screen Viewport Comparison Properties
+    is_split_active: BoolProperty(name="Split Screen Active", default=False)
+    split_ratio: FloatProperty(
+        name="Split Divider",
+        default=0.5,
+        min=0.05,
+        max=0.95,
+        subtype="FACTOR",
+        precision=2,
+        description="Position of the A/B comparison divider line",
+    )
+    split_compare_tier: IntProperty(
+        name="Compare Tier",
+        default=3,
+        min=1,
+        max=7,
+        description="LOD tier index to compare against LOD0 Master",
+    )
+
 
 def register_properties() -> None:
     if not bpy:

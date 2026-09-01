@@ -168,155 +168,162 @@ class LOD_OT_generate_all(Operator):
             orig_pose_pos = armature_obj.data.pose_position
             armature_obj.data.pose_position = "REST"
 
-        base_name = props.export_base_name or (
-            context.active_object.name if context.active_object else mesh_objs[0].name
-        )
-        coll_name = f"{base_name}_LODs"
-        target_coll = bpy.data.collections.get(coll_name)
-        if not target_coll:
-            target_coll = bpy.data.collections.new(coll_name)
-            context.scene.collection.children.link(target_coll)
+        try:
+            base_name = props.export_base_name or (
+                context.active_object.name if context.active_object else mesh_objs[0].name
+            )
+            coll_name = f"{base_name}_LODs"
+            target_coll = bpy.data.collections.get(coll_name)
+            if not target_coll:
+                target_coll = bpy.data.collections.new(coll_name)
+                context.scene.collection.children.link(target_coll)
 
-        for obj in mesh_objs:
-            if not obj.parent or obj.parent.type != "ARMATURE":
-                bpy.context.view_layer.objects.active = obj
-                obj.select_set(True)
-                bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+            for obj in mesh_objs:
+                if not obj.parent or obj.parent.type != "ARMATURE":
+                    bpy.context.view_layer.objects.active = obj
+                    obj.select_set(True)
+                    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
 
-        all_coords = []
-        for obj in mesh_objs:
-            all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
-        _, radius = compute_bounding_sphere(all_coords)
+            all_coords = []
+            for obj in mesh_objs:
+                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
+            _, radius = compute_bounding_sphere(all_coords)
 
-        render = context.scene.render
-        cam = context.scene.camera
-        cam_angle = cam.data.angle if cam and cam.type == "CAMERA" else math.radians(60.0)
-        sensor_fit = cam.data.sensor_fit if cam and cam.type == "CAMERA" else "AUTO"
-        aspect_ratio = render.resolution_x / max(1, render.resolution_y)
-        fov_v = compute_vertical_fov(cam_angle, aspect_ratio, sensor_fit)
+            render = context.scene.render
+            cam = context.scene.camera
+            cam_angle = cam.data.angle if cam and cam.type == "CAMERA" else math.radians(60.0)
+            sensor_fit = cam.data.sensor_fit if cam and cam.type == "CAMERA" else "AUTO"
+            aspect_ratio = render.resolution_x / max(1, render.resolution_y)
+            fov_v = compute_vertical_fov(cam_angle, aspect_ratio, sensor_fit)
 
-        max_influences = int(props.max_bone_influences)
-        generated_tier_objects = []
+            max_influences = int(props.max_bone_influences)
+            generated_tier_objects = []
 
-        for i, tier in enumerate(props.lods):
-            s_frac = tier.screen_size_pct / 100.0
-            tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
-            should_merge = props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier
+            for i, tier in enumerate(props.lods):
+                s_frac = tier.screen_size_pct / 100.0
+                tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
+                should_merge = props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier
 
-            tier_obj = None
+                tier_obj = None
 
-            if should_merge and len(mesh_objs) > 1:
-                merged_name = f"{base_name}_LOD{i}"
-                existing = bpy.data.objects.get(merged_name)
-                if existing:
-                    bpy.data.objects.remove(existing, do_unlink=True)
-
-                tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(mesh_objs, merged_name, armature_obj)
-                target_coll.objects.link(tier_obj)
-
-                bm = bmesh.new()
-                bm.from_mesh(tier_obj.data)
-                MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
-                pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
-                MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
-                MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
-                bm.to_mesh(tier_obj.data)
-                bm.free()
-                tier_obj.data.update()
-
-                MeshDecimator.execute_decimate_qem(tier_obj, tolerances["qem_ratio"], use_curvature_weight=True)
-
-                if props.purge_shape_keys and i >= 2:
-                    MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
-
-                if armature_obj and len(tier_obj.vertex_groups) > 0:
-                    if props.enable_bone_pruning and i >= 2:
-                        KinematicBonePruner.prune_kinematic_subtrees(
-                            tier_obj,
-                            armature_obj,
-                            screen_distance_m=tier.distance_m,
-                            fov_v_rad=fov_v,
-                            resolution_y=render.resolution_y,
-                            pixel_threshold=1.5,
-                        )
-                    WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
-
-                tier.actual_tris = len(tier_obj.data.polygons)
-                tier.mat_slots_count = len(tier_obj.material_slots)
-                tier.generated_obj = tier_obj
-                generated_tier_objects.append(tier_obj)
-
-            else:
-                tier_tris = 0
-                tier_mats = 0
-                for obj_idx, source_obj in enumerate(mesh_objs):
-                    sub_name = f"{source_obj.name}_LOD{i}" if len(mesh_objs) > 1 else f"{base_name}_LOD{i}"
-                    existing = bpy.data.objects.get(sub_name)
-                    if existing and existing != source_obj:
+                if should_merge and len(mesh_objs) > 1:
+                    merged_name = f"{base_name}_LOD{i}"
+                    existing = bpy.data.objects.get(merged_name)
+                    if existing:
                         bpy.data.objects.remove(existing, do_unlink=True)
 
-                    lod_obj = source_obj.copy()
-                    lod_obj.data = source_obj.data.copy()
-                    lod_obj.name = sub_name
-                    lod_obj.data.name = f"{sub_name}_Mesh"
-                    target_coll.objects.link(lod_obj)
+                    tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(mesh_objs, merged_name, armature_obj)
+                    target_coll.objects.link(tier_obj)
 
-                    if i == 0:
-                        bm = bmesh.new()
-                        bm.from_mesh(lod_obj.data)
-                        MeshSanitizer.clean_loose_and_degenerates(bm)
-                        bm.to_mesh(lod_obj.data)
-                        bm.free()
-                    else:
-                        if props.purge_shape_keys and i >= 2:
-                            MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
+                    bm = bmesh.new()
+                    bm.from_mesh(tier_obj.data)
+                    MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
+                    pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
+                    MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
+                    MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
+                    bm.to_mesh(tier_obj.data)
+                    bm.free()
+                    tier_obj.data.update()
 
-                        bm = bmesh.new()
-                        bm.from_mesh(lod_obj.data)
-                        MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
-                        pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
-                        MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
-                        MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
-                        bm.to_mesh(lod_obj.data)
-                        bm.free()
+                    MeshDecimator.execute_decimate_qem(tier_obj, tolerances["qem_ratio"], use_curvature_weight=True)
+
+                    if props.purge_shape_keys and i >= 2:
+                        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
+
+                    if armature_obj and len(tier_obj.vertex_groups) > 0:
+                        if props.enable_bone_pruning and i >= 2:
+                            KinematicBonePruner.prune_kinematic_subtrees(
+                                tier_obj,
+                                armature_obj,
+                                screen_distance_m=tier.distance_m,
+                                fov_v_rad=fov_v,
+                                resolution_y=render.resolution_y,
+                                pixel_threshold=1.5,
+                            )
+                        WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
+
+                    tier.actual_tris = len(tier_obj.data.polygons)
+                    tier.mat_slots_count = len(tier_obj.material_slots)
+                    tier.generated_obj = tier_obj
+                    generated_tier_objects.append(tier_obj)
+
+                else:
+                    tier_tris = 0
+                    tier_mats = 0
+                    for obj_idx, source_obj in enumerate(mesh_objs):
+                        sub_name = f"{source_obj.name}_LOD{i}" if len(mesh_objs) > 1 else f"{base_name}_LOD{i}"
+                        existing = bpy.data.objects.get(sub_name)
+                        if existing and existing != source_obj:
+                            bpy.data.objects.remove(existing, do_unlink=True)
+
+                        lod_obj = source_obj.copy()
+                        lod_obj.data = source_obj.data.copy()
+                        lod_obj.name = sub_name
+                        lod_obj.data.name = f"{sub_name}_Mesh"
+                        target_coll.objects.link(lod_obj)
+
+                        if i == 0:
+                            bm = bmesh.new()
+                            bm.from_mesh(lod_obj.data)
+                            MeshSanitizer.clean_loose_and_degenerates(bm)
+                            bm.to_mesh(lod_obj.data)
+                            bm.free()
+                        else:
+                            if props.purge_shape_keys and i >= 2:
+                                MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
+
+                            bm = bmesh.new()
+                            bm.from_mesh(lod_obj.data)
+                            MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
+                            pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
+                            MeshDecimator.apply_planar_limited_dissolve(
+                                bm, math.radians(tolerances["planar_angle_deg"])
+                            )
+                            MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
+                            bm.to_mesh(lod_obj.data)
+                            bm.free()
+                            lod_obj.data.update()
+
+                            MeshDecimator.execute_decimate_qem(
+                                lod_obj, tolerances["qem_ratio"], use_curvature_weight=True
+                            )
+
+                            MaterialOptimizer.consolidate_micro_materials(
+                                lod_obj,
+                                area_crit=tolerances["area_crit"],
+                                preserve_slot_indexing=props.preserve_slot_indexing,
+                            )
+
+                            NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"])
+
+                            if armature_obj and len(lod_obj.vertex_groups) > 0:
+                                if props.enable_bone_pruning and i >= 2:
+                                    KinematicBonePruner.prune_kinematic_subtrees(
+                                        lod_obj,
+                                        armature_obj,
+                                        screen_distance_m=tier.distance_m,
+                                        fov_v_rad=fov_v,
+                                        resolution_y=render.resolution_y,
+                                        pixel_threshold=1.5,
+                                    )
+                                WeightSanitizer.normalize_and_clamp_weights(lod_obj, max_influences=max_influences)
+
                         lod_obj.data.update()
+                        tier_tris += len(lod_obj.data.polygons)
+                        tier_mats += len(lod_obj.material_slots)
+                        if obj_idx == 0:
+                            tier.generated_obj = lod_obj
 
-                        MeshDecimator.execute_decimate_qem(lod_obj, tolerances["qem_ratio"], use_curvature_weight=True)
+                    tier.actual_tris = tier_tris
+                    tier.mat_slots_count = tier_mats
 
-                        MaterialOptimizer.consolidate_micro_materials(
-                            lod_obj,
-                            area_crit=tolerances["area_crit"],
-                            preserve_slot_indexing=props.preserve_slot_indexing,
-                        )
-
-                        NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"])
-
-                        if armature_obj and len(lod_obj.vertex_groups) > 0:
-                            if props.enable_bone_pruning and i >= 2:
-                                KinematicBonePruner.prune_kinematic_subtrees(
-                                    lod_obj,
-                                    armature_obj,
-                                    screen_distance_m=tier.distance_m,
-                                    fov_v_rad=fov_v,
-                                    resolution_y=render.resolution_y,
-                                    pixel_threshold=1.5,
-                                )
-                            WeightSanitizer.normalize_and_clamp_weights(lod_obj, max_influences=max_influences)
-
-                    lod_obj.data.update()
-                    tier_tris += len(lod_obj.data.polygons)
-                    tier_mats += len(lod_obj.material_slots)
-                    if obj_idx == 0:
-                        tier.generated_obj = lod_obj
-
-                tier.actual_tris = tier_tris
-                tier.mat_slots_count = tier_mats
-
-        if armature_obj and orig_pose_pos:
-            armature_obj.data.pose_position = orig_pose_pos
-
-        self.report({"INFO"}, f"Generated {len(props.lods)} LOD tiers across {len(mesh_objs)} objects in '{coll_name}'")
-        return {"FINISHED"}
+            self.report(
+                {"INFO"}, f"Generated {len(props.lods)} LOD tiers across {len(mesh_objs)} objects in '{coll_name}'"
+            )
+            return {"FINISHED"}
+        finally:
+            if armature_obj and orig_pose_pos and hasattr(armature_obj.data, "pose_position"):
+                armature_obj.data.pose_position = orig_pose_pos
 
 
 class LOD_OT_preview_tier(Operator):
@@ -420,6 +427,19 @@ class LOD_PT_main_panel(Panel):
             box.prop(props, "virtual_screen_size_pct", slider=True)
             box.prop(props, "virtual_preview_dist_m")
 
+        # Visual A/B Split-Screen Viewport Comparison Section
+        box = layout.box()
+        box.label(text="A/B Split-Screen Comparison", icon="UV_SYNC_SELECT")
+        row = box.row(align=True)
+        row.scale_y = 1.2
+        if props.is_split_active:
+            row.operator("lod_tool.toggle_split_preview", text="Exit Split Preview", icon="CANCEL")
+            box.prop(props, "split_ratio", text="Split Line", slider=True)
+            box.prop(props, "split_compare_tier", text="Compare Tier")
+        else:
+            row.operator("lod_tool.toggle_split_preview", text="Start Split Preview", icon="VIEW_CAMERA")
+            box.prop(props, "split_compare_tier", text="Compare Tier")
+
         # PBR Texture Packing & Animation Section
         box = layout.box()
         box.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
@@ -451,12 +471,27 @@ class LOD_PT_main_panel(Panel):
         row.scale_y = 1.2
         row.operator("lod_tool.sync_live_bridge", text="Sync to Engine", icon="FILE_REFRESH")
 
+        # Single Asset Export Section
         box = layout.box()
         box.label(text="Multi-Engine Export", icon="EXPORT")
         box.prop(props, "export_directory")
         col = box.column(align=True)
         col.scale_y = 1.2
         col.operator("lod_tool.export_engine_package", icon="PACKAGE")
+
+        # Batch Library Ingestion Section
+        box = layout.box()
+        box.label(text="Batch Library Ingest", icon="FILE_FOLDER")
+        box.prop(props, "batch_source_directory", text="Source Folder")
+        box.prop(props, "batch_export_directory", text="Output Folder")
+        box.prop(props, "batch_recursive_scan")
+        row = box.row(align=True)
+        row.scale_y = 1.2
+        if props.is_batch_running:
+            row.label(text=props.batch_status_text, icon="TIME")
+        else:
+            row.operator("lod_tool.batch_process", text="Batch Process Library", icon="AUTO")
+            box.label(text=props.batch_status_text)
 
 
 classes = (

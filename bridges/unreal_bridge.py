@@ -46,7 +46,7 @@ class UnrealLiveBridge(EngineBridgeBase):
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=timeout_sec):
                 return True
-        except (socket.timeout, ConnectionRefusedError, OSError):
+        except (socket.timeout, ConnectionRefusedError, OSError, Exception):
             return False
 
     @classmethod
@@ -56,7 +56,7 @@ class UnrealLiveBridge(EngineBridgeBase):
             req = urllib.request.Request(f"http://127.0.0.1:{port}/remote/info", method="GET")
             with urllib.request.urlopen(req, timeout=timeout_sec) as resp:  # noqa: S310
                 return resp.status == 200
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except (urllib.error.URLError, TimeoutError, OSError, Exception):
             return False
 
     @classmethod
@@ -79,22 +79,26 @@ class UnrealLiveBridge(EngineBridgeBase):
         texture_dict: Optional[Dict[str, str]] = None,
     ) -> str:
         """Generates Python code for execution inside UE5 that preserves existing materials,
-
         updates texture bindings non-destructively, and avoids collision hull destruction.
         """
         fbx_posix = _to_posix(fbx_absolute_path)
-        tex_json = json.dumps({k: _to_posix(v) for k, v in (texture_dict or {}).items()})
+        dest_posix = _to_posix(destination_content_path).rstrip("/")
+        if not dest_posix.startswith("/"):
+            dest_posix = "/" + dest_posix
+        master_mat_posix = _to_posix(master_material_path)
+        sanitized_asset_name = asset_name.replace('"', '\\"')
+
+        textures_literal = json.dumps({k: _to_posix(v) for k, v in (texture_dict or {}).items()})
 
         lines = [
             "import unreal",
-            "import json",
             "import pathlib",
             "",
             f'fbx_path = "{fbx_posix}"',
-            f'dest_path = "{destination_content_path}"',
-            f'asset_name = "{asset_name}"',
-            f"textures = json.loads('{tex_json}')",
-            f'master_mat_path = "{master_material_path}"',
+            f'dest_path = "{dest_posix}"',
+            f'asset_name = "{sanitized_asset_name}"',
+            f"textures = {textures_literal}",
+            f'master_mat_path = "{master_mat_posix}"',
             "",
             "# 1. Non-Destructive FBX Import Task",
             "task = unreal.AssetImportTask()",
@@ -120,7 +124,7 @@ class UnrealLiveBridge(EngineBridgeBase):
             'imported_asset = unreal.EditorAssetLibrary.load_asset(f"{dest_path}/{asset_name}")',
             "",
             "if imported_asset:",
-            f'    mat_inst_name = "MI_{asset_name}"',
+            f'    mat_inst_name = "MI_{sanitized_asset_name}"',
             '    mat_inst_path = f"{dest_path}/{mat_inst_name}"',
             "    if not unreal.EditorAssetLibrary.does_asset_exist(mat_inst_path):",
             "        master_mat = unreal.EditorAssetLibrary.load_asset(master_mat_path)",
@@ -181,7 +185,7 @@ class UnrealLiveBridge(EngineBridgeBase):
                 msg = json.dumps(cmd_dict).encode("utf-8")
                 s.sendall(len(msg).to_bytes(4, byteorder="big") + msg)
                 return True, "Successfully dispatched live sync command to active UE5 session."
-        except OSError as e:
+        except (socket.timeout, ConnectionRefusedError, OSError) as e:
             return False, f"Socket transmission failed: {str(e)}"
 
     @classmethod

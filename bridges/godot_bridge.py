@@ -95,14 +95,23 @@ class GodotLiveBridge(EngineBridgeBase):
         if not project_dir or not os.path.exists(project_dir):
             return False, "Target Godot project directory not configured."
 
+        if not export_dir or not os.path.exists(export_dir):
+            return False, f"Export directory not found: {export_dir}"
+
         cls.install_companion_scripts(project_dir)
 
         target_import_dir = os.path.join(project_dir, "OmniMesh_Exports", asset_name)
         os.makedirs(target_import_dir, exist_ok=True)
 
+        copied_models = 0
         for f in os.listdir(export_dir):
             if f.endswith((".gltf", ".glb", ".bin")):
                 shutil.copy2(os.path.join(export_dir, f), os.path.join(target_import_dir, f))
+                if f.endswith((".gltf", ".glb")):
+                    copied_models += 1
+
+        if copied_models == 0:
+            return False, f"No glTF/GLB models found in export directory: {export_dir}"
 
         src_tex = os.path.join(export_dir, "Textures")
         if os.path.exists(src_tex):
@@ -111,4 +120,4 @@ class GodotLiveBridge(EngineBridgeBase):
             for f in os.listdir(src_tex):
                 shutil.copy2(os.path.join(src_tex, f), os.path.join(dest_tex, f))
 
-        return True, f"Synced glTF asset and textures to Godot project at {target_import_dir}"
+        return True, f"Synced glTF asset ({copied_models} models) and textures to Godot project at {target_import_dir}"
