@@ -26,7 +26,7 @@ class LODViewportHUD:
     _cached_data = {}
 
     @classmethod
-    def update_cache(cls, context):
+    def update_cache(cls, context: Any) -> None:
         if not bpy or not context:
             return
         props = getattr(context.scene, "lod_tool", None)
@@ -34,7 +34,8 @@ class LODViewportHUD:
             cls._cached_data = {}
             return
 
-        active_tier = props.lods[props.active_lod_index] if props.active_lod_index < len(props.lods) else props.lods[0]
+        active_idx = max(0, min(props.active_lod_index, len(props.lods) - 1))
+        active_tier = props.lods[active_idx]
         base_tris = props.lods[0].actual_tris or props.lods[0].target_tris or 1
         curr_tris = active_tier.actual_tris or active_tier.target_tris or 1
         reduction_pct = max(0.0, (1.0 - curr_tris / float(base_tris)) * 100.0)
@@ -62,7 +63,7 @@ class LODViewportHUD:
         distance_m: float,
         active_tris: int,
         tracked_count: int,
-    ):
+    ) -> None:
         cls._cached_data = {
             "is_active": True,
             "is_simulating": True,
@@ -75,21 +76,31 @@ class LODViewportHUD:
         }
 
     @classmethod
-    def clear_simulation_hud(cls):
+    def clear_simulation_hud(cls) -> None:
         if cls._cached_data:
             cls._cached_data["is_simulating"] = False
 
     @classmethod
-    def draw_callback_px(cls):
-        if not cls._cached_data or not cls._cached_data.get("is_active") or not gpu or not blf:
+    def draw_callback_px(cls) -> None:
+        if not cls._cached_data or not cls._cached_data.get("is_active") or not gpu or not blf or not bpy:
+            return
+
+        # Check if HUD is toggled off in scene properties
+        props = getattr(bpy.context.scene, "lod_tool", None) if (bpy.context and bpy.context.scene) else None
+        if props and not getattr(props, "show_viewport_hud", True):
             return
 
         try:
+            scale = (
+                bpy.context.preferences.system.ui_scale
+                if (bpy.context and hasattr(bpy.context, "preferences"))
+                else 1.0
+            )
             font_id = 0
-            x_offset = 40
-            y_offset = 120
-            box_w = 340
-            box_h = 100
+            x_offset = int(40 * scale)
+            y_offset = int(120 * scale)
+            box_w = int(340 * scale)
+            box_h = int(100 * scale)
 
             vertices = (
                 (x_offset - 10, y_offset + 10),
@@ -102,60 +113,63 @@ class LODViewportHUD:
             shader = gpu.shader.from_builtin("UNIFORM_COLOR")
             batch = batch_for_shader(shader, "TRIS", {"pos": vertices}, indices=indices)
 
+            # GPU blend state management with strict try...finally guard
             gpu.state.blend_set("ALPHA")
-            shader.bind()
-            shader.uniform_float("color", (0.04, 0.07, 0.11, 0.88))
-            batch.draw(shader)
-            gpu.state.blend_set("NONE")
+            try:
+                shader.bind()
+                shader.uniform_float("color", (0.04, 0.07, 0.11, 0.88))
+                batch.draw(shader)
+            finally:
+                gpu.state.blend_set("NONE")
 
             is_sim = cls._cached_data.get("is_simulating", False)
 
             if is_sim:
-                blf.size(font_id, 13)
+                blf.size(font_id, int(13 * scale))
                 blf.color(font_id, 0.2, 1.0, 0.6, 1.0)
-                blf.position(font_id, x_offset, y_offset - 15, 0)
+                blf.position(font_id, x_offset, int(y_offset - 15 * scale), 0)
                 blf.draw(font_id, f"● OMNIMESH SIMULATOR ACTIVE ({cls._cached_data.get('sim_mode', 'LIVE')})")
 
-                blf.size(font_id, 11)
+                blf.size(font_id, int(11 * scale))
                 blf.color(font_id, 1.0, 1.0, 1.0, 0.9)
-                blf.position(font_id, x_offset, y_offset - 35, 0)
+                blf.position(font_id, x_offset, int(y_offset - 35 * scale), 0)
                 blf.draw(
                     font_id,
                     f"Target: {cls._cached_data['active_name']}  (Screen: {cls._cached_data['screen_pct']:.1f}%)",
                 )
 
-                blf.position(font_id, x_offset, y_offset - 55, 0)
+                blf.position(font_id, x_offset, int(y_offset - 55 * scale), 0)
                 blf.draw(
                     font_id,
                     f"Distance: {cls._cached_data['distance_m']:.1f}m | Assets: {cls._cached_data['tracked_count']}",
                 )
 
                 blf.color(font_id, 0.3, 0.9, 1.0, 1.0)
-                blf.position(font_id, x_offset, y_offset - 75, 0)
+                blf.position(font_id, x_offset, int(y_offset - 75 * scale), 0)
                 blf.draw(font_id, f"Active Geometry : {cls._cached_data['curr_tris']:,} tris")
 
             else:
-                blf.size(font_id, 13)
+                blf.size(font_id, int(13 * scale))
                 blf.color(font_id, 0.2, 0.8, 1.0, 1.0)
-                blf.position(font_id, x_offset, y_offset - 15, 0)
+                blf.position(font_id, x_offset, int(y_offset - 15 * scale), 0)
                 blf.draw(font_id, f"OMNIMESH MONITOR ({cls._cached_data.get('engine', 'MSFS')})")
 
-                blf.size(font_id, 11)
+                blf.size(font_id, int(11 * scale))
                 blf.color(font_id, 1.0, 1.0, 1.0, 0.9)
-                blf.position(font_id, x_offset, y_offset - 35, 0)
+                blf.position(font_id, x_offset, int(y_offset - 35 * scale), 0)
                 blf.draw(
                     font_id,
                     f"Active Tier: {cls._cached_data['active_name']}  (Screen: {cls._cached_data['screen_pct']:.1f}%)",
                 )
 
-                blf.position(font_id, x_offset, y_offset - 55, 0)
+                blf.position(font_id, x_offset, int(y_offset - 55 * scale), 0)
                 blf.draw(
                     font_id,
                     f"Switch Dist: {cls._cached_data['distance_m']:.1f}m | Mat Slots: {cls._cached_data.get('mat_slots', 1)}",
                 )
 
                 blf.color(font_id, 0.3, 1.0, 0.4, 1.0)
-                blf.position(font_id, x_offset, y_offset - 75, 0)
+                blf.position(font_id, x_offset, int(y_offset - 75 * scale), 0)
                 blf.draw(
                     font_id,
                     f"Triangles  : {cls._cached_data['curr_tris']:,}  (-{cls._cached_data.get('reduction_pct', 0.0):.1f}%)",
@@ -164,7 +178,7 @@ class LODViewportHUD:
             logger.debug("HUD draw callback exception: %s", exc)
 
     @classmethod
-    def register(cls):
+    def register(cls) -> None:
         if not bpy:
             return
         if cls._handler is None:
@@ -175,7 +189,7 @@ class LODViewportHUD:
                 cls._handler = None
 
     @classmethod
-    def unregister(cls):
+    def unregister(cls) -> None:
         if not bpy:
             return
         if cls._handler is not None:

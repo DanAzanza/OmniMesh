@@ -65,46 +65,52 @@ class SplitPreviewEngine:
             height = region.height
             split_x = width * cls._cached_overlay["split_ratio"]
 
-            # 1. Draw vertical divider line
+            # 1. Draw vertical divider line with strict blend state management
             shader = gpu.shader.from_builtin("UNIFORM_COLOR")
             gpu.state.blend_set("ALPHA")
-            gpu.state.line_width_set(2.0)
+            try:
+                gpu.state.line_width_set(2.0)
 
-            line_coords = [(split_x, 0.0), (split_x, float(height))]
-            batch = batch_for_shader(shader, "LINES", {"pos": line_coords})
-            shader.bind()
-            shader.uniform_float("color", (0.2, 0.8, 1.0, 0.9))  # Cyan divider line
-            batch.draw(shader)
+                line_coords = [(split_x, 0.0), (split_x, float(height))]
+                batch = batch_for_shader(shader, "LINES", {"pos": line_coords})
+                shader.bind()
+                shader.uniform_float("color", (0.2, 0.8, 1.0, 0.9))  # Cyan divider line
+                batch.draw(shader)
 
-            # Draw center handle notch
-            notch_y = height * 0.5
-            notch_coords = [
-                (split_x - 12.0, notch_y - 20.0),
-                (split_x + 12.0, notch_y - 20.0),
-                (split_x + 12.0, notch_y + 20.0),
-                (split_x - 12.0, notch_y + 20.0),
-            ]
-            notch_indices = [(0, 1, 2), (2, 3, 0)]
-            notch_batch = batch_for_shader(shader, "TRIS", {"pos": notch_coords}, indices=notch_indices)
-            shader.uniform_float("color", (0.1, 0.5, 0.9, 0.7))
-            notch_batch.draw(shader)
-
-            gpu.state.blend_set("NONE")
-            gpu.state.line_width_set(1.0)
+                # Draw center handle notch
+                notch_y = height * 0.5
+                notch_coords = [
+                    (split_x - 12.0, notch_y - 20.0),
+                    (split_x + 12.0, notch_y - 20.0),
+                    (split_x + 12.0, notch_y + 20.0),
+                    (split_x - 12.0, notch_y + 20.0),
+                ]
+                notch_indices = [(0, 1, 2), (2, 3, 0)]
+                notch_batch = batch_for_shader(shader, "TRIS", {"pos": notch_coords}, indices=notch_indices)
+                shader.uniform_float("color", (0.1, 0.5, 0.9, 0.7))
+                notch_batch.draw(shader)
+            finally:
+                gpu.state.blend_set("NONE")
+                gpu.state.line_width_set(1.0)
 
             # 2. Draw split labels via BLF
             if blf:
+                scale = (
+                    bpy.context.preferences.system.ui_scale
+                    if (bpy.context and hasattr(bpy.context, "preferences"))
+                    else 1.0
+                )
                 font_id = 0
-                blf.size(font_id, 14.0)
+                blf.size(font_id, int(14 * scale))
 
                 # Left side label (LOD0)
                 blf.color(font_id, 0.2, 1.0, 0.4, 1.0)
-                blf.position(font_id, max(15.0, split_x - 180.0), height - 40.0, 0)
+                blf.position(font_id, max(15.0, split_x - 180.0 * scale), height - 40.0 * scale, 0)
                 blf.draw(font_id, f"◀ {cls._cached_overlay['left_label']} ({cls._cached_overlay['left_tris']:,} tris)")
 
                 # Right side label (LOD_N)
                 blf.color(font_id, 1.0, 0.6, 0.2, 1.0)
-                blf.position(font_id, min(width - 190.0, split_x + 15.0), height - 40.0, 0)
+                blf.position(font_id, min(width - 190.0 * scale, split_x + 15.0 * scale), height - 40.0 * scale, 0)
                 blf.draw(
                     font_id, f"{cls._cached_overlay['right_label']} ({cls._cached_overlay['right_tris']:,} tris) ▶"
                 )

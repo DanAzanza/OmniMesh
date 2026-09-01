@@ -34,7 +34,7 @@ if __package__:
         textures,
     )
     from .exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
-    from .ui import batch_panel, hud, panel, properties, simulator_ops, split_preview
+    from .ui import batch_panel, hud, lists, operators, panel, properties, simulator_ops, split_preview
 else:
     import bridges
     from core import (
@@ -51,7 +51,7 @@ else:
         textures,
     )
     from exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
-    from ui import batch_panel, hud, panel, properties, simulator_ops, split_preview
+    from ui import batch_panel, hud, lists, operators, panel, properties, simulator_ops, split_preview
 
 # Dynamic reloading for live development sessions
 if "bpy" in locals() and "bpy" in sys.modules:
@@ -68,6 +68,8 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(bridges)
     importlib.reload(simulator)
     importlib.reload(properties)
+    importlib.reload(lists)
+    importlib.reload(operators)
     importlib.reload(panel)
     importlib.reload(simulator_ops)
     importlib.reload(batch_panel)
@@ -82,6 +84,8 @@ if "bpy" in locals() and "bpy" in sys.modules:
 
 def register():
     properties.register_properties()
+    lists.register_lists()
+    operators.register_operators()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
     batch_panel.register_batch_ops()
@@ -97,4 +101,6 @@ def unregister():
     batch_panel.unregister_batch_ops()
     simulator_ops.unregister_simulator_ops()
     panel.unregister_panel()
+    operators.unregister_operators()
+    lists.unregister_lists()
     properties.unregister_properties()

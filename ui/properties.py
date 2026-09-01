@@ -4,7 +4,10 @@ UI PropertyGroups for LOD Tool with Rigging, Hierarchy, Texture, Live Simulator 
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import bpy
@@ -45,6 +48,23 @@ except ImportError:
         return None
 
 
+def update_bridge_status_cached(self: Any, context: Any) -> None:
+    """Asynchronously update bridge status text without running blocking I/O inside draw()."""
+    if not bpy or not context:
+        return
+    try:
+        from ..bridges.manager import BridgeManager
+    except (ImportError, ValueError):
+        try:
+            from bridges.manager import BridgeManager
+        except (ImportError, ValueError):
+            return
+
+    engine_path = bpy.path.abspath(self.engine_project_path) if self.engine_project_path else ""
+    _, status_msg = BridgeManager.ping_engine(self.target_engine, engine_path)
+    self.bridge_status_text = status_msg
+
+
 class LODLevelItem(PropertyGroup):
     name: StringProperty(name="LOD Name", default="LOD0")
     lod_index: IntProperty(name="LOD Index", default=0, min=0, max=10)
@@ -69,6 +89,7 @@ class LODPipelineProperties(PropertyGroup):
             ("GODOT_4", "Godot 4.x", "Godot 4 glTF with visibility ranges"),
         ],
         default="MSFS_2024",
+        update=update_bridge_status_cached,
     )
     asset_category: EnumProperty(
         name="Asset Role",
@@ -175,6 +196,19 @@ class LODPipelineProperties(PropertyGroup):
     )
     is_simulator_running: BoolProperty(name="Simulator Running", default=False)
 
+    # Viewport HUD Overlay & Controls
+    show_viewport_hud: BoolProperty(
+        name="Show Viewport HUD",
+        default=True,
+        description="Display real-time statistics HUD overlay in 3D Viewport",
+    )
+
+    # Post-Generation Summary Metrics
+    last_generated_base_tris: IntProperty(name="Base Tris", default=0)
+    last_generated_final_tris: IntProperty(name="Final Tris", default=0)
+    last_generated_reduction_pct: FloatProperty(name="Reduction %", default=0.0, precision=1)
+    last_generated_tier_count: IntProperty(name="Tier Count", default=0)
+
     is_preview_active: BoolProperty(name="Live Viewport Preview", default=False)
     preview_screen_pct: FloatProperty(
         name="Preview Screen %", default=100.0, min=0.01, max=100.0, subtype="PERCENTAGE", precision=1
@@ -191,6 +225,7 @@ class LODPipelineProperties(PropertyGroup):
         subtype="DIR_PATH",
         default="",
         description="Root path to active Unreal, Unity, MSFS Community, or Godot project folder",
+        update=update_bridge_status_cached,
     )
     enable_live_sync: BoolProperty(
         name="Live Sync on Export",

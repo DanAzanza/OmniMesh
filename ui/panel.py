@@ -1,490 +1,297 @@
 """
-N-Panel User Interface & Master Operators for OmniMesh with Multi-Mesh, Rigging & Real-Time Simulator.
+Modular N-Panel User Interface Hierarchy for OmniMesh in Blender 4.2+ and 5.2 LTS.
+Structured into clean, workflow-oriented collapsible subpanels with responsive layouts.
 """
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 try:
-    import bmesh
     import bpy
-    from bpy.types import Operator, Panel, UIList
+    from bpy.types import Panel
 except ImportError:
     bpy = None
-    bmesh = None
     Panel = object
-    Operator = object
-    UIList = object
 
 try:
-    from ..core.decimator import MeshDecimator
-    from ..core.hierarchy import MeshMergeEngine
-    from ..core.materials import MaterialOptimizer
-    from ..core.metrics import (
-        compute_bounding_sphere,
-        compute_coupled_tolerances,
-        compute_distance_from_screen_size,
-        compute_vertical_fov,
-        generate_logarithmic_screen_tiers,
-    )
-    from ..core.normals import NormalManager
-    from ..core.rigging import KinematicBonePruner, WeightSanitizer
-    from ..core.sanitizer import MeshSanitizer
+    from .operators import get_associated_armature, get_selected_mesh_objects
 except (ImportError, ValueError):
-    from core.decimator import MeshDecimator
-    from core.hierarchy import MeshMergeEngine
-    from core.materials import MaterialOptimizer
-    from core.metrics import (
-        compute_bounding_sphere,
-        compute_coupled_tolerances,
-        compute_distance_from_screen_size,
-        compute_vertical_fov,
-        generate_logarithmic_screen_tiers,
-    )
-    from core.normals import NormalManager
-    from core.rigging import KinematicBonePruner, WeightSanitizer
-    from core.sanitizer import MeshSanitizer
-
-
-class LOD_UL_tier_list(UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        if self.layout_type in {"DEFAULT", "COMPACT"}:
-            row = layout.row(align=True)
-            row.label(text=f"LOD{item.lod_index}", icon="MESH_DATA")
-            row.prop(item, "screen_size_pct", text="", emboss=False)
-            if item.actual_tris > 0:
-                row.label(text=f"{item.actual_tris:,} tris")
-            else:
-                row.label(text=f"~{item.target_tris:,} tris")
-            row.label(text=f"{item.distance_m:.1f}m")
-            row.label(text=f"{item.mat_slots_count} mat", icon="MATERIAL")
-
-
-def get_selected_mesh_objects(context: Any) -> list[Any]:
-    if not bpy or not context:
-        return []
-    meshes = [obj for obj in context.selected_objects if obj.type == "MESH"]
-    if not meshes and context.active_object and context.active_object.type == "MESH":
-        meshes = [context.active_object]
-    return meshes
-
-
-def get_associated_armature(mesh_objs: list[Any]) -> Any:
-    for obj in mesh_objs:
-        if obj.parent and obj.parent.type == "ARMATURE":
-            return obj.parent
-        for mod in obj.modifiers:
-            if mod.type == "ARMATURE" and mod.object:
-                return mod.object
-    return None
-
-
-class LOD_OT_analyze_and_configure(Operator):
-    bl_idname = "lod_tool.analyze_and_configure"
-    bl_label = "Analyze & Auto-Configure"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context):
-        return bpy and len(get_selected_mesh_objects(context)) > 0
-
-    def execute(self, context):
-        props = context.scene.lod_tool
-        mesh_objs = get_selected_mesh_objects(context)
-        if not mesh_objs:
-            self.report({"WARNING"}, "No mesh objects selected.")
-            return {"CANCELLED"}
-
-        all_coords = []
-        base_tris = 0
-        total_mat_slots = 0
-
-        for obj in mesh_objs:
-            m_w = obj.matrix_world
-            all_coords.extend([m_w @ v.co for v in obj.data.vertices])
-            base_tris += len(obj.data.polygons)
-            total_mat_slots += len(obj.material_slots)
-
-        _, radius = compute_bounding_sphere(all_coords)
-
-        if not props.export_base_name:
-            primary_name = context.active_object.name if context.active_object else mesh_objs[0].name
-            props.export_base_name = primary_name.split("_LOD")[0]
-
-        render = context.scene.render
-        aspect_ratio = render.resolution_x / max(1, render.resolution_y)
-        cam = context.scene.camera
-        cam_angle = cam.data.angle if cam and cam.type == "CAMERA" else math.radians(60.0)
-        sensor_fit = cam.data.sensor_fit if cam and cam.type == "CAMERA" else "AUTO"
-        fov_v = compute_vertical_fov(cam_angle, aspect_ratio, sensor_fit)
-
-        if props.target_engine == "MSFS_2024":
-            props.num_lods = 7
-            screen_tiers = [100.0, 50.0, 25.0, 10.0, 5.0, 2.0, 0.5]
-        else:
-            screen_tiers = generate_logarithmic_screen_tiers(props.num_lods, props.cull_screen_size_pct)
-
-        props.lods.clear()
-        for i, s_pct in enumerate(screen_tiers):
-            item = props.lods.add()
-            item.name = f"LOD{i}"
-            item.lod_index = i
-            item.screen_size_pct = s_pct
-
-            s_frac = s_pct / 100.0
-            dist = compute_distance_from_screen_size(radius, s_frac, fov_v)
-            tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
-
-            item.distance_m = dist
-            item.delta_world = tolerances["delta_world"]
-            item.target_tris = max(12, int(base_tris * tolerances["qem_ratio"]))
-            item.mat_slots_count = total_mat_slots if i < 2 else max(1, total_mat_slots - (i - 1))
-
-        self.report(
-            {"INFO"},
-            f"Configured {len(props.lods)} LOD tiers for {len(mesh_objs)} meshes (Radius: {radius:.2f}m, Base Tris: {base_tris:,})",
-        )
-        return {"FINISHED"}
-
-
-class LOD_OT_generate_all(Operator):
-    bl_idname = "lod_tool.generate_all"
-    bl_label = "Generate All LODs"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context):
-        return bpy and len(get_selected_mesh_objects(context)) > 0 and len(context.scene.lod_tool.lods) > 0
-
-    def execute(self, context):
-        props = context.scene.lod_tool
-        mesh_objs = get_selected_mesh_objects(context)
-        armature_obj = get_associated_armature(mesh_objs)
-
-        orig_pose_pos = None
-        if armature_obj and hasattr(armature_obj.data, "pose_position"):
-            orig_pose_pos = armature_obj.data.pose_position
-            armature_obj.data.pose_position = "REST"
-
-        try:
-            base_name = props.export_base_name or (
-                context.active_object.name if context.active_object else mesh_objs[0].name
-            )
-            coll_name = f"{base_name}_LODs"
-            target_coll = bpy.data.collections.get(coll_name)
-            if not target_coll:
-                target_coll = bpy.data.collections.new(coll_name)
-                context.scene.collection.children.link(target_coll)
-
-            for obj in mesh_objs:
-                if not obj.parent or obj.parent.type != "ARMATURE":
-                    bpy.context.view_layer.objects.active = obj
-                    obj.select_set(True)
-                    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-
-            all_coords = []
-            for obj in mesh_objs:
-                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
-            _, radius = compute_bounding_sphere(all_coords)
-
-            render = context.scene.render
-            cam = context.scene.camera
-            cam_angle = cam.data.angle if cam and cam.type == "CAMERA" else math.radians(60.0)
-            sensor_fit = cam.data.sensor_fit if cam and cam.type == "CAMERA" else "AUTO"
-            aspect_ratio = render.resolution_x / max(1, render.resolution_y)
-            fov_v = compute_vertical_fov(cam_angle, aspect_ratio, sensor_fit)
-
-            max_influences = int(props.max_bone_influences)
-            generated_tier_objects = []
-
-            for i, tier in enumerate(props.lods):
-                s_frac = tier.screen_size_pct / 100.0
-                tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
-                should_merge = props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier
-
-                tier_obj = None
-
-                if should_merge and len(mesh_objs) > 1:
-                    merged_name = f"{base_name}_LOD{i}"
-                    existing = bpy.data.objects.get(merged_name)
-                    if existing:
-                        bpy.data.objects.remove(existing, do_unlink=True)
-
-                    tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(mesh_objs, merged_name, armature_obj)
-                    target_coll.objects.link(tier_obj)
-
-                    bm = bmesh.new()
-                    bm.from_mesh(tier_obj.data)
-                    MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
-                    pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
-                    MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
-                    MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
-                    bm.to_mesh(tier_obj.data)
-                    bm.free()
-                    tier_obj.data.update()
-
-                    MeshDecimator.execute_decimate_qem(tier_obj, tolerances["qem_ratio"], use_curvature_weight=True)
-
-                    if props.purge_shape_keys and i >= 2:
-                        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
-
-                    if armature_obj and len(tier_obj.vertex_groups) > 0:
-                        if props.enable_bone_pruning and i >= 2:
-                            KinematicBonePruner.prune_kinematic_subtrees(
-                                tier_obj,
-                                armature_obj,
-                                screen_distance_m=tier.distance_m,
-                                fov_v_rad=fov_v,
-                                resolution_y=render.resolution_y,
-                                pixel_threshold=1.5,
-                            )
-                        WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
-
-                    tier.actual_tris = len(tier_obj.data.polygons)
-                    tier.mat_slots_count = len(tier_obj.material_slots)
-                    tier.generated_obj = tier_obj
-                    generated_tier_objects.append(tier_obj)
-
-                else:
-                    tier_tris = 0
-                    tier_mats = 0
-                    for obj_idx, source_obj in enumerate(mesh_objs):
-                        sub_name = f"{source_obj.name}_LOD{i}" if len(mesh_objs) > 1 else f"{base_name}_LOD{i}"
-                        existing = bpy.data.objects.get(sub_name)
-                        if existing and existing != source_obj:
-                            bpy.data.objects.remove(existing, do_unlink=True)
-
-                        lod_obj = source_obj.copy()
-                        lod_obj.data = source_obj.data.copy()
-                        lod_obj.name = sub_name
-                        lod_obj.data.name = f"{sub_name}_Mesh"
-                        target_coll.objects.link(lod_obj)
-
-                        if i == 0:
-                            bm = bmesh.new()
-                            bm.from_mesh(lod_obj.data)
-                            MeshSanitizer.clean_loose_and_degenerates(bm)
-                            bm.to_mesh(lod_obj.data)
-                            bm.free()
-                        else:
-                            if props.purge_shape_keys and i >= 2:
-                                MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
-
-                            bm = bmesh.new()
-                            bm.from_mesh(lod_obj.data)
-                            MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
-                            pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
-                            MeshDecimator.apply_planar_limited_dissolve(
-                                bm, math.radians(tolerances["planar_angle_deg"])
-                            )
-                            MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
-                            bm.to_mesh(lod_obj.data)
-                            bm.free()
-                            lod_obj.data.update()
-
-                            MeshDecimator.execute_decimate_qem(
-                                lod_obj, tolerances["qem_ratio"], use_curvature_weight=True
-                            )
-
-                            MaterialOptimizer.consolidate_micro_materials(
-                                lod_obj,
-                                area_crit=tolerances["area_crit"],
-                                preserve_slot_indexing=props.preserve_slot_indexing,
-                            )
-
-                            NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"])
-
-                            if armature_obj and len(lod_obj.vertex_groups) > 0:
-                                if props.enable_bone_pruning and i >= 2:
-                                    KinematicBonePruner.prune_kinematic_subtrees(
-                                        lod_obj,
-                                        armature_obj,
-                                        screen_distance_m=tier.distance_m,
-                                        fov_v_rad=fov_v,
-                                        resolution_y=render.resolution_y,
-                                        pixel_threshold=1.5,
-                                    )
-                                WeightSanitizer.normalize_and_clamp_weights(lod_obj, max_influences=max_influences)
-
-                        lod_obj.data.update()
-                        tier_tris += len(lod_obj.data.polygons)
-                        tier_mats += len(lod_obj.material_slots)
-                        if obj_idx == 0:
-                            tier.generated_obj = lod_obj
-
-                    tier.actual_tris = tier_tris
-                    tier.mat_slots_count = tier_mats
-
-            self.report(
-                {"INFO"}, f"Generated {len(props.lods)} LOD tiers across {len(mesh_objs)} objects in '{coll_name}'"
-            )
-            return {"FINISHED"}
-        finally:
-            if armature_obj and orig_pose_pos and hasattr(armature_obj.data, "pose_position"):
-                armature_obj.data.pose_position = orig_pose_pos
-
-
-class LOD_OT_preview_tier(Operator):
-    bl_idname = "lod_tool.preview_tier"
-    bl_label = "Preview Selected Tier"
-    bl_options = {"REGISTER", "UNDO"}
-
-    tier_index: bpy.props.IntProperty(default=0) if bpy else 0
-
-    def execute(self, context):
-        if not bpy:
-            return {"FINISHED"}
-        props = context.scene.lod_tool
-        target_idx = self.tier_index
-        base_name = props.export_base_name
-
-        coll = bpy.data.collections.get(f"{base_name}_LODs")
-        if coll:
-            for obj in coll.objects:
-                is_this_tier = f"_LOD{target_idx}" in obj.name
-                obj.hide_viewport = not is_this_tier
-                obj.hide_render = not is_this_tier
-
-        props.active_lod_index = target_idx
-        return {"FINISHED"}
+    from ui.operators import get_associated_armature, get_selected_mesh_objects
 
 
 class LOD_PT_main_panel(Panel):
+    """OmniMesh Root Panel: Target Engine & Asset Setup."""
+
     bl_label = "OmniMesh"
     bl_idname = "LOD_PT_main_panel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
 
-    def draw(self, context):
-        if not bpy:
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
             return
         layout = self.layout
         props = context.scene.lod_tool
 
+        # Selection vs Configured Asset mismatch alert
+        active_obj = context.active_object
+        if active_obj and props.export_base_name:
+            curr_base = active_obj.name.split("_LOD")[0]
+            if curr_base != props.export_base_name:
+                box_alert = layout.box()
+                box_alert.alert = True
+                box_alert.label(
+                    text=f"Selected: '{curr_base}' (Configured: '{props.export_base_name}')",
+                    icon="INFO",
+                )
+
+        # 1. Project & Target Engine Setup Card
         box = layout.box()
-        box.label(text="Project & Engine Target", icon="SCENE_DATA")
+        box.label(text="1. Target Engine & Preset", icon="SCENE_DATA")
         box.prop(props, "target_engine", text="")
         box.prop(props, "asset_category", text="")
         box.prop(props, "export_base_name", text="Asset Name")
 
-        box = layout.box()
-        box.label(text="Hierarchy & Draw-Call Optimization", icon="OUTLINER_OB_GROUP_INSTANCE")
-        box.prop(props, "hierarchy_mode", text="")
-        if props.hierarchy_mode == "MERGE_AT_TIER":
-            box.prop(props, "merge_start_tier")
-
-        box = layout.box()
-        box.label(text="Rigging & Skeletal Optimization", icon="ARMATURE_DATA")
-        box.prop(props, "max_bone_influences")
-        box.prop(props, "enable_bone_pruning")
-        box.prop(props, "purge_shape_keys")
-
-        box = layout.box()
-        box.label(text="Quality & Screen-Space Error", icon="RESTRICT_VIEW_OFF")
-        box.prop(props, "tau_sse", slider=True)
-        box.prop(props, "cull_screen_size_pct", slider=True)
+        # 2. Quality & Screen-Space Error Card
+        box_q = layout.box()
+        box_q.label(text="Quality & Tolerance", icon="RESTRICT_VIEW_OFF")
+        box_q.prop(props, "tau_sse", slider=True, text="Visual Stability (SSE)")
+        box_q.prop(props, "cull_screen_size_pct", slider=True, text="Cull Screen Size (%)")
         if props.target_engine != "MSFS_2024":
-            box.prop(props, "num_lods")
-        box.prop(props, "preserve_slot_indexing")
+            box_q.prop(props, "num_lods", text="LOD Tier Count")
 
-        col = layout.column(align=True)
-        col.scale_y = 1.2
-        col.operator("lod_tool.analyze_and_configure", icon="VIEWZOOM")
+        # Step 1 Primary CTA
+        col_cta = layout.column(align=True)
+        col_cta.scale_y = 1.3
+        col_cta.operator("lod_tool.analyze_and_configure", text="1. Auto-Configure Tiers", icon="VIEWZOOM")
 
-        if len(props.lods) > 0:
+
+class LOD_PT_tiers_panel(Panel):
+    """Subpanel 1: Configured LOD Tiers, Generation Action Card & Isolation Grid."""
+
+    bl_label = "2. LOD Tiers & Geometry"
+    bl_idname = "LOD_PT_tiers_panel"
+    bl_parent_id = "LOD_PT_main_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_order = 0
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        if not props.lods:
             box = layout.box()
-            box.label(text="Configured LOD Tiers", icon="MOD_DECIM")
-            box.template_list("LOD_UL_tier_list", "", props, "lods", props, "active_lod_index", rows=len(props.lods))
+            box.label(text="No tiers configured.", icon="INFO")
+            box.label(text="Click '1. Auto-Configure Tiers' above.")
+            return
 
-            col = layout.column(align=True)
-            col.scale_y = 1.4
-            col.operator("lod_tool.generate_all", icon="GEOMETRY_NODES")
-
-            box = layout.box()
-            box.label(text="Isolate Viewport LOD", icon="HIDE_OFF")
-            row = box.row(align=True)
-            for i, _tier in enumerate(props.lods):
-                op = row.operator("lod_tool.preview_tier", text=f"LOD{i}")
-                op.tier_index = i
-
-        # Real-Time Viewport LOD Simulator Section
+        # UIList Table
         box = layout.box()
-        box.label(text="Real-Time LOD Simulator", icon="PLAY")
+        box.template_list("LOD_UL_tier_list", "", props, "lods", props, "active_lod_index", rows=len(props.lods))
 
-        row = box.row(align=True)
-        row.scale_y = 1.3
+        # Selected Tier Inspection Detail
+        active_idx = max(0, min(props.active_lod_index, len(props.lods) - 1))
+        active_tier = props.lods[active_idx]
+        box_detail = layout.box()
+        row = box_detail.row(align=True)
+        row.label(text=f"{active_tier.name} Switch: {active_tier.distance_m:.1f}m", icon="CON_DISTLIMIT")
+        row.label(text=f"Slots: {active_tier.mat_slots_count}", icon="MATERIAL")
+
+        # Step 2 Primary Action CTA
+        col_gen = layout.column(align=True)
+        col_gen.scale_y = 1.35
+        col_gen.operator("lod_tool.generate_all", text="2. Generate All LODs", icon="GEOMETRY_NODES")
+
+        # Post-Generation Summary Metrics Banner
+        if props.last_generated_tier_count > 0 and props.last_generated_base_tris > 0:
+            box_summary = layout.box()
+            box_summary.label(
+                text=f"✔ {props.last_generated_tier_count} LODs: {props.last_generated_base_tris:,} → {props.last_generated_final_tris:,} tris (-{props.last_generated_reduction_pct:.1f}%)",
+                icon="CHECKMARK",
+            )
+
+        # Isolate Viewport LOD Grid Flow
+        box_iso = layout.box()
+        box_iso.label(text="Isolate Viewport LOD", icon="HIDE_OFF")
+        grid = box_iso.grid_flow(row_major=True, columns=0, even_columns=True, align=True)
+        for i in range(len(props.lods)):
+            op = grid.operator("lod_tool.preview_tier", text=f"LOD{i}")
+            op.tier_index = i
+
+
+class LOD_PT_inspection_panel(Panel):
+    """Subpanel 2: Viewport Inspection, Real-Time LOD Simulator & A/B Split Preview."""
+
+    bl_label = "3. Viewport Inspection & Simulator"
+    bl_idname = "LOD_PT_inspection_panel"
+    bl_parent_id = "LOD_PT_main_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 1
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        # Real-Time LOD Simulator
+        box_sim = layout.box()
+        box_sim.label(text="Real-Time Viewport Simulator", icon="PLAY")
+        row = box_sim.row(align=True)
+        row.scale_y = 1.2
         if props.is_simulator_running:
             row.operator("lod_tool.toggle_live_simulator", text="Stop Simulation", icon="CANCEL")
         else:
             row.operator("lod_tool.toggle_live_simulator", text="Start Live Simulator", icon="PLAY")
 
-        box.prop(props, "simulator_mode", text="Mode")
-
+        box_sim.prop(props, "simulator_mode", text="Mode")
         if props.simulator_mode == "VIRTUAL_SLIDER":
-            box.prop(props, "virtual_screen_size_pct", slider=True)
-            box.prop(props, "virtual_preview_dist_m")
+            box_sim.prop(props, "virtual_screen_size_pct", slider=True)
+            box_sim.prop(props, "virtual_preview_dist_m")
 
-        # Visual A/B Split-Screen Viewport Comparison Section
-        box = layout.box()
-        box.label(text="A/B Split-Screen Comparison", icon="UV_SYNC_SELECT")
-        row = box.row(align=True)
+        # A/B Split-Screen Viewport Comparison
+        box_split = layout.box()
+        box_split.label(text="A/B Split-Screen Comparison", icon="UV_SYNC_SELECT")
+        row = box_split.row(align=True)
         row.scale_y = 1.2
         if props.is_split_active:
             row.operator("lod_tool.toggle_split_preview", text="Exit Split Preview", icon="CANCEL")
-            box.prop(props, "split_ratio", text="Split Line", slider=True)
-            box.prop(props, "split_compare_tier", text="Compare Tier")
+            box_split.prop(props, "split_ratio", text="Split Line", slider=True)
+            box_split.prop(props, "split_compare_tier", text="Compare Tier")
         else:
             row.operator("lod_tool.toggle_split_preview", text="Start Split Preview", icon="VIEW_CAMERA")
-            box.prop(props, "split_compare_tier", text="Compare Tier")
+            box_split.prop(props, "split_compare_tier", text="Compare Tier")
 
-        # PBR Texture Packing & Animation Section
-        box = layout.box()
-        box.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
-        box.prop(props, "export_packed_textures")
+        # Viewport HUD Toggle
+        box_hud = layout.box()
+        box_hud.prop(props, "show_viewport_hud", text="Show Viewport HUD Overlay", icon="WINDOW")
+
+
+class LOD_PT_optimization_panel(Panel):
+    """Subpanel 3: Hierarchy Draw-Call Merging, Rigging Kinematics & PBR Texture Baking."""
+
+    bl_label = "4. Advanced Optimization"
+    bl_idname = "LOD_PT_optimization_panel"
+    bl_parent_id = "LOD_PT_main_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 2
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+        mesh_objs = get_selected_mesh_objects(context)
+        armature_obj = get_associated_armature(mesh_objs)
+
+        # Hierarchy & Draw-Call Optimization
+        box_h = layout.box()
+        box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
+        box_h.prop(props, "hierarchy_mode", text="")
+        if props.hierarchy_mode == "MERGE_AT_TIER":
+            box_h.prop(props, "merge_start_tier")
+        box_h.prop(props, "preserve_slot_indexing")
+
+        # Rigging & Skeletal Kinematics
+        box_r = layout.box()
+        box_r.label(text="Rigging & Skeletal Kinematics", icon="ARMATURE_DATA")
+        has_skinning = bool(armature_obj or any(len(obj.vertex_groups) > 0 for obj in mesh_objs))
+        if not has_skinning:
+            box_r.label(text="No Armature or Deform Groups Detected", icon="INFO")
+        col_rig = box_r.column()
+        col_rig.active = has_skinning
+        col_rig.prop(props, "max_bone_influences")
+        col_rig.prop(props, "enable_bone_pruning")
+        col_rig.prop(props, "purge_shape_keys")
+
+        # PBR Texture Channel Packing & Animation
+        box_tex = layout.box()
+        box_tex.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
+        box_tex.prop(props, "export_packed_textures")
         if props.export_packed_textures:
-            box.prop(props, "texture_max_resolution")
-            box.operator("lod_tool.pack_pbr_textures", icon="IMAGE_DATA")
-        box.prop(props, "bake_animations")
+            box_tex.prop(props, "texture_max_resolution")
+            box_tex.operator("lod_tool.pack_pbr_textures", icon="IMAGE_DATA")
+        box_tex.prop(props, "bake_animations")
         if props.bake_animations:
-            box.operator("lod_tool.bake_rig_animation", icon="ACTION")
+            box_tex.operator("lod_tool.bake_rig_animation", icon="ACTION")
 
-        # Live Engine Bridge Section
-        box = layout.box()
-        box.label(text="⚡ Live Engine Bridge", icon="LINKED")
-        box.prop(props, "engine_project_path", text="Project Path")
-        box.prop(props, "enable_live_sync")
 
-        try:
-            from ..bridges.manager import BridgeManager
-        except (ImportError, ValueError):
-            from bridges.manager import BridgeManager
+class LOD_PT_export_bridge_panel(Panel):
+    """Subpanel 4: Multi-Engine Package Export & Live Engine Bridge."""
 
-        _, status_msg = BridgeManager.ping_engine(
-            props.target_engine, bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
+    bl_label = "5. Export & Live Engine Bridge"
+    bl_idname = "LOD_PT_export_bridge_panel"
+    bl_parent_id = "LOD_PT_main_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 3
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        # Single Asset Package Export
+        box_exp = layout.box()
+        box_exp.label(text="Package Export", icon="EXPORT")
+        box_exp.prop(props, "export_directory", text="Output Dir")
+        col_exp = box_exp.column(align=True)
+        col_exp.scale_y = 1.2
+        col_exp.operator("lod_tool.export_engine_package", text="Export Engine Package", icon="PACKAGE")
+
+        # Live Engine Bridge
+        box_br = layout.box()
+        box_br.label(text="⚡ Live Engine Bridge", icon="LINKED")
+        box_br.prop(props, "engine_project_path", text="Project Path")
+        box_br.prop(props, "enable_live_sync", text="Auto-Sync on Export")
+
+        # Display cached status string (zero blocking I/O)
+        box_br.label(
+            text=props.bridge_status_text,
+            icon="RADIOBUT_ON"
+            if "Connected" in props.bridge_status_text or "Ready" in props.bridge_status_text
+            else "RADIOBUT_OFF",
         )
-        box.label(text=status_msg)
 
-        row = box.row(align=True)
+        row = box_br.row(align=True)
         row.scale_y = 1.2
         row.operator("lod_tool.sync_live_bridge", text="Sync to Engine", icon="FILE_REFRESH")
 
-        # Single Asset Export Section
-        box = layout.box()
-        box.label(text="Multi-Engine Export", icon="EXPORT")
-        box.prop(props, "export_directory")
-        col = box.column(align=True)
-        col.scale_y = 1.2
-        col.operator("lod_tool.export_engine_package", icon="PACKAGE")
 
-        # Batch Library Ingestion Section
+class LOD_PT_batch_panel(Panel):
+    """Subpanel 5: Batch Asset Library Ingestion."""
+
+    bl_label = "6. Batch Library Ingestion"
+    bl_idname = "LOD_PT_batch_panel"
+    bl_parent_id = "LOD_PT_main_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 4
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
         box = layout.box()
         box.label(text="Batch Library Ingest", icon="FILE_FOLDER")
         box.prop(props, "batch_source_directory", text="Source Folder")
         box.prop(props, "batch_export_directory", text="Output Folder")
-        box.prop(props, "batch_recursive_scan")
+        box.prop(props, "batch_recursive_scan", text="Recursive Scan")
+
         row = box.row(align=True)
         row.scale_y = 1.2
         if props.is_batch_running:
@@ -494,24 +301,26 @@ class LOD_PT_main_panel(Panel):
             box.label(text=props.batch_status_text)
 
 
-classes = (
-    LOD_UL_tier_list,
-    LOD_OT_analyze_and_configure,
-    LOD_OT_generate_all,
-    LOD_OT_preview_tier,
+# Strict Parent-First Topological Registration Order
+PANEL_CLASSES = (
     LOD_PT_main_panel,
+    LOD_PT_tiers_panel,
+    LOD_PT_inspection_panel,
+    LOD_PT_optimization_panel,
+    LOD_PT_export_bridge_panel,
+    LOD_PT_batch_panel,
 )
 
 
-def register_panel():
+def register_panel() -> None:
     if not bpy:
         return
-    for cls in classes:
+    for cls in PANEL_CLASSES:
         bpy.utils.register_class(cls)
 
 
-def unregister_panel():
+def unregister_panel() -> None:
     if not bpy:
         return
-    for cls in reversed(classes):
+    for cls in reversed(PANEL_CLASSES):
         bpy.utils.unregister_class(cls)
