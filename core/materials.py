@@ -488,6 +488,17 @@ class MaterialOptimizer:
         return len(orphans)
 
     @classmethod
+    def clean_orphan_shader_nodes(cls, mat: Any | None = None) -> int:
+        """Removes disconnected or orphan texture nodes from target material or all scene materials."""
+        if mat is not None:
+            return SemanticTextureAuditor.remove_orphan_texture_nodes(mat)
+        total = 0
+        if bpy:
+            for m in bpy.data.materials:
+                total += SemanticTextureAuditor.remove_orphan_texture_nodes(m)
+        return total
+
+    @classmethod
     def clean_materials_full(
         cls,
         mesh_objs: list[Any],

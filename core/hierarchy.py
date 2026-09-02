@@ -349,10 +349,13 @@ class CollectionCloneDAG:
 
         coll["_is_lod_root"] = True
 
-        # Link objects into new collection and unlink from master scene collection if present
+        # Link objects into new collection and unlink from all other collections to avoid ghost geometry
         for obj in objects:
             if obj.name not in coll.objects:
                 coll.objects.link(obj)
+            for c in list(getattr(obj, "users_collection", [])):
+                if c != coll:
+                    c.objects.unlink(obj)
             if bpy.context and bpy.context.scene and obj.name in bpy.context.scene.collection.objects:
                 bpy.context.scene.collection.objects.unlink(obj)
 
@@ -388,6 +391,12 @@ class CollectionCloneDAG:
         pivot_obj.location = pivot_loc
         pivot_obj["_is_pivot"] = True
         coll.objects.link(pivot_obj)
+
+        if hasattr(bpy.context, "view_layer") and bpy.context.view_layer:
+            try:
+                bpy.context.view_layer.update()
+            except Exception as exc:
+                logger.debug("View layer update exception: %s", exc)
 
         # Parent unparented objects to Pivot
         for obj in objects:

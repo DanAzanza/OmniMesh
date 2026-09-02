@@ -19,6 +19,7 @@ try:
         CollectionProperty,
         EnumProperty,
         FloatProperty,
+        FloatVectorProperty,
         IntProperty,
         PointerProperty,
         StringProperty,
@@ -38,6 +39,9 @@ except ImportError:
         return None
 
     def FloatProperty(**kwargs: Any) -> Any:
+        return None
+
+    def FloatVectorProperty(**kwargs: Any) -> Any:
         return None
 
     def IntProperty(**kwargs: Any) -> Any:
@@ -141,6 +145,10 @@ class LODToolSettings(PropertyGroup):
     is_generated_lod: BoolProperty(name="Is Generated Derivative", default=False)
     lod_root_object: PointerProperty(name="Root Master Asset", type=bpy.types.Object if bpy else object)
     lod_index: IntProperty(name="Derivative Tier Index", default=0, min=0, max=7)
+    bounding_radius: FloatProperty(name="Bounding Radius", default=1.0, min=0.0)
+    bounding_center: FloatVectorProperty(name="Bounding Center", size=3, default=(0.0, 0.0, 0.0))
+    base_triangles: IntProperty(name="Base Triangles", default=0, min=0)
+    screen_coverage_lod0: FloatProperty(name="LOD0 Screen Coverage %", default=100.0, min=0.0, max=100.0)
 
     # Preflight Inspection & Base Mesh Hygiene Properties
     preflight_inspected: BoolProperty(name="Preflight Inspected", default=False)
@@ -755,9 +763,19 @@ def register_properties() -> None:
     if not bpy:
         return
     for cls in CLASSES:
-        bpy.utils.register_class(cls)
-    bpy.types.Scene.lod_tool = PointerProperty(type=LODToolSettings)
-    bpy.types.Object.lod_tool = PointerProperty(type=LODToolSettings)
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        try:
+            bpy.utils.register_class(cls)
+        except Exception as exc:
+            logger.debug("Safe register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    try:
+        bpy.types.Scene.lod_tool = PointerProperty(type=LODToolSettings)
+        bpy.types.Object.lod_tool = PointerProperty(type=LODToolSettings)
+    except Exception as exc:
+        logger.debug("PointerProperty assignment exception: %s", exc)
 
 
 def unregister_properties() -> None:

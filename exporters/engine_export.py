@@ -345,16 +345,32 @@ class LOD_OT_export_engine_package(Operator):
 def register_exporters() -> None:
     if not bpy:
         return
-    bpy.utils.register_class(LOD_OT_pack_pbr_textures)
-    bpy.utils.register_class(LOD_OT_bake_rig_animation)
-    bpy.utils.register_class(LOD_OT_sync_live_bridge)
-    bpy.utils.register_class(LOD_OT_export_engine_package)
+    for cls in (
+        LOD_OT_pack_pbr_textures,
+        LOD_OT_bake_rig_animation,
+        LOD_OT_sync_live_bridge,
+        LOD_OT_export_engine_package,
+    ):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        try:
+            bpy.utils.register_class(cls)
+        except Exception as exc:
+            logger.debug("Safe register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
 
 
 def unregister_exporters() -> None:
     if not bpy:
         return
-    bpy.utils.unregister_class(LOD_OT_export_engine_package)
-    bpy.utils.unregister_class(LOD_OT_sync_live_bridge)
-    bpy.utils.unregister_class(LOD_OT_bake_rig_animation)
-    bpy.utils.unregister_class(LOD_OT_pack_pbr_textures)
+    for cls in (
+        LOD_OT_export_engine_package,
+        LOD_OT_sync_live_bridge,
+        LOD_OT_bake_rig_animation,
+        LOD_OT_pack_pbr_textures,
+    ):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)

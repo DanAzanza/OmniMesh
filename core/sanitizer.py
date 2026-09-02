@@ -742,11 +742,11 @@ class MeshSanitizer:
         # Tier 0: Pure Geometric Hygiene (Uncritical, Always Active)
         stats.update(cls.execute_tier0_pure_hygiene(bm))
 
-        # Backward-compatibility fallback if epsilon_merge passed directly
-        actual_weld = enable_weld or (epsilon_merge > 1e-5)
-        actual_dist = epsilon_merge if (epsilon_merge > 1e-5) else 0.0005
-        actual_cull = enable_cull_micro_islands or (w_crit > 1e-4)
-        actual_crit = w_crit if (w_crit > 1e-4) else 0.005
+        # Strictly respect explicit enable flags
+        actual_weld = bool(enable_weld and epsilon_merge > 1e-6)
+        actual_dist = epsilon_merge if (epsilon_merge > 1e-6) else 0.0005
+        actual_cull = bool(enable_cull_micro_islands and w_crit > 1e-5)
+        actual_crit = w_crit if (w_crit > 1e-5) else 0.005
 
         # Tier 1: Topological Repair (Critical / Opt-in)
         tier1_stats = cls.execute_tier1_topological_repair(

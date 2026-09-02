@@ -224,8 +224,21 @@ class LODSimulatorEngine:
         if hasattr(scene, "lod_tool") and len(scene.lod_tool.lods) > 0:
             default_tiers_pct = [t.screen_size_pct for t in scene.lod_tool.lods]
 
+        # Scope to collections linked to the target scene
+        scene_colls: set[Any] = set()
+        if scene and hasattr(scene, "collection"):
+
+            def collect_children(p_coll: Any) -> None:
+                scene_colls.add(p_coll)
+                for c in getattr(p_coll, "children", []):
+                    collect_children(c)
+
+            collect_children(scene.collection)
+        else:
+            scene_colls = set(bpy.data.collections)
+
         # 1. Index Sibling Collections ({Root}, {Root}_LOD1..k)
-        for coll in bpy.data.collections:
+        for coll in scene_colls:
             if not coll.name.endswith(tuple(f"_LOD{n}" for n in range(1, 11))) and not coll.name.endswith(
                 ("_LODs", "_Colliders", "_LOD_Impostor")
             ):

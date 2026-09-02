@@ -212,3 +212,51 @@ def test_registration_lifecycle_safety():
     unregister_lists()
     register_panel()
     unregister_panel()
+
+
+def test_clean_and_repair_mesh_properties(monkeypatch):
+    """Verify LOD_OT_clean_and_repair_mesh correctly accesses cleanup_* properties without AttributeError."""
+    import ui.cleanup_ops as cleanup_ops
+
+    mock_bpy = MagicMock()
+    mock_bmesh = MagicMock()
+    monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
+    monkeypatch.setattr(cleanup_ops, "bmesh", mock_bmesh)
+
+    op = cleanup_ops.LOD_OT_clean_and_repair_mesh()
+    mock_context = MagicMock()
+    mock_props = MagicMock()
+    # Configure exact LODToolSettings property names
+    mock_props.cleanup_enable_weld = False
+    mock_props.cleanup_weld_distance = 0.0005
+    mock_props.cleanup_enable_split_non_manifold = True
+    mock_props.cleanup_enable_fill_holes = False
+    mock_props.cleanup_hole_max_edges = 4
+    mock_props.cleanup_enable_triangulate_ngons = False
+    mock_props.cleanup_normal_policy = "OFF"
+    mock_props.last_cleanup_summary = ""
+
+    mock_mesh = MagicMock()
+    mock_mesh.name = "TestMesh"
+    mock_mesh.type = "MESH"
+    mock_mesh.get.return_value = False
+    mock_context.scene.lod_tool = mock_props
+    mock_context.active_object = mock_mesh
+    mock_context.selected_objects = [mock_mesh]
+
+    res = op.execute(mock_context)
+    assert res == {"FINISHED"}
+    assert "Cleaned:" in mock_props.last_cleanup_summary
+
+
+def test_operator_classes_no_duplicates():
+    """Ensure OPERATOR_CLASSES contains unique bl_idnames and no registration collisions."""
+    from ui.operators import OPERATOR_CLASSES
+
+    idnames = [getattr(cls, "bl_idname", None) for cls in OPERATOR_CLASSES if hasattr(cls, "bl_idname")]
+    assert len(idnames) == len(set(idnames)), f"Duplicate bl_idnames found: {idnames}"
+    assert "lod_tool.clean_and_repair_mesh" in idnames
+    assert "lod_tool.inspect_lod0" in idnames
+    assert "lod_tool.generate_all" in idnames
+    assert "lod_tool.generate_collision_hulls" in idnames
+    assert "lod_tool.import_pbr_set" in idnames

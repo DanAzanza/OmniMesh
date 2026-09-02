@@ -6,7 +6,10 @@ Blender 4.2+ and 5.2 LTS Add-on.
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
+
+logger = logging.getLogger(__name__)
 
 bl_info = {
     "name": "OmniMesh",
@@ -40,7 +43,21 @@ if __package__:
         textures,
     )
     from .exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
-    from .ui import batch_panel, hud, lists, operators, panel, properties, simulator_ops, split_preview
+    from .ui import (
+        batch_panel,
+        cleanup_ops,
+        hud,
+        hull_impostor_ops,
+        lists,
+        lod_ops,
+        operators,
+        panel,
+        pbr_ops,
+        properties,
+        simulator_ops,
+        split_preview,
+        utils,
+    )
 else:
     import bridges
     from core import (
@@ -63,7 +80,21 @@ else:
         textures,
     )
     from exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
-    from ui import batch_panel, hud, lists, operators, panel, properties, simulator_ops, split_preview
+    from ui import (
+        batch_panel,
+        cleanup_ops,
+        hud,
+        hull_impostor_ops,
+        lists,
+        lod_ops,
+        operators,
+        panel,
+        pbr_ops,
+        properties,
+        simulator_ops,
+        split_preview,
+        utils,
+    )
 
 # Dynamic reloading for live development sessions
 if "bpy" in locals() and "bpy" in sys.modules:
@@ -87,6 +118,11 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(simulator)
     importlib.reload(properties)
     importlib.reload(lists)
+    importlib.reload(utils)
+    importlib.reload(cleanup_ops)
+    importlib.reload(hull_impostor_ops)
+    importlib.reload(lod_ops)
+    importlib.reload(pbr_ops)
     importlib.reload(operators)
     importlib.reload(panel)
     importlib.reload(simulator_ops)
@@ -113,15 +149,21 @@ def register():
 
 
 def unregister():
-    hud.LODViewportHUD.unregister()
-    engine_export.unregister_exporters()
-    split_preview.unregister_split_ops()
-    batch_panel.unregister_batch_ops()
-    simulator_ops.unregister_simulator_ops()
-    panel.unregister_panel()
-    operators.unregister_operators()
-    lists.unregister_lists()
-    properties.unregister_properties()
+    for fn in (
+        hud.LODViewportHUD.unregister,
+        engine_export.unregister_exporters,
+        split_preview.unregister_split_ops,
+        batch_panel.unregister_batch_ops,
+        simulator_ops.unregister_simulator_ops,
+        panel.unregister_panel,
+        operators.unregister_operators,
+        lists.unregister_lists,
+        properties.unregister_properties,
+    ):
+        try:
+            fn()
+        except Exception as exc:
+            logger.debug("Failed unregistering %s: %s", getattr(fn, "__name__", "fn"), exc)
 
 
 if __name__ == "__main__":
