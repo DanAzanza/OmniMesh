@@ -746,7 +746,7 @@ class LOD_OT_generate_all(Operator):
                             )
                         WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
 
-                    tier.actual_tris = len(tier_obj.data.polygons)
+                    tier.actual_triangles = len(tier_obj.data.polygons)
                     tier.mat_slots_count = len(tier_obj.material_slots)
                     tier.generated_obj = tier_obj
                     generated_tier_objects.append(tier_obj)
@@ -847,13 +847,13 @@ class LOD_OT_generate_all(Operator):
 
                         tier_sub_objs.append(tier_obj)
 
-                    tier.actual_tris = sum(len(o.data.polygons) for o in tier_sub_objs)
+                    tier.actual_triangles = sum(len(o.data.polygons) for o in tier_sub_objs)
                     tier.mat_slots_count = sum(len(o.material_slots) for o in tier_sub_objs)
                     tier.generated_obj = tier_sub_objs[0]
                     generated_tier_objects.extend(tier_sub_objs)
 
-            base_tris = props.lods[0].actual_tris
-            final_tris = props.lods[-1].actual_tris
+            base_tris = props.lods[0].actual_triangles
+            final_tris = props.lods[-1].actual_triangles
             red_pct = ((base_tris - final_tris) / max(1, base_tris)) * 100.0 if base_tris > 0 else 0.0
 
             props.last_generated_base_tris = base_tris
