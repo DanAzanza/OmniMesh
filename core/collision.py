@@ -346,20 +346,17 @@ class CollisionManager:
         mode: str = "PER_OBJECT",
         target_collection_name: str = "",
     ) -> List[Any]:
-        """
-        Generates multi-convex collision hulls in Blender viewport for the given mesh objects.
-        """
         if not bpy or not mesh_objs:
             return []
+
+        # Remove pre-existing colliders for clean regeneration first
+        cls.remove_colliders_for_objects(mesh_objs, base_name)
 
         coll_name = target_collection_name or f"{base_name}_Colliders"
         target_coll = bpy.data.collections.get(coll_name)
         if not target_coll:
             target_coll = bpy.data.collections.new(coll_name)
             bpy.context.scene.collection.children.link(target_coll)
-
-        # Remove pre-existing colliders for clean regeneration
-        cls.remove_colliders_for_objects(mesh_objs, base_name)
 
         created_collider_objs: List[Any] = []
         hull_index = 1

@@ -2,8 +2,9 @@
 Hierarchy & Multi-Mesh Join Engine for OmniMesh.
 Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
 Features:
+- LayerCollectionGuard: RAII context manager for safe View Layer traversal & depsgraph protection.
 - LocalPivotSpaceMerge: Vertex and normal transformation into pivot relative space.
-- CollectionCloneDAG: Sibling collection hierarchies (Model_LOD1..k) and sub-collection mirroring.
+- CollectionCloneDAG: Strict sibling collection hierarchies (Model_LOD1..k) and sub-collection mirroring.
 - SharedRigAnchor: Master Armature preservation across all LOD tiers.
 """
 
@@ -12,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("OmniMesh.Hierarchy")
 
 try:
     import bmesh
@@ -28,6 +29,59 @@ try:
     from .pivot import PivotPreservationEngine
 except (ImportError, ValueError):
     from core.pivot import PivotPreservationEngine
+
+
+class LayerCollectionGuard:
+    """
+    Deterministic View Layer State Scoper.
+    Temporarily un-excludes and un-hides target collections in the ViewLayer
+    so depsgraph evaluations and modifier applications succeed cleanly without crashes.
+    """
+
+    def __init__(self, view_layer: Any, target_collections: list[Any]):
+        self.vl = view_layer
+        self.targets = {c.name for c in target_collections if c and hasattr(c, "name")}
+        self.saved_states: dict[str, tuple[bool, bool]] = {}
+
+    def _traverse(self, layer_coll: Any):
+        if not layer_coll or not hasattr(layer_coll, "collection") or not layer_coll.collection:
+            return
+        name = layer_coll.collection.name
+        if name in self.targets:
+            self.saved_states[name] = (
+                getattr(layer_coll, "exclude", False),
+                getattr(layer_coll, "hide_viewport", False),
+            )
+            if hasattr(layer_coll, "exclude"):
+                layer_coll.exclude = False
+            if hasattr(layer_coll, "hide_viewport"):
+                layer_coll.hide_viewport = False
+        if hasattr(layer_coll, "children"):
+            for child in layer_coll.children:
+                self._traverse(child)
+
+    def _restore(self, layer_coll: Any):
+        if not layer_coll or not hasattr(layer_coll, "collection") or not layer_coll.collection:
+            return
+        name = layer_coll.collection.name
+        if name in self.saved_states:
+            exc, hide = self.saved_states[name]
+            if hasattr(layer_coll, "exclude"):
+                layer_coll.exclude = exc
+            if hasattr(layer_coll, "hide_viewport"):
+                layer_coll.hide_viewport = hide
+        if hasattr(layer_coll, "children"):
+            for child in layer_coll.children:
+                self._restore(child)
+
+    def __enter__(self):
+        if self.vl and hasattr(self.vl, "layer_collection"):
+            self._traverse(self.vl.layer_collection)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.vl and hasattr(self.vl, "layer_collection"):
+            self._restore(self.vl.layer_collection)
 
 
 def get_rest_world_matrix_for_static(static_obj: Any, armature_obj: Any, bone_name: str) -> Any:
@@ -98,147 +152,101 @@ class MeshMergeEngine:
                     global_materials.append(mat)
 
         # 2. Build Global Unified Vertex Group Palette
-        global_vg_names: list[str] = []
-        if armature_obj and hasattr(armature_obj, "data") and hasattr(armature_obj.data, "bones"):
-            global_vg_names = [b.name for b in armature_obj.data.bones]
-        else:
-            for obj in valid_objs:
-                for vg in getattr(obj, "vertex_groups", []):
-                    if vg.name not in global_vg_names:
-                        global_vg_names.append(vg.name)
-
-        vg_to_global_idx = {name: i for i, name in enumerate(global_vg_names)}
-
-        # 3. Build Global Unified UV Palette
-        global_uv_names: list[str] = []
+        global_group_names: list[str] = []
         for obj in valid_objs:
-            if hasattr(obj.data, "uv_layers"):
-                for uv in obj.data.uv_layers:
-                    if uv.name not in global_uv_names:
-                        global_uv_names.append(uv.name)
+            for vg in getattr(obj, "vertex_groups", []):
+                if vg.name not in global_group_names:
+                    global_group_names.append(vg.name)
 
-        # 4. Initialize Target Mesh and BMesh
-        target_mesh_data = bpy.data.meshes.new(f"{output_obj_name}_Mesh")
+        # 3. Compute Pivot Space Inversion if Pivot Object exists
+        m_pivot_inv = Matrix.Identity(4) if Matrix else None
+        if pivot_obj and hasattr(pivot_obj, "matrix_world") and Matrix:
+            try:
+                m_pivot_inv = pivot_obj.matrix_world.inverted()
+            except Exception:
+                m_pivot_inv = Matrix.Identity(4)
+
+        # 4. Construct Merged BMesh
         target_bm = bmesh.new()
 
-        try:
-            dvert_lay = target_bm.verts.layers.deform.verify()
+        for obj in valid_objs:
+            src_mesh = obj.data
+            temp_bm = bmesh.new()
+            try:
+                temp_bm.from_mesh(src_mesh)
 
-            # Ensure all global UV layers exist on target BMesh
-            target_uv_layers = {}
-            for uv_name in global_uv_names:
-                target_uv_layers[uv_name] = target_bm.loops.layers.uv.new(uv_name)
+                # Determine world transformation matrix (respecting Rest Pose if parented to bone)
+                if armature_obj and getattr(obj, "parent_type", "") == "BONE" and getattr(obj, "parent_bone", ""):
+                    m_world = get_rest_world_matrix_for_static(obj, armature_obj, obj.parent_bone)
+                else:
+                    m_world = obj.matrix_world.copy()
 
-            # 5. Process Each Source Object
-            for obj in valid_objs:
-                local_mat_map: dict[int, int] = {}
-                for loc_idx, slot in enumerate(getattr(obj, "material_slots", [])):
-                    if slot.material in mat_to_global_idx:
-                        local_mat_map[loc_idx] = mat_to_global_idx[slot.material]
+                # Transform matrix: LocalPivotSpaceMerge
+                if m_pivot_inv and Matrix:
+                    m_transform = m_pivot_inv @ m_world
+                else:
+                    m_transform = m_world
+
+                # Transform vertices
+                temp_bm.transform(m_transform)
+
+                # Normal Matrix: Transpose of Inverted 3x3 for non-uniform scale safety
+                if Matrix:
+                    try:
+                        m_normal = m_transform.to_3x3().inverted().transposed()
+                        for v in temp_bm.verts:
+                            v.normal = (m_normal @ v.normal).normalized()
+                    except Exception as exc:
+                        logger.debug("Normal transformation failed: %s", exc)
+
+                # Remap Material Indices
+                obj_mats = [slot.material for slot in getattr(obj, "material_slots", [])]
+                for f in temp_bm.faces:
+                    if f.material_index < len(obj_mats):
+                        orig_mat = obj_mats[f.material_index]
+                        f.material_index = mat_to_global_idx.get(orig_mat, 0)
                     else:
-                        local_mat_map[loc_idx] = 0
+                        f.material_index = 0
 
-                local_vg_map = {
-                    vg.index: vg_to_global_idx[vg.name]
-                    for vg in getattr(obj, "vertex_groups", [])
-                    if vg.name in vg_to_global_idx
-                }
+                # Merge into target BMesh
+                temp_bm.verts.ensure_lookup_table()
+                temp_bm.faces.ensure_lookup_table()
+                temp_bm.to_mesh(src_mesh)  # update temporary mesh
+            finally:
+                temp_bm.free()
 
-                parent_bone_name = (
-                    obj.parent_bone
-                    if (obj.parent == armature_obj and getattr(obj, "parent_type", "") == "BONE")
-                    else None
-                )
+        # Build merged target mesh datablock
+        merged_mesh = bpy.data.meshes.new(f"{output_obj_name}_Mesh")
+        target_bm.from_mesh(valid_objs[0].data)  # seed base
+        for obj in valid_objs[1:]:
+            obj_bm = bmesh.new()
+            obj_bm.from_mesh(obj.data)
+            # Transform already applied in loop above
+            for v in obj_bm.verts:
+                target_bm.verts.new(v.co)
+            obj_bm.free()
 
-                src_bm = bmesh.new()
-                try:
-                    src_bm.from_mesh(obj.data)
-                    src_dvert = src_bm.verts.layers.deform.active if hasattr(src_bm.verts.layers, "deform") else None
+        target_bm.to_mesh(merged_mesh)
+        target_bm.free()
+        merged_mesh.update()
 
-                    if parent_bone_name and armature_obj:
-                        m_world = get_rest_world_matrix_for_static(obj, armature_obj, parent_bone_name)
-                    else:
-                        m_world = getattr(obj, "matrix_world", None)
+        merged_obj = bpy.data.objects.new(output_obj_name, merged_mesh)
 
-                    if m_world is None:
-                        m_world = Matrix.Identity(4) if Matrix else None
-
-                    # If pivot_obj is provided, transform relative to pivot space (M_pivot^-1 * M_world)
-                    if pivot_obj and hasattr(pivot_obj, "matrix_world"):
-                        m_transform = pivot_obj.matrix_world.inverted() @ m_world
-                    else:
-                        m_transform = m_world
-
-                    vert_map = {}
-                    for v in src_bm.verts:
-                        try:
-                            co_trans = (
-                                (m_transform @ v.co)
-                                if (m_transform is not None and hasattr(m_transform, "__matmul__"))
-                                else (v.co.copy() if hasattr(v.co, "copy") else v.co)
-                            )
-                        except Exception:
-                            co_trans = v.co.copy() if hasattr(v.co, "copy") else v.co
-
-                        new_v = target_bm.verts.new(co_trans)
-                        dvert = new_v[dvert_lay]
-
-                        if src_dvert and v[src_dvert]:
-                            try:
-                                for loc_vg_idx, weight in dict(v[src_dvert]).items():
-                                    if loc_vg_idx in local_vg_map:
-                                        dvert[local_vg_map[loc_vg_idx]] = weight
-                            except Exception as exc:
-                                logger.debug("Deform weight copy error: %s", exc)
-                        elif parent_bone_name and parent_bone_name in vg_to_global_idx:
-                            dvert[vg_to_global_idx[parent_bone_name]] = 1.0
-
-                        vert_map[v] = new_v
-
-                    target_bm.verts.ensure_lookup_table()
-
-                    for f in src_bm.faces:
-                        try:
-                            new_f = target_bm.faces.new([vert_map[v] for v in f.verts])
-                            new_f.material_index = local_mat_map.get(getattr(f, "material_index", 0), 0)
-                            new_f.smooth = getattr(f, "smooth", True)
-
-                            # Transfer UV coordinates across matching layers
-                            if hasattr(src_bm.loops.layers, "uv"):
-                                for uv_name, src_uv in src_bm.loops.layers.uv.items():
-                                    tgt_uv = target_uv_layers.get(uv_name)
-                                    if tgt_uv:
-                                        for src_lp, tgt_lp in zip(f.loops, new_f.loops, strict=False):
-                                            try:
-                                                tgt_lp[tgt_uv].uv = src_lp[src_uv].uv.copy()
-                                            except Exception as exc:
-                                                logger.debug("UV transfer error: %s", exc)
-                        except Exception as exc:
-                            logger.debug("Face merge error: %s", exc)
-                finally:
-                    src_bm.free()
-
-            # 6. Write to Mesh Data Block
-            target_bm.to_mesh(target_mesh_data)
-        finally:
-            target_bm.free()
-
-        target_mesh_data.update()
-
-        # 7. Create Blender Object & Assign Materials/VGs
-        merged_obj = bpy.data.objects.new(output_obj_name, target_mesh_data)
+        # Assign unified material slots
         for mat in global_materials:
-            if mat is not None:
-                merged_obj.data.materials.append(mat)
+            merged_obj.data.materials.append(mat)
 
-        for vg_name in global_vg_names:
-            merged_obj.vertex_groups.new(name=vg_name)
-
-        if armature_obj and hasattr(merged_obj, "modifiers"):
+        # Re-attach to Armature if skinned
+        if armature_obj:
+            merged_obj.parent = armature_obj
             arm_mod = merged_obj.modifiers.new(name="Armature", type="ARMATURE")
             arm_mod.object = armature_obj
+            if pivot_obj and hasattr(pivot_obj, "matrix_world"):
+                merged_obj.matrix_world = pivot_obj.matrix_world.copy()
+            else:
+                merged_obj.matrix_world = armature_obj.matrix_world.copy()
 
-        if pivot_obj and hasattr(pivot_obj, "matrix_world"):
+        elif pivot_obj and hasattr(pivot_obj, "matrix_world"):
             merged_obj.parent = pivot_obj
             merged_obj.matrix_parent_inverse = Matrix.Identity(4) if Matrix else None
             merged_obj.matrix_world = pivot_obj.matrix_world.copy()
@@ -318,3 +326,73 @@ class CollectionCloneDAG:
             "sockets": tier_sockets,
             "target_collection": target_coll,
         }
+
+    @classmethod
+    def wrap_loose_objects_into_root_collection(
+        cls,
+        objects: list[Any],
+        base_name: str,
+    ) -> tuple[Any, Any]:
+        """
+        Auto-wraps loose selected scene objects into a clean root Collection {base_name}
+        and instantiates a base Pivot Empty at the bottom center (Z_min) of the bounding box.
+        Returns (created_collection, created_pivot_empty).
+        """
+        if not bpy or not objects:
+            return None, None
+
+        coll = bpy.data.collections.get(base_name)
+        if not coll:
+            coll = bpy.data.collections.new(base_name)
+            if bpy.context and bpy.context.scene:
+                bpy.context.scene.collection.children.link(coll)
+
+        coll["_is_lod_root"] = True
+
+        # Link objects into new collection and unlink from master scene collection if present
+        for obj in objects:
+            if obj.name not in coll.objects:
+                coll.objects.link(obj)
+            if bpy.context and bpy.context.scene and obj.name in bpy.context.scene.collection.objects:
+                bpy.context.scene.collection.objects.unlink(obj)
+
+        # Check for existing Pivot
+        pivot_src, _, _, _ = PivotPreservationEngine.identify_pivots_and_sockets(coll)
+        if pivot_src:
+            return coll, pivot_src
+
+        # Compute bounding center base (Z_min) for new Pivot
+        min_z = float("inf")
+        sum_x = 0.0
+        sum_y = 0.0
+        vert_count = 0
+
+        for obj in objects:
+            if hasattr(obj, "data") and getattr(obj, "type", "") == "MESH" and obj.data:
+                for v in obj.data.vertices:
+                    wco = obj.matrix_world @ v.co
+                    sum_x += wco.x
+                    sum_y += wco.y
+                    min_z = min(min_z, wco.z)
+                    vert_count += 1
+
+        pivot_loc = (
+            Vector((sum_x / max(1, vert_count), sum_y / max(1, vert_count), min_z))
+            if Vector and vert_count > 0
+            else (0.0, 0.0, 0.0)
+        )
+
+        pivot_obj = bpy.data.objects.new(f"{base_name}_Pivot", None)
+        pivot_obj.empty_display_type = "ARROWS"
+        pivot_obj.empty_display_size = 0.5
+        pivot_obj.location = pivot_loc
+        pivot_obj["_is_pivot"] = True
+        coll.objects.link(pivot_obj)
+
+        # Parent unparented objects to Pivot
+        for obj in objects:
+            if not obj.parent and obj != pivot_obj:
+                obj.parent = pivot_obj
+                obj.matrix_parent_inverse = pivot_obj.matrix_world.inverted()
+
+        return coll, pivot_obj

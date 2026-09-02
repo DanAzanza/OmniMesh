@@ -349,8 +349,15 @@ class ImpostorManager:
 
         # Configure material transparency & two-sided
         if hasattr(mat, "blend_method"):
-            mat.blend_method = "CLIP"
-            mat.shadow_method = "CLIP"
+            try:
+                mat.blend_method = "CLIP"
+            except Exception as exc:
+                logger.debug("Could not set blend_method: %s", exc)
+        if hasattr(mat, "shadow_method"):
+            try:
+                mat.shadow_method = "CLIP"
+            except Exception as exc:
+                logger.debug("Could not set shadow_method: %s", exc)
         if hasattr(mat, "use_backface_culling"):
             mat.use_backface_culling = not is_two_sided
 
@@ -434,7 +441,7 @@ class ImpostorManager:
         if not bpy or not mesh_objs:
             return None
 
-        coll_name = target_collection_name or f"{base_name}_LODs"
+        coll_name = target_collection_name or f"{base_name}_LOD_Impostor"
         target_coll = bpy.data.collections.get(coll_name)
         if not target_coll:
             target_coll = bpy.data.collections.new(coll_name)

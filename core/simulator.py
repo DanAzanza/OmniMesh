@@ -224,8 +224,43 @@ class LODSimulatorEngine:
         if hasattr(scene, "lod_tool") and len(scene.lod_tool.lods) > 0:
             default_tiers_pct = [t.screen_size_pct for t in scene.lod_tool.lods]
 
+        # 1. Index Sibling Collections ({Root}, {Root}_LOD1..k)
         for coll in bpy.data.collections:
-            if coll.name.endswith("_LODs"):
+            if not coll.name.endswith(tuple(f"_LOD{n}" for n in range(1, 11))) and not coll.name.endswith(
+                ("_LODs", "_Colliders", "_LOD_Impostor")
+            ):
+                # Check if this collection has sibling LOD collections
+                has_siblings = any(bpy.data.collections.get(f"{coll.name}_LOD{i}") is not None for i in range(1, 8))
+                if has_siblings or coll.get("_is_lod_root", False):
+                    record = LODAssetRecord(coll.name, coll.name)
+                    # Gather objects from root and siblings
+                    record.tier_objects.clear()
+                    all_coords = []
+                    # LOD 0
+                    l0_objs = [o for o in coll.objects if o.type == "MESH" and not o.get("_is_collider", False)]
+                    if l0_objs:
+                        record.tier_objects[0] = l0_objs
+                        for o in l0_objs:
+                            all_coords.extend([o.matrix_world @ v.co for v in o.data.vertices])
+
+                    # LOD 1..k
+                    for i in range(1, 8):
+                        s_c = bpy.data.collections.get(f"{coll.name}_LOD{i}")
+                        if s_c:
+                            s_objs = [o for o in s_c.objects if o.type == "MESH" and not o.get("_is_collider", False)]
+                            if s_objs:
+                                record.tier_objects[i] = s_objs
+
+                    if all_coords:
+                        center = sum(all_coords, Vector()) / len(all_coords) if Vector else (0, 0, 0)
+                        radius = max((co - center).length for co in all_coords) if Vector else 1.0
+                        record.center = center
+                        record.radius = max(0.01, radius)
+                        record.is_valid = True
+                        record.tier_screen_pcts = list(default_tiers_pct)
+                        cls._tracked_assets[coll.name] = record
+
+            elif coll.name.endswith("_LODs"):
                 root_name = coll.name[:-5]
                 record = LODAssetRecord(coll.name, root_name)
                 record.update_bounds_and_tiers()

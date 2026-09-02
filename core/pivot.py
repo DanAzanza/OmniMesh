@@ -180,9 +180,6 @@ class PivotPreservationEngine:
         Clones sockets into target collection and parents them to the tier's Pivot Empty
         while strictly preserving their exact world-space locations.
         """
-        if not bpy or not target_pivot:
-            return []
-
         cloned_sockets = []
         for sock in sockets:
             if not sock or not hasattr(sock, "copy"):
@@ -191,9 +188,25 @@ class PivotPreservationEngine:
             sock_world = sock.matrix_world.copy()
 
             target_collection.objects.link(sock_clone)
-            sock_clone.parent = target_pivot
-            sock_clone.matrix_parent_inverse = target_pivot.matrix_world.inverted()
-            sock_clone.matrix_world = sock_world
+
+            if getattr(sock, "parent_type", "") == "BONE" and getattr(sock, "parent", None):
+                # Retain bone attachment on Master Armature
+                sock_clone.parent = sock.parent
+                sock_clone.parent_type = "BONE"
+                if hasattr(sock, "parent_bone"):
+                    sock_clone.parent_bone = sock.parent_bone
+                if hasattr(sock, "matrix_parent_inverse"):
+                    sock_clone.matrix_parent_inverse = sock.matrix_parent_inverse.copy()
+                sock_clone.matrix_world = sock_world
+            else:
+                sock_clone.parent = target_pivot
+                if hasattr(target_pivot, "matrix_world") and hasattr(target_pivot.matrix_world, "inverted"):
+                    try:
+                        sock_clone.matrix_parent_inverse = target_pivot.matrix_world.inverted()
+                    except Exception as exc:
+                        logger.debug("Matrix inversion failed: %s", exc)
+                sock_clone.matrix_world = sock_world
+
             cloned_sockets.append(sock_clone)
 
         return cloned_sockets

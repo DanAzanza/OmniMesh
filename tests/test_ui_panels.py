@@ -9,12 +9,13 @@ from unittest.mock import MagicMock
 from ui.hud import LODViewportHUD
 from ui.lists import LOD_UL_tier_list, register_lists, unregister_lists
 from ui.operators import (
-    LOD_OT_apply_transforms,
+    LOD_OT_analyze_and_configure,
     LOD_OT_auto_match_pbr_folder,
     LOD_OT_clean_and_repair_materials,
+    LOD_OT_clean_and_repair_mesh,
+    LOD_OT_generate_all,
     LOD_OT_import_pbr_set,
     LOD_OT_inspect_lod0,
-    LOD_OT_sanitize_base_mesh,
     get_associated_armature,
     get_selected_mesh_objects,
     is_object_valid,
@@ -112,25 +113,32 @@ def test_fix_lod0_operators_poll_and_exec_mocked():
     mock_mesh.type = "MESH"
     mock_context.selected_objects = [mock_mesh]
     mock_context.active_object = mock_mesh
+    mock_context.scene.lod_tool.lods = [MagicMock(), MagicMock()]
+    mock_mesh.lod_tool.is_configured = False
 
     # Poll methods
     assert LOD_OT_inspect_lod0.poll(mock_context) is True
-    assert LOD_OT_sanitize_base_mesh.poll(mock_context) is True
-    assert LOD_OT_apply_transforms.poll(mock_context) is True
+    assert LOD_OT_analyze_and_configure.poll(mock_context) is True
+    assert LOD_OT_clean_and_repair_mesh.poll(mock_context) is True
+    assert LOD_OT_generate_all.poll(mock_context) is True
 
     assert LOD_OT_inspect_lod0.poll(None) is False
-    assert LOD_OT_sanitize_base_mesh.poll(None) is False
-    assert LOD_OT_apply_transforms.poll(None) is False
+    assert LOD_OT_analyze_and_configure.poll(None) is False
+    assert LOD_OT_clean_and_repair_mesh.poll(None) is False
+    assert LOD_OT_generate_all.poll(None) is False
 
     # Execute fallback when bpy is None
     op_inspect = LOD_OT_inspect_lod0()
     assert op_inspect.execute(None) == {"FINISHED"}
 
-    op_sanitize = LOD_OT_sanitize_base_mesh()
-    assert op_sanitize.execute(None) == {"FINISHED"}
+    op_analyze = LOD_OT_analyze_and_configure()
+    assert op_analyze.execute(None) == {"FINISHED"}
 
-    op_apply = LOD_OT_apply_transforms()
-    assert op_apply.execute(None) == {"FINISHED"}
+    op_clean = LOD_OT_clean_and_repair_mesh()
+    assert op_clean.execute(None) == {"FINISHED"}
+
+    op_gen = LOD_OT_generate_all()
+    assert op_gen.execute(None) == {"FINISHED"}
 
     op_mat = LOD_OT_clean_and_repair_materials()
     assert op_mat.execute(None) == {"FINISHED"}

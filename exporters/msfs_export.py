@@ -93,10 +93,18 @@ class MSFSExporter:
             # Gather all objects belonging to this LOD tier
             tier_objs: list[Any] = []
 
-            # Check 1: Sibling collections (e.g. Model_LOD1)
-            sibling_coll = bpy.data.collections.get(f"{clean_name}_LOD{i}") or bpy.data.collections.get(
-                f"{props.export_base_name}_LOD{i}"
-            )
+            # Check 1: Sibling collections (e.g. Model for LOD0, Model_LOD1..k for tiers)
+            if i == 0:
+                sibling_coll = (
+                    bpy.data.collections.get(clean_name)
+                    or bpy.data.collections.get(f"{clean_name}_LOD0")
+                    or (bpy.data.collections.get(props.export_base_name) if props else None)
+                )
+            else:
+                sibling_coll = bpy.data.collections.get(f"{clean_name}_LOD{i}") or (
+                    bpy.data.collections.get(f"{props.export_base_name}_LOD{i}") if props else None
+                )
+
             if sibling_coll:
                 tier_objs.extend(getattr(sibling_coll, "all_objects", getattr(sibling_coll, "objects", [])))
 

@@ -31,14 +31,38 @@ class UE5Exporter:
         except OSError as exc:
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
-        coll = bpy.data.collections.get(f"{clean_name}_LODs") or (
-            bpy.data.collections.get(f"{props.export_base_name}_LODs") if props else None
-        )
-
         export_objects: list[Any] = []
-        if coll and len(coll.objects) > 0:
-            export_objects = [obj for obj in coll.objects]
-        elif props and len(props.lods) > 0:
+        base_search = clean_name.split("_LOD")[0]
+
+        # 1. LOD0 Root Collection
+        root_c = bpy.data.collections.get(base_search) or (
+            bpy.data.collections.get(props.export_base_name) if props else None
+        )
+        if root_c:
+            export_objects.extend(
+                [obj for obj in root_c.objects if obj.type in {"MESH", "EMPTY"} and not obj.get("_is_collider", False)]
+            )
+
+        # 2. Sibling LOD Collections (LOD1..k)
+        if props and len(props.lods) > 0:
+            for i in range(1, len(props.lods)):
+                s_c = bpy.data.collections.get(f"{base_search}_LOD{i}")
+                if s_c:
+                    export_objects.extend(
+                        [
+                            obj
+                            for obj in s_c.objects
+                            if obj.type in {"MESH", "EMPTY"} and not obj.get("_is_collider", False)
+                        ]
+                    )
+
+        # 3. Impostor Collection
+        imp_c = bpy.data.collections.get(f"{base_search}_LOD_Impostor")
+        if imp_c:
+            export_objects.extend(list(imp_c.objects))
+
+        # 4. Fallback to direct tier references
+        if not export_objects and props and len(props.lods) > 0:
             export_objects = [tier.generated_obj for tier in props.lods if tier.generated_obj]
 
         if not export_objects:
