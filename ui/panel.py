@@ -1,8 +1,8 @@
 """
 Modular N-Panel User Interface Hierarchy for OmniMesh in Blender 4.2+ and 5.2 LTS.
 Structured into clean, workflow-oriented collapsible subpanels with responsive layouts.
-Supports Per-Object property persistence, Sub-LOD derivative inspection, multi-selection batch sync,
-safe vs critical mesh & material cleanup, and 1-click PBR Texture Set Importer.
+Supports Selection Mode vs Collection Hierarchy Mode, Pivot Empty preservation,
+Sub-LOD derivative inspection, multi-selection batch sync, safe vs critical cleanup, and PBR Importer.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ class LOD_PT_main_panel(Panel):
 
         # Multi-Selection Sync CTA
         selected_meshes = get_selected_mesh_objects(context)
-        if len(selected_meshes) > 1:
+        if len(selected_meshes) > 1 and scene_props.lod_generation_source == "SELECTION":
             box_sync = layout.box()
             row_sync = box_sync.row(align=True)
             row_sync.operator(
@@ -60,9 +60,14 @@ class LOD_PT_main_panel(Panel):
                 icon="DUPLICATE",
             )
 
-        # 1. Project & Target Engine Setup Card (Scene-Level)
+        # 1. Source Scope & Target Engine Setup Card (Scene-Level)
         box = layout.box()
-        box.label(text="1. Target Engine & Preset", icon="SCENE_DATA")
+        box.label(text="1. Source Scope & Engine", icon="SCENE_DATA")
+        box.prop(scene_props, "lod_generation_source", text="")
+        if scene_props.lod_generation_source == "COLLECTION":
+            box.prop(scene_props, "source_collection_name", text="Collection")
+            box.prop(scene_props, "preserve_pivot_empty", text="Preserve Pivot/Root Empty")
+
         box.prop(scene_props, "target_engine", text="")
         box.prop(props, "asset_category", text="")
         box.prop(props, "export_base_name", text="Asset Name")

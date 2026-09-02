@@ -1,17 +1,21 @@
 """
 Microsoft Flight Simulator (MSFS 2020 / 2024) Exporter.
+Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Features:
+- Descending minSize ModelInfo.xml generation: minSize(LOD_i) = Screen_pct(LOD_{i+1}), last tier = 0.
+- Collection-based and Object-based glTF export.
+- Modular SimObject component structure.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-import re
 
 try:
     import bpy
@@ -21,7 +25,7 @@ except ImportError:
 
 class MSFSExporter:
     @staticmethod
-    def generate_model_info_xml(asset_name: str, tiers: list[dict], guid_str: str = "") -> str:
+    def generate_model_info_xml(asset_name: str, tiers: list[dict[str, Any]], guid_str: str = "") -> str:
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
         clean_guid = (
             guid_str.strip().strip("{}").upper() if guid_str and guid_str.strip() else str(uuid.uuid4()).upper()
@@ -47,10 +51,16 @@ class MSFSExporter:
         if num_tiers == 0:
             lines.append(f'        <LOD minSize="0" ModelFile="{escaped_asset_name}_LOD0.gltf"/>')
         else:
-            for i, tier in enumerate(tiers):
-                min_size = 0 if i == num_tiers - 1 else round(float(tier.get("screen_size_pct", 0.0)), 2)
+            for i in range(num_tiers):
+                # Descending minSize: minSize for LOD_i is the screen percentage of the NEXT tier
+                if i < num_tiers - 1:
+                    raw_val = round(float(tiers[i + 1].get("screen_size_pct", 0.0)), 2)
+                    min_size_str = str(int(raw_val)) if raw_val == int(raw_val) else str(raw_val)
+                else:
+                    min_size_str = "0"
+
                 model_file = f"{escaped_asset_name}_LOD{i}.gltf"
-                lines.append(f'        <LOD minSize="{min_size}" ModelFile="{model_file}"/>')
+                lines.append(f'        <LOD minSize="{min_size_str}" ModelFile="{model_file}"/>')
 
         lines.append("    </LODS>")
         lines.append("</ModelInfo>")
@@ -80,13 +90,23 @@ class MSFSExporter:
         exported_tiers = 0
 
         for i, tier in enumerate(props.lods):
-            # Gather all objects belonging to this LOD tier (supports multi-mesh hierarchies)
+            # Gather all objects belonging to this LOD tier
             tier_objs: list[Any] = []
-            if coll:
+
+            # Check 1: Sibling collections (e.g. Model_LOD1)
+            sibling_coll = bpy.data.collections.get(f"{clean_name}_LOD{i}") or bpy.data.collections.get(
+                f"{props.export_base_name}_LOD{i}"
+            )
+            if sibling_coll:
+                tier_objs.extend(getattr(sibling_coll, "all_objects", getattr(sibling_coll, "objects", [])))
+
+            # Check 2: Aggregated LOD collection ({Asset}_LODs)
+            if not tier_objs and coll:
                 for obj in coll.objects:
                     if f"_LOD{i}" in obj.name:
                         tier_objs.append(obj)
 
+            # Check 3: Direct reference on LODLevelItem
             if not tier_objs and tier.generated_obj:
                 tier_objs.append(tier.generated_obj)
 
@@ -107,7 +127,7 @@ class MSFSExporter:
 
             context.view_layer.objects.active = tier_objs[0]
 
-            gltf_path = os.path.join(export_dir, f"{asset_name}_LOD{i}.gltf")
+            gltf_path = os.path.join(export_dir, f"{clean_name}_LOD{i}.gltf")
             try:
                 bpy.ops.export_scene.gltf(
                     filepath=gltf_path, use_selection=True, export_format="GLTF_SEPARATE", export_apply=True
@@ -119,8 +139,8 @@ class MSFSExporter:
         if exported_tiers == 0:
             return False, "No valid LOD objects found to export."
 
-        xml_content = cls.generate_model_info_xml(asset_name, tier_data)
-        xml_path = os.path.join(export_dir, f"{asset_name}.xml")
+        xml_content = cls.generate_model_info_xml(clean_name, tier_data)
+        xml_path = os.path.join(export_dir, f"{clean_name}.xml")
         try:
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(xml_content)

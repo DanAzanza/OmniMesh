@@ -1,5 +1,10 @@
 """
-Hierarchy & Multi-Mesh Join Engine for LOD Tool.
+Hierarchy & Multi-Mesh Join Engine for OmniMesh.
+Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Features:
+- LocalPivotSpaceMerge: Vertex and normal transformation into pivot relative space.
+- CollectionCloneDAG: Sibling collection hierarchies (Model_LOD1..k) and sub-collection mirroring.
+- SharedRigAnchor: Master Armature preservation across all LOD tiers.
 """
 
 from __future__ import annotations
@@ -18,6 +23,11 @@ except ImportError:
     bmesh = None
     Matrix = None
     Vector = None
+
+try:
+    from .pivot import PivotPreservationEngine
+except (ImportError, ValueError):
+    from core.pivot import PivotPreservationEngine
 
 
 def get_rest_world_matrix_for_static(static_obj: Any, armature_obj: Any, bone_name: str) -> Any:
@@ -55,17 +65,18 @@ def get_rest_world_matrix_for_static(static_obj: Any, armature_obj: Any, bone_na
 class MeshMergeEngine:
     @staticmethod
     def consolidate_and_merge_meshes(
-        mesh_objs: list[Any], output_obj_name: str, armature_obj: Any | None = None
+        mesh_objs: list[Any],
+        output_obj_name: str,
+        armature_obj: Any | None = None,
+        pivot_obj: Any | None = None,
     ) -> Any | None:
         """
         Merges multiple static and skinned meshes into a single optimized draw-call mesh
         using pure BMesh data pipelines (Zero bpy.ops calls, zero context dependencies),
         with complete preservation of UV channels, materials, smoothing, and vertex groups.
+        If pivot_obj is provided, coordinates are transformed into the Pivot's local coordinate space (LocalPivotSpaceMerge).
         """
-        if not bpy or not bmesh:
-            return None
-
-        if not mesh_objs:
+        if not bpy or not bmesh or not mesh_objs:
             return None
 
         # Filter to valid mesh objects
@@ -152,18 +163,24 @@ class MeshMergeEngine:
                     if m_world is None:
                         m_world = Matrix.Identity(4) if Matrix else None
 
+                    # If pivot_obj is provided, transform relative to pivot space (M_pivot^-1 * M_world)
+                    if pivot_obj and hasattr(pivot_obj, "matrix_world"):
+                        m_transform = pivot_obj.matrix_world.inverted() @ m_world
+                    else:
+                        m_transform = m_world
+
                     vert_map = {}
                     for v in src_bm.verts:
                         try:
-                            world_co = (
-                                (m_world @ v.co)
-                                if (m_world is not None and hasattr(m_world, "__matmul__"))
+                            co_trans = (
+                                (m_transform @ v.co)
+                                if (m_transform is not None and hasattr(m_transform, "__matmul__"))
                                 else (v.co.copy() if hasattr(v.co, "copy") else v.co)
                             )
                         except Exception:
-                            world_co = v.co.copy() if hasattr(v.co, "copy") else v.co
+                            co_trans = v.co.copy() if hasattr(v.co, "copy") else v.co
 
-                        new_v = target_bm.verts.new(world_co)
+                        new_v = target_bm.verts.new(co_trans)
                         dvert = new_v[dvert_lay]
 
                         if src_dvert and v[src_dvert]:
@@ -221,4 +238,83 @@ class MeshMergeEngine:
             arm_mod = merged_obj.modifiers.new(name="Armature", type="ARMATURE")
             arm_mod.object = armature_obj
 
+        if pivot_obj and hasattr(pivot_obj, "matrix_world"):
+            merged_obj.parent = pivot_obj
+            merged_obj.matrix_parent_inverse = Matrix.Identity(4) if Matrix else None
+            merged_obj.matrix_world = pivot_obj.matrix_world.copy()
+
         return merged_obj
+
+
+class CollectionCloneDAG:
+    """
+    Manages collection-level LOD generation, sibling collections (Model_LOD1..k),
+    sub-collection mirroring, and pivot/socket preservation.
+    """
+
+    @classmethod
+    def get_or_create_sibling_collection(cls, root_coll: Any, tier_idx: int, base_name: str) -> Any:
+        """
+        Creates or retrieves a sibling collection for LOD tier i (e.g. Model_LOD1).
+        """
+        if not bpy:
+            return None
+
+        tier_name = f"{base_name}_LOD{tier_idx}" if tier_idx > 0 else base_name
+        existing = bpy.data.collections.get(tier_name)
+        if existing:
+            return existing
+
+        target_coll = bpy.data.collections.new(tier_name)
+
+        # Link as sibling in parent collection or scene root
+        linked = False
+        for parent_c in bpy.data.collections:
+            if root_coll.name in parent_c.children:
+                parent_c.children.link(target_coll)
+                linked = True
+                break
+
+        if not linked and bpy.context and bpy.context.scene:
+            bpy.context.scene.collection.children.link(target_coll)
+
+        return target_coll
+
+    @classmethod
+    def clone_collection_hierarchy(
+        cls,
+        root_coll: Any,
+        target_coll: Any,
+        tier_idx: int,
+        base_name: str,
+        armature_obj: Any | None = None,
+        pivot_obj: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Builds sibling collection hierarchy for tier_idx:
+        - Clones Pivot Empty and Sockets into target_coll
+        - Excludes Colliders into {Asset}_Colliders
+        - Returns dict with cloned objects and collection hierarchy
+        """
+        if not bpy or not root_coll or not target_coll:
+            return {"meshes": [], "pivot": None, "sockets": []}
+
+        pivot_src, sockets_src, meshes_src, _ = PivotPreservationEngine.identify_pivots_and_sockets(root_coll)
+        active_pivot = pivot_src or pivot_obj
+
+        # 1. Clone Pivot Empty
+        tier_pivot = None
+        if active_pivot:
+            tier_pivot = PivotPreservationEngine.clone_pivot_empty(active_pivot, target_coll, tier_idx, base_name)
+
+        # 2. Clone Sockets
+        tier_sockets = []
+        if sockets_src and tier_pivot:
+            tier_sockets = PivotPreservationEngine.reparent_sockets_to_pivot(sockets_src, tier_pivot, target_coll)
+
+        return {
+            "source_meshes": meshes_src,
+            "pivot": tier_pivot,
+            "sockets": tier_sockets,
+            "target_collection": target_coll,
+        }

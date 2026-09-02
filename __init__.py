@@ -32,6 +32,7 @@ if __package__:
         normals,
         occlusion,
         pbr_importer,
+        pivot,
         rigging,
         sanitizer,
         simulator,
@@ -53,6 +54,7 @@ else:
         normals,
         occlusion,
         pbr_importer,
+        pivot,
         rigging,
         sanitizer,
         simulator,
@@ -71,6 +73,7 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(decimator)
     importlib.reload(materials)
     importlib.reload(pbr_importer)
+    importlib.reload(pivot)
     importlib.reload(normals)
     importlib.reload(hierarchy)
     importlib.reload(rigging)

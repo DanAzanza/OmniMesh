@@ -1,5 +1,5 @@
 """
-Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, Mesh Cleanup, Material Cleanup, Impostors, PBR Textures Importer, and Viewport Preview.
+Master Pipeline Operators for OmniMesh LOD Analysis, Generation, Collision, Mesh Cleanup, Material Cleanup, Impostors, PBR Textures Importer, Collection Hierarchy Mode, and Viewport Preview.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ except ImportError:
 try:
     from ..core.collision import CollisionManager
     from ..core.decimator import MeshDecimator
-    from ..core.hierarchy import MeshMergeEngine
+    from ..core.hierarchy import CollectionCloneDAG, MeshMergeEngine
     from ..core.impostor import ImpostorManager
     from ..core.materials import MaterialOptimizer
     from ..core.metrics import (
@@ -48,12 +48,13 @@ try:
         PBRSemanticClassifier,
         ShaderGraphBuilder,
     )
+    from ..core.pivot import PivotPreservationEngine
     from ..core.rigging import KinematicBonePruner, WeightSanitizer
     from ..core.sanitizer import MeshSanitizer
 except (ImportError, ValueError):
     from core.collision import CollisionManager
     from core.decimator import MeshDecimator
-    from core.hierarchy import MeshMergeEngine
+    from core.hierarchy import CollectionCloneDAG, MeshMergeEngine
     from core.impostor import ImpostorManager
     from core.materials import MaterialOptimizer
     from core.metrics import (
@@ -69,6 +70,7 @@ except (ImportError, ValueError):
         PBRSemanticClassifier,
         ShaderGraphBuilder,
     )
+    from core.pivot import PivotPreservationEngine
     from core.rigging import KinematicBonePruner, WeightSanitizer
     from core.sanitizer import MeshSanitizer
 
@@ -85,10 +87,41 @@ def is_object_valid(obj: Any) -> bool:
         return False
 
 
+def get_target_collection(context: Any) -> Any | None:
+    """Retrieves active or specified source collection for Collection-Based LOD generation."""
+    if not context or not bpy:
+        return None
+    props = getattr(context.scene, "lod_tool", None)
+    if props and props.source_collection_name:
+        coll = bpy.data.collections.get(props.source_collection_name)
+        if coll:
+            return coll
+
+    # Active collection in context
+    if getattr(context, "collection", None) and context.collection != context.scene.collection:
+        return context.collection
+
+    # Active object's collection
+    active_obj = getattr(context, "active_object", None)
+    if active_obj and getattr(active_obj, "users_collection", None):
+        return active_obj.users_collection[0]
+
+    return None
+
+
 def get_selected_mesh_objects(context: Any) -> list[Any]:
-    """Retrieves all selected mesh objects, or falls back to active object."""
+    """Retrieves all selected mesh objects or collection mesh objects based on Source Scope."""
     if not context:
         return []
+
+    props = getattr(context.scene, "lod_tool", None)
+    if props and props.lod_generation_source == "COLLECTION":
+        coll = get_target_collection(context)
+        if coll:
+            _, _, meshes, _ = PivotPreservationEngine.identify_pivots_and_sockets(coll)
+            if meshes:
+                return meshes
+
     selected = [obj for obj in getattr(context, "selected_objects", []) if getattr(obj, "type", "") == "MESH"]
     if not selected and getattr(context, "active_object", None) and context.active_object.type == "MESH":
         selected = [context.active_object]
@@ -110,12 +143,6 @@ def resolve_lod_context(context: Any) -> tuple[Any, Any, Any, bool]:
     """
     Robust Context Resolver:
     Returns: (scene_props, obj_props, master_object, is_derivative)
-
-    Guarantees:
-    1. Returns valid Scene-level Project Settings.
-    2. If active object is a generated sub-LOD (e.g. Tree_LOD2), resolves upward to the Master LOD0.
-    3. Handles name changes via native PointerProperty references with fallback to suffix parsing.
-    4. Never triggers recursive decimation on derivative objects.
     """
     if not context or not hasattr(context, "scene") or not context.scene:
         return None, None, None, False
@@ -152,7 +179,7 @@ def resolve_lod_context(context: Any) -> tuple[Any, Any, Any, bool]:
 
 
 class LOD_OT_analyze_and_configure(Operator):
-    """Analyze selected mesh bounding metrics and auto-populate recommended LOD screen tiers."""
+    """Analyze selected mesh or collection bounding metrics and auto-populate recommended LOD screen tiers."""
 
     bl_idname = "lod_tool.analyze_and_configure"
     bl_label = "Auto-Configure LOD Tiers"
@@ -163,7 +190,7 @@ class LOD_OT_analyze_and_configure(Operator):
             return {"CANCELLED"}
         mesh_objs = get_selected_mesh_objects(context)
         if not mesh_objs:
-            self.report({"WARNING"}, "No mesh objects selected.")
+            self.report({"WARNING"}, "No mesh objects found in selection or collection.")
             return {"CANCELLED"}
 
         all_coords = []
@@ -177,6 +204,14 @@ class LOD_OT_analyze_and_configure(Operator):
         center, radius = compute_bounding_sphere(all_coords)
         scene_props, obj_props, master_obj, _ = resolve_lod_context(context)
         props = obj_props or scene_props
+
+        # Collection mode base name detection
+        target_coll = get_target_collection(context) if scene_props.lod_generation_source == "COLLECTION" else None
+        if target_coll:
+            coll_clean_name = target_coll.name.split("_LOD")[0]
+            scene_props.source_collection_name = target_coll.name
+            props.export_base_name = coll_clean_name
+            scene_props.export_base_name = coll_clean_name
 
         render = context.scene.render
         cam = context.scene.camera
@@ -203,23 +238,18 @@ class LOD_OT_analyze_and_configure(Operator):
                 item = p.lods.add()
                 item.name = f"LOD{i}"
                 item.level_index = i
-                item.lod_index = i
                 item.screen_size_pct = s_pct
 
                 s_frac = max(0.001, s_pct / 100.0)
                 item.distance_m = compute_distance_from_screen_size(radius, s_frac, fov_v)
 
                 qem_ratio = max(0.01, min(1.0, math.pow(s_frac, 1.5)))
-                target_tris_calc = max(12, int(round(total_tris * qem_ratio)))
-                item.triangle_target = target_tris_calc
-                item.target_tris = target_tris_calc
-                actual_tris_calc = total_tris if i == 0 else 0
-                item.actual_triangles = actual_tris_calc
-                item.actual_tris = actual_tris_calc
+                item.triangle_target = max(12, int(round(total_tris * qem_ratio)))
+                item.actual_triangles = total_tris if i == 0 else 0
                 item.reduction_pct = 0.0 if i == 0 else (1.0 - qem_ratio) * 100.0
                 item.mat_slots_count = len(mesh_objs[0].material_slots) if mesh_objs else 0
 
-        first_name = mesh_objs[0].name.split("_LOD")[0]
+        first_name = props.export_base_name or mesh_objs[0].name.split("_LOD")[0]
         if not props.export_base_name:
             props.export_base_name = first_name
         if scene_props and not scene_props.export_base_name:
@@ -451,7 +481,6 @@ class LOD_OT_import_pbr_set(Operator):
             else (mesh_objs[0] if mesh_objs else None)
         )
 
-        # Build texture map
         texture_map: dict[str, str] = {}
         sample_filename = ""
         for file_elem in self.files:
@@ -469,7 +498,6 @@ class LOD_OT_import_pbr_set(Operator):
             self.report({"WARNING"}, "Could not semantically classify any selected texture files.")
             return {"CANCELLED"}
 
-        # Target material
         mat = None
         if active_obj and active_obj.active_material:
             mat = active_obj.active_material
@@ -564,7 +592,7 @@ class LOD_OT_auto_match_pbr_folder(Operator):
 
 
 class LOD_OT_generate_all(Operator):
-    """Execute complete multi-LOD simplification, occlusion culling, rigging preservation, and normal reprojection."""
+    """Execute complete multi-LOD simplification, pivot preservation, occlusion culling, rigging, and normal reprojection."""
 
     bl_idname = "lod_tool.generate_all"
     bl_label = "Generate All LODs"
@@ -573,10 +601,6 @@ class LOD_OT_generate_all(Operator):
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context:
             return {"CANCELLED"}
-        mesh_objs = get_selected_mesh_objects(context)
-        if not mesh_objs:
-            self.report({"WARNING"}, "No mesh objects selected.")
-            return {"CANCELLED"}
 
         scene_props, obj_props, master_obj, _ = resolve_lod_context(context)
         props = obj_props or scene_props
@@ -584,6 +608,18 @@ class LOD_OT_generate_all(Operator):
         if not props.lods:
             self.report({"ERROR"}, "No LOD tiers configured. Run Auto-Configure first.")
             return {"CANCELLED"}
+
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            self.report({"WARNING"}, "No mesh objects found.")
+            return {"CANCELLED"}
+
+        is_coll_mode = scene_props.lod_generation_source == "COLLECTION"
+        src_coll = get_target_collection(context) if is_coll_mode else None
+
+        pivot_src = None
+        if is_coll_mode and src_coll and props.preserve_pivot_empty:
+            pivot_src, _, _, _ = PivotPreservationEngine.identify_pivots_and_sockets(src_coll)
 
         armature_obj = get_associated_armature(mesh_objs)
         orig_pose_pos = None
@@ -595,13 +631,11 @@ class LOD_OT_generate_all(Operator):
         total_culled_islands = 0
 
         try:
-            base_name = props.export_base_name or mesh_objs[0].name.split("_LOD")[0]
-            coll_name = f"{base_name}_LODs"
-            target_coll = bpy.data.collections.get(coll_name)
-            if not target_coll:
-                target_coll = bpy.data.collections.new(coll_name)
-                context.scene.collection.children.link(target_coll)
+            base_name = props.export_base_name or (
+                src_coll.name.split("_LOD")[0] if src_coll else mesh_objs[0].name.split("_LOD")[0]
+            )
 
+            # Apply transforms for static meshes (unless parented to armature)
             for obj in mesh_objs:
                 if not obj.parent or obj.parent.type != "ARMATURE":
                     bpy.context.view_layer.objects.active = obj
@@ -628,23 +662,46 @@ class LOD_OT_generate_all(Operator):
                 tolerances = compute_coupled_tolerances(radius, s_frac, 1.5, render.resolution_y)
                 should_merge = props.hierarchy_mode == "MERGE_DISTANT" and i >= props.merge_lod_start
 
+                # 1. Target Collection Setup
+                if is_coll_mode and src_coll:
+                    if i == 0:
+                        tier_coll = src_coll
+                        tier_pivot = pivot_src
+                    else:
+                        tier_coll = CollectionCloneDAG.get_or_create_sibling_collection(src_coll, i, base_name)
+                        tier_info = CollectionCloneDAG.clone_collection_hierarchy(
+                            src_coll, tier_coll, i, base_name, armature_obj, pivot_src
+                        )
+                        tier_pivot = tier_info.get("pivot")
+                else:
+                    coll_name = f"{base_name}_LODs"
+                    tier_coll = bpy.data.collections.get(coll_name)
+                    if not tier_coll:
+                        tier_coll = bpy.data.collections.new(coll_name)
+                        context.scene.collection.children.link(tier_coll)
+                    tier_pivot = None
+
+                # 2. Geometry Merging or Individual Mesh Duplication
                 if should_merge and len(mesh_objs) > 1:
                     merged_name = f"{base_name}_LOD{i}"
                     existing = bpy.data.objects.get(merged_name)
                     if existing and existing not in mesh_objs:
                         bpy.data.objects.remove(existing, do_unlink=True)
 
-                    tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(mesh_objs, merged_name, armature_obj)
+                    tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
+                        mesh_objs, merged_name, armature_obj, pivot_obj=tier_pivot
+                    )
                     tier_obj.lod_tool.is_generated_lod = True
                     tier_obj.lod_tool.lod_root_object = mesh_objs[0]
                     tier_obj.lod_tool.lod_index = i
-                    target_coll.objects.link(tier_obj)
+
+                    if tier_obj.name not in tier_coll.objects:
+                        tier_coll.objects.link(tier_obj)
 
                     bm = bmesh.new()
                     bm.from_mesh(tier_obj.data)
                     MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
 
-                    # Occlusion & Interior Geometry Culling
                     if props.enable_occlusion_culling and i >= props.occlusion_lod_start:
                         cull_res = HardenedOcclusionCuller.cull_interior_faces(
                             tier_obj,
@@ -680,9 +737,7 @@ class LOD_OT_generate_all(Operator):
                             )
                         WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
 
-                    tris_count = len(tier_obj.data.polygons)
-                    tier.actual_tris = tris_count
-                    tier.actual_triangles = tris_count
+                    tier.actual_tris = len(tier_obj.data.polygons)
                     tier.mat_slots_count = len(tier_obj.material_slots)
                     tier.generated_obj = tier_obj
                     generated_tier_objects.append(tier_obj)
@@ -710,15 +765,20 @@ class LOD_OT_generate_all(Operator):
                             tier_obj.lod_tool.lod_root_object = src_obj
                             tier_obj.lod_tool.lod_index = i
 
-                            if src_obj.parent:
+                            # Handle parenting & pivot
+                            if tier_pivot:
+                                tier_obj.parent = tier_pivot
+                                tier_obj.matrix_parent_inverse = tier_pivot.matrix_world.inverted()
+                                tier_obj.matrix_world = src_obj.matrix_world.copy()
+                            elif src_obj.parent:
                                 tier_obj.parent = src_obj.parent
                                 tier_obj.parent_type = src_obj.parent_type
                                 if hasattr(src_obj, "parent_bone") and src_obj.parent_bone:
                                     tier_obj.parent_bone = src_obj.parent_bone
                                 tier_obj.matrix_parent_inverse = src_obj.matrix_parent_inverse.copy()
 
-                            if tier_obj.name not in target_coll.objects:
-                                target_coll.objects.link(tier_obj)
+                            if tier_obj.name not in tier_coll.objects:
+                                tier_coll.objects.link(tier_obj)
 
                         if i > 0:
                             bm = bmesh.new()
@@ -768,9 +828,7 @@ class LOD_OT_generate_all(Operator):
 
                         tier_sub_objs.append(tier_obj)
 
-                    sub_tris_count = sum(len(o.data.polygons) for o in tier_sub_objs)
-                    tier.actual_tris = sub_tris_count
-                    tier.actual_triangles = sub_tris_count
+                    tier.actual_tris = sum(len(o.data.polygons) for o in tier_sub_objs)
                     tier.mat_slots_count = sum(len(o.material_slots) for o in tier_sub_objs)
                     tier.generated_obj = tier_sub_objs[0]
                     generated_tier_objects.extend(tier_sub_objs)
@@ -946,13 +1004,23 @@ class LOD_OT_preview_tier(Operator):
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context:
             return {"CANCELLED"}
-        _, obj_props, _, _ = resolve_lod_context(context)
-        props = obj_props or context.scene.lod_tool
+        scene_props, obj_props, _, _ = resolve_lod_context(context)
+        props = obj_props or scene_props
         props.active_lod_index = self.tier_index
 
         base_name = props.export_base_name
-        coll = bpy.data.collections.get(f"{base_name}_LODs")
+        is_coll_mode = scene_props.lod_generation_source == "COLLECTION"
 
+        # Collection mode visibility toggle
+        if is_coll_mode and props.lods:
+            for i in range(len(props.lods)):
+                coll_name = f"{base_name}_LOD{i}" if i > 0 else base_name
+                sibling_coll = bpy.data.collections.get(coll_name) or bpy.data.collections.get(f"{base_name}_LOD{i}")
+                if sibling_coll:
+                    sibling_coll.hide_viewport = i != self.tier_index
+
+        # Unified LOD collection fallback
+        coll = bpy.data.collections.get(f"{base_name}_LODs")
         if coll:
             for obj in coll.objects:
                 if getattr(obj, "type", "") == "MESH":
@@ -966,6 +1034,68 @@ class LOD_OT_preview_tier(Operator):
                     tier.generated_obj.hide_viewport = not is_target
 
         self.report({"INFO"}, f"Isolated Viewport Preview: LOD{self.tier_index}")
+        return {"FINISHED"}
+
+
+class LOD_OT_toggle_simulator(Operator):
+    """Toggle real-time distance-based LOD simulator."""
+
+    bl_idname = "lod_tool.toggle_simulator"
+    bl_label = "Toggle Real-Time Simulator"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        props = context.scene.lod_tool
+
+        try:
+            from ..core.simulator import RealTimeLODSimulator
+        except (ImportError, ValueError):
+            from core.simulator import RealTimeLODSimulator
+
+        if props.is_simulator_active:
+            RealTimeLODSimulator.stop()
+            props.is_simulator_active = False
+            self.report({"INFO"}, "Real-Time LOD Simulator stopped.")
+        else:
+            started = RealTimeLODSimulator.start(context)
+            if started:
+                props.is_simulator_active = True
+                self.report({"INFO"}, "Real-Time LOD Simulator active.")
+            else:
+                self.report({"WARNING"}, "Failed to start simulator. Ensure LODs are generated.")
+        return {"FINISHED"}
+
+
+class LOD_OT_toggle_split_preview(Operator):
+    """Toggle interactive A/B split-screen viewport preview."""
+
+    bl_idname = "lod_tool.toggle_split_preview"
+    bl_label = "Toggle Split Preview"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        props = context.scene.lod_tool
+
+        try:
+            from .hud import ViewportSplitPreview
+        except (ImportError, ValueError):
+            from ui.hud import ViewportSplitPreview
+
+        if props.is_split_active:
+            ViewportSplitPreview.stop()
+            props.is_split_active = False
+            self.report({"INFO"}, "Split-screen preview disabled.")
+        else:
+            started = ViewportSplitPreview.start(context)
+            if started:
+                props.is_split_active = True
+                self.report({"INFO"}, "Split-screen A/B preview enabled.")
+            else:
+                self.report({"WARNING"}, "Split-screen preview requires generated LODs.")
         return {"FINISHED"}
 
 
@@ -984,6 +1114,8 @@ OPERATOR_CLASSES = (
     LOD_OT_generate_collision_hulls,
     LOD_OT_remove_collision_hulls,
     LOD_OT_preview_tier,
+    LOD_OT_toggle_simulator,
+    LOD_OT_toggle_split_preview,
 )
 
 

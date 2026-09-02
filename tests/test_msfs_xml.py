@@ -32,8 +32,9 @@ def test_msfs_model_info_xml_generation():
     assert len(lod_elements) == 7
 
     # Check minSize descending and last is 0
-    assert lod_elements[0].attrib["minSize"] == "100.0"
+    assert lod_elements[0].attrib["minSize"] == "50"
     assert lod_elements[0].attrib["ModelFile"] == "SM_Hangar_01_LOD0.gltf"
+    assert lod_elements[1].attrib["minSize"] == "25"
     assert lod_elements[-1].attrib["minSize"] == "0"
     assert lod_elements[-1].attrib["ModelFile"] == "SM_Hangar_01_LOD6.gltf"
 
