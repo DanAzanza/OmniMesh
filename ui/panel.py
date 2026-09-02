@@ -54,7 +54,7 @@ class OMNIMESH_PT_fix_lod0(Panel):
         # Preflight Health Card
         box_pre = layout.box()
         row = box_pre.row(align=True)
-        row.label(text="LOD0 Health Check", icon="DIAGNOSTIC")
+        row.label(text="LOD0 Health Check", icon="MESH_DATA")
         row.operator("lod_tool.inspect_lod0", text="Run Preflight", icon="VIEWZOOM")
 
         if props.preflight_inspected:
