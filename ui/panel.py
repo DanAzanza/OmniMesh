@@ -1,9 +1,10 @@
 """
-OmniMesh 3-Panel Architecture for Blender 4.2+ and 5.2 LTS.
-Structured into three primary sequential workflow panels:
-1. Fix LOD0 (Sanitize, Repair, Transform & Origin Normalization)
-2. LODs (Configure, Generate, Simulate, Split Preview & Isolate)
-3. Engine Export (Multi-Engine Package Export, PBR Textures, Live Bridge & Batch Ingestion)
+OmniMesh Modular Panel Architecture for Blender 4.2+ and 5.2 LTS.
+Structured into sequential workflow panels:
+1. Import (PBR Texture Set Importer & Auto-Matcher)
+2. Fix LOD0 (Sanitize, Preflight, Mesh Topology, Material Cleanup)
+3. LODs (Configure, Generate, Simulate, Split Preview & Isolate)
+4. Engine Export (Multi-Engine Package Export, PBR Textures, Live Bridge & Batch Ingestion)
 """
 
 from __future__ import annotations
@@ -24,19 +25,54 @@ except (ImportError, ValueError):
 
 
 # =========================================================================
-# PANEL 1: FIX LOD0 (Sanitization, Preflight & Geometry Normalization)
+# PANEL 1: IMPORT (PBR Texture Set Importer & Folder Auto-Matcher)
 # =========================================================================
 
 
-class OMNIMESH_PT_fix_lod0(Panel):
-    """Panel 1: Base Mesh Preflight Inspection, Sanitization, and Transform Normalization."""
+class OMNIMESH_PT_import(Panel):
+    """Panel 1: PBR Texture Set Importer and Folder Auto-Matcher."""
 
-    bl_label = "1. Fix LOD0"
-    bl_idname = "OMNIMESH_PT_fix_lod0"
+    bl_label = "1. Import"
+    bl_idname = "OMNIMESH_PT_import"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
     bl_order = 0
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        box_pbr = layout.box()
+        box_pbr.label(text="PBR Texture Set Importer", icon="IMAGE_DATA")
+        row_pbr = box_pbr.row(align=True)
+        row_pbr.scale_y = 1.25
+        row_pbr.operator("lod_tool.import_pbr_set", text="Import PBR Texture Set", icon="FILE_IMAGE")
+        row_pbr.operator("lod_tool.auto_match_pbr_folder", text="Auto-Match Folder", icon="FILE_FOLDER")
+
+        if props.last_pbr_import_summary:
+            box_pbr.label(text=props.last_pbr_import_summary, icon="CHECKMARK")
+
+        box_pbr.prop(props, "pbr_import_ao_mode", text="AO Routing")
+        box_pbr.prop(props, "pbr_import_preserve_existing", text="Preserve Other Nodes")
+
+
+# =========================================================================
+# PANEL 2: FIX LOD0 (Sanitization, Preflight & Materials)
+# =========================================================================
+
+
+class OMNIMESH_PT_fix_lod0(Panel):
+    """Panel 2: Base Mesh Preflight Inspection, Sanitization, and Material Cleanup."""
+
+    bl_label = "2. Fix LOD0"
+    bl_idname = "OMNIMESH_PT_fix_lod0"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "OmniMesh"
+    bl_order = 1
 
     def draw(self, context: Any) -> None:
         if not bpy or not context:
@@ -51,7 +87,7 @@ class OMNIMESH_PT_fix_lod0(Panel):
             box.label(text="Select an active mesh object to inspect.")
             return
 
-        # Preflight Health Card
+        # 1. Preflight Health Card
         box_pre = layout.box()
         row = box_pre.row(align=True)
         row.label(text="LOD0 Health Check", icon="MESH_DATA")
@@ -87,26 +123,68 @@ class OMNIMESH_PT_fix_lod0(Panel):
         col_trans.scale_y = 1.15
         col_trans.operator("lod_tool.apply_transforms", text="Apply Scale & Rotation", icon="OBJECT_ORIGIN")
 
-        # Tuning Parameters
-        box_opt = layout.box()
-        box_opt.label(text="Sanitizer Tuning", icon="PREFERENCES")
-        box_opt.prop(props, "sanitize_merge_epsilon", text="Merge Epsilon", slider=True)
+        # 2. Mesh Topology & Geometry Options
+        box_mesh_opt = layout.box()
+        box_mesh_opt.label(text="Mesh Topology & Cleanup Options", icon="PREFERENCES")
+        box_mesh_opt.prop(props, "cleanup_enable_split_non_manifold", text="Repair Non-Manifold & Bowties")
+        box_mesh_opt.prop(props, "cleanup_normal_policy", text="Normals")
+
+        row_w = box_mesh_opt.row(align=True)
+        row_w.prop(props, "cleanup_enable_weld", text="Merge Close")
+        if props.cleanup_enable_weld:
+            row_w.prop(props, "cleanup_weld_distance", text="Dist")
+
+        row_h = box_mesh_opt.row(align=True)
+        row_h.prop(props, "cleanup_enable_fill_holes", text="Fill Holes")
+        if props.cleanup_enable_fill_holes:
+            row_h.prop(props, "cleanup_hole_max_edges", text="Max Edges")
+
+        box_mesh_opt.prop(props, "cleanup_enable_triangulate_ngons", text="Triangulate N-Gons")
+
+        # 3. Material Cleanup & Slot Consolidation Suite
+        box_mat = layout.box()
+        box_mat.label(text="Material Cleanup & Consolidation", icon="MATERIAL")
+        row_mat = box_mat.row(align=True)
+        row_mat.scale_y = 1.25
+        row_mat.operator(
+            "lod_tool.clean_and_repair_materials", text="Clean & Consolidate Materials", icon="MATERIAL_DATA"
+        )
+
+        if props.last_material_cleanup_summary:
+            box_mat.label(text=props.last_material_cleanup_summary, icon="CHECKMARK")
+
+        # Safe Material Toggles
+        box_mat_safe = box_mat.box()
+        box_mat_safe.label(text="Safe Operations (Default ON)", icon="CHECKMARK")
+        box_mat_safe.prop(props, "mat_cleanup_purge_unused_slots")
+        box_mat_safe.prop(props, "mat_cleanup_deduplicate_slots")
+        box_mat_safe.prop(props, "mat_cleanup_merge_duplicate_datablocks")
+        box_mat_safe.prop(props, "mat_cleanup_remove_orphan_nodes")
+
+        # Critical Material Toggles
+        box_mat_crit = box_mat.box()
+        box_mat_crit.label(text="Critical Operations (Opt-In)", icon="ERROR")
+        box_mat_crit.prop(props, "mat_cleanup_enable_micro_consolidation")
+        if props.mat_cleanup_enable_micro_consolidation:
+            box_mat_crit.prop(props, "mat_cleanup_micro_area_pct", text="Threshold %")
+        box_mat_crit.prop(props, "mat_cleanup_repair_missing_textures")
+        box_mat_crit.prop(props, "mat_cleanup_purge_orphans_blendfile")
 
 
 # =========================================================================
-# PANEL 2: LODs (Configuration, QEM Decimation, Viewport Tools & Inspection)
+# PANEL 3: LODs (Configuration, QEM Decimation, Viewport Tools & Inspection)
 # =========================================================================
 
 
 class OMNIMESH_PT_lods(Panel):
-    """Panel 2: LOD Generation Pipeline, UIList Table, and Viewport Isolation."""
+    """Panel 3: LOD Generation Pipeline, UIList Table, and Viewport Isolation."""
 
-    bl_label = "2. LODs"
+    bl_label = "3. LODs"
     bl_idname = "OMNIMESH_PT_lods"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
-    bl_order = 1
+    bl_order = 2
 
     def draw(self, context: Any) -> None:
         if not bpy or not context:
@@ -184,7 +262,7 @@ class OMNIMESH_PT_lods(Panel):
 
 
 class OMNIMESH_PT_inspection_sub(Panel):
-    """Subpanel 2.1: Viewport Inspection, Real-Time LOD Simulator & A/B Split Preview."""
+    """Subpanel 3.1: Viewport Inspection, Real-Time LOD Simulator & A/B Split Preview."""
 
     bl_label = "Viewport Inspection & Simulator"
     bl_idname = "OMNIMESH_PT_inspection_sub"
@@ -234,7 +312,7 @@ class OMNIMESH_PT_inspection_sub(Panel):
 
 
 class OMNIMESH_PT_optimization_sub(Panel):
-    """Subpanel 2.2: Hierarchy Draw-Call Merging, Rigging Kinematics & PBR Texture Baking."""
+    """Subpanel 3.2: Hierarchy Draw-Call Merging, Rigging Kinematics & PBR Texture Baking."""
 
     bl_label = "Advanced Optimization & Rigging"
     bl_idname = "OMNIMESH_PT_optimization_sub"
@@ -274,19 +352,19 @@ class OMNIMESH_PT_optimization_sub(Panel):
 
 
 # =========================================================================
-# PANEL 3: ENGINE EXPORT (Multi-Engine Package, Textures, Bridge & Batch)
+# PANEL 4: ENGINE EXPORT (Multi-Engine Package, Textures, Bridge & Batch)
 # =========================================================================
 
 
 class OMNIMESH_PT_export(Panel):
-    """Panel 3: Single Asset Multi-Engine Export, PBR Texture Channel Packing & Live Bridge."""
+    """Panel 4: Single Asset Multi-Engine Export, PBR Texture Channel Packing & Live Bridge."""
 
-    bl_label = "3. Engine Export"
+    bl_label = "4. Engine Export"
     bl_idname = "OMNIMESH_PT_export"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
-    bl_order = 2
+    bl_order = 3
 
     def draw(self, context: Any) -> None:
         if not bpy or not context:
@@ -333,7 +411,7 @@ class OMNIMESH_PT_export(Panel):
 
 
 class OMNIMESH_PT_batch_sub(Panel):
-    """Subpanel 3.1: Batch Asset Library Ingestion."""
+    """Subpanel 4.1: Batch Asset Library Ingestion."""
 
     bl_label = "Batch Library Ingestion"
     bl_idname = "OMNIMESH_PT_batch_sub"
@@ -366,6 +444,7 @@ class OMNIMESH_PT_batch_sub(Panel):
 
 # Strict Parent-First Topological Registration Order
 PANEL_CLASSES = (
+    OMNIMESH_PT_import,
     OMNIMESH_PT_fix_lod0,
     OMNIMESH_PT_lods,
     OMNIMESH_PT_inspection_sub,

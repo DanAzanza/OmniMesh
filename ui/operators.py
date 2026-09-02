@@ -1,20 +1,30 @@
 """
-Master Pipeline Operators for OmniMesh LOD Analysis, Base Mesh Sanitization, Generation, and Viewport Preview.
+Master Pipeline Operators for OmniMesh LOD Analysis, Base Mesh Sanitization, Material Cleanup, PBR Import, Generation, and Viewport Preview.
 """
 
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
 try:
     import bmesh
     import bpy
-    from bpy.types import Operator
+    from bpy.props import CollectionProperty, StringProperty
+    from bpy.types import Operator, OperatorFileListElement
 except ImportError:
     bpy = None
     bmesh = None
     Operator = object
+    OperatorFileListElement = object
+
+    def StringProperty(**kwargs: Any) -> Any:
+        return None
+
+    def CollectionProperty(**kwargs: Any) -> Any:
+        return None
+
 
 try:
     from ..core.decimator import MeshDecimator
@@ -28,6 +38,7 @@ try:
         generate_logarithmic_screen_tiers,
     )
     from ..core.normals import NormalManager
+    from ..core.pbr_importer import BatchMaterialSlotMatcher, PBRSemanticClassifier, ShaderGraphBuilder
     from ..core.rigging import KinematicBonePruner, WeightSanitizer
     from ..core.sanitizer import MeshSanitizer
 except (ImportError, ValueError):
@@ -42,6 +53,7 @@ except (ImportError, ValueError):
         generate_logarithmic_screen_tiers,
     )
     from core.normals import NormalManager
+    from core.pbr_importer import BatchMaterialSlotMatcher, PBRSemanticClassifier, ShaderGraphBuilder
     from core.rigging import KinematicBonePruner, WeightSanitizer
     from core.sanitizer import MeshSanitizer
 
@@ -177,11 +189,11 @@ class LOD_OT_inspect_lod0(Operator):
 
 
 class LOD_OT_sanitize_base_mesh(Operator):
-    """Sanitize and repair base mesh in-place: clean loose geometry, purge degenerates, and merge coincident boundary vertices."""
+    """Sanitize and repair base mesh in-place: clean loose geometry, purge degenerates, merge coincident boundary vertices, and apply configured cleanup options."""
 
     bl_idname = "lod_tool.sanitize_base_mesh"
     bl_label = "Sanitize Base Mesh"
-    bl_description = "Clean loose vertices, remove degenerate faces, and merge duplicate vertices on base mesh"
+    bl_description = "Clean loose vertices, remove degenerate faces, repair non-manifold bowties, and weld duplicate vertices on base mesh"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -201,7 +213,14 @@ class LOD_OT_sanitize_base_mesh(Operator):
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
 
-        epsilon = getattr(props, "sanitize_merge_epsilon", 0.0001)
+        weld_dist = getattr(props, "cleanup_weld_distance", 0.0001) or getattr(props, "sanitize_merge_epsilon", 0.0001)
+        enable_weld = getattr(props, "cleanup_enable_weld", False)
+        enable_split_non_manifold = getattr(props, "cleanup_enable_split_non_manifold", True)
+        enable_fill_holes = getattr(props, "cleanup_enable_fill_holes", False)
+        hole_max_edges = getattr(props, "cleanup_hole_max_edges", 4)
+        enable_triangulate_ngons = getattr(props, "cleanup_enable_triangulate_ngons", False)
+        normal_policy = getattr(props, "cleanup_normal_policy", "MANIFOLD_ONLY")
+
         total_cleaned = 0
 
         for obj in mesh_objs:
@@ -212,16 +231,23 @@ class LOD_OT_sanitize_base_mesh(Operator):
             bm = bmesh.new()
             try:
                 bm.from_mesh(obj.data)
-                stats = MeshSanitizer.clean_loose_and_degenerates(bm)
-                merged = MeshSanitizer.merge_doubles_boundary_safe(bm, dist=epsilon)
+                stats = MeshSanitizer.sanitize_mesh_full(
+                    bm,
+                    enable_weld=enable_weld,
+                    epsilon_merge=weld_dist,
+                    enable_split_non_manifold=enable_split_non_manifold,
+                    enable_fill_holes=enable_fill_holes,
+                    hole_max_edges=hole_max_edges,
+                    enable_triangulate_ngons=enable_triangulate_ngons,
+                    normal_recalc_policy=normal_policy,
+                    world_matrix=obj.matrix_world,
+                )
                 bm.to_mesh(obj.data)
                 obj.data.update()
                 if isinstance(stats, dict):
-                    total_cleaned += int(sum(v for v in stats.values() if isinstance(v, (int, float)))) + int(
-                        merged or 0
-                    )
+                    total_cleaned += int(sum(v for v in stats.values() if isinstance(v, (int, float))))
                 else:
-                    total_cleaned += int(stats or 0) + int(merged or 0)
+                    total_cleaned += int(stats or 0)
             finally:
                 bm.free()
 
@@ -229,7 +255,7 @@ class LOD_OT_sanitize_base_mesh(Operator):
         bpy.ops.lod_tool.inspect_lod0()
 
         self.report(
-            {"INFO"}, f"Sanitized {len(mesh_objs)} mesh(es). Removed {total_cleaned} loose/degenerate elements."
+            {"INFO"}, f"Sanitized {len(mesh_objs)} mesh(es). Cleaned/repaired {total_cleaned} geometric elements."
         )
         return {"FINISHED"}
 
@@ -268,6 +294,177 @@ class LOD_OT_apply_transforms(Operator):
         bpy.ops.lod_tool.inspect_lod0()
 
         self.report({"INFO"}, f"Applied scale & rotation transforms to {len(mesh_objs)} mesh object(s).")
+        return {"FINISHED"}
+
+
+class LOD_OT_clean_and_repair_materials(Operator):
+    """Execute material slot compaction, deduplication, AST hash merging, and micro-material consolidation."""
+
+    bl_idname = "lod_tool.clean_and_repair_materials"
+    bl_label = "Clean & Consolidate Materials"
+    bl_description = "Clean empty slots, deduplicate materials, AST-hash merge datablocks, and fix missing textures"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        return bool(context and get_selected_mesh_objects(context))
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"FINISHED"}
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            self.report({"WARNING"}, "No mesh objects selected.")
+            return {"CANCELLED"}
+
+        props = context.scene.lod_tool
+
+        stats = MaterialOptimizer.clean_materials_full(
+            mesh_objs=mesh_objs,
+            purge_unused_slots=props.mat_cleanup_purge_unused_slots,
+            deduplicate_slots=props.mat_cleanup_deduplicate_slots,
+            merge_duplicate_datablocks=props.mat_cleanup_merge_duplicate_datablocks,
+            remove_orphan_nodes=props.mat_cleanup_remove_orphan_nodes,
+            enable_micro_consolidation=props.mat_cleanup_enable_micro_consolidation,
+            micro_area_pct=props.mat_cleanup_micro_area_pct,
+            repair_missing_textures=props.mat_cleanup_repair_missing_textures,
+            purge_orphans_blendfile=props.mat_cleanup_purge_orphans_blendfile,
+        )
+
+        summary_msg = (
+            f"Removed {stats['slots_removed']} unused/dup slots ({stats['faces_remapped']} faces remapped), "
+            f"merged {stats['merged_datablocks']} duplicate materials, "
+            f"cleaned {stats['orphan_nodes_removed']} dead nodes."
+        )
+        if stats["consolidated_slots"] > 0:
+            summary_msg += f" Consolidated {stats['consolidated_slots']} micro-materials."
+        if stats["repaired_textures"] > 0:
+            summary_msg += f" Repaired {stats['repaired_textures']} missing textures."
+        if stats["purged_orphans"] > 0:
+            summary_msg += f" Purged {stats['purged_orphans']} orphan materials."
+
+        props.last_material_cleanup_summary = summary_msg
+        self.report({"INFO"}, f"✔ {summary_msg}")
+        return {"FINISHED"}
+
+
+class LOD_OT_import_pbr_set(Operator):
+    """Import multi-selected PBR texture files and construct a complete Principled BSDF node graph."""
+
+    bl_idname = "lod_tool.import_pbr_set"
+    bl_label = "Import PBR Texture Set"
+    bl_options = {"REGISTER", "UNDO"}
+
+    directory: StringProperty(subtype="DIR_PATH")  # type: ignore
+    files: CollectionProperty(type=OperatorFileListElement)  # type: ignore
+
+    def invoke(self, context: Any, event: Any) -> set[str]:
+        if not bpy:
+            return {"CANCELLED"}
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"FINISHED"}
+        if not self.directory or not self.files:
+            self.report({"WARNING"}, "No texture files selected.")
+            return {"CANCELLED"}
+
+        mesh_objs = get_selected_mesh_objects(context)
+        active_obj = (
+            context.active_object
+            if context.active_object and context.active_object.type == "MESH"
+            else (mesh_objs[0] if mesh_objs else None)
+        )
+
+        texture_map: dict[str, str] = {}
+        sample_filename = ""
+        for file_elem in self.files:
+            fname = file_elem.name
+            if not fname:
+                continue
+            full_path = os.path.join(self.directory, fname)
+            sem_type = PBRSemanticClassifier.classify(fname)
+            if sem_type:
+                texture_map[sem_type] = full_path
+                if not sample_filename:
+                    sample_filename = fname
+
+        if not texture_map:
+            self.report({"WARNING"}, "Could not semantically classify any selected texture files.")
+            return {"CANCELLED"}
+
+        mat = None
+        if active_obj and active_obj.active_material:
+            mat = active_obj.active_material
+        else:
+            base_stem = PBRSemanticClassifier.clean_stem(sample_filename) or "PBR_Material"
+            mat = bpy.data.materials.new(name=base_stem)
+            if active_obj:
+                if len(active_obj.material_slots) == 0:
+                    active_obj.data.materials.append(mat)
+                else:
+                    active_obj.material_slots[active_obj.active_material_index].material = mat
+
+        props = context.scene.lod_tool
+        ShaderGraphBuilder.build_pbr_graph(
+            material=mat,
+            texture_map=texture_map,
+            ao_mode=props.pbr_import_ao_mode,
+            preserve_existing=props.pbr_import_preserve_existing,
+        )
+
+        summary = f"Configured '{mat.name}' with {len(texture_map)} PBR textures ({', '.join(texture_map.keys())})"
+        props.last_pbr_import_summary = summary
+        self.report({"INFO"}, f"✔ {summary}")
+        return {"FINISHED"}
+
+
+class LOD_OT_auto_match_pbr_folder(Operator):
+    """Scan directory and automatically map all matching PBR texture sets to active mesh material slots."""
+
+    bl_idname = "lod_tool.auto_match_pbr_folder"
+    bl_label = "Auto-Match PBR Folder"
+    bl_options = {"REGISTER", "UNDO"}
+
+    directory: StringProperty(subtype="DIR_PATH")  # type: ignore
+
+    def invoke(self, context: Any, event: Any) -> set[str]:
+        if not bpy:
+            return {"CANCELLED"}
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"FINISHED"}
+        if not self.directory or not os.path.isdir(self.directory):
+            self.report({"WARNING"}, "Invalid texture directory.")
+            return {"CANCELLED"}
+
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            self.report({"WARNING"}, "No mesh objects selected.")
+            return {"CANCELLED"}
+
+        matched_count = 0
+        props = context.scene.lod_tool
+        for obj in mesh_objs:
+            mapping = BatchMaterialSlotMatcher.match_directory_to_slots(obj, self.directory)
+            for slot in getattr(obj, "material_slots", []):
+                if slot.material and slot.name in mapping and mapping[slot.name]:
+                    ShaderGraphBuilder.build_pbr_graph(
+                        material=slot.material,
+                        texture_map=mapping[slot.name],
+                        ao_mode=props.pbr_import_ao_mode,
+                        preserve_existing=props.pbr_import_preserve_existing,
+                    )
+                    matched_count += 1
+
+        summary = f"Matched and wired {matched_count} PBR material slots from '{os.path.basename(self.directory)}'"
+        context.scene.lod_tool.last_pbr_import_summary = summary
+        self.report({"INFO"}, f"✔ {summary}")
         return {"FINISHED"}
 
 
@@ -570,6 +767,9 @@ classes = (
     LOD_OT_inspect_lod0,
     LOD_OT_sanitize_base_mesh,
     LOD_OT_apply_transforms,
+    LOD_OT_clean_and_repair_materials,
+    LOD_OT_import_pbr_set,
+    LOD_OT_auto_match_pbr_folder,
     LOD_OT_analyze_and_configure,
     LOD_OT_generate_all,
     LOD_OT_preview_tier,

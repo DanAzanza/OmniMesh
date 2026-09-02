@@ -10,6 +10,9 @@ from ui.hud import LODViewportHUD
 from ui.lists import LOD_UL_tier_list, register_lists, unregister_lists
 from ui.operators import (
     LOD_OT_apply_transforms,
+    LOD_OT_auto_match_pbr_folder,
+    LOD_OT_clean_and_repair_materials,
+    LOD_OT_import_pbr_set,
     LOD_OT_inspect_lod0,
     LOD_OT_sanitize_base_mesh,
     get_associated_armature,
@@ -21,6 +24,7 @@ from ui.panel import (
     OMNIMESH_PT_batch_sub,
     OMNIMESH_PT_export,
     OMNIMESH_PT_fix_lod0,
+    OMNIMESH_PT_import,
     OMNIMESH_PT_inspection_sub,
     OMNIMESH_PT_lods,
     OMNIMESH_PT_optimization_sub,
@@ -31,19 +35,23 @@ from ui.properties import register_properties, unregister_properties
 
 
 def test_panel_class_hierarchy_and_order():
-    """Verify 3-panel architecture has correct root panels, subpanels, bl_order, and registration order."""
+    """Verify panel architecture has correct root panels, subpanels, bl_order, and registration order."""
     # Root Panels
+    assert OMNIMESH_PT_import.bl_idname == "OMNIMESH_PT_import"
+    assert OMNIMESH_PT_import.bl_category == "OmniMesh"
+    assert OMNIMESH_PT_import.bl_order == 0
+
     assert OMNIMESH_PT_fix_lod0.bl_idname == "OMNIMESH_PT_fix_lod0"
     assert OMNIMESH_PT_fix_lod0.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_fix_lod0.bl_order == 0
+    assert OMNIMESH_PT_fix_lod0.bl_order == 1
 
     assert OMNIMESH_PT_lods.bl_idname == "OMNIMESH_PT_lods"
     assert OMNIMESH_PT_lods.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_lods.bl_order == 1
+    assert OMNIMESH_PT_lods.bl_order == 2
 
     assert OMNIMESH_PT_export.bl_idname == "OMNIMESH_PT_export"
     assert OMNIMESH_PT_export.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_export.bl_order == 2
+    assert OMNIMESH_PT_export.bl_order == 3
 
     # Subpanels
     assert OMNIMESH_PT_inspection_sub.bl_parent_id == "OMNIMESH_PT_lods"
@@ -54,11 +62,12 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_batch_sub.bl_parent_id == "OMNIMESH_PT_export"
     assert OMNIMESH_PT_batch_sub.bl_order == 0
 
-    # Registration tuple
-    assert PANEL_CLASSES[0] is OMNIMESH_PT_fix_lod0
-    assert PANEL_CLASSES[1] is OMNIMESH_PT_lods
-    assert PANEL_CLASSES[4] is OMNIMESH_PT_export
-    assert len(PANEL_CLASSES) == 6
+    # Registration tuple (parent-first topological order)
+    assert PANEL_CLASSES[0] is OMNIMESH_PT_import
+    assert PANEL_CLASSES[1] is OMNIMESH_PT_fix_lod0
+    assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
+    assert PANEL_CLASSES[5] is OMNIMESH_PT_export
+    assert len(PANEL_CLASSES) == 7
 
 
 def test_operator_helpers_mocked():
@@ -122,6 +131,15 @@ def test_fix_lod0_operators_poll_and_exec_mocked():
 
     op_apply = LOD_OT_apply_transforms()
     assert op_apply.execute(None) == {"FINISHED"}
+
+    op_mat = LOD_OT_clean_and_repair_materials()
+    assert op_mat.execute(None) == {"FINISHED"}
+
+    op_pbr = LOD_OT_import_pbr_set()
+    assert op_pbr.execute(None) == {"FINISHED"}
+
+    op_auto_pbr = LOD_OT_auto_match_pbr_folder()
+    assert op_auto_pbr.execute(None) == {"FINISHED"}
 
 
 def test_ui_list_draw_item_mock():
