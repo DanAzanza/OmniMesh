@@ -55,6 +55,7 @@ class LODLevelItem(PropertyGroup):
 
     name: StringProperty(name="Tier Name", default="LOD0")
     level_index: IntProperty(name="Level Index", default=0, min=0, max=7)
+    lod_index: IntProperty(name="LOD Index", default=0, min=0, max=7)
     screen_size_pct: FloatProperty(
         name="Screen Size %",
         default=100.0,
@@ -72,9 +73,12 @@ class LODLevelItem(PropertyGroup):
         description="Calculated camera distance for this tier transition",
     )
     triangle_target: IntProperty(name="Target Tris", default=0, min=0)
+    target_tris: IntProperty(name="Target Tris", default=0, min=0)
     actual_triangles: IntProperty(name="Actual Tris", default=0, min=0)
+    actual_tris: IntProperty(name="Actual Tris", default=0, min=0)
     reduction_pct: FloatProperty(name="Reduction %", default=0.0, precision=1)
     mat_slots_count: IntProperty(name="Material Slots", default=0, min=0)
+    delta_world: FloatProperty(name="Allowed Error (m)", default=0.0, min=0.0, precision=4)
     generated_obj: PointerProperty(name="Mesh Object", type=bpy.types.Object if bpy else object)
 
 
@@ -138,6 +142,23 @@ class LODToolSettings(PropertyGroup):
     lod_root_object: PointerProperty(name="Root Master Asset", type=bpy.types.Object if bpy else object)
     lod_index: IntProperty(name="Derivative Tier Index", default=0, min=0, max=7)
 
+    # Preflight Inspection & Base Mesh Hygiene Properties
+    preflight_inspected: BoolProperty(name="Preflight Inspected", default=False)
+    preflight_summary_text: StringProperty(name="Preflight Summary", default="Not Inspected")
+    preflight_loose_verts: IntProperty(name="Loose Vertices", default=0)
+    preflight_degenerate_tris: IntProperty(name="Degenerate Triangles", default=0)
+    preflight_unapplied_scale: BoolProperty(name="Unapplied Scale Detected", default=False)
+    preflight_missing_materials: IntProperty(name="Missing Material Slots", default=0)
+    preflight_is_clean: BoolProperty(name="Mesh Clean", default=False)
+    sanitize_merge_epsilon: FloatProperty(
+        name="Merge Tolerance (m)",
+        default=0.0001,
+        min=0.00001,
+        max=0.01,
+        precision=5,
+        description="Maximum distance between coincident vertices to merge during base mesh sanitization",
+    )
+
     # Target Engine Presets
     target_engine: EnumProperty(
         name="Target Engine",
@@ -190,11 +211,27 @@ class LODToolSettings(PropertyGroup):
         max=7,
         description="Total number of LOD tiers to generate (including base LOD0)",
     )
+    num_lods: IntProperty(
+        name="LOD Count",
+        default=7,
+        min=2,
+        max=8,
+        description="Number of LOD tiers",
+    )
+    cull_screen_size_pct: FloatProperty(
+        name="Cull Screen Size (%)",
+        default=0.5,
+        min=0.01,
+        max=10.0,
+        precision=2,
+        subtype="PERCENTAGE",
+    )
+    preserve_slot_indexing: BoolProperty(name="Preserve Slot Indices", default=True)
 
     # Error Metrics and Screen Parameters
     tau_sse: FloatProperty(
         name="Error Bound Factor",
-        default=1.0,
+        default=0.8,
         min=0.1,
         max=5.0,
         precision=2,
@@ -474,13 +511,20 @@ class LODToolSettings(PropertyGroup):
         items=[
             ("PRESERVE", "Preserve Sub-Meshes", "Each selected object generates individual LOD copies"),
             (
-                "MERGE_DISTANT",
+                "MERGE_AT_TIER",
                 "Merge at Distant Tiers",
                 "Joins compatible sub-meshes into a single draw-call mesh at lower LODs",
             ),
         ],
         default="PRESERVE",
         description="How multi-mesh hierarchies and accessories are structured across LOD tiers",
+    )
+    merge_start_tier: IntProperty(
+        name="Merge Start Tier",
+        default=3,
+        min=1,
+        max=6,
+        description="LOD tier at which compatible submeshes are merged into single draw-call meshes",
     )
     merge_lod_start: IntProperty(
         name="Merge From LOD",
@@ -496,12 +540,23 @@ class LODToolSettings(PropertyGroup):
         default=True,
         description="Ensures all vertex deform weights strictly sum to 1.0",
     )
-    max_bone_influences: IntProperty(
-        name="Max Influences / Vertex",
-        default=4,
-        min=1,
-        max=8,
-        description="Clamps maximum active bone influences per vertex (4 for standard game engines)",
+    max_bone_influences: EnumProperty(
+        name="Max GPU Bone Influences",
+        items=[
+            ("4", "4 Influences (Standard GPU)", "Standard GPU vertex shader register limit (glTF, Mobile, Unity)"),
+            ("8", "8 Influences (High-End)", "Unreal Engine 5 high-precision skinning"),
+        ],
+        default="4",
+    )
+    enable_bone_pruning: BoolProperty(
+        name="Prune Sub-Pixel Bones",
+        default=True,
+        description="Recursively collapse sub-pixel leaf bones (fingers, facial bones) into parent bones on distant LODs",
+    )
+    purge_shape_keys: BoolProperty(
+        name="Purge Shape Keys on Distance LODs",
+        default=True,
+        description="Strip facial blendshapes / shape keys on LOD >= 2 to save GPU memory and prevent mesh tearing",
     )
     prune_micro_weights: BoolProperty(
         name="Prune Micro-Weights (< 0.01)",
@@ -535,13 +590,11 @@ class LODToolSettings(PropertyGroup):
     texture_max_resolution: EnumProperty(
         name="Max Resolution",
         items=[
-            ("ORIGINAL", "Original Source Res", "Keep original texture dimensions"),
-            ("4096", "4096 x 4096 (4K)", "Clamp maximum resolution to 4K"),
-            ("2048", "2048 x 2048 (2K)", "Clamp maximum resolution to 2K"),
-            ("1024", "1024 x 1024 (1K)", "Clamp maximum resolution to 1K"),
-            ("512", "512 x 512", "Clamp maximum resolution to 512px"),
+            ("4096", "4K (4096x4096)", "4K texture resolution"),
+            ("2048", "2K (2048x2048)", "2K texture resolution"),
+            ("1024", "1K (1024x1024)", "1K texture resolution"),
         ],
-        default="ORIGINAL",
+        default="2048",
         description="Maximum texture resolution for exported PBR channel sets",
     )
     bake_animations: BoolProperty(
@@ -551,10 +604,30 @@ class LODToolSettings(PropertyGroup):
     )
 
     # Live Viewport LOD Simulator Settings
+    is_simulator_running: BoolProperty(name="Simulator Running", default=False)
     is_simulator_active: BoolProperty(
         name="Live Distance Simulator",
         default=False,
         description="Real-time automatic LOD switching based on viewport and scene camera distance",
+    )
+    simulator_mode: EnumProperty(
+        name="Simulator Mode",
+        items=[
+            ("LIVE_ORBIT", "Live Viewport Orbit", "Evaluate LOD distances dynamically as you orbit/zoom in Viewport"),
+            (
+                "VIRTUAL_SLIDER",
+                "Virtual Distance Slider",
+                "Interactive Unity-style distance/screen size slider override",
+            ),
+            ("CAMERA_LOCKED", "Lock to Scene Camera", "Evaluate LOD distances strictly from active Scene Camera"),
+        ],
+        default="LIVE_ORBIT",
+    )
+    virtual_preview_dist_m: FloatProperty(
+        name="Virtual Distance (m)", default=10.0, min=0.1, max=5000.0, precision=1, subtype="DISTANCE"
+    )
+    virtual_screen_size_pct: FloatProperty(
+        name="Virtual Screen Size (%)", default=100.0, min=0.01, max=100.0, precision=1, subtype="PERCENTAGE"
     )
     simulator_camera_mode: EnumProperty(
         name="Camera Source",
@@ -623,24 +696,18 @@ class LODToolSettings(PropertyGroup):
     split_ratio: FloatProperty(
         name="Divider Ratio",
         default=0.5,
-        min=0.0,
-        max=1.0,
-        subtype="PERCENTAGE",
+        min=0.05,
+        max=0.95,
+        subtype="FACTOR",
         precision=2,
         description="Horizontal screen split position (0.0 = Left only, 1.0 = Right only)",
     )
-    split_compare_tier: EnumProperty(
+    split_compare_tier: IntProperty(
         name="Compare Tier",
-        items=[
-            ("LOD1", "LOD1", "Compare LOD0 against LOD1"),
-            ("LOD2", "LOD2", "Compare LOD0 against LOD2"),
-            ("LOD3", "LOD3", "Compare LOD0 against LOD3"),
-            ("LOD4", "LOD4", "Compare LOD0 against LOD4"),
-            ("LOD5", "LOD5", "Compare LOD0 against LOD5"),
-            ("LOD6", "LOD6", "Compare LOD0 against LOD6"),
-        ],
-        default="LOD1",
-        description="Which simplified LOD tier to show on the right side of the split screen",
+        default=3,
+        min=1,
+        max=7,
+        description="LOD tier index to compare against LOD0 Master",
     )
 
     # Batch Processing Properties
@@ -673,6 +740,9 @@ class LODToolSettings(PropertyGroup):
     )
     batch_status_text: StringProperty(name="Batch Status", default="Batch Ready")
     is_batch_running: BoolProperty(name="Batch Running", default=False)
+    batch_total_count: IntProperty(name="Total Assets", default=0)
+    batch_processed_count: IntProperty(name="Processed Assets", default=0)
+    batch_current_asset: StringProperty(name="Current Asset", default="")
 
 
 CLASSES = (

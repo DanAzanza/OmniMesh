@@ -1,5 +1,5 @@
 """
-Unit tests for OmniMesh UI subpanels, UIList components, and operator helpers.
+Unit tests for OmniMesh 3-Panel UI architecture, UIList components, and operator helpers.
 """
 
 from __future__ import annotations
@@ -9,19 +9,21 @@ from unittest.mock import MagicMock
 from ui.hud import LODViewportHUD
 from ui.lists import LOD_UL_tier_list, register_lists, unregister_lists
 from ui.operators import (
+    LOD_OT_apply_transforms,
+    LOD_OT_inspect_lod0,
+    LOD_OT_sanitize_base_mesh,
     get_associated_armature,
     get_selected_mesh_objects,
     is_object_valid,
-    resolve_lod_context,
 )
 from ui.panel import (
     PANEL_CLASSES,
-    LOD_PT_batch_panel,
-    LOD_PT_export_bridge_panel,
-    LOD_PT_inspection_panel,
-    LOD_PT_main_panel,
-    LOD_PT_optimization_panel,
-    LOD_PT_tiers_panel,
+    OMNIMESH_PT_batch_sub,
+    OMNIMESH_PT_export,
+    OMNIMESH_PT_fix_lod0,
+    OMNIMESH_PT_inspection_sub,
+    OMNIMESH_PT_lods,
+    OMNIMESH_PT_optimization_sub,
     register_panel,
     unregister_panel,
 )
@@ -29,26 +31,33 @@ from ui.properties import register_properties, unregister_properties
 
 
 def test_panel_class_hierarchy_and_order():
-    """Verify subpanel definitions have correct bl_parent_id, bl_order, and registration order."""
-    assert LOD_PT_main_panel.bl_idname == "LOD_PT_main_panel"
-    assert LOD_PT_main_panel.bl_category == "OmniMesh"
+    """Verify 3-panel architecture has correct root panels, subpanels, bl_order, and registration order."""
+    # Root Panels
+    assert OMNIMESH_PT_fix_lod0.bl_idname == "OMNIMESH_PT_fix_lod0"
+    assert OMNIMESH_PT_fix_lod0.bl_category == "OmniMesh"
+    assert OMNIMESH_PT_fix_lod0.bl_order == 0
 
-    # Subpanels must reference LOD_PT_main_panel as parent
-    assert LOD_PT_tiers_panel.bl_parent_id == "LOD_PT_main_panel"
-    assert LOD_PT_inspection_panel.bl_parent_id == "LOD_PT_main_panel"
-    assert LOD_PT_optimization_panel.bl_parent_id == "LOD_PT_main_panel"
-    assert LOD_PT_export_bridge_panel.bl_parent_id == "LOD_PT_main_panel"
-    assert LOD_PT_batch_panel.bl_parent_id == "LOD_PT_main_panel"
+    assert OMNIMESH_PT_lods.bl_idname == "OMNIMESH_PT_lods"
+    assert OMNIMESH_PT_lods.bl_category == "OmniMesh"
+    assert OMNIMESH_PT_lods.bl_order == 1
 
-    # Subpanel ordering must be strictly monotonic
-    assert LOD_PT_tiers_panel.bl_order == 0
-    assert LOD_PT_inspection_panel.bl_order == 1
-    assert LOD_PT_optimization_panel.bl_order == 2
-    assert LOD_PT_export_bridge_panel.bl_order == 3
-    assert LOD_PT_batch_panel.bl_order == 4
+    assert OMNIMESH_PT_export.bl_idname == "OMNIMESH_PT_export"
+    assert OMNIMESH_PT_export.bl_category == "OmniMesh"
+    assert OMNIMESH_PT_export.bl_order == 2
 
-    # Registration tuple must start with root parent
-    assert PANEL_CLASSES[0] is LOD_PT_main_panel
+    # Subpanels
+    assert OMNIMESH_PT_inspection_sub.bl_parent_id == "OMNIMESH_PT_lods"
+    assert OMNIMESH_PT_inspection_sub.bl_order == 0
+    assert OMNIMESH_PT_optimization_sub.bl_parent_id == "OMNIMESH_PT_lods"
+    assert OMNIMESH_PT_optimization_sub.bl_order == 1
+
+    assert OMNIMESH_PT_batch_sub.bl_parent_id == "OMNIMESH_PT_export"
+    assert OMNIMESH_PT_batch_sub.bl_order == 0
+
+    # Registration tuple
+    assert PANEL_CLASSES[0] is OMNIMESH_PT_fix_lod0
+    assert PANEL_CLASSES[1] is OMNIMESH_PT_lods
+    assert PANEL_CLASSES[4] is OMNIMESH_PT_export
     assert len(PANEL_CLASSES) == 6
 
 
@@ -75,6 +84,7 @@ def test_operator_helpers_mocked():
 
     # Modifier fallback
     mock_mesh2 = MagicMock()
+    mock_mesh2.name = "SM_Skinned"
     mock_mesh2.type = "MESH"
     mock_mesh2.parent = None
     mock_mod = MagicMock()
@@ -85,76 +95,33 @@ def test_operator_helpers_mocked():
     assert get_associated_armature([mock_mesh2]) == mock_armature
 
 
-def test_resolve_lod_context_none_and_non_mesh():
-    """Verify resolve_lod_context safe fallbacks for None, missing scene, or non-mesh objects."""
-    assert resolve_lod_context(None) == (None, None, None, False)
-
-    mock_scene = MagicMock()
-    mock_scene_props = MagicMock()
-    mock_scene.lod_tool = mock_scene_props
-
+def test_fix_lod0_operators_poll_and_exec_mocked():
+    """Test poll and safe execution for LOD0 preflight and sanitization operators in headless mock."""
     mock_context = MagicMock()
-    mock_context.scene = mock_scene
-    mock_context.active_object = None
+    mock_mesh = MagicMock()
+    mock_mesh.name = "SM_Test"
+    mock_mesh.type = "MESH"
+    mock_context.selected_objects = [mock_mesh]
+    mock_context.active_object = mock_mesh
 
-    s_props, o_props, m_obj, is_der = resolve_lod_context(mock_context)
-    assert s_props is mock_scene_props
-    assert o_props is mock_scene_props
-    assert m_obj is None
-    assert is_der is False
+    # Poll methods
+    assert LOD_OT_inspect_lod0.poll(mock_context) is True
+    assert LOD_OT_sanitize_base_mesh.poll(mock_context) is True
+    assert LOD_OT_apply_transforms.poll(mock_context) is True
 
-    # Non-mesh active object (e.g. Camera or Light)
-    mock_cam = MagicMock()
-    mock_cam.type = "CAMERA"
-    mock_context.active_object = mock_cam
+    assert LOD_OT_inspect_lod0.poll(None) is False
+    assert LOD_OT_sanitize_base_mesh.poll(None) is False
+    assert LOD_OT_apply_transforms.poll(None) is False
 
-    s_props, o_props, m_obj, is_der = resolve_lod_context(mock_context)
-    assert s_props is mock_scene_props
-    assert o_props is mock_scene_props
-    assert m_obj is mock_cam
-    assert is_der is False
+    # Execute fallback when bpy is None
+    op_inspect = LOD_OT_inspect_lod0()
+    assert op_inspect.execute(None) == {"FINISHED"}
 
+    op_sanitize = LOD_OT_sanitize_base_mesh()
+    assert op_sanitize.execute(None) == {"FINISHED"}
 
-def test_resolve_lod_context_master_and_derivative():
-    """Verify resolve_lod_context correctly distinguishes Master LOD0 from sub-LOD derivatives."""
-    mock_scene = MagicMock()
-    mock_scene_props = MagicMock()
-    mock_scene.lod_tool = mock_scene_props
-
-    mock_context = MagicMock()
-    mock_context.scene = mock_scene
-
-    # Master LOD0 Mesh
-    mock_master = MagicMock()
-    mock_master.name = "SM_Tree"
-    mock_master.type = "MESH"
-    mock_master_props = MagicMock()
-    mock_master_props.is_generated_lod = False
-    mock_master_props.lod_root_object = None
-    mock_master.lod_tool = mock_master_props
-    mock_context.active_object = mock_master
-
-    s_props, o_props, m_obj, is_der = resolve_lod_context(mock_context)
-    assert s_props is mock_scene_props
-    assert o_props is mock_master_props
-    assert m_obj is mock_master
-    assert is_der is False
-
-    # Generated Derivative (SM_Tree_LOD2) pointing to SM_Tree
-    mock_der = MagicMock()
-    mock_der.name = "SM_Tree_LOD2"
-    mock_der.type = "MESH"
-    mock_der_props = MagicMock()
-    mock_der_props.is_generated_lod = True
-    mock_der_props.lod_root_object = mock_master
-    mock_der.lod_tool = mock_der_props
-    mock_context.active_object = mock_der
-
-    s_props, o_props, m_obj, is_der = resolve_lod_context(mock_context)
-    assert s_props is mock_scene_props
-    assert o_props is mock_master_props
-    assert m_obj is mock_master
-    assert is_der is True
+    op_apply = LOD_OT_apply_transforms()
+    assert op_apply.execute(None) == {"FINISHED"}
 
 
 def test_ui_list_draw_item_mock():
