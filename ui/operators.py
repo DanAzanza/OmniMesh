@@ -51,6 +51,7 @@ try:
     from ..core.pivot import PivotPreservationEngine
     from ..core.rigging import KinematicBonePruner, WeightSanitizer
     from ..core.sanitizer import MeshSanitizer
+    from ..core.slender import SlenderFeatureCuller
 except (ImportError, ValueError):
     from core.collision import CollisionManager
     from core.decimator import MeshDecimator
@@ -73,6 +74,7 @@ except (ImportError, ValueError):
     from core.pivot import PivotPreservationEngine
     from core.rigging import KinematicBonePruner, WeightSanitizer
     from core.sanitizer import MeshSanitizer
+    from core.slender import SlenderFeatureCuller
 
 
 def is_object_valid(obj: Any) -> bool:
@@ -360,7 +362,6 @@ class LOD_OT_clean_and_repair_mesh(Operator):
         total_welded_verts = 0
         total_split_bowties = 0
         total_filled_holes = 0
-        total_culled_islands = 0
 
         for obj in mesh_objs:
             bm = bmesh.new()
@@ -374,8 +375,6 @@ class LOD_OT_clean_and_repair_mesh(Operator):
                 enable_fill_holes=props.cleanup_enable_fill_holes,
                 hole_max_edges=props.cleanup_hole_max_edges,
                 enable_triangulate_ngons=props.cleanup_enable_triangulate_ngons,
-                enable_cull_micro_islands=props.cleanup_enable_cull_micro_islands,
-                w_crit=props.cleanup_island_size_threshold,
                 normal_recalc_policy=props.cleanup_normal_policy,
                 world_matrix=obj.matrix_world,
             )
@@ -392,7 +391,6 @@ class LOD_OT_clean_and_repair_mesh(Operator):
             total_welded_verts += stats.get("welded_verts", 0)
             total_split_bowties += stats.get("split_bowties", 0)
             total_filled_holes += stats.get("filled_holes", 0)
-            total_culled_islands += stats.get("culled_islands", 0)
 
         summary_msg = (
             f"Cleaned: {total_loose_verts} loose verts, {total_wire_edges} wire edges, "
@@ -629,6 +627,7 @@ class LOD_OT_generate_all(Operator):
 
         total_culled_faces = 0
         total_culled_islands = 0
+        total_culled_slender = 0
 
         try:
             base_name = props.export_base_name or (
@@ -712,6 +711,16 @@ class LOD_OT_generate_all(Operator):
                         )
                         total_culled_faces += cull_res.get("culled_faces", 0)
                         total_culled_islands += cull_res.get("culled_islands", 0)
+
+                    if props.enable_slender_culling and i > 0:
+                        slender_res = SlenderFeatureCuller.cull_slender_features(
+                            bm,
+                            screen_size_pct=tier.screen_size_pct,
+                            resolution_y=render.resolution_y,
+                            root_radius_m=radius,
+                            tau_sse=props.tau_sse,
+                        )
+                        total_culled_slender += slender_res.get("culled_islands", 0)
 
                     pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
                     MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
@@ -798,6 +807,16 @@ class LOD_OT_generate_all(Operator):
                                 total_culled_faces += cull_res.get("culled_faces", 0)
                                 total_culled_islands += cull_res.get("culled_islands", 0)
 
+                            if props.enable_slender_culling and i > 0:
+                                slender_res = SlenderFeatureCuller.cull_slender_features(
+                                    bm,
+                                    screen_size_pct=tier.screen_size_pct,
+                                    resolution_y=render.resolution_y,
+                                    root_radius_m=radius,
+                                    tau_sse=props.tau_sse,
+                                )
+                                total_culled_slender += slender_res.get("culled_islands", 0)
+
                             pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
                             MeshDecimator.apply_planar_limited_dissolve(
                                 bm, math.radians(tolerances["planar_angle_deg"])
@@ -843,6 +862,7 @@ class LOD_OT_generate_all(Operator):
             props.last_generated_tier_count = len(props.lods)
             props.last_culled_faces_count = total_culled_faces
             props.last_culled_islands_count = total_culled_islands
+            props.last_culled_slender_count = total_culled_slender
 
             if scene_props and scene_props != props:
                 scene_props.last_generated_base_tris = base_tris
@@ -851,6 +871,7 @@ class LOD_OT_generate_all(Operator):
                 scene_props.last_generated_tier_count = len(props.lods)
                 scene_props.last_culled_faces_count = total_culled_faces
                 scene_props.last_culled_islands_count = total_culled_islands
+                scene_props.last_culled_slender_count = total_culled_slender
 
             self.report(
                 {"INFO"},

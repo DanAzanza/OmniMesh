@@ -237,11 +237,6 @@ class LOD_PT_optimization_panel(Panel):
         if props.cleanup_enable_fill_holes:
             row_h.prop(props, "cleanup_hole_max_edges", text="Max Edges")
 
-        row_i = box_opt.row(align=True)
-        row_i.prop(props, "cleanup_enable_cull_micro_islands", text="Cull Islands")
-        if props.cleanup_enable_cull_micro_islands:
-            row_i.prop(props, "cleanup_island_size_threshold", text="Size")
-
         # 2. Material Cleanup & Slot Consolidation Suite
         box_mat = layout.box()
         box_mat.label(text="Material Cleanup & Consolidation", icon="MATERIAL")
@@ -331,7 +326,17 @@ class LOD_PT_optimization_panel(Panel):
                     icon="CHECKMARK",
                 )
 
-        # 7. Hierarchy & Draw-Call Optimization
+        # 7. Sub-Pixel Geometry Culling (Geometric Aliasing Suppression)
+        box_sl = layout.box()
+        box_sl.label(text="Sub-Pixel Geometry Culling", icon="SNAP_EDGE")
+        box_sl.prop(props, "enable_slender_culling", text="Cull Sub-Pixel Cables & Railings")
+        if props.last_culled_slender_count > 0:
+            box_sl.label(
+                text=f"✔ Culled {props.last_culled_slender_count} sub-pixel elements from lower LODs",
+                icon="CHECKMARK",
+            )
+
+        # 8. Hierarchy & Draw-Call Optimization
         box_h = layout.box()
         box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
         box_h.prop(props, "hierarchy_mode", text="")

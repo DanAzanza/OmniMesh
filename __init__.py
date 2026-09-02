@@ -36,6 +36,7 @@ if __package__:
         rigging,
         sanitizer,
         simulator,
+        slender,
         textures,
     )
     from .exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
@@ -58,6 +59,7 @@ else:
         rigging,
         sanitizer,
         simulator,
+        slender,
         textures,
     )
     from exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
@@ -74,6 +76,7 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(materials)
     importlib.reload(pbr_importer)
     importlib.reload(pivot)
+    importlib.reload(slender)
     importlib.reload(normals)
     importlib.reload(hierarchy)
     importlib.reload(rigging)

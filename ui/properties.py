@@ -258,19 +258,6 @@ class LODToolSettings(PropertyGroup):
         default=False,
         description="Triangulate polygons with >4 vertices during cleanup (Note: N-gons are automatically triangulated on engine export)",
     )
-    cleanup_enable_cull_micro_islands: BoolProperty(
-        name="Cull Floating Micro-Islands",
-        default=False,
-        description="Remove tiny disconnected floating mesh pieces in world space",
-    )
-    cleanup_island_size_threshold: FloatProperty(
-        name="Island Size Threshold",
-        default=0.005,
-        min=0.0001,
-        max=0.5,
-        precision=4,
-        description="Bounding diagonal threshold in meters for culling small islands",
-    )
     cleanup_normal_policy: EnumProperty(
         name="Normal Alignment",
         items=[
@@ -430,6 +417,14 @@ class LODToolSettings(PropertyGroup):
     )
     last_culled_faces_count: IntProperty(name="Last Culled Faces", default=0)
     last_culled_islands_count: IntProperty(name="Last Culled Islands", default=0)
+
+    # Sub-Pixel Slender & Thin Feature Culling Settings (Directly coupled to SSE Error Bound)
+    enable_slender_culling: BoolProperty(
+        name="Cull Sub-Pixel Cables & Railings",
+        default=True,
+        description="Automatically remove sub-pixel thin cables, railings, and wires using the LOD Screen-Space Error Bound",
+    )
+    last_culled_slender_count: IntProperty(name="Last Culled Slender Features", default=0)
 
     # Multi-Convex Collision Hull Generator Settings
     collision_decomposition_mode: EnumProperty(
