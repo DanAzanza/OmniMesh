@@ -2,10 +2,12 @@
 OmniMesh Unified Sub-Pixel & Slender Feature Culler.
 Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
 Features:
-- Unified Sub-Pixel Geometry Culler: Eliminates both small compact parts (bolts, screws, micro-debris) and thin slender features (cables, railings, wires, antennas).
-- Hydraulic Caliper: Volume-to-surface invariant thickness (t = 4V / A) for curved cables, railings, and spiral wires.
-- Pure Screen-Space Error (SSE) Bound Coupling: Automatically derives world-space thresholds from LOD screen coverage and tau_sse.
-- Structural Silhouette Protection: Preserves major load-bearing trusses and large structural components.
+- Pure Screen-Space Error (SSE) Bound Coupling: 100% physically and geometrically grounded.
+- Unified Sub-Pixel Geometry Culling:
+  * Case A (Compact Micro-Parts): Culls islands with bounding extent d_max <= delta_world.
+  * Case B (Slender Thin Features): Culls cables, railings, wires with hydraulic thickness t <= delta_world and AR >= 4.0.
+- Hydraulic Caliper: Volume-to-surface invariant thickness (t = 4V / A) for curved cables, railings, and spiral wires without PCA axis distortions.
+- Robust Silhouette Protection: Protects major load-bearing structural bodies while ensuring sub-pixel wires and micro-islands are cleanly eliminated.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ except ImportError:
 class SlenderFeatureCuller:
     """
     Detects and culls sub-pixel small parts and slender geometry
-    using the LOD tier's Screen-Space Error (SSE) tolerance bound.
+    strictly using the LOD tier's Screen-Space Error (SSE) tolerance bound.
     """
 
     MIN_ASPECT_RATIO = 4.0  # Length-to-thickness ratio for slender rods/wires
@@ -166,8 +168,8 @@ class SlenderFeatureCuller:
     ) -> dict[str, int]:
         """
         Identifies and removes all sub-pixel small parts and slender face islands from BMesh.
-        - Case A: Small compact islands / micro-debris (max_dim <= delta_world)
-        - Case B: Slender thin features / cables / railings (thickness <= delta_world and aspect_ratio >= MIN_ASPECT_RATIO)
+        - Case A (Compact Micro-Parts): max_dim <= delta_world
+        - Case B (Slender Thin Features): thickness <= delta_world AND aspect_ratio >= MIN_ASPECT_RATIO
         Returns: {"culled_islands": int, "culled_faces": int}
         """
         if not bm or not hasattr(bm, "faces") or len(bm.faces) == 0:
@@ -217,14 +219,16 @@ class SlenderFeatureCuller:
             aspect_ratio = analysis["aspect_ratio"]
             max_dim = analysis["max_dim"]
 
-            # Silhouette protection: large structural span
-            if protect_silhouettes and max_dim >= structural_limit and thickness > (delta_world * 0.5):
+            # Silhouette protection: only protect genuinely THICK structural spans (thickness > delta_world)
+            # If thickness <= delta_world, the feature is sub-pixel (< 1px on screen) and MUST be culled.
+            if protect_silhouettes and max_dim >= structural_limit and thickness > delta_world:
                 continue
 
-            # Culling condition:
-            # 1. Small compact part (bolts, screws, micro-debris): max_dim <= delta_world
-            # 2. Slender thin feature (cables, wires, railings): thickness <= delta_world AND aspect_ratio >= MIN_ASPECT_RATIO
+            # Culling conditions:
+            # 1. Small compact sub-pixel part (bolts, screws, micro-debris): max_dim <= delta_world
             is_small_part = max_dim <= delta_world and max_dim > 0
+
+            # 2. Slender thin feature (cables, wires, railings): thickness <= delta_world AND aspect_ratio >= MIN_ASPECT_RATIO
             is_slender_wire = thickness <= delta_world and aspect_ratio >= cls.MIN_ASPECT_RATIO and thickness > 0
 
             if is_small_part or is_slender_wire:
