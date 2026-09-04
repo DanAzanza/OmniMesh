@@ -23,6 +23,7 @@ from ui.operators import (
 from ui.panel import (
     PANEL_CLASSES,
     OMNIMESH_PT_batch_sub,
+    OMNIMESH_PT_chunking_sub,
     OMNIMESH_PT_export,
     OMNIMESH_PT_fix_lod0,
     OMNIMESH_PT_import,
@@ -32,6 +33,7 @@ from ui.panel import (
     register_panel,
     unregister_panel,
 )
+
 from ui.properties import register_properties, unregister_properties
 
 
@@ -59,6 +61,8 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_inspection_sub.bl_order == 0
     assert OMNIMESH_PT_optimization_sub.bl_parent_id == "OMNIMESH_PT_lods"
     assert OMNIMESH_PT_optimization_sub.bl_order == 1
+    assert OMNIMESH_PT_chunking_sub.bl_parent_id == "OMNIMESH_PT_lods"
+    assert OMNIMESH_PT_chunking_sub.bl_order == 2
 
     assert OMNIMESH_PT_batch_sub.bl_parent_id == "OMNIMESH_PT_export"
     assert OMNIMESH_PT_batch_sub.bl_order == 0
@@ -67,8 +71,9 @@ def test_panel_class_hierarchy_and_order():
     assert PANEL_CLASSES[0] is OMNIMESH_PT_import
     assert PANEL_CLASSES[1] is OMNIMESH_PT_fix_lod0
     assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
-    assert PANEL_CLASSES[5] is OMNIMESH_PT_export
-    assert len(PANEL_CLASSES) == 7
+    assert PANEL_CLASSES[5] is OMNIMESH_PT_chunking_sub
+    assert PANEL_CLASSES[6] is OMNIMESH_PT_export
+    assert len(PANEL_CLASSES) == 8
 
 
 def test_operator_helpers_mocked():
@@ -249,6 +254,47 @@ def test_clean_and_repair_mesh_properties(monkeypatch):
     assert "Cleaned:" in mock_props.last_cleanup_summary
 
 
+def test_clean_and_repair_mesh_with_apply_modifiers_opt_in(monkeypatch):
+    """Verify clean_and_repair_mesh applies modifiers when cleanup_apply_modifiers is enabled."""
+    import ui.cleanup_ops as cleanup_ops
+
+    mock_bpy = MagicMock()
+    mock_bmesh = MagicMock()
+    monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
+    monkeypatch.setattr(cleanup_ops, "bmesh", mock_bmesh)
+
+    mock_mod_mgr = MagicMock()
+    mock_mod_mgr.has_unapplied_modifiers.return_value = True
+    mock_mod_mgr.apply_all_modifiers_in_place.return_value = True
+    monkeypatch.setattr(cleanup_ops, "ModifierManager", mock_mod_mgr)
+
+    op = cleanup_ops.LOD_OT_clean_and_repair_mesh()
+    mock_context = MagicMock()
+    mock_props = MagicMock()
+    mock_props.cleanup_apply_modifiers = True
+    mock_props.cleanup_sync_viewport_settings = True
+    mock_props.cleanup_enable_weld = False
+    mock_props.cleanup_enable_split_non_manifold = False
+    mock_props.cleanup_enable_fill_holes = False
+    mock_props.cleanup_enable_triangulate_ngons = False
+    mock_props.cleanup_normal_policy = "OFF"
+    mock_props.last_cleanup_summary = ""
+
+    mock_mesh = MagicMock()
+    mock_mesh.name = "TestMesh"
+    mock_mesh.type = "MESH"
+    mock_mesh.get.return_value = False
+    mock_context.scene.lod_tool = mock_props
+    mock_context.active_object = mock_mesh
+    mock_context.selected_objects = [mock_mesh]
+
+    res = op.execute(mock_context)
+    assert res == {"FINISHED"}
+    mock_mod_mgr.sync_viewport_to_render_settings.assert_called_once_with(mock_mesh)
+    mock_mod_mgr.apply_all_modifiers_in_place.assert_called_once_with(mock_mesh, preserve_armature=True)
+    assert "modifier(s) baked" in mock_props.last_cleanup_summary
+
+
 def test_operator_classes_no_duplicates():
     """Ensure OPERATOR_CLASSES contains unique bl_idnames and no registration collisions."""
     from ui.operators import OPERATOR_CLASSES
@@ -260,3 +306,50 @@ def test_operator_classes_no_duplicates():
     assert "lod_tool.generate_all" in idnames
     assert "lod_tool.generate_collision_hulls" in idnames
     assert "lod_tool.import_pbr_set" in idnames
+    assert "lod_tool.apply_all_modifiers" in idnames
+    assert "lod_tool.apply_transforms" in idnames
+
+
+def test_lod_ot_apply_transforms(monkeypatch):
+    """Test LOD_OT_apply_transforms operator execution."""
+    import ui.cleanup_ops as cleanup_ops
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
+
+    op = cleanup_ops.LOD_OT_apply_transforms()
+    mock_context = MagicMock()
+    mock_mesh = MagicMock()
+    mock_mesh.name = "TestMesh"
+    mock_mesh.type = "MESH"
+    mock_mesh.get.return_value = False
+    mock_context.selected_objects = [mock_mesh]
+    mock_context.active_object = mock_mesh
+
+    res = op.execute(mock_context)
+    assert res == {"FINISHED"}
+
+
+def test_lod_ot_apply_all_modifiers(monkeypatch):
+    """Test LOD_OT_apply_all_modifiers operator execution."""
+    import ui.cleanup_ops as cleanup_ops
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
+
+    mock_mod_mgr = MagicMock()
+    mock_mod_mgr.apply_all_modifiers_in_place.return_value = True
+    monkeypatch.setattr(cleanup_ops, "ModifierManager", mock_mod_mgr)
+
+    op = cleanup_ops.LOD_OT_apply_all_modifiers()
+    mock_context = MagicMock()
+    mock_mesh = MagicMock()
+    mock_mesh.name = "TestMesh"
+    mock_mesh.type = "MESH"
+    mock_mesh.get.return_value = False
+    mock_context.selected_objects = [mock_mesh]
+    mock_context.active_object = mock_mesh
+
+    res = op.execute(mock_context)
+    assert res == {"FINISHED"}
+    mock_mod_mgr.apply_all_modifiers_in_place.assert_called_once_with(mock_mesh, preserve_armature=True)

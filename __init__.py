@@ -26,12 +26,14 @@ if __package__:
     from .core import (
         animations,
         batch,
+        chunking,
         collision,
         decimator,
         hierarchy,
         impostor,
         materials,
         metrics,
+        modifiers,
         normals,
         occlusion,
         pbr_importer,
@@ -45,6 +47,7 @@ if __package__:
     from .exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
     from .ui import (
         batch_panel,
+        chunk_ops,
         cleanup_ops,
         hud,
         hull_impostor_ops,
@@ -63,12 +66,14 @@ else:
     from core import (
         animations,
         batch,
+        chunking,
         collision,
         decimator,
         hierarchy,
         impostor,
         materials,
         metrics,
+        modifiers,
         normals,
         occlusion,
         pbr_importer,
@@ -82,6 +87,7 @@ else:
     from exporters import engine_export, godot_export, msfs_export, ue5_export, unity_export
     from ui import (
         batch_panel,
+        chunk_ops,
         cleanup_ops,
         hud,
         hull_impostor_ops,
@@ -99,11 +105,13 @@ else:
 # Dynamic reloading for live development sessions
 if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(metrics)
+    importlib.reload(modifiers)
     importlib.reload(sanitizer)
     importlib.reload(occlusion)
     importlib.reload(collision)
     importlib.reload(impostor)
     importlib.reload(decimator)
+    importlib.reload(chunking)
     importlib.reload(materials)
     importlib.reload(pbr_importer)
     importlib.reload(pivot)
@@ -120,6 +128,7 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(lists)
     importlib.reload(utils)
     importlib.reload(cleanup_ops)
+    importlib.reload(chunk_ops)
     importlib.reload(hull_impostor_ops)
     importlib.reload(lod_ops)
     importlib.reload(pbr_ops)

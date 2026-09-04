@@ -26,8 +26,10 @@ except ImportError:
     Vector = None
 
 try:
+    from .modifiers import ModifierManager
     from .pivot import PivotPreservationEngine
 except (ImportError, ValueError):
+    from core.modifiers import ModifierManager
     from core.pivot import PivotPreservationEngine
 
 
@@ -168,73 +170,122 @@ class MeshMergeEngine:
 
         # 4. Construct Merged BMesh
         target_bm = bmesh.new()
+        try:
+            dvert_lay = target_bm.verts.layers.deform.verify() if global_group_names else None
 
-        for obj in valid_objs:
-            src_mesh = obj.data
-            temp_bm = bmesh.new()
-            try:
-                temp_bm.from_mesh(src_mesh)
+            for obj in valid_objs:
+                eval_mesh = None
+                eval_obj = None
+                if ModifierManager.has_unapplied_modifiers(obj):
+                    eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
 
-                # Determine world transformation matrix (respecting Rest Pose if parented to bone)
-                if armature_obj and getattr(obj, "parent_type", "") == "BONE" and getattr(obj, "parent_bone", ""):
-                    m_world = get_rest_world_matrix_for_static(obj, armature_obj, obj.parent_bone)
-                else:
-                    m_world = obj.matrix_world.copy()
+                src_mesh = eval_mesh if eval_mesh else obj.data
+                temp_bm = bmesh.new()
+                try:
+                    temp_bm.from_mesh(src_mesh)
 
-                # Transform matrix: LocalPivotSpaceMerge
-                if m_pivot_inv and Matrix:
-                    m_transform = m_pivot_inv @ m_world
-                else:
-                    m_transform = m_world
-
-                # Transform vertices
-                temp_bm.transform(m_transform)
-
-                # Normal Matrix: Transpose of Inverted 3x3 for non-uniform scale safety
-                if Matrix:
-                    try:
-                        m_normal = m_transform.to_3x3().inverted().transposed()
-                        for v in temp_bm.verts:
-                            v.normal = (m_normal @ v.normal).normalized()
-                    except Exception as exc:
-                        logger.debug("Normal transformation failed: %s", exc)
-
-                # Remap Material Indices
-                obj_mats = [slot.material for slot in getattr(obj, "material_slots", [])]
-                for f in temp_bm.faces:
-                    if f.material_index < len(obj_mats):
-                        orig_mat = obj_mats[f.material_index]
-                        f.material_index = mat_to_global_idx.get(orig_mat, 0)
+                    # Determine world transformation matrix (respecting Rest Pose if parented to bone)
+                    if armature_obj and getattr(obj, "parent_type", "") == "BONE" and getattr(obj, "parent_bone", ""):
+                        m_world = get_rest_world_matrix_for_static(obj, armature_obj, obj.parent_bone)
                     else:
-                        f.material_index = 0
+                        m_world = obj.matrix_world.copy()
 
-                # Merge into target BMesh
-                temp_bm.verts.ensure_lookup_table()
-                temp_bm.faces.ensure_lookup_table()
-                temp_bm.to_mesh(src_mesh)  # update temporary mesh
-            finally:
-                temp_bm.free()
+                    # Transform matrix: LocalPivotSpaceMerge
+                    if m_pivot_inv and Matrix:
+                        m_transform = m_pivot_inv @ m_world
+                    else:
+                        m_transform = m_world
 
-        # Build merged target mesh datablock
-        merged_mesh = bpy.data.meshes.new(f"{output_obj_name}_Mesh")
-        target_bm.from_mesh(valid_objs[0].data)  # seed base
-        for obj in valid_objs[1:]:
-            obj_bm = bmesh.new()
-            obj_bm.from_mesh(obj.data)
-            # Transform already applied in loop above
-            for v in obj_bm.verts:
-                target_bm.verts.new(v.co)
-            obj_bm.free()
+                    temp_bm.transform(m_transform)
 
-        target_bm.to_mesh(merged_mesh)
-        target_bm.free()
-        merged_mesh.update()
+                    # Normal Matrix: Transpose of Inverted 3x3 for non-uniform scale safety
+                    if Matrix:
+                        try:
+                            m_normal = m_transform.to_3x3().inverted().transposed()
+                            for v in temp_bm.verts:
+                                v.normal = (m_normal @ v.normal).normalized()
+                        except Exception as exc:
+                            logger.debug("Normal transformation failed: %s", exc)
+
+                    # Remap Material Indices
+                    obj_mats = [slot.material for slot in getattr(obj, "material_slots", [])]
+                    mat_remap: dict[int, int] = {}
+                    for idx, mat in enumerate(obj_mats):
+                        mat_remap[idx] = mat_to_global_idx.get(mat, 0)
+
+                    # Vertex Group Deform Layer Remap
+                    src_dvert_lay = (
+                        temp_bm.verts.layers.deform.active if hasattr(temp_bm.verts.layers, "deform") else None
+                    )
+                    vg_map: dict[int, int] = {}
+                    if hasattr(obj, "vertex_groups"):
+                        for vg in obj.vertex_groups:
+                            if vg.name in global_group_names:
+                                vg_map[vg.index] = global_group_names.index(vg.name)
+
+                    # Append verts into target BMesh
+                    vert_map: dict[Any, Any] = {}
+                    for v in temp_bm.verts:
+                        new_v = target_bm.verts.new(v.co)
+                        new_v.normal = v.normal
+                        vert_map[v] = new_v
+
+                        # Transfer deform weights
+                        if dvert_lay and src_dvert_lay:
+                            dvert = v[src_dvert_lay]
+                            target_dvert = new_v[dvert_lay]
+                            for old_vg_idx, weight in dvert.items():
+                                if old_vg_idx in vg_map:
+                                    target_dvert[vg_map[old_vg_idx]] = weight
+
+                    target_bm.verts.ensure_lookup_table()
+
+                    # Copy UV Layers
+                    temp_uv_layers = (
+                        list(temp_bm.loops.layers.uv.values()) if hasattr(temp_bm.loops.layers, "uv") else []
+                    )
+                    target_uv_layers = []
+                    for src_uv in temp_uv_layers:
+                        target_uv = target_bm.loops.layers.uv.get(src_uv.name) or target_bm.loops.layers.uv.new(
+                            src_uv.name
+                        )
+                        target_uv_layers.append((src_uv, target_uv))
+
+                    # Append faces with UVs
+                    for f in temp_bm.faces:
+                        new_verts = [vert_map[v] for v in f.verts]
+                        try:
+                            new_f = target_bm.faces.new(new_verts)
+                            new_f.material_index = mat_remap.get(f.material_index, 0)
+                            for src_uv, tgt_uv in target_uv_layers:
+                                for l_old, l_new in zip(f.loops, new_f.loops, strict=False):
+                                    l_new[tgt_uv].uv = l_old[src_uv].uv
+                        except ValueError:
+                            # Skip degenerate or duplicate faces
+                            pass
+
+                finally:
+                    temp_bm.free()
+                    if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+                        eval_obj.to_mesh_clear()
+
+            # Build merged target mesh datablock
+            merged_mesh = bpy.data.meshes.new(f"{output_obj_name}_Mesh")
+            target_bm.to_mesh(merged_mesh)
+            merged_mesh.update()
+
+        finally:
+            target_bm.free()
 
         merged_obj = bpy.data.objects.new(output_obj_name, merged_mesh)
 
         # Assign unified material slots
         for mat in global_materials:
             merged_obj.data.materials.append(mat)
+
+        # Create unified vertex groups
+        for gname in global_group_names:
+            merged_obj.vertex_groups.new(name=gname)
 
         # Re-attach to Armature if skinned
         if armature_obj:

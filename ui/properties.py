@@ -267,6 +267,16 @@ class LODToolSettings(PropertyGroup):
         default=True,
         description="Automatically run safe Tier 0 geometric hygiene before generating LOD tiers",
     )
+    cleanup_apply_modifiers: BoolProperty(
+        name="Apply Modifiers (Bake Viewport)",
+        default=False,
+        description="Bake procedural modifier stacks using Viewport settings into base geometry before topology repair (Opt-In)",
+    )
+    cleanup_sync_viewport_settings: BoolProperty(
+        name="Sync Viewport to Render Settings",
+        default=True,
+        description="Synchronize modifier render settings (e.g. render_levels) to viewport settings before applying",
+    )
     cleanup_enable_weld: BoolProperty(
         name="Merge Close Vertices",
         default=False,
@@ -540,6 +550,81 @@ class LODToolSettings(PropertyGroup):
         min=1,
         max=6,
         description="LOD tier at which compatible submeshes are merged into single draw-call meshes",
+    )
+
+    # Spatial Chunking & HLOD Settings (Large Assets / Scans / Terrains)
+    enable_spatial_chunking: BoolProperty(
+        name="Enable Spatial Chunking (Tiling)",
+        default=False,
+        description="Spatially partitions massive assets (terrains, buildings, scans) into 2.5D AABB grid tiles",
+    )
+    chunk_cell_size: FloatProperty(
+        name="Chunk Cell Size (m)",
+        default=32.0,
+        min=1.0,
+        max=1000.0,
+        unit="LENGTH",
+        description="Size of spatial partitioning grid cells in meters",
+    )
+    chunk_split_z: BoolProperty(
+        name="Split Vertical Z-Axis",
+        default=False,
+        description="Splits geometry along vertical Z planes for high-rise buildings and cliffs",
+    )
+    chunk_cell_size_z: FloatProperty(
+        name="Z Cell Size (m)",
+        default=32.0,
+        min=1.0,
+        max=1000.0,
+        unit="LENGTH",
+        description="Vertical height of spatial grid cells in meters",
+    )
+    chunk_partitioning_mode: EnumProperty(
+        name="Partitioning Mode",
+        items=[
+            ("UNIFORM_GRID", "Uniform 2.5D Grid", "Equal-sized spatial cells across the bounding box"),
+            (
+                "ADAPTIVE_CLUSTERING",
+                "Adaptive Cell Clustering",
+                "Clusters sparse adjacent cells into larger chunks to balance polycount without T-junctions",
+            ),
+        ],
+        default="UNIFORM_GRID",
+        description="Spatial chunk tiling strategy",
+    )
+    adaptive_cluster_target_polys: IntProperty(
+        name="Max Polys / Cluster",
+        default=50000,
+        min=1000,
+        max=5000000,
+        description="Target maximum polygon budget per clustered chunk in adaptive mode",
+    )
+    enable_hlod: BoolProperty(
+        name="Enable HLOD Merging",
+        default=True,
+        description="Merges tiles into a single unified mesh at distant LOD tiers, eliminating seams and draw calls",
+    )
+
+    hlod_start_tier: IntProperty(
+        name="HLOD Start Tier",
+        default=2,
+        min=1,
+        max=6,
+        description="LOD tier at which chunk tiles are merged into unified HLOD mesh",
+    )
+    enable_scan_pre_remesh: BoolProperty(
+        name="Pre-Process: Voxel Remesh",
+        default=False,
+        description="Optional voxel remesh cleanup for non-manifold photogrammetry scans (Destructive to UVs)",
+    )
+    scan_remesh_voxel_size: FloatProperty(
+        name="Remesh Voxel Size (m)",
+        default=0.05,
+        min=0.005,
+        max=1.0,
+        precision=3,
+        unit="LENGTH",
+        description="Voxel grid resolution for surface reconstruction",
     )
 
     # Skeletal Rigging & Bone Pruning Settings

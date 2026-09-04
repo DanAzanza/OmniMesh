@@ -274,12 +274,53 @@ class MeshDecimator:
                 logger.debug("Error assigning deform weight: %s", exc)
 
     @staticmethod
+    def lock_chunk_boundaries(obj: Any, group_name: str = "OMNIMESH_SEAM_LOCKED") -> set[int]:
+        """
+        Identifies and tags all open boundary vertices into the specified vertex group with weight 1.0.
+        Returns set of tagged vertex indices.
+        """
+        tagged_indices: set[int] = set()
+        if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
+            return tagged_indices
+
+        mesh = obj.data
+        if not hasattr(mesh, "edges") or not hasattr(mesh, "vertices"):
+            return tagged_indices
+
+        if bmesh:
+            bm = bmesh.new()
+            try:
+                bm.from_mesh(mesh)
+                bm.edges.ensure_lookup_table()
+                bm.verts.ensure_lookup_table()
+                for edge in bm.edges:
+                    if getattr(edge, "is_boundary", False):
+                        for v in edge.verts:
+                            tagged_indices.add(v.index)
+            finally:
+                bm.free()
+
+        if tagged_indices and hasattr(obj, "vertex_groups"):
+            vg = obj.vertex_groups.get(group_name)
+            if not vg:
+                vg = obj.vertex_groups.new(name=group_name)
+            vg.add(list(tagged_indices), 1.0, "REPLACE")
+
+        return tagged_indices
+
+    @staticmethod
     def execute_decimate_qem(
-        obj: Any, target_ratio: float, use_curvature_weight: bool = True, group_name: str = "OmniMesh_Protection"
+        obj: Any,
+        target_ratio: float,
+        use_curvature_weight: bool = True,
+        group_name: str = "OmniMesh_Protection",
+        vertex_group_factor: float = 0.5,
+        cleanup_group: bool = True,
     ):
         """
         Applies quadric error metric (QEM) edge collapse decimation to the target mesh object.
-        Cleans up temporary protection vertex groups upon completion.
+        Supports custom vertex group factor for strict boundary pinning.
+        Optionally cleans up temporary protection vertex groups upon completion.
         """
         if not obj or getattr(obj, "type", "") != "MESH":
             return
@@ -287,7 +328,7 @@ class MeshDecimator:
         clamped_ratio = max(0.001, min(1.0, target_ratio))
         if clamped_ratio >= 0.999:
             # Clean up protection vertex group if returning without decimation
-            if hasattr(obj, "vertex_groups"):
+            if cleanup_group and hasattr(obj, "vertex_groups"):
                 vg = obj.vertex_groups.get(group_name)
                 if vg:
                     obj.vertex_groups.remove(vg)
@@ -305,7 +346,7 @@ class MeshDecimator:
         if use_curvature_weight and hasattr(obj, "vertex_groups") and group_name in obj.vertex_groups:
             dec_mod.vertex_group = group_name
             dec_mod.invert_vertex_group = True
-            dec_mod.vertex_group_factor = 0.5
+            dec_mod.vertex_group_factor = max(0.0, min(1.0, float(vertex_group_factor)))
 
         try:
             if hasattr(bpy.context, "temp_override"):
@@ -319,8 +360,8 @@ class MeshDecimator:
             if hasattr(obj, "modifiers") and dec_mod.name in obj.modifiers:
                 obj.modifiers.remove(dec_mod)
         finally:
-            # Cleanup protection vertex group
-            if hasattr(obj, "vertex_groups"):
+            # Cleanup protection vertex group if requested
+            if cleanup_group and hasattr(obj, "vertex_groups"):
                 vg = obj.vertex_groups.get(group_name)
                 if vg:
                     obj.vertex_groups.remove(vg)

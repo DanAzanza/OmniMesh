@@ -61,7 +61,13 @@ class GodotExporter:
         if imp_c:
             all_objs.extend(list(imp_c.objects))
 
-        # 4. Fallback to direct tier references
+        # 4. Spatial Chunk & HLOD Collections
+        for chunk_c_name in [f"{base_search}_Chunks_LOD0", f"{base_search}_Chunks_LOD1", f"{base_search}_HLOD_LOD2"]:
+            chunk_c = bpy.data.collections.get(chunk_c_name)
+            if chunk_c:
+                all_objs.extend([obj for obj in chunk_c.objects if obj.type in {"MESH", "EMPTY"}])
+
+        # 5. Fallback to direct tier references
         if not all_objs and props and len(props.lods) > 0:
             all_objs = [tier.generated_obj for tier in props.lods if tier.generated_obj]
 

@@ -19,13 +19,15 @@ except ImportError:
     Operator = object
 
 try:
-    from core.materials import MaterialOptimizer
-    from core.sanitizer import MeshSanitizer
-    from ui.utils import get_selected_mesh_objects, resolve_lod_context
-except (ImportError, ValueError):
     from ..core.materials import MaterialOptimizer
+    from ..core.modifiers import ModifierManager
     from ..core.sanitizer import MeshSanitizer
     from .utils import get_selected_mesh_objects, resolve_lod_context
+except (ImportError, ValueError):
+    from core.materials import MaterialOptimizer
+    from core.modifiers import ModifierManager
+    from core.sanitizer import MeshSanitizer
+    from ui.utils import get_selected_mesh_objects, resolve_lod_context
 
 
 class LOD_OT_inspect_lod0(Operator):
@@ -132,6 +134,28 @@ class LOD_OT_clean_and_repair_mesh(Operator):
 
         weld_dist = props.cleanup_weld_distance if props.cleanup_enable_weld else 0.0
 
+        total_mods_baked = 0
+        apply_mods = getattr(props, "cleanup_apply_modifiers", False) or (
+            hasattr(context, "scene")
+            and hasattr(context.scene, "lod_tool")
+            and getattr(context.scene.lod_tool, "cleanup_apply_modifiers", False)
+        )
+        sync_vp = getattr(props, "cleanup_sync_viewport_settings", True)
+        if (
+            hasattr(context, "scene")
+            and hasattr(context.scene, "lod_tool")
+            and not getattr(props, "cleanup_apply_modifiers", False)
+        ):
+            sync_vp = getattr(context.scene.lod_tool, "cleanup_sync_viewport_settings", sync_vp)
+
+        if apply_mods:
+            for obj in mesh_objs:
+                if ModifierManager.has_unapplied_modifiers(obj):
+                    if sync_vp:
+                        ModifierManager.sync_viewport_to_render_settings(obj)
+                    if ModifierManager.apply_all_modifiers_in_place(obj, preserve_armature=True):
+                        total_mods_baked += 1
+
         for obj in mesh_objs:
             bm = bmesh.new()
             try:
@@ -161,6 +185,8 @@ class LOD_OT_clean_and_repair_mesh(Operator):
             obj.data.update()
 
         summary_parts = []
+        if total_mods_baked > 0:
+            summary_parts.append(f"{total_mods_baked} obj modifier(s) baked")
         if total_loose > 0:
             summary_parts.append(f"{total_loose} loose verts")
         if total_deg > 0:
@@ -223,8 +249,82 @@ class LOD_OT_clean_and_repair_materials(Operator):
         return {"FINISHED"}
 
 
+class LOD_OT_apply_all_modifiers(Operator):
+    """Applies all non-armature modifiers in-place, baking procedural stacks into raw mesh data."""
+
+    bl_idname = "lod_tool.apply_all_modifiers"
+    bl_label = "Apply All Modifiers"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        return bool(context and get_selected_mesh_objects(context))
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"FINISHED"}
+
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            if hasattr(self, "report"):
+                self.report({"WARNING"}, "No mesh objects selected.")
+            return {"CANCELLED"}
+
+        applied_count = 0
+        for obj in mesh_objs:
+            if ModifierManager.apply_all_modifiers_in_place(obj, preserve_armature=True):
+                applied_count += 1
+
+        msg = f"Applied modifiers on {applied_count} object(s)."
+        if hasattr(self, "report"):
+            self.report({"INFO"}, msg)
+        return {"FINISHED"}
+
+
+class LOD_OT_apply_transforms(Operator):
+    """Applies object rotation and scale transforms to normalize base mesh orientation."""
+
+    bl_idname = "lod_tool.apply_transforms"
+    bl_label = "Apply Scale & Rotation"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        return bool(context and get_selected_mesh_objects(context))
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"FINISHED"}
+
+        mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            if hasattr(self, "report"):
+                self.report({"WARNING"}, "No mesh objects selected.")
+            return {"CANCELLED"}
+
+        applied_count = 0
+        for obj in mesh_objs:
+            try:
+                if hasattr(context, "temp_override"):
+                    with context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+                elif hasattr(context, "view_layer") and hasattr(context.view_layer, "objects"):
+                    context.view_layer.objects.active = obj
+                    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+                applied_count += 1
+            except Exception as exc:
+                logger.warning("Failed applying transforms on %s: %s", getattr(obj, "name", "obj"), exc)
+
+        msg = f"Applied rotation & scale on {applied_count} object(s)."
+        if hasattr(self, "report"):
+            self.report({"INFO"}, msg)
+        return {"FINISHED"}
+
+
 CLEANUP_OPERATOR_CLASSES = (
     LOD_OT_inspect_lod0,
     LOD_OT_clean_and_repair_mesh,
     LOD_OT_clean_and_repair_materials,
+    LOD_OT_apply_all_modifiers,
+    LOD_OT_apply_transforms,
 )

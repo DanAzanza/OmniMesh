@@ -193,8 +193,12 @@ class LOD_OT_toggle_live_simulator(LOD_OT_toggle_simulator):
 def register_simulator_ops() -> None:
     if not bpy:
         return
-    bpy.utils.register_class(LOD_OT_toggle_simulator)
-    bpy.utils.register_class(LOD_OT_toggle_live_simulator)
+    for cls in (LOD_OT_toggle_simulator, LOD_OT_toggle_live_simulator):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        bpy.utils.register_class(cls)
 
 
 def unregister_simulator_ops() -> None:

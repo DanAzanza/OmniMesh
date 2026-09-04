@@ -260,6 +260,10 @@ class OMNIMESH_OT_toggle_split_preview(Operator):
 def register_split_ops() -> None:
     if not bpy:
         return
+    try:
+        bpy.utils.unregister_class(OMNIMESH_OT_toggle_split_preview)
+    except Exception as exc:
+        logger.debug("Safe unregister skipped OMNIMESH_OT_toggle_split_preview: %s", exc)
     bpy.utils.register_class(OMNIMESH_OT_toggle_split_preview)
 
 

@@ -20,8 +20,15 @@ except ImportError:
     bpy = None
 
 try:
+    from ui.chunk_ops import (
+        CLASSES as CHUNK_OPERATOR_CLASSES,
+        LOD_OT_spatial_chunk_and_generate,
+        LOD_OT_voxel_scan_cleanup,
+    )
     from ui.cleanup_ops import (
         CLEANUP_OPERATOR_CLASSES,
+        LOD_OT_apply_all_modifiers,
+        LOD_OT_apply_transforms,
         LOD_OT_clean_and_repair_materials,
         LOD_OT_clean_and_repair_mesh,
         LOD_OT_inspect_lod0,
@@ -55,8 +62,15 @@ try:
         resolve_lod_context,
     )
 except (ImportError, ValueError):
+    from .chunk_ops import (
+        CLASSES as CHUNK_OPERATOR_CLASSES,
+        LOD_OT_spatial_chunk_and_generate,
+        LOD_OT_voxel_scan_cleanup,
+    )
     from .cleanup_ops import (
         CLEANUP_OPERATOR_CLASSES,
+        LOD_OT_apply_all_modifiers,
+        LOD_OT_apply_transforms,
         LOD_OT_clean_and_repair_materials,
         LOD_OT_clean_and_repair_mesh,
         LOD_OT_inspect_lod0,
@@ -95,6 +109,7 @@ OPERATOR_CLASSES = [
     *LOD_OPERATOR_CLASSES,
     *HULL_IMPOSTOR_OPERATOR_CLASSES,
     *PBR_OPERATOR_CLASSES,
+    *CHUNK_OPERATOR_CLASSES,
 ]
 
 
@@ -102,6 +117,10 @@ def register_operators() -> None:
     if not bpy:
         return
     for cls in OPERATOR_CLASSES:
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
         bpy.utils.register_class(cls)
 
 
@@ -129,10 +148,14 @@ __all__ = [
     "LOD_OT_toggle_split_preview",
     "LOD_OT_clean_and_repair_mesh",
     "LOD_OT_clean_and_repair_materials",
+    "LOD_OT_apply_all_modifiers",
+    "LOD_OT_apply_transforms",
     "LOD_OT_import_pbr_set",
     "LOD_OT_auto_match_pbr_folder",
     "LOD_OT_sync_selection_settings",
     "LOD_OT_select_master_asset",
+    "LOD_OT_spatial_chunk_and_generate",
+    "LOD_OT_voxel_scan_cleanup",
     "OPERATOR_CLASSES",
     "register_operators",
     "unregister_operators",

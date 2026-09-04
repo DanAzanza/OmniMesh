@@ -9,7 +9,10 @@ Structured into sequential workflow panels:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import bpy
@@ -116,16 +119,20 @@ class OMNIMESH_PT_fix_lod0(Panel):
         # Primary Sanitization Action
         col_act = layout.column(align=True)
         col_act.scale_y = 1.3
-        col_act.operator("lod_tool.sanitize_base_mesh", text="🧹 Sanitize & Fix Base Mesh", icon="BRUSH_DATA")
+        col_act.operator("lod_tool.clean_and_repair_mesh", text="Clean & Repair Mesh", icon="BRUSH_DATA")
 
         # Transform Normalization Action
         col_trans = layout.column(align=True)
         col_trans.scale_y = 1.15
         col_trans.operator("lod_tool.apply_transforms", text="Apply Scale & Rotation", icon="OBJECT_ORIGIN")
+        col_trans.operator("lod_tool.apply_all_modifiers", text="Apply All Modifiers", icon="MODIFIER")
 
         # 2. Mesh Topology & Geometry Options
         box_mesh_opt = layout.box()
         box_mesh_opt.label(text="Mesh Topology & Cleanup Options", icon="PREFERENCES")
+        box_mesh_opt.prop(props, "cleanup_apply_modifiers", text="Apply Modifiers (Bake Viewport)")
+        if getattr(props, "cleanup_apply_modifiers", False):
+            box_mesh_opt.prop(props, "cleanup_sync_viewport_settings", text="Sync Viewport to Render Settings")
         box_mesh_opt.prop(props, "cleanup_enable_split_non_manifold", text="Repair Non-Manifold & Bowties")
         box_mesh_opt.prop(props, "cleanup_normal_policy", text="Normals")
 
@@ -442,6 +449,52 @@ class OMNIMESH_PT_batch_sub(Panel):
             box.label(text=props.batch_status_text)
 
 
+class OMNIMESH_PT_chunking_sub(Panel):
+    """Subpanel 3.3: Spatial Partitioning (Tiling), Seam Protection & HLOD Merging."""
+
+    bl_label = "Spatial Chunking & HLOD (Large Assets)"
+    bl_idname = "OMNIMESH_PT_chunking_sub"
+    bl_parent_id = "OMNIMESH_PT_lods"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_order = 2
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        box_pre = layout.box()
+        box_pre.label(text="Raw Scan Surface Cleanup", icon="MOD_REMESH")
+        box_pre.prop(props, "scan_remesh_voxel_size", text="Voxel Size")
+        row_remesh = box_pre.row(align=True)
+        row_remesh.operator("lod_tool.voxel_scan_cleanup", text="Pre-Process: Voxel Remesh", icon="SHADING_WIRE")
+
+        box_chunk = layout.box()
+        box_chunk.label(text="Spatial Chunking & Tiling", icon="GRID")
+        box_chunk.prop(props, "chunk_partitioning_mode", text="Mode")
+        if props.chunk_partitioning_mode == "ADAPTIVE_CLUSTERING":
+            box_chunk.prop(props, "adaptive_cluster_target_polys", text="Target Poly Limit")
+        box_chunk.prop(props, "chunk_cell_size", text="Cell Size (m)")
+        box_chunk.prop(props, "chunk_split_z", text="Split Z-Axis (Height)")
+        if props.chunk_split_z:
+            box_chunk.prop(props, "chunk_cell_size_z", text="Z Cell Size (m)")
+
+        box_hlod = layout.box()
+        box_hlod.label(text="Hierarchical LOD (HLOD)", icon="STICKY_UVS_DISABLE")
+        box_hlod.prop(props, "enable_hlod", text="Enable HLOD Merging")
+        if props.enable_hlod:
+            box_hlod.prop(props, "hlod_start_tier", text="Merge From Tier")
+
+        col_chunk = layout.column(align=True)
+        col_chunk.scale_y = 1.3
+        col_chunk.operator(
+            "lod_tool.spatial_chunk_and_generate", text="Partition & Generate Chunked LODs", icon="MOD_BUILD"
+        )
+
+
 # Strict Parent-First Topological Registration Order
 PANEL_CLASSES = (
     OMNIMESH_PT_import,
@@ -449,6 +502,7 @@ PANEL_CLASSES = (
     OMNIMESH_PT_lods,
     OMNIMESH_PT_inspection_sub,
     OMNIMESH_PT_optimization_sub,
+    OMNIMESH_PT_chunking_sub,
     OMNIMESH_PT_export,
     OMNIMESH_PT_batch_sub,
 )
@@ -458,6 +512,10 @@ def register_panel() -> None:
     if not bpy:
         return
     for cls in PANEL_CLASSES:
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
         bpy.utils.register_class(cls)
 
 

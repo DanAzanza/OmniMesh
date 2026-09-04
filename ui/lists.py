@@ -4,7 +4,10 @@ UIList components for OmniMesh LOD tiers with responsive column layout.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import bpy
@@ -55,6 +58,10 @@ def register_lists() -> None:
     if not bpy:
         return
     for cls in classes:
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
         bpy.utils.register_class(cls)
 
 

@@ -14,10 +14,12 @@ try:
     import bmesh
     import bpy
     from bpy.types import Operator
+    from mathutils import Vector
 except ImportError:
     bpy = None
     bmesh = None
     Operator = object
+    Vector = None
 
 try:
     from core.decimator import MeshDecimator
@@ -30,6 +32,7 @@ try:
         compute_vertical_fov,
         generate_logarithmic_screen_tiers,
     )
+    from core.modifiers import ModifierManager
     from core.normals import NormalManager
     from core.occlusion import HardenedOcclusionCuller
     from core.pivot import PivotPreservationEngine
@@ -48,6 +51,8 @@ except (ImportError, ValueError):
         compute_vertical_fov,
         generate_logarithmic_screen_tiers,
     )
+    from ..core.modifiers import ModifierManager
+
     from ..core.normals import NormalManager
     from ..core.occlusion import HardenedOcclusionCuller
     from ..core.pivot import PivotPreservationEngine
@@ -206,7 +211,10 @@ class LOD_OT_generate_all(Operator):
 
             all_coords = []
             for obj in mesh_objs:
-                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
+                if hasattr(obj, "bound_box") and obj.bound_box and Vector is not None:
+                    all_coords.extend([obj.matrix_world @ Vector(b) for b in obj.bound_box])
+                elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
+                    all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
             _, radius = compute_bounding_sphere(all_coords)
 
             render = context.scene.render
@@ -234,8 +242,19 @@ class LOD_OT_generate_all(Operator):
                     tier_coll = all_tier_collections[i]
 
                     if i == 0:
-                        tier_tris = sum(len(obj.data.polygons) for obj in mesh_objs)
+                        tier_tris = 0
                         tier_mats = sum(len(obj.material_slots) for obj in mesh_objs)
+                        for obj in mesh_objs:
+                            if ModifierManager.has_unapplied_modifiers(obj):
+                                eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
+                                if eval_mesh:
+                                    tier_tris += len(getattr(eval_mesh, "polygons", []))
+                                    if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+                                        eval_obj.to_mesh_clear()
+                                else:
+                                    tier_tris += len(obj.data.polygons)
+                            else:
+                                tier_tris += len(obj.data.polygons)
                         tier.actual_tris = tier_tris
                         tier.actual_triangles = tier_tris
                         tier.mat_slots_count = tier_mats
@@ -310,6 +329,9 @@ class LOD_OT_generate_all(Operator):
                             lod_obj.name = sub_name
                             lod_obj.data.name = f"{sub_name}_Mesh"
                             tier_coll.objects.link(lod_obj)
+
+                            # Bake procedural modifiers so LOD operations run on evaluated geometry
+                            ModifierManager.apply_all_modifiers_in_place(lod_obj, preserve_armature=True)
 
                             if tier_pivot:
                                 is_parent_pivot = (

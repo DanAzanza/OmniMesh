@@ -126,7 +126,7 @@ class NormalManager:
 
     @classmethod
     def _kdtree_normal_transfer_fallback(cls, lod_obj: Any, source_lod0: Any) -> bool:
-        """Spatial KDTree nearest-vertex surface normal interpolation fallback."""
+        """Spatial KDTree nearest-vertex surface normal interpolation fallback in world space."""
         if not KDTree or not lod_obj or not source_lod0:
             return False
         try:
@@ -143,17 +143,22 @@ class NormalManager:
             if num_src_verts == 0 or len(tgt_loops) == 0:
                 return False
 
+            src_mat = getattr(source_lod0, "matrix_world", None)
+            tgt_mat = getattr(lod_obj, "matrix_world", None)
+
             kd = KDTree(num_src_verts)
             for i, v in enumerate(src_verts):
-                kd.insert(v.co, i)
+                world_co = src_mat @ v.co if src_mat is not None else v.co
+                kd.insert(world_co, i)
             kd.balance()
 
-            # Build custom loop normals directly in loop order
+            # Build custom loop normals directly in loop order in world space
             custom_normals = []
             for loop in tgt_loops:
                 v_idx = loop.vertex_index
                 v_co = tgt_verts[v_idx].co
-                _, src_idx, _ = kd.find(v_co)
+                world_tgt_co = tgt_mat @ v_co if tgt_mat is not None else v_co
+                _, src_idx, _ = kd.find(world_tgt_co)
                 src_norm = src_verts[src_idx].normal
                 custom_normals.append(src_norm)
 
@@ -166,3 +171,8 @@ class NormalManager:
         except Exception as exc:
             logger.error("KDTree normal fallback failed: %s", exc)
             return False
+
+    @classmethod
+    def transfer_boundary_loop_normals_kdtree(cls, chunk_obj: Any, source_obj: Any) -> bool:
+        """Transfers custom normals to chunk mesh by world-space KDTree sampling from source."""
+        return cls._kdtree_normal_transfer_fallback(chunk_obj, source_obj)

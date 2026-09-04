@@ -170,6 +170,10 @@ class OMNIMESH_OT_batch_process(Operator):
 def register_batch_ops() -> None:
     if not bpy:
         return
+    try:
+        bpy.utils.unregister_class(OMNIMESH_OT_batch_process)
+    except Exception as exc:
+        logger.debug("Safe unregister skipped OMNIMESH_OT_batch_process: %s", exc)
     bpy.utils.register_class(OMNIMESH_OT_batch_process)
 
 
