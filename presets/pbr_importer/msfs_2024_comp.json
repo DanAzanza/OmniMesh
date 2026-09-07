@@ -1,0 +1,108 @@
+{
+  "name": "MSFS 2024 (glTF COMP)",
+  "version": 2,
+  "description": "Microsoft Flight Simulator 2024 / glTF COMP (ALBEDO, COMP [R: AO, G: Roughness, B: Metallic], NORM OpenGL)",
+  "target_engine": "MSFS_2024",
+  "strategy": "CONVERT_PNG",
+  "bit_depth": 8,
+  "naming_pattern": "{material}{suffix}",
+  "maps": [
+    {
+      "id": "albedo",
+      "name": "Albedo",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_ALBEDO",
+      "suffixes": [
+        "_ALBEDO",
+        "_albedo",
+        "_BaseColor",
+        "_Col",
+        "_Diffuse"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        },
+        "a": {
+          "target": "Alpha",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "comp",
+      "name": "Composite (AO Rough Metal)",
+      "priority": 50,
+      "export": true,
+      "export_suffix": "_COMP",
+      "suffixes": [
+        "_COMP",
+        "_comp",
+        "_ORM"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        },
+        "g": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        },
+        "b": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "norm",
+      "name": "Normal (OpenGL)",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_NORM",
+      "suffixes": [
+        "_NORM",
+        "_norm",
+        "_Normal_GL",
+        "_Normal"
+      ],
+      "color_space": "Non-Color",
+      "normal_format": "OPENGL",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "emissive",
+      "name": "Emissive",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_EMISSIVE",
+      "suffixes": [
+        "_EMISSIVE",
+        "_emissive",
+        "_Emission",
+        "_E"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ],
+  "schema_type": "omnimesh_pbr_import"
+}

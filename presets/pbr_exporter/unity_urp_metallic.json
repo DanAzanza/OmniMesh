@@ -1,0 +1,94 @@
+{
+  "schema_type": "omnimesh_pbr_export",
+  "name": "Unity URP (Metallic Standard)",
+  "version": 2,
+  "description": "Universal Render Pipeline split PBR channels with smoothness alpha",
+  "target_engine": "UNITY_6",
+  "strategy": "CONVERT_PNG",
+  "bit_depth": 8,
+  "naming_pattern": "{material}{suffix}",
+  "maps": [
+    {
+      "id": "base_color",
+      "name": "Base Color",
+      "export_suffix": "_BaseColor",
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        },
+        "a": {
+          "target": "Alpha",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "metallic_smoothness",
+      "name": "Metallic (Smoothness in Alpha)",
+      "export_suffix": "_Metallic",
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        },
+        "g": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        },
+        "b": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        },
+        "a": {
+          "target": "Roughness",
+          "invert": true,
+          "default": 0.5
+        }
+      }
+    },
+    {
+      "id": "normal",
+      "name": "Normal Map (OpenGL)",
+      "export_suffix": "_Normal",
+      "color_space": "Non-Color",
+      "normal_format": "OPENGL",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "occlusion",
+      "name": "Ambient Occlusion",
+      "export_suffix": "_AO",
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        }
+      }
+    },
+    {
+      "id": "emissive",
+      "name": "Emissive",
+      "export_suffix": "_Emissive",
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ]
+}

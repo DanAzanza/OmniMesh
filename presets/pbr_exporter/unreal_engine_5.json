@@ -1,0 +1,76 @@
+{
+  "schema_type": "omnimesh_pbr_export",
+  "name": "Unreal Engine 5 (Packed ORM)",
+  "version": 2,
+  "description": "Standard UE5 packed export (BaseColor sRGB, ORM Non-Color, Normal DirectX)",
+  "target_engine": "UE5",
+  "strategy": "CONVERT_PNG",
+  "bit_depth": 8,
+  "naming_pattern": "{material}{suffix}",
+  "maps": [
+    {
+      "id": "base_color",
+      "name": "Base Color",
+      "export_suffix": "_BaseColor",
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        },
+        "a": {
+          "target": "Alpha",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "orm",
+      "name": "Occlusion Roughness Metallic",
+      "export_suffix": "_ORM",
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        },
+        "g": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        },
+        "b": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "normal",
+      "name": "Normal Map (DirectX)",
+      "export_suffix": "_Normal_DirectX",
+      "color_space": "Non-Color",
+      "normal_format": "DIRECTX",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "emissive",
+      "name": "Emissive",
+      "export_suffix": "_Emissive",
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ]
+}

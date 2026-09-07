@@ -51,7 +51,12 @@ try:
     from ui.pbr_ops import (
         PBR_OPERATOR_CLASSES,
         LOD_OT_auto_match_pbr_folder,
+        LOD_OT_delete_export_preset,
+        LOD_OT_duplicate_export_preset,
         LOD_OT_import_pbr_set,
+        LOD_OT_reload_pbr_presets,
+        LOD_OT_reset_pbr_preset,
+        LOD_OT_save_export_preset,
     )
     from ui.simulator_ops import LOD_OT_toggle_simulator
     from ui.split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
@@ -93,7 +98,12 @@ except (ImportError, ValueError):
     from .pbr_ops import (
         PBR_OPERATOR_CLASSES,
         LOD_OT_auto_match_pbr_folder,
+        LOD_OT_delete_export_preset,
+        LOD_OT_duplicate_export_preset,
         LOD_OT_import_pbr_set,
+        LOD_OT_reload_pbr_presets,
+        LOD_OT_reset_pbr_preset,
+        LOD_OT_save_export_preset,
     )
     from .simulator_ops import LOD_OT_toggle_simulator
     from .split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
@@ -152,6 +162,11 @@ __all__ = [
     "LOD_OT_apply_transforms",
     "LOD_OT_import_pbr_set",
     "LOD_OT_auto_match_pbr_folder",
+    "LOD_OT_reload_pbr_presets",
+    "LOD_OT_reset_pbr_preset",
+    "LOD_OT_duplicate_export_preset",
+    "LOD_OT_save_export_preset",
+    "LOD_OT_delete_export_preset",
     "LOD_OT_sync_selection_settings",
     "LOD_OT_select_master_asset",
     "LOD_OT_spatial_chunk_and_generate",

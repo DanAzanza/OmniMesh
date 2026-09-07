@@ -1,10 +1,10 @@
 """
 OmniMesh Modular Panel Architecture for Blender 4.2+ and 5.2 LTS.
-Structured into sequential workflow panels:
+Structured into four streamlined sequential workflow panels with gear-icon popovers:
 1. Import (PBR Texture Set Importer & Auto-Matcher)
-2. Fix LOD0 (Sanitize, Preflight, Mesh Topology, Material Cleanup)
-3. LODs (Configure, Generate, Simulate, Split Preview & Isolate)
-4. Engine Export (Multi-Engine Package Export, PBR Textures, Live Bridge & Batch Ingestion)
+2. Modify (Base Mesh Preflight, Sanitization, Modifiers, and Material Cleanup)
+3. LODs (Tier Configuration, UIList, Decimation, Isolate, Simulator & Preview)
+4. Engine Export (Multi-Engine Package Export, Live Bridge & Batch Ingestion)
 """
 
 from __future__ import annotations
@@ -22,13 +22,25 @@ except ImportError:
     Panel = object
 
 try:
-    from .operators import get_associated_armature, get_selected_mesh_objects
+    from ..core.pbr_presets import (
+        DEFAULT_PRESET_ID,
+        PBRExportPresetManager,
+        PBRImportPresetManager,
+    )
+    from .operators import get_selected_mesh_objects
+    from .popovers import POPOVER_CLASSES
 except (ImportError, ValueError):
-    from ui.operators import get_associated_armature, get_selected_mesh_objects
+    from core.pbr_presets import (
+        DEFAULT_PRESET_ID,
+        PBRExportPresetManager,
+        PBRImportPresetManager,
+    )
+    from ui.operators import get_selected_mesh_objects
+    from ui.popovers import POPOVER_CLASSES
 
 
 # =========================================================================
-# PANEL 1: IMPORT (PBR Texture Set Importer & Folder Auto-Matcher)
+# PANEL 1: IMPORT
 # =========================================================================
 
 
@@ -50,28 +62,42 @@ class OMNIMESH_PT_import(Panel):
 
         box_pbr = layout.box()
         box_pbr.label(text="PBR Texture Set Importer", icon="IMAGE_DATA")
-        row_pbr = box_pbr.row(align=True)
-        row_pbr.scale_y = 1.25
-        row_pbr.operator("lod_tool.import_pbr_set", text="Import PBR Texture Set", icon="FILE_IMAGE")
-        row_pbr.operator("lod_tool.auto_match_pbr_folder", text="Auto-Match Folder", icon="FILE_FOLDER")
+
+        # Row 1: [ Preset Dropdown ▾ ] [ 📋 Copy ] [ ❌ Delete ] [ ⚙️ Gear ]
+        raw_preset = getattr(props, "pbr_import_preset", "")
+        preset_id = str(raw_preset).strip() or DEFAULT_PRESET_ID
+        is_builtin = PBRImportPresetManager.is_builtin(preset_id)
+
+        row_preset = box_pbr.row(align=True)
+        row_preset.prop(props, "pbr_import_preset", text="Preset")
+        op_dup_imp = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
+        op_dup_imp.preset_type = "IMPORT"
+
+        sub_del = row_preset.row(align=True)
+        sub_del.enabled = not is_builtin
+        sub_del.operator("lod_tool.delete_import_preset", text="", icon="X")
+        row_preset.popover(panel="OMNIMESH_PT_popover_import_preset", icon="PREFERENCES", text="")
+
+        # Row 2: [ Import ] [ Path Field ][ 📁 ]
+        row2 = box_pbr.row(align=True)
+        row2.scale_y = 1.15
+        row2.operator("lod_tool.import_pbr_set", text="Import", icon="IMPORT")
+        row2.prop(props, "pbr_import_directory", text="")
 
         if props.last_pbr_import_summary:
             box_pbr.label(text=props.last_pbr_import_summary, icon="CHECKMARK")
 
-        box_pbr.prop(props, "pbr_import_ao_mode", text="AO Routing")
-        box_pbr.prop(props, "pbr_import_preserve_existing", text="Preserve Other Nodes")
-
 
 # =========================================================================
-# PANEL 2: FIX LOD0 (Sanitization, Preflight & Materials)
+# PANEL 2: MODIFY (Base Prep, Health, Sanitization & Materials)
 # =========================================================================
 
 
-class OMNIMESH_PT_fix_lod0(Panel):
-    """Panel 2: Base Mesh Preflight Inspection, Sanitization, and Material Cleanup."""
+class OMNIMESH_PT_modify(Panel):
+    """Panel 2: Base Mesh Preflight Inspection, Sanitization, Modifiers, and Material Cleanup."""
 
-    bl_label = "2. Fix LOD0"
-    bl_idname = "OMNIMESH_PT_fix_lod0"
+    bl_label = "2. Modify"
+    bl_idname = "OMNIMESH_PT_modify"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
@@ -90,11 +116,11 @@ class OMNIMESH_PT_fix_lod0(Panel):
             box.label(text="Select an active mesh object to inspect.")
             return
 
-        # 1. Preflight Health Card
+        # 1. Compact Preflight Health Card
         box_pre = layout.box()
-        row = box_pre.row(align=True)
-        row.label(text="LOD0 Health Check", icon="MESH_DATA")
-        row.operator("lod_tool.inspect_lod0", text="Run Preflight", icon="VIEWZOOM")
+        row_pre = box_pre.row(align=True)
+        row_pre.label(text="LOD0 Health Check", icon="MESH_DATA")
+        row_pre.operator("lod_tool.inspect_lod0", text="Run Preflight", icon="VIEWZOOM")
 
         if props.preflight_inspected:
             col_stat = box_pre.column(align=True)
@@ -103,88 +129,41 @@ class OMNIMESH_PT_fix_lod0(Panel):
             else:
                 col_stat.label(text=props.preflight_summary_text, icon="ERROR")
 
-            # Metrics Breakdown
-            row_badges = box_pre.row(align=True)
+            # Compact Metrics Breakdown
+            row_b = box_pre.row(align=True)
             scale_icon = "CHECKMARK" if not props.preflight_unapplied_scale else "CANCEL"
-            row_badges.label(text="Scale: 1.0", icon=scale_icon)
+            row_b.label(text="Scale: 1.0", icon=scale_icon)
             loose_icon = "CHECKMARK" if props.preflight_loose_verts == 0 else "CANCEL"
-            row_badges.label(text=f"Loose: {props.preflight_loose_verts}", icon=loose_icon)
-
-            row_badges2 = box_pre.row(align=True)
+            row_b.label(text=f"Loose: {props.preflight_loose_verts}", icon=loose_icon)
             deg_icon = "CHECKMARK" if props.preflight_degenerate_tris == 0 else "CANCEL"
-            row_badges2.label(text=f"Degenerates: {props.preflight_degenerate_tris}", icon=deg_icon)
+            row_b.label(text=f"Deg: {props.preflight_degenerate_tris}", icon=deg_icon)
             mat_icon = "CHECKMARK" if props.preflight_missing_materials == 0 else "CANCEL"
-            row_badges2.label(text=f"Missing Mat: {props.preflight_missing_materials}", icon=mat_icon)
+            row_b.label(text=f"Mat: {props.preflight_missing_materials}", icon=mat_icon)
 
-        # Primary Sanitization Action
-        col_act = layout.column(align=True)
-        col_act.scale_y = 1.3
-        col_act.operator("lod_tool.clean_and_repair_mesh", text="Clean & Repair Mesh", icon="BRUSH_DATA")
+        # 2. Action Row 1: Mesh Sanitization + Gear Popover
+        row_san = layout.row(align=True)
+        row_san.scale_y = 1.3
+        row_san.operator("lod_tool.clean_and_repair_mesh", text="🧹 Sanitize Base Mesh", icon="BRUSH_DATA")
+        row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
 
-        # Transform Normalization Action
-        col_trans = layout.column(align=True)
-        col_trans.scale_y = 1.15
-        col_trans.operator("lod_tool.apply_transforms", text="Apply Scale & Rotation", icon="OBJECT_ORIGIN")
-        col_trans.operator("lod_tool.apply_all_modifiers", text="Apply All Modifiers", icon="MODIFIER")
-
-        # 2. Mesh Topology & Geometry Options
-        box_mesh_opt = layout.box()
-        box_mesh_opt.label(text="Mesh Topology & Cleanup Options", icon="PREFERENCES")
-        box_mesh_opt.prop(props, "cleanup_apply_modifiers", text="Apply Modifiers (Bake Viewport)")
-        if getattr(props, "cleanup_apply_modifiers", False):
-            box_mesh_opt.prop(props, "cleanup_sync_viewport_settings", text="Sync Viewport to Render Settings")
-        box_mesh_opt.prop(props, "cleanup_enable_split_non_manifold", text="Repair Non-Manifold & Bowties")
-        box_mesh_opt.prop(props, "cleanup_normal_policy", text="Normals")
-
-        row_w = box_mesh_opt.row(align=True)
-        row_w.prop(props, "cleanup_enable_weld", text="Merge Close")
-        if props.cleanup_enable_weld:
-            row_w.prop(props, "cleanup_weld_distance", text="Dist")
-
-        row_h = box_mesh_opt.row(align=True)
-        row_h.prop(props, "cleanup_enable_fill_holes", text="Fill Holes")
-        if props.cleanup_enable_fill_holes:
-            row_h.prop(props, "cleanup_hole_max_edges", text="Max Edges")
-
-        box_mesh_opt.prop(props, "cleanup_enable_triangulate_ngons", text="Triangulate N-Gons")
-
-        # 3. Material Cleanup & Slot Consolidation Suite
-        box_mat = layout.box()
-        box_mat.label(text="Material Cleanup & Consolidation", icon="MATERIAL")
-        row_mat = box_mat.row(align=True)
+        # 3. Action Row 2: Material Cleanup + Gear Popover
+        row_mat = layout.row(align=True)
         row_mat.scale_y = 1.25
-        row_mat.operator(
-            "lod_tool.clean_and_repair_materials", text="Clean & Consolidate Materials", icon="MATERIAL_DATA"
-        )
+        row_mat.operator("lod_tool.clean_and_repair_materials", text="🎨 Clean Materials", icon="MATERIAL_DATA")
+        row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
 
         if props.last_material_cleanup_summary:
-            box_mat.label(text=props.last_material_cleanup_summary, icon="CHECKMARK")
-
-        # Safe Material Toggles
-        box_mat_safe = box_mat.box()
-        box_mat_safe.label(text="Safe Operations (Default ON)", icon="CHECKMARK")
-        box_mat_safe.prop(props, "mat_cleanup_purge_unused_slots")
-        box_mat_safe.prop(props, "mat_cleanup_deduplicate_slots")
-        box_mat_safe.prop(props, "mat_cleanup_merge_duplicate_datablocks")
-        box_mat_safe.prop(props, "mat_cleanup_remove_orphan_nodes")
-
-        # Critical Material Toggles
-        box_mat_crit = box_mat.box()
-        box_mat_crit.label(text="Critical Operations (Opt-In)", icon="ERROR")
-        box_mat_crit.prop(props, "mat_cleanup_enable_micro_consolidation")
-        if props.mat_cleanup_enable_micro_consolidation:
-            box_mat_crit.prop(props, "mat_cleanup_micro_area_pct", text="Threshold %")
-        box_mat_crit.prop(props, "mat_cleanup_repair_missing_textures")
-        box_mat_crit.prop(props, "mat_cleanup_purge_orphans_blendfile")
+            box_stat = layout.box()
+            box_stat.label(text=props.last_material_cleanup_summary, icon="CHECKMARK")
 
 
 # =========================================================================
-# PANEL 3: LODs (Configuration, QEM Decimation, Viewport Tools & Inspection)
+# PANEL 3: LODs (Configuration, QEM Decimation, Viewport Tools & Simulator)
 # =========================================================================
 
 
 class OMNIMESH_PT_lods(Panel):
-    """Panel 3: LOD Generation Pipeline, UIList Table, and Viewport Isolation."""
+    """Panel 3: LOD Generation Pipeline, UIList Table, Viewport Isolation, and Simulator."""
 
     bl_label = "3. LODs"
     bl_idname = "OMNIMESH_PT_lods"
@@ -211,45 +190,38 @@ class OMNIMESH_PT_lods(Panel):
                     icon="INFO",
                 )
 
-        # 1. Preset & Target Setup
-        box = layout.box()
-        box.label(text="Target Engine & Asset Role", icon="SCENE_DATA")
-        box.prop(props, "target_engine", text="")
-        box.prop(props, "asset_category", text="")
-        box.prop(props, "export_base_name", text="Asset Name")
+        # 1. Preset & Configuration Row + Gear Popover
+        box_cfg = layout.box()
+        row_cfg_head = box_cfg.row(align=True)
+        target_item = props.bl_rna.properties["target_engine"].enum_items.get(props.target_engine)
+        target_label = target_item.name if target_item else str(props.target_engine)
+        row_cfg_head.label(text=f"Target: {target_label.split(' (')[0]} | {props.asset_category}", icon="SCENE_DATA")
 
-        # 2. Quality & Tolerances
-        box_q = layout.box()
-        box_q.label(text="Quality & Screen Error", icon="RESTRICT_VIEW_OFF")
-        box_q.prop(props, "tau_sse", slider=True, text="Visual Stability (SSE)")
-        box_q.prop(props, "cull_screen_size_pct", slider=True, text="Cull Screen Size (%)")
-        if props.target_engine != "MSFS_2024":
-            box_q.prop(props, "num_lods", text="LOD Tier Count")
-
-        # Step 1 CTA: Auto-Configure
-        col_cta = layout.column(align=True)
-        col_cta.scale_y = 1.3
-        col_cta.operator("lod_tool.analyze_and_configure", text="1. Auto-Configure Tiers", icon="VIEWZOOM")
+        row_cfg = box_cfg.row(align=True)
+        row_cfg.scale_y = 1.25
+        row_cfg.operator("lod_tool.analyze_and_configure", text="1. Auto-Configure Tiers", icon="VIEWZOOM")
+        row_cfg.popover(panel="OMNIMESH_PT_popover_configure", icon="PREFERENCES", text="")
 
         if props.lods:
             # UIList Table
             box_list = layout.box()
             box_list.template_list(
-                "LOD_UL_tier_list", "", props, "lods", props, "active_lod_index", rows=len(props.lods)
+                "LOD_UL_tier_list", "", props, "lods", props, "active_lod_index", rows=min(6, len(props.lods))
             )
 
             # Selected Tier Detail
             active_idx = max(0, min(props.active_lod_index, len(props.lods) - 1))
             active_tier = props.lods[active_idx]
             box_detail = layout.box()
-            row = box_detail.row(align=True)
-            row.label(text=f"{active_tier.name} Switch: {active_tier.distance_m:.1f}m", icon="CON_DISTLIMIT")
-            row.label(text=f"Slots: {active_tier.mat_slots_count}", icon="MATERIAL")
+            row_det = box_detail.row(align=True)
+            row_det.label(text=f"{active_tier.name} Switch: {active_tier.distance_m:.1f}m", icon="CON_DISTLIMIT")
+            row_det.label(text=f"Slots: {active_tier.mat_slots_count}", icon="MATERIAL")
 
-            # Step 2 Primary Action CTA
-            col_gen = layout.column(align=True)
-            col_gen.scale_y = 1.35
-            col_gen.operator("lod_tool.generate_all", text="2. Generate All LODs", icon="GEOMETRY_NODES")
+            # 2. Primary Action CTA: Generate All LODs + Gear Popover
+            row_gen = layout.row(align=True)
+            row_gen.scale_y = 1.35
+            row_gen.operator("lod_tool.generate_all", text="2. Generate All LODs", icon="GEOMETRY_NODES")
+            row_gen.popover(panel="OMNIMESH_PT_popover_generate", icon="PREFERENCES", text="")
 
             # Post-Generation Summary Banner
             if props.last_generated_tier_count > 0 and props.last_generated_base_tris > 0:
@@ -276,6 +248,7 @@ class OMNIMESH_PT_inspection_sub(Panel):
     bl_parent_id = "OMNIMESH_PT_lods"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
+    bl_category = "OmniMesh"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 0
 
@@ -318,46 +291,6 @@ class OMNIMESH_PT_inspection_sub(Panel):
         box_hud.prop(props, "show_viewport_hud", text="Show Viewport HUD Overlay", icon="WINDOW")
 
 
-class OMNIMESH_PT_optimization_sub(Panel):
-    """Subpanel 3.2: Hierarchy Draw-Call Merging, Rigging Kinematics & PBR Texture Baking."""
-
-    bl_label = "Advanced Optimization & Rigging"
-    bl_idname = "OMNIMESH_PT_optimization_sub"
-    bl_parent_id = "OMNIMESH_PT_lods"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 1
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = context.scene.lod_tool
-        mesh_objs = get_selected_mesh_objects(context)
-        armature_obj = get_associated_armature(mesh_objs)
-
-        # Hierarchy & Draw-Call Optimization
-        box_h = layout.box()
-        box_h.label(text="Draw-Call Merging", icon="OUTLINER_OB_GROUP_INSTANCE")
-        box_h.prop(props, "hierarchy_mode", text="")
-        if props.hierarchy_mode == "MERGE_AT_TIER":
-            box_h.prop(props, "merge_start_tier")
-        box_h.prop(props, "preserve_slot_indexing")
-
-        # Rigging & Skeletal Kinematics
-        box_r = layout.box()
-        box_r.label(text="Rigging & Skeletal Kinematics", icon="ARMATURE_DATA")
-        has_skinning = bool(armature_obj or any(len(obj.vertex_groups) > 0 for obj in mesh_objs))
-        if not has_skinning:
-            box_r.label(text="No Armature or Deform Groups Detected", icon="INFO")
-        col_rig = box_r.column()
-        col_rig.active = has_skinning
-        col_rig.prop(props, "max_bone_influences")
-        col_rig.prop(props, "enable_bone_pruning")
-        col_rig.prop(props, "purge_shape_keys")
-
-
 # =========================================================================
 # PANEL 4: ENGINE EXPORT (Multi-Engine Package, Textures, Bridge & Batch)
 # =========================================================================
@@ -382,141 +315,91 @@ class OMNIMESH_PT_export(Panel):
         # Single Asset Package Export
         box_exp = layout.box()
         box_exp.label(text="Package Export", icon="EXPORT")
-        box_exp.prop(props, "export_directory", text="Output Dir")
-        col_exp = box_exp.column(align=True)
-        col_exp.scale_y = 1.25
-        col_exp.operator("lod_tool.export_engine_package", text="Export Engine Package", icon="PACKAGE")
 
-        # PBR Texture Channel Packing & Animation
-        box_tex = layout.box()
-        box_tex.label(text="PBR Textures & Rig Animations", icon="NODE_MATERIAL")
-        box_tex.prop(props, "export_packed_textures")
-        if props.export_packed_textures:
-            box_tex.prop(props, "texture_max_resolution")
-            box_tex.operator("lod_tool.pack_pbr_textures", icon="IMAGE_DATA")
-        box_tex.prop(props, "bake_animations")
-        if props.bake_animations:
-            box_tex.operator("lod_tool.bake_rig_animation", icon="ACTION")
+        # Row 1: [ Preset Dropdown ▾ ] [ 📋 Copy ] [ ❌ Delete ] [ ⚙️ Gear ]
+        raw_exp = str(getattr(props, "pbr_export_preset", "")).strip() or str(getattr(props, "pbr_preset", "")).strip()
+        export_preset_id = raw_exp or DEFAULT_PRESET_ID
+        is_builtin_exp = PBRExportPresetManager.is_builtin(export_preset_id)
 
-        # Live Engine Bridge
-        box_br = layout.box()
-        box_br.label(text="⚡ Live Engine Bridge", icon="LINKED")
-        box_br.prop(props, "engine_project_path", text="Project Path")
-        box_br.prop(props, "enable_live_sync", text="Auto-Sync on Export")
+        row_preset = box_exp.row(align=True)
+        row_preset.prop(props, "pbr_export_preset", text="Preset")
+        op_dup_exp = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
+        op_dup_exp.preset_type = "EXPORT"
 
-        # Display cached status string (zero blocking I/O)
-        box_br.label(
-            text=props.bridge_status_text,
-            icon="RADIOBUT_ON"
-            if "Connected" in props.bridge_status_text or "Ready" in props.bridge_status_text
-            else "RADIOBUT_OFF",
-        )
+        sub_del_exp = row_preset.row(align=True)
+        sub_del_exp.enabled = not is_builtin_exp
+        sub_del_exp.operator("lod_tool.delete_export_preset", text="", icon="X")
+        row_preset.popover(panel="OMNIMESH_PT_popover_export_preset", icon="PREFERENCES", text="")
 
-        row = box_br.row(align=True)
-        row.scale_y = 1.2
-        row.operator("lod_tool.sync_live_bridge", text="Sync to Engine", icon="FILE_REFRESH")
+        # Row 2: Batch Mode Toggle (Checkbox)
+        row_batch = box_exp.row(align=True)
+        row_batch.prop(props, "batch_mode", text="Batch Export (.blend files)")
 
+        if getattr(props, "batch_mode", False):
+            # Source Folder Field
+            row_src = box_exp.row(align=True)
+            row_src.prop(props, "batch_source_directory", text="Source")
 
-class OMNIMESH_PT_batch_sub(Panel):
-    """Subpanel 4.1: Batch Asset Library Ingestion."""
+            # Batch Export Action + Destination Path
+            row_act = box_exp.row(align=True)
+            row_act.scale_y = 1.15
+            if getattr(props, "is_batch_running", False):
+                row_act.operator("lod_tool.batch_cancel", text="Cancel Batch", icon="CANCEL")
+            else:
+                row_act.operator("lod_tool.batch_process", text="Batch Export", icon="PACKAGE")
+            row_act.prop(props, "export_directory", text="")
 
-    bl_label = "Batch Library Ingestion"
-    bl_idname = "OMNIMESH_PT_batch_sub"
-    bl_parent_id = "OMNIMESH_PT_export"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 0
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = context.scene.lod_tool
-
-        box = layout.box()
-        box.label(text="Batch Library Ingest", icon="FILE_FOLDER")
-        box.prop(props, "batch_source_directory", text="Source Folder")
-        box.prop(props, "batch_export_directory", text="Output Folder")
-        box.prop(props, "batch_recursive_scan", text="Recursive Scan")
-
-        row = box.row(align=True)
-        row.scale_y = 1.2
-        if props.is_batch_running:
-            row.label(text=props.batch_status_text, icon="TIME")
+            if getattr(props, "is_batch_running", False):
+                box_status = box_exp.box()
+                box_status.label(text=props.batch_status_text, icon="TIME")
         else:
-            row.operator("lod_tool.batch_process", text="Batch Process Library", icon="AUTO")
-            box.label(text=props.batch_status_text)
+            # Single Asset Export Action + Destination Path
+            row2_exp = box_exp.row(align=True)
+            row2_exp.scale_y = 1.15
+            row2_exp.operator("lod_tool.export_engine_package", text="Export", icon="PACKAGE")
+            row2_exp.prop(props, "export_directory", text="")
 
-
-class OMNIMESH_PT_chunking_sub(Panel):
-    """Subpanel 3.3: Spatial Partitioning (Tiling), Seam Protection & HLOD Merging."""
-
-    bl_label = "Spatial Chunking & HLOD (Large Assets)"
-    bl_idname = "OMNIMESH_PT_chunking_sub"
-    bl_parent_id = "OMNIMESH_PT_lods"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_options = {"DEFAULT_CLOSED"}
-    bl_order = 2
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = context.scene.lod_tool
-
-        box_pre = layout.box()
-        box_pre.label(text="Raw Scan Surface Cleanup", icon="MOD_REMESH")
-        box_pre.prop(props, "scan_remesh_voxel_size", text="Voxel Size")
-        row_remesh = box_pre.row(align=True)
-        row_remesh.operator("lod_tool.voxel_scan_cleanup", text="Pre-Process: Voxel Remesh", icon="SHADING_WIRE")
-
-        box_chunk = layout.box()
-        box_chunk.label(text="Spatial Chunking & Tiling", icon="GRID")
-        box_chunk.prop(props, "chunk_partitioning_mode", text="Mode")
-        if props.chunk_partitioning_mode == "ADAPTIVE_CLUSTERING":
-            box_chunk.prop(props, "adaptive_cluster_target_polys", text="Target Poly Limit")
-        box_chunk.prop(props, "chunk_cell_size", text="Cell Size (m)")
-        box_chunk.prop(props, "chunk_split_z", text="Split Z-Axis (Height)")
-        if props.chunk_split_z:
-            box_chunk.prop(props, "chunk_cell_size_z", text="Z Cell Size (m)")
-
-        box_hlod = layout.box()
-        box_hlod.label(text="Hierarchical LOD (HLOD)", icon="STICKY_UVS_DISABLE")
-        box_hlod.prop(props, "enable_hlod", text="Enable HLOD Merging")
-        if props.enable_hlod:
-            box_hlod.prop(props, "hlod_start_tier", text="Merge From Tier")
-
-        col_chunk = layout.column(align=True)
-        col_chunk.scale_y = 1.3
-        col_chunk.operator(
-            "lod_tool.spatial_chunk_and_generate", text="Partition & Generate Chunked LODs", icon="MOD_BUILD"
-        )
+        # Row 3: Live Link Status / Toggle (Positioned under Export)
+        row3_link = box_exp.row(align=True)
+        row3_link.scale_y = 1.1
+        if not props.enable_live_sync:
+            row3_link.alert = False
+            row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Off", icon="RADIOBUT_OFF")
+        elif props.bridge_connected:
+            row3_link.alert = False
+            row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Active", icon="COLOR_GREEN")
+        else:
+            row3_link.alert = True
+            row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Offline", icon="COLOR_RED")
 
 
 # Strict Parent-First Topological Registration Order
-PANEL_CLASSES = (
+PRIMARY_PANELS = (
     OMNIMESH_PT_import,
-    OMNIMESH_PT_fix_lod0,
+    OMNIMESH_PT_modify,
     OMNIMESH_PT_lods,
-    OMNIMESH_PT_inspection_sub,
-    OMNIMESH_PT_optimization_sub,
-    OMNIMESH_PT_chunking_sub,
     OMNIMESH_PT_export,
-    OMNIMESH_PT_batch_sub,
 )
+
+SUBPANEL_CLASSES = (OMNIMESH_PT_inspection_sub,)
+
+PANEL_CLASSES = PRIMARY_PANELS + SUBPANEL_CLASSES + POPOVER_CLASSES
 
 
 def register_panel() -> None:
     if not bpy:
         return
     for cls in PANEL_CLASSES:
+        existing = getattr(bpy.types, cls.__name__, None)
+        if existing is not None:
+            try:
+                bpy.utils.unregister_class(existing)
+            except Exception as exc:
+                logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
         try:
-            bpy.utils.unregister_class(cls)
+            bpy.utils.register_class(cls)
         except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        bpy.utils.register_class(cls)
+            logger.warning("Could not register %s: %s", cls.__name__, exc)
 
 
 def unregister_panel() -> None:

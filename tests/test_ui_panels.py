@@ -22,31 +22,30 @@ from ui.operators import (
 )
 from ui.panel import (
     PANEL_CLASSES,
-    OMNIMESH_PT_batch_sub,
-    OMNIMESH_PT_chunking_sub,
+    PRIMARY_PANELS,
+    SUBPANEL_CLASSES,
     OMNIMESH_PT_export,
-    OMNIMESH_PT_fix_lod0,
     OMNIMESH_PT_import,
     OMNIMESH_PT_inspection_sub,
     OMNIMESH_PT_lods,
-    OMNIMESH_PT_optimization_sub,
+    OMNIMESH_PT_modify,
     register_panel,
     unregister_panel,
 )
-
+from ui.popovers import POPOVER_CLASSES
 from ui.properties import register_properties, unregister_properties
 
 
 def test_panel_class_hierarchy_and_order():
-    """Verify panel architecture has correct root panels, subpanels, bl_order, and registration order."""
+    """Verify panel architecture has correct root panels, subpanels, popovers, bl_order, and registration order."""
     # Root Panels
     assert OMNIMESH_PT_import.bl_idname == "OMNIMESH_PT_import"
     assert OMNIMESH_PT_import.bl_category == "OmniMesh"
     assert OMNIMESH_PT_import.bl_order == 0
 
-    assert OMNIMESH_PT_fix_lod0.bl_idname == "OMNIMESH_PT_fix_lod0"
-    assert OMNIMESH_PT_fix_lod0.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_fix_lod0.bl_order == 1
+    assert OMNIMESH_PT_modify.bl_idname == "OMNIMESH_PT_modify"
+    assert OMNIMESH_PT_modify.bl_category == "OmniMesh"
+    assert OMNIMESH_PT_modify.bl_order == 1
 
     assert OMNIMESH_PT_lods.bl_idname == "OMNIMESH_PT_lods"
     assert OMNIMESH_PT_lods.bl_category == "OmniMesh"
@@ -58,22 +57,30 @@ def test_panel_class_hierarchy_and_order():
 
     # Subpanels
     assert OMNIMESH_PT_inspection_sub.bl_parent_id == "OMNIMESH_PT_lods"
+    assert OMNIMESH_PT_inspection_sub.bl_category == "OmniMesh"
     assert OMNIMESH_PT_inspection_sub.bl_order == 0
-    assert OMNIMESH_PT_optimization_sub.bl_parent_id == "OMNIMESH_PT_lods"
-    assert OMNIMESH_PT_optimization_sub.bl_order == 1
-    assert OMNIMESH_PT_chunking_sub.bl_parent_id == "OMNIMESH_PT_lods"
-    assert OMNIMESH_PT_chunking_sub.bl_order == 2
 
-    assert OMNIMESH_PT_batch_sub.bl_parent_id == "OMNIMESH_PT_export"
-    assert OMNIMESH_PT_batch_sub.bl_order == 0
+    # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
+    assert len(POPOVER_CLASSES) == 9
+    for popover_cls in POPOVER_CLASSES:
+        assert getattr(popover_cls, "bl_space_type", None) == "VIEW_3D"
+        assert getattr(popover_cls, "bl_region_type", None) == "HEADER"
+        assert getattr(popover_cls, "bl_ui_units_x", None) in {16, 18, 22}
+        # Popovers must NOT have bl_category or bl_parent_id
+        assert not hasattr(popover_cls, "bl_category")
+        assert not hasattr(popover_cls, "bl_parent_id")
 
     # Registration tuple (parent-first topological order)
+    assert len(PRIMARY_PANELS) == 4
+    assert len(SUBPANEL_CLASSES) == 1
+    assert len(PANEL_CLASSES) == 14
     assert PANEL_CLASSES[0] is OMNIMESH_PT_import
-    assert PANEL_CLASSES[1] is OMNIMESH_PT_fix_lod0
+    assert PANEL_CLASSES[1] is OMNIMESH_PT_modify
     assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
-    assert PANEL_CLASSES[5] is OMNIMESH_PT_chunking_sub
-    assert PANEL_CLASSES[6] is OMNIMESH_PT_export
-    assert len(PANEL_CLASSES) == 8
+    assert PANEL_CLASSES[3] is OMNIMESH_PT_export
+    assert PANEL_CLASSES[4] is OMNIMESH_PT_inspection_sub
+    for idx, pop_cls in enumerate(POPOVER_CLASSES):
+        assert PANEL_CLASSES[5 + idx] is pop_cls
 
 
 def test_operator_helpers_mocked():
@@ -353,3 +360,45 @@ def test_lod_ot_apply_all_modifiers(monkeypatch):
     res = op.execute(mock_context)
     assert res == {"FINISHED"}
     mock_mod_mgr.apply_all_modifiers_in_place.assert_called_once_with(mock_mesh, preserve_armature=True)
+
+
+def test_preset_delete_button_disabled_for_factory_presets():
+    """Verify that delete button is disabled (enabled=False) for factory presets and enabled for custom."""
+    from core.pbr_presets import PBRExportPresetManager, PBRImportPresetManager
+
+    # 1. Built-in factory presets must report is_builtin=True
+    assert PBRImportPresetManager.is_builtin("unreal_engine_5") is True
+    assert PBRImportPresetManager.is_builtin("standard_pbr_split") is True
+    assert PBRExportPresetManager.is_builtin("unreal_engine_5") is True
+    assert PBRExportPresetManager.is_builtin("godot_4_orm") is True
+
+    # 2. Empty or invalid preset ID must safely fall back to is_builtin=True (locked)
+    assert PBRImportPresetManager.is_builtin("") is True
+    assert PBRImportPresetManager.is_builtin("non_existent_preset_xyz") is True
+    assert PBRExportPresetManager.is_builtin("") is True
+    assert PBRExportPresetManager.is_builtin("non_existent_preset_xyz") is True
+
+    # 3. Simulate Panel 1 (Import) draw sub_del.enabled
+    mock_context = MagicMock()
+    mock_props = MagicMock()
+    mock_context.scene.lod_tool = mock_props
+
+    mock_props.pbr_import_preset = "unreal_engine_5"
+    raw_preset = getattr(mock_props, "pbr_import_preset", "")
+    preset_id = str(raw_preset).strip() or "unreal_engine_5"
+    is_builtin = PBRImportPresetManager.is_builtin(preset_id)
+    enabled_for_factory = not is_builtin
+    assert enabled_for_factory is False, "X-Button must be disabled (enabled=False) for factory presets"
+
+    # Custom preset
+    PBRImportPresetManager.load_presets()["my_custom_import"] = {"_is_builtin": False, "name": "My Custom"}
+    is_custom_builtin = PBRImportPresetManager.is_builtin("my_custom_import")
+    assert is_custom_builtin is False
+
+    # 4. Simulate Panel 4 (Export) draw sub_del_exp.enabled
+    mock_props.pbr_export_preset = "unreal_engine_5"
+    raw_exp = str(getattr(mock_props, "pbr_export_preset", "")).strip() or "unreal_engine_5"
+    export_preset_id = raw_exp or "unreal_engine_5"
+    is_builtin_exp = PBRExportPresetManager.is_builtin(export_preset_id)
+    enabled_exp_factory = not is_builtin_exp
+    assert enabled_exp_factory is False, "Export X-Button must be disabled for factory presets"

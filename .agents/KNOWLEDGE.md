@@ -31,11 +31,20 @@
 ### 1.5 Batch Processing, Memory & Threading
 * **Global Undo & Orphan Datablock Purge**: Batch processing multi-asset folders without disabling global undo retains the modifier/import history of every asset in RAM. Operators must wrap execution in `use_global_undo = False` and call `bpy.data.orphans_purge(...)` + `gc.collect()` + OS heap compaction (`ctypes.cdll.msvcrt._heapmin()` on Win32 / `libc.so.6.malloc_trim(0)` on Linux) to prevent multi-gigabyte memory leaks.
 * **Async Texture Worker Safety**: Blender's Python `bpy` C-API is not thread-safe. Worker threads in `ThreadPoolExecutor` must receive pre-quantized `uint8` NumPy arrays / PIL images and file paths only (zero `bpy` calls on workers). Enforce a synchronous join barrier (`wait_all()`) before exporting packages.
+* **Dominant Resolution Packing Rule**: When assembling channel-packed texture maps (e.g. ORM, MaskMap, COMP) from separate source textures with mismatched resolutions (e.g. 4K Roughness and 2K AO), `np.stack` raises `ValueError: all input arrays must have the same shape`. All channels must be resampled to the dominant resolution ($\max(w_i), \max(h_i)$) of the linked input images before stacking.
 * **Modifier Execution under `temp_override`**: In Blender 5.2+, applying modifiers on objects inside collections without `temp_override(active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj])` can fail or cause view layer selection lockups if the object is not active in the current window context.
 
 ### 1.6 UI Drawing & Dynamic Hot-Reloading
 * **Invalid Icon RNA Fatal Draw Abort**: Passing an invalid `icon` string (e.g. `"DIAGNOSTIC"`) to `layout.label()` or `layout.operator()` raises a fatal Python `TypeError` inside Blender's C++ UI draw loop, instantly aborting panel rendering for that frame and leaving the panel header un-expandable or blank without viewport errors. Always verify icon strings against valid Blender RNA enum items.
 * **Dynamic UI Class Unregistration & RNA Registry Ghosting**: When hot-reloading add-on modules during live development or MCP sessions, unregistering classes via module class objects (`bpy.utils.unregister_class(cls)`) fails if old class references were already replaced in `sys.modules`. In Blender's underlying C++/RNA registry, orphaned panel definitions (`OMNIMESH_PT_*`) persist in `bpy.types` and cause registration collisions. Clean unregistration must dynamically inspect `dir(bpy.types)` and unregister matching class identifiers before re-registering.
+
+### 1.7 Operator Property Annotations & Dynamic EnumProperty Invalidation
+* **`from __future__ import annotations` in Operators**: When `from __future__ import annotations` is present, writing `prop: Any = bpy.props.StringProperty(...)` stores the literal string `'Any'` in `__annotations__`. Blender's RNA registration inspects `__annotations__` and expects either a deferred property object or a string starting with `bpy.props.`. Annotations evaluated as `'Any'` cause Blender to silently skip RNA property registration, leading to `TypeError: Converting py args to operator properties:: keyword unrecognized` when invoked with keyword arguments. Use `prop: bpy.props.StringProperty(...) if bpy else ""` directly.
+* **Dynamic `EnumProperty` Item Invalidation on File Deletion**: When deleting a custom item (such as a JSON preset) that is referenced by an active `EnumProperty` with a dynamic callback, Blender evaluates the current value against the newly reduced enum list immediately upon cache reload. If the property still holds the deleted item's ID, Blender logs `bpy.rna WARNING current value matches no enum`. Reassign the property to a guaranteed fallback (e.g. `DEFAULT_PRESET_ID`) *before* removing the file from disk and triggering cache reloads.
+* **Blender RNA Property Naming**: RNA properties defined on `bpy.types.PropertyGroup` MUST NOT start with an underscore (`_`). Defining e.g. `_state_restored: BoolProperty(...)` raises `ValueError/RuntimeError: ... BoolProperty could not register because it starts with an '_'` and silently halts registration of all subsequent properties in the class.
+* **Operator Subclassing / Aliases Invariant**: In Blender RNA, never directly subclass a registered `bpy.types.Operator` class to create an alias operator (e.g. `class OpAlias(OriginalOp):`). Doing so corrupts Blender's C++ RNA class table, causing `bpy.rna | WARNING unable to get Python class for RNA struct ...` and silently breaking execution of the parent operator. Operator aliases must inherit directly from `bpy.types.Operator` and delegate to the primary operator via `bpy.ops` inside `execute()`.
+* **Extension Sibling Relative Imports**: In Blender 4.2+ extensions, top-level imports (e.g. `from ui.properties import ...`) can bind to stale `sys.modules` instances loaded during initial add-on boot. Sibling relative imports (`from .properties import ...`) must always be prioritized to ensure shared module state (like singleton registries and cache dictionaries) remains unified.
+* **Blender C-RNA Dynamic Enum Assignment in Operators**: When an operator dynamically adds an item to a custom enum collection and immediately assigns `props.my_enum = new_id` inside `execute()`, Blender's C-RNA operator transaction validation may reject the assignment with `TypeError: ... enum "<id>" not found in (...)` if the enum items tuple was cached at operator invocation. Wrapping the assignment in a short deferred timer (`bpy.app.timers.register(..., first_interval=0.005)`) allows Blender to refresh its RNA enum cache on the next event tick and safely apply the value.
 
 ---
 
@@ -45,3 +54,30 @@
 * **Python Ternary Tuple Return Precedence**: `return a if cond else b, c` evaluates as `return a if cond else (b, c)`. Parentheses `return (a if cond else b), c` are mandatory to return a tuple in all branches.
 * **Linux `sys.path` Quirk**: Unlike Windows, `pytest` on Ubuntu runners does NOT include the root working directory in `sys.path`. Always configure `pythonpath = .` in `pytest.ini` and declare `PYTHONPATH: .` in GitHub Actions workflows.
 * **Dependency Parity Invariant**: Blender bundles `numpy` and `Pillow` internally, but standalone test suites in clean CI environments require them declared in `pyproject.toml` and installed via `pip install -e .[dev]`.
+
+---
+
+## 3. Autonomous Multi-Engine Export Testing Guide
+
+### 3.1 Headless Data & Pipeline Execution
+* **Unified Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 4 engine export pipelines in one shot.
+* **Godot 4 Headless Import**: Test glTF and GDScript post-imports using `godot --headless --path <project_dir> --editor --quit`. Requires `Godot_*_mono_win64_console.exe` (not the GUI `.exe`, which drops pipe handles).
+* **Unity 6 CLI Execution**: Use `unity run <project_dir> --editor-version <installed_ver> -- -nographics`. Never pass `-quit` or `-batchmode` after `--` (managed natively by Unity CLI; causes fatal argument collision).
+* **Unreal Engine 5 Headless Ingestion**: Run `UnrealEditor-Cmd.exe <Project.uproject> -run=pythonscript -script="<script>.py" -nullrhi -nosound -unattended` for 100% headless asset and collision testing without GUI overhead.
+* **MSFS 2024 Validation**: For Steam installs, `fspackagetool.exe` requires `C:\MSFS 2024 SDK\Tools\bin\fspackagetool_overrideExePath.txt` pointing to `FlightSimulator2024.exe` (`C:\Program Files (x86)\Steam\steamapps\common\MSFS2024\FlightSimulator2024.exe`). Execute package builds with `fspackagetool.exe <Project.xml> -forcesteam -nopause` and `stdin=subprocess.DEVNULL` to prevent interactive console deadlocks. Without live MSFS, validate via XML schema (`ModelInfo.xml` with GUID `{[...]}`, strictly descending `minSize`, ending at `0`) and glTF integrity.
+
+### 3.2 Optical & Visual Review Protocol (`view_file`)
+* **Engine Capture Commands**:
+  * *Blender*: `blender-mcp.get_viewport_screenshot` or `bpy.ops.render.opengl(write_still=True)`.
+  * *Godot 4*: `viewport.get_texture().get_image().save_png("render.png")` in EditorScript/Scene.
+  * *Unity 6*: Offscreen `Camera.Render()` to `RenderTexture` -> `Texture2D.EncodeToPNG()`.
+  * *Unreal 5*: `unreal.AutomationLibrary.take_high_res_screenshot(1920, 1080, "render.png")`.
+  * *MSFS 2024 glTF*: Re-import exported glTF into Blender (`bpy.ops.import_scene.gltf`) or render via `chrome-devtools-mcp` (`<model-viewer>`); in-game live check uses MSFS DevMode `Debug > Model LODs`.
+
+* **Visual Inspection Checklist** (Load rendered `.png` via `view_file`):
+  1. *Silhouette Collapse & Popping*: Compare LOD0 vs. LOD1..k contours; flag missing thin geometry (antennas, railings) or sudden silhouette jumps.
+  2. *Normal Shading Inversion*: Verify lighting on relief/creases (DirectX in UE5 has inverted green channel vs. OpenGL in Godot/Blender; inverted normals appear as inverted cavities/bumps).
+  3. *Impostor Alpha Fringing*: Inspect billboard borders against light/dark backgrounds for dark borders caused by non-dilated alpha cutouts.
+  4. *UV & Texture Stretching*: Check mapped textures (grids/bricks) across decimated regions for skewed UV seams.
+  5. *Collider Snugness*: Overlay wireframe collision hulls (`display_type='WIRE'`) over visual mesh; verify zero geometry clipping or excessive exterior empty volume.
+

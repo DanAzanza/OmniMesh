@@ -1,0 +1,76 @@
+{
+  "schema_type": "omnimesh_pbr_export",
+  "name": "Godot 4 (Standard ORM)",
+  "version": 2,
+  "description": "Godot 4 standard packed ORM texture export",
+  "target_engine": "GODOT_4",
+  "strategy": "PASSTHROUGH",
+  "bit_depth": 8,
+  "naming_pattern": "{material}{suffix}",
+  "maps": [
+    {
+      "id": "albedo",
+      "name": "Albedo",
+      "export_suffix": "_Albedo",
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        },
+        "a": {
+          "target": "Alpha",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "orm",
+      "name": "Occlusion Roughness Metallic",
+      "export_suffix": "_ORM",
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        },
+        "g": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        },
+        "b": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "normal",
+      "name": "Normal Map (OpenGL)",
+      "export_suffix": "_Normal",
+      "color_space": "Non-Color",
+      "normal_format": "OPENGL",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "emission",
+      "name": "Emission",
+      "export_suffix": "_Emission",
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ]
+}

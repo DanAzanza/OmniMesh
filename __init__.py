@@ -37,6 +37,7 @@ if __package__:
         normals,
         occlusion,
         pbr_importer,
+        pbr_presets,
         pivot,
         rigging,
         sanitizer,
@@ -77,6 +78,7 @@ else:
         normals,
         occlusion,
         pbr_importer,
+        pbr_presets,
         pivot,
         rigging,
         sanitizer,
@@ -114,6 +116,7 @@ if "bpy" in locals() and "bpy" in sys.modules:
     importlib.reload(chunking)
     importlib.reload(materials)
     importlib.reload(pbr_importer)
+    importlib.reload(pbr_presets)
     importlib.reload(pivot)
     importlib.reload(slender)
     importlib.reload(normals)

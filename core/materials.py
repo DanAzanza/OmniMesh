@@ -256,32 +256,46 @@ class SemanticTextureAuditor:
             if getattr(node, "type", "") == "TEX_IMAGE":
                 img = getattr(node, "image", None)
                 if not cls.is_image_valid(img):
-                    # Trace downstream connections to inject semantic default
-                    for out_sock in getattr(node, "outputs", []):
-                        for link in list(getattr(out_sock, "links", [])):
-                            target_sock = link.to_socket
-                            target_node = link.to_node
+                    # Trace downstream connections (including through demux/mix/math nodes)
+                    def resolve_downstream_targets(start_node: Any, visited: set[int]) -> list[tuple[Any, Any, Any]]:
+                        resolved = []
+                        for out_s in getattr(start_node, "outputs", []):
+                            for lnk in list(getattr(out_s, "links", [])):
+                                t_node = lnk.to_node
+                                t_sock = lnk.to_socket
+                                n_type = getattr(t_node, "type", "")
+                                if n_type in ("SEPARATE_COLOR", "COMBINE_COLOR", "MIX", "MATH", "NORMAL_MAP"):
+                                    if id(t_node) not in visited:
+                                        visited.add(id(t_node))
+                                        resolved.extend(resolve_downstream_targets(t_node, visited))
+                                resolved.append((lnk, t_sock, t_node))
+                        return resolved
 
-                            # Check target socket semantics
-                            sock_name = str(getattr(target_sock, "name", "")).lower()
-                            node_type = getattr(target_node, "type", "")
+                    downstream = resolve_downstream_targets(node, {id(node)})
+                    for link, target_sock, target_node in downstream:
+                        sock_name = str(getattr(target_sock, "name", "")).lower()
+                        node_type = getattr(target_node, "type", "")
 
-                            if "normal" in sock_name or node_type == "NORMAL_MAP":
-                                # Safely unlink normal map to restore unperturbed surface normal
+                        if "normal" in sock_name or node_type == "NORMAL_MAP":
+                            if link in links:
                                 links.remove(link)
-                            elif "roughness" in sock_name:
-                                if hasattr(target_sock, "default_value"):
-                                    target_sock.default_value = 0.5
+                        elif "roughness" in sock_name:
+                            if hasattr(target_sock, "default_value"):
+                                target_sock.default_value = 0.5
+                            if link in links:
                                 links.remove(link)
-                            elif "metallic" in sock_name:
-                                if hasattr(target_sock, "default_value"):
-                                    target_sock.default_value = 0.0
+                        elif "metallic" in sock_name:
+                            if hasattr(target_sock, "default_value"):
+                                target_sock.default_value = 0.0
+                            if link in links:
                                 links.remove(link)
-                            elif "base color" in sock_name or "color" in sock_name:
-                                if hasattr(target_sock, "default_value"):
-                                    target_sock.default_value = (0.8, 0.8, 0.8, 1.0)
+                        elif "base color" in sock_name or "color" in sock_name:
+                            if hasattr(target_sock, "default_value"):
+                                target_sock.default_value = (0.8, 0.8, 0.8, 1.0)
+                            if link in links:
                                 links.remove(link)
-                            else:
+                        else:
+                            if link in links:
                                 links.remove(link)
 
                     nodes.remove(node)

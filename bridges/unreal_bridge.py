@@ -115,6 +115,7 @@ class UnrealLiveBridge(EngineBridgeBase):
             "# 2. Configure Import Data without wiping materials/collisions",
             "options = unreal.FbxImportUI()",
             "options.import_mesh = True",
+            "options.import_mesh_lods = True",
             "options.import_textures = False",
             "options.import_materials = False",
             "options.create_physics_asset = False",

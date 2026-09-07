@@ -1,0 +1,152 @@
+{
+  "name": "Unreal Engine 5 (Packed ORM)",
+  "version": 2,
+  "description": "Standard UE5 packed texture export (BaseColor sRGB, ORM Non-Color, Normal DirectX)",
+  "target_engine": "UE5",
+  "strategy": "CONVERT_PNG",
+  "bit_depth": 8,
+  "naming_pattern": "{asset}_{material}{suffix}",
+  "maps": [
+    {
+      "id": "base_color",
+      "name": "Base Color",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_BaseColor",
+      "suffixes": [
+        "_BaseColor",
+        "_BC",
+        "_Albedo",
+        "_Diff",
+        "_Diffuse",
+        "_Col",
+        "_Color"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        },
+        "a": {
+          "target": "Alpha",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "orm",
+      "name": "Occlusion Roughness Metallic",
+      "priority": 50,
+      "export": true,
+      "export_suffix": "_ORM",
+      "suffixes": [
+        "_ORM",
+        "_ARM",
+        "_ORD"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        },
+        "g": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        },
+        "b": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "roughness_loose",
+      "name": "Dedicated Roughness",
+      "priority": 100,
+      "export": false,
+      "export_suffix": "_Roughness",
+      "suffixes": [
+        "_Roughness",
+        "_Rough",
+        "_RGH"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        }
+      }
+    },
+    {
+      "id": "metallic_loose",
+      "name": "Dedicated Metallic",
+      "priority": 100,
+      "export": false,
+      "export_suffix": "_Metallic",
+      "suffixes": [
+        "_Metallic",
+        "_Metalness",
+        "_Metal",
+        "_MET"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "normal",
+      "name": "Normal Map (DirectX)",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Normal_DirectX",
+      "suffixes": [
+        "_Normal_DX",
+        "_Normal",
+        "_Norm",
+        "_NRM",
+        "_N"
+      ],
+      "color_space": "Non-Color",
+      "normal_format": "DIRECTX",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "emissive",
+      "name": "Emissive",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Emissive",
+      "suffixes": [
+        "_Emissive",
+        "_Emission",
+        "_Emit",
+        "_E"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ],
+  "schema_type": "omnimesh_pbr_import"
+}

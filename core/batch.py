@@ -11,7 +11,10 @@ import gc
 import logging
 import math
 import os
+import re
+import subprocess
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 try:
@@ -29,6 +32,7 @@ try:
         generate_logarithmic_screen_tiers,
     )
     from .normals import NormalManager
+    from .pbr_presets import PBRImporterPresetManager
     from .sanitizer import MeshSanitizer
     from .textures import TextureChannelPacker
     from ..exporters.godot_export import GodotExporter
@@ -45,6 +49,7 @@ except (ImportError, ValueError):
         generate_logarithmic_screen_tiers,
     )
     from core.normals import NormalManager
+    from core.pbr_presets import PBRImporterPresetManager
     from core.sanitizer import MeshSanitizer
     from core.textures import TextureChannelPacker
     from exporters.godot_export import GodotExporter
@@ -95,6 +100,116 @@ class BatchProcessorEngine:
             logger.error("Failed during asset discovery in '%s': %s", resolved_source, exc)
 
         return sorted(discovered_files)
+
+    @staticmethod
+    def discover_blend_files(
+        source_dir: str,
+        recursive: bool = True,
+        export_dir: str = "",
+    ) -> list[str]:
+        """Discovers valid .blend files in source directory, ignoring locks, backups,
+        and excluding the export directory if nested.
+        """
+        if not source_dir or not os.path.exists(source_dir):
+            return []
+
+        resolved_source = os.path.normpath(os.path.abspath(source_dir))
+        resolved_export = os.path.normpath(os.path.abspath(export_dir)) if export_dir else ""
+        discovered_files: list[str] = []
+
+        try:
+            if recursive:
+                for root, dirs, files in os.walk(resolved_source, followlinks=False):
+                    # Prevent recursing into export directory or hidden folders
+                    dirs[:] = [
+                        d
+                        for d in dirs
+                        if not (
+                            resolved_export
+                            and os.path.normpath(os.path.abspath(os.path.join(root, d))) == resolved_export
+                        )
+                        and not d.startswith(".")
+                    ]
+                    for f in files:
+                        if f.lower().endswith(".blend") and not f.startswith((".", "~", "#")):
+                            discovered_files.append(os.path.join(root, f))
+            else:
+                for item in os.listdir(resolved_source):
+                    full_p = os.path.join(resolved_source, item)
+                    if os.path.isfile(full_p):
+                        if item.lower().endswith(".blend") and not item.startswith((".", "~", "#")):
+                            discovered_files.append(full_p)
+        except OSError as exc:
+            logger.error("Failed during .blend discovery in '%s': %s", resolved_source, exc)
+
+        return sorted(discovered_files)
+
+    @staticmethod
+    def compute_mirrored_export_path(
+        blend_path: str,
+        source_root: str,
+        export_root: str,
+    ) -> tuple[str, str]:
+        """Calculates destination directory mirroring source folder hierarchy with sanitized names.
+        Returns (target_export_dir, asset_name).
+        """
+        norm_source = os.path.normpath(os.path.abspath(source_root))
+        norm_blend = os.path.normpath(os.path.abspath(blend_path))
+        norm_export = os.path.normpath(os.path.abspath(export_root))
+
+        try:
+            rel_path = os.path.relpath(norm_blend, norm_source)
+        except ValueError:
+            rel_path = os.path.basename(norm_blend)
+
+        rel_dir = os.path.dirname(rel_path)
+
+        clean_parts = [re.sub(r"[^\w\-]", "_", part) for part in Path(rel_dir).parts if part and part != "."]
+
+        target_dir = os.path.join(norm_export, *clean_parts) if clean_parts else norm_export
+        stem = Path(norm_blend).stem
+        asset_name = re.sub(r"[^\w\-]", "_", stem)
+
+        return os.path.normpath(target_dir), asset_name
+
+    @classmethod
+    def spawn_batch_worker(
+        cls,
+        blend_path: str,
+        export_dir: str,
+        preset_id: str = "",
+        target_engine: str = "UE5",
+        asset_name: str = "",
+    ) -> subprocess.Popen:
+        """Launches an isolated headless background Blender process to export a single .blend asset."""
+        blender_exe = bpy.app.binary_path if bpy else "blender"
+        worker_script = os.path.join(os.path.dirname(__file__), "batch_worker.py")
+
+        cmd = [
+            blender_exe,
+            "-b",
+            blend_path,
+            "--factory-startup",
+            "--disable-autoexec",
+            "--python",
+            worker_script,
+            "--",
+            "--export-dir",
+            export_dir,
+            "--engine",
+            target_engine,
+        ]
+        if preset_id:
+            cmd.extend(["--preset", preset_id])
+        if asset_name:
+            cmd.extend(["--asset-name", asset_name])
+
+        return subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
 
     @classmethod
     def import_asset_file(cls, filepath: str) -> list[Any]:
@@ -294,25 +409,64 @@ class BatchProcessorEngine:
                     if slot.material:
                         unique_mats.add(slot.material)
 
+            # Resolve active PBR preset for batch packing
+            preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", "")
+            if not preset_id:
+                engine_map = {
+                    "UE5": "unreal_engine_5",
+                    "UNITY_6": "unity_hdrp_maskmap",
+                    "MSFS_2024": "msfs_2024_comp",
+                    "GODOT_4": "godot_4_orm",
+                }
+                preset_id = engine_map.get(target_engine, "unreal_engine_5")
+
+            try:
+                preset = PBRImporterPresetManager.get_preset(preset_id)
+            except Exception as exc:
+                logger.warning("Could not load batch preset '%s': %s", preset_id, exc)
+                preset = PBRImporterPresetManager.get_preset("unreal_engine_5")
+
+            strategy = getattr(props, "pbr_export_texture_strategy", preset.get("strategy", "CONVERT_PNG"))
+            bit_depth = int(getattr(props, "pbr_export_bit_depth", str(preset.get("bit_depth", 8))))
+            naming_pattern = getattr(
+                props, "pbr_export_naming_pattern", preset.get("naming_pattern", "{material}{suffix}")
+            )
+
             for mat in unique_mats:
-                m_name = getattr(mat, "name", "Mat").replace(" ", "_")
-                if target_engine == "UE5":
-                    TextureChannelPacker.pack_orm_ue5(mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048))
-                    norm_img = TextureChannelPacker.get_material_normal_image(mat)
-                    if norm_img:
-                        TextureChannelPacker.convert_normal_directx(
-                            norm_img, os.path.join(tex_dir, f"T_{m_name}_Normal_DirectX.png"), (2048, 2048)
+                try:
+                    TextureChannelPacker.pack_material_preset(
+                        material=mat,
+                        preset=preset,
+                        export_dir=tex_dir,
+                        asset_name=base_name,
+                        target_size=(2048, 2048),
+                        bit_depth=bit_depth,
+                        strategy=strategy,
+                        naming_pattern=naming_pattern,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Preset-based texture packing failed for '%s', using fallback: %s",
+                        getattr(mat, "name", "Mat"),
+                        exc,
+                    )
+                    m_name = getattr(mat, "name", "Mat").replace(" ", "_")
+                    if target_engine == "UE5":
+                        TextureChannelPacker.pack_orm_ue5(
+                            mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048)
                         )
-                elif target_engine == "UNITY_6":
-                    TextureChannelPacker.pack_maskmap_unity(
-                        mat, os.path.join(tex_dir, f"T_{m_name}_MaskMap.png"), (2048, 2048)
-                    )
-                elif target_engine == "MSFS_2024":
-                    TextureChannelPacker.pack_comp_msfs(
-                        mat, os.path.join(tex_dir, f"T_{m_name}_COMP.png"), (2048, 2048)
-                    )
-                elif target_engine == "GODOT_4":
-                    TextureChannelPacker.pack_orm_godot(mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048))
+                    elif target_engine == "UNITY_6":
+                        TextureChannelPacker.pack_maskmap_unity(
+                            mat, os.path.join(tex_dir, f"T_{m_name}_MaskMap.png"), (2048, 2048)
+                        )
+                    elif target_engine == "MSFS_2024":
+                        TextureChannelPacker.pack_comp_msfs(
+                            mat, os.path.join(tex_dir, f"T_{m_name}_COMP.png"), (2048, 2048)
+                        )
+                    elif target_engine == "GODOT_4":
+                        TextureChannelPacker.pack_orm_godot(
+                            mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048)
+                        )
 
             # 5. Export Multi-Engine Package
             if props:

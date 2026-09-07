@@ -1,0 +1,150 @@
+{
+  "name": "Godot 4 (Standard ORM)",
+  "version": 2,
+  "description": "Godot 4 Standard glTF PBR (Albedo sRGB, ORM Non-Color [R: AO, G: Roughness, B: Metallic], Normal OpenGL)",
+  "target_engine": "GODOT_4",
+  "strategy": "PASSTHROUGH",
+  "bit_depth": 8,
+  "naming_pattern": "{material}{suffix}",
+  "maps": [
+    {
+      "id": "albedo",
+      "name": "Albedo",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Albedo",
+      "suffixes": [
+        "_Albedo",
+        "_BaseColor",
+        "_Col",
+        "_Diffuse",
+        "_Diff"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        },
+        "a": {
+          "target": "Alpha",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "orm",
+      "name": "Occlusion Roughness Metallic",
+      "priority": 50,
+      "export": true,
+      "export_suffix": "_ORM",
+      "suffixes": [
+        "_ORM",
+        "_ARM",
+        "_ORD"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        },
+        "g": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        },
+        "b": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "roughness_loose",
+      "name": "Roughness",
+      "priority": 100,
+      "export": false,
+      "export_suffix": "_Roughness",
+      "suffixes": [
+        "_Roughness",
+        "_Rough",
+        "_RGH"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        }
+      }
+    },
+    {
+      "id": "metallic_loose",
+      "name": "Metallic",
+      "priority": 100,
+      "export": false,
+      "export_suffix": "_Metallic",
+      "suffixes": [
+        "_Metallic",
+        "_Metalness",
+        "_Metal",
+        "_MET"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "normal",
+      "name": "Normal Map (OpenGL)",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Normal",
+      "suffixes": [
+        "_Normal_GL",
+        "_Normal",
+        "_Norm",
+        "_NRM",
+        "_N"
+      ],
+      "color_space": "Non-Color",
+      "normal_format": "OPENGL",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "emission",
+      "name": "Emission",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Emission",
+      "suffixes": [
+        "_Emission",
+        "_Emissive",
+        "_Emit",
+        "_E"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ],
+  "schema_type": "omnimesh_pbr_import"
+}

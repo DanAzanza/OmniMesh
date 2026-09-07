@@ -7,10 +7,26 @@ Supports both Scene-Level project globals, Per-Object persistent geometric confi
 
 from __future__ import annotations
 
+import copy
 import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+try:
+    from ..core.pbr_presets import (
+        PBRExportPresetManager,
+        PBRImportPresetManager,
+        get_pipeline_state,
+        set_pipeline_setting,
+    )
+except (ImportError, ValueError):
+    from core.pbr_presets import (
+        PBRExportPresetManager,
+        PBRImportPresetManager,
+        get_pipeline_state,
+        set_pipeline_setting,
+    )
 
 try:
     import bpy
@@ -86,6 +102,463 @@ class LODLevelItem(PropertyGroup):
     generated_obj: PointerProperty(name="Mesh Object", type=bpy.types.Object if bpy else object)
 
 
+class PresetSyncGuard:
+    """Thread-safe reentrancy guard preventing circular cascades between preset and property updates."""
+
+    _depth: int = 0
+
+    def __enter__(self) -> PresetSyncGuard:
+        PresetSyncGuard._depth += 1
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        PresetSyncGuard._depth -= 1
+
+    @classmethod
+    def is_locked(cls) -> bool:
+        return cls._depth > 0
+
+    is_active = is_locked
+
+
+class StateRestorationGuard:
+    """Thread-safe reentrancy guard suppressing RNA update events and CoW duplication during state restoration."""
+
+    _depth: int = 0
+
+    def __enter__(self) -> StateRestorationGuard:
+        StateRestorationGuard._depth += 1
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        StateRestorationGuard._depth -= 1
+
+    @classmethod
+    def is_active(cls) -> bool:
+        return cls._depth > 0
+
+
+class MapSyncGuard:
+    """Thread-safe reentrancy guard preventing update cascades during map synchronization."""
+
+    _depth: int = 0
+
+    @classmethod
+    def is_active(cls) -> bool:
+        return cls._depth > 0
+
+    def __enter__(self) -> MapSyncGuard:
+        MapSyncGuard._depth += 1
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        MapSyncGuard._depth -= 1
+
+
+PRINCIPLED_TARGET_ITEMS: list[tuple[str, str, str]] = [
+    ("NONE", "None (Unused)", "Do not route this channel"),
+    ("Base Color", "Base Color", "Diffuse / Albedo color input"),
+    ("Roughness", "Roughness", "Surface microfacet roughness"),
+    ("Metallic", "Metallic", "Metalness mask"),
+    ("Normal", "Normal", "Tangent-space normal vector"),
+    ("Ambient Occlusion", "Ambient Occlusion", "AO mask for Base Color multiplicative blend"),
+    ("Alpha", "Alpha / Opacity", "Surface transparency mask"),
+    ("Emission Color", "Emission Color", "Self-illumination color"),
+    ("Displacement", "Displacement / Height", "Material Output height displacement"),
+    ("Specular IOR Level", "Specular IOR Level", "Dielectric specular reflectivity level"),
+]
+
+
+def on_map_item_updated(self: Any, context: Any) -> None:
+    """Invoked when a user modifies a map attribute in the interactive editor."""
+    if MapSyncGuard.is_active() or StateRestorationGuard.is_active():
+        return
+    props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
+    if not props:
+        return
+    sync_maps_to_preset(props)
+
+
+def sync_maps_from_preset(props: Any, preset: dict[str, Any]) -> None:
+    """Populates ephemeral RNA collection from preset dictionary under sync guard."""
+    if not hasattr(props, "pbr_active_maps"):
+        return
+    preset_id = preset.get("id", "") or preset.get("_id", "") or getattr(props, "pbr_import_preset", "")
+    with MapSyncGuard():
+        props.pbr_active_maps.clear()
+        if hasattr(props, "pbr_active_maps_preset_id"):
+            props.pbr_active_maps_preset_id = str(preset_id)
+        for m in preset.get("maps", []):
+            item = props.pbr_active_maps.add()
+            item.map_id = str(m.get("id", "map"))
+            item.name = str(m.get("name", item.map_id))
+            item.priority = int(m.get("priority", 10))
+            suffixes = m.get("suffixes", [])
+            item.suffixes_str = ", ".join(suffixes) if isinstance(suffixes, list) else str(suffixes)
+            item.color_space = str(m.get("color_space", "Non-Color"))
+            n_fmt = str(m.get("normal_format", "")).upper()
+
+            channels = m.get("channels", {})
+            is_normal_target = False
+            if isinstance(channels, dict):
+                for ch_val in channels.values():
+                    if isinstance(ch_val, dict) and ch_val.get("target") == "Normal":
+                        is_normal_target = True
+                        break
+
+            item.is_normal_map = is_normal_target or any(t in item.map_id.lower() for t in ("normal", "norm", "bump"))
+            item.normal_format = n_fmt if n_fmt in {"OPENGL", "DIRECTX"} else "OPENGL"
+            if "rgb" in channels:
+                item.is_packed = False
+                rgb_info = channels.get("rgb", {})
+                item.target_rgb = rgb_info.get("target", "Base Color") if isinstance(rgb_info, dict) else "Base Color"
+                if "a" in channels:
+                    a_info = channels.get("a", {})
+                    item.target_a = a_info.get("target", "NONE") if isinstance(a_info, dict) else "NONE"
+                    item.invert_a = bool(a_info.get("invert", False)) if isinstance(a_info, dict) else False
+                else:
+                    item.target_a = "NONE"
+                    item.invert_a = False
+            else:
+                item.is_packed = True
+                for ch in ("r", "g", "b", "a"):
+                    ch_data = channels.get(ch, {})
+                    if isinstance(ch_data, dict):
+                        setattr(item, f"target_{ch}", ch_data.get("target", "NONE"))
+                        setattr(item, f"invert_{ch}", bool(ch_data.get("invert", False)))
+                    else:
+                        setattr(item, f"target_{ch}", "NONE")
+                        setattr(item, f"invert_{ch}", False)
+
+        if len(props.pbr_active_maps) > 0 and props.pbr_active_map_index >= len(props.pbr_active_maps):
+            props.pbr_active_map_index = 0
+
+
+def sync_maps_to_preset(props: Any) -> None:
+    """Rebuilds JSON structure from RNA and persists to custom preset with safe CoW."""
+    if MapSyncGuard.is_active() or StateRestorationGuard.is_active():
+        return
+
+    preset_id = getattr(props, "pbr_import_preset", "") or PBRImportPresetManager.DEFAULT_PRESET_ID
+
+    # Handle Copy-on-Write for built-ins
+    if PBRImportPresetManager.is_builtin(preset_id):
+        with MapSyncGuard(), PresetSyncGuard():
+            new_id = PBRImportPresetManager.duplicate_preset(preset_id)
+            props.pbr_import_preset = new_id
+            preset_id = new_id
+
+    preset_data = copy.deepcopy(PBRImportPresetManager.get_preset(preset_id))
+    new_maps = []
+
+    for item in props.pbr_active_maps:
+        raw_suffixes = [s.strip() for s in item.suffixes_str.split(",") if s.strip()]
+        if not raw_suffixes:
+            raw_suffixes = [f"_{item.map_id}"]
+
+        channels: dict[str, Any] = {}
+        if not item.is_packed:
+            if item.target_rgb != "NONE":
+                channels["rgb"] = {"target": item.target_rgb, "invert": False}
+            if item.target_a != "NONE":
+                channels["a"] = {"target": item.target_a, "invert": item.invert_a}
+        else:
+            for ch in ("r", "g", "b", "a"):
+                target = getattr(item, f"target_{ch}")
+                if target != "NONE":
+                    channels[ch] = {
+                        "target": target,
+                        "invert": getattr(item, f"invert_{ch}"),
+                        "default": 1.0 if "occlusion" in target.lower() else 0.0,
+                    }
+
+        if not channels:
+            channels["rgb"] = {"target": "Base Color", "invert": False}
+
+        map_dict = {
+            "id": item.map_id,
+            "name": item.name,
+            "priority": int(item.priority),
+            "suffixes": raw_suffixes,
+            "color_space": item.color_space,
+            "channels": channels,
+        }
+        if item.is_normal_map:
+            map_dict["normal_format"] = item.normal_format
+
+        new_maps.append(map_dict)
+
+    preset_data["maps"] = new_maps
+    PBRImportPresetManager.save_custom_preset(preset_data, custom_id=preset_id)
+
+
+class ExportMapSyncGuard:
+    """Thread-safe reentrancy guard preventing update cascades during export map synchronization."""
+
+    _depth: int = 0
+
+    @classmethod
+    def is_active(cls) -> bool:
+        return cls._depth > 0
+
+    def __enter__(self) -> ExportMapSyncGuard:
+        ExportMapSyncGuard._depth += 1
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        ExportMapSyncGuard._depth -= 1
+
+
+def on_export_map_item_updated(self: Any, context: Any) -> None:
+    """Invoked when a user modifies an export map attribute in the interactive editor."""
+    if ExportMapSyncGuard.is_active() or StateRestorationGuard.is_active():
+        return
+    props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
+    if not props:
+        return
+    sync_export_maps_to_preset(props)
+
+
+def sync_export_maps_from_preset(props: Any, preset: dict[str, Any]) -> None:
+    """Populates ephemeral export RNA collection from preset dictionary under sync guard."""
+    if not hasattr(props, "pbr_export_active_maps"):
+        return
+    preset_id = preset.get("id", "") or preset.get("_id", "") or getattr(props, "pbr_export_preset", "")
+    with ExportMapSyncGuard():
+        props.pbr_export_active_maps.clear()
+        if hasattr(props, "pbr_export_active_maps_preset_id"):
+            props.pbr_export_active_maps_preset_id = str(preset_id)
+        for m in preset.get("maps", []):
+            item = props.pbr_export_active_maps.add()
+            item.map_id = str(m.get("id", "map"))
+            item.name = str(m.get("name", item.map_id))
+            item.export = bool(m.get("export", True))
+            item.export_suffix = str(m.get("export_suffix", f"_{item.map_id}"))
+            item.color_space = str(m.get("color_space", "Non-Color"))
+            n_fmt = str(m.get("normal_format", "")).upper()
+
+            channels = m.get("channels", {})
+            is_normal_target = False
+            if isinstance(channels, dict):
+                for ch_val in channels.values():
+                    if isinstance(ch_val, dict) and ch_val.get("target") == "Normal":
+                        is_normal_target = True
+                        break
+
+            item.is_normal_map = is_normal_target or any(t in item.map_id.lower() for t in ("normal", "norm", "bump"))
+            item.normal_format = n_fmt if n_fmt in {"OPENGL", "DIRECTX"} else "OPENGL"
+            if "rgb" in channels:
+                item.is_packed = False
+                rgb_info = channels.get("rgb", {})
+                item.target_rgb = rgb_info.get("target", "Base Color") if isinstance(rgb_info, dict) else "Base Color"
+                if "a" in channels:
+                    a_info = channels.get("a", {})
+                    item.target_a = a_info.get("target", "NONE") if isinstance(a_info, dict) else "NONE"
+                    item.invert_a = bool(a_info.get("invert", False)) if isinstance(a_info, dict) else False
+                else:
+                    item.target_a = "NONE"
+                    item.invert_a = False
+            else:
+                item.is_packed = True
+                for ch in ("r", "g", "b", "a"):
+                    ch_data = channels.get(ch, {})
+                    if isinstance(ch_data, dict):
+                        setattr(item, f"target_{ch}", ch_data.get("target", "NONE"))
+                        setattr(item, f"invert_{ch}", bool(ch_data.get("invert", False)))
+                    else:
+                        setattr(item, f"target_{ch}", "NONE")
+                        setattr(item, f"invert_{ch}", False)
+
+        if len(props.pbr_export_active_maps) > 0 and props.pbr_export_active_map_index >= len(
+            props.pbr_export_active_maps
+        ):
+            props.pbr_export_active_map_index = 0
+
+
+def sync_export_maps_to_preset(props: Any) -> None:
+    """Rebuilds JSON structure from export RNA and persists to custom preset with safe CoW."""
+    if ExportMapSyncGuard.is_active() or StateRestorationGuard.is_active():
+        return
+
+    try:
+        from core.pbr_presets import PBRExportPresetManager
+    except ImportError:
+        from ..core.pbr_presets import PBRExportPresetManager
+
+    preset_id = getattr(props, "pbr_export_preset", "") or PBRExportPresetManager.DEFAULT_PRESET_ID
+
+    # Handle Copy-on-Write for built-ins
+    if PBRExportPresetManager.is_builtin(preset_id):
+        with ExportMapSyncGuard(), PresetSyncGuard():
+            new_id = PBRExportPresetManager.duplicate_preset(preset_id)
+            props.pbr_export_preset = new_id
+            if hasattr(props, "pbr_preset"):
+                props.pbr_preset = new_id
+            preset_id = new_id
+            PBRExportPresetManager.set_last_active_preset(new_id)
+
+    preset_data = copy.deepcopy(PBRExportPresetManager.get_preset(preset_id))
+    new_maps = []
+
+    for item in props.pbr_export_active_maps:
+        export_suffix = item.export_suffix.strip()
+        if not export_suffix:
+            export_suffix = f"_{item.map_id}"
+
+        channels: dict[str, Any] = {}
+        if not item.is_packed:
+            if item.target_rgb != "NONE":
+                channels["rgb"] = {"target": item.target_rgb, "invert": False}
+            if item.target_a != "NONE":
+                channels["a"] = {"target": item.target_a, "invert": item.invert_a}
+        else:
+            for ch in ("r", "g", "b", "a"):
+                target = getattr(item, f"target_{ch}")
+                if target != "NONE":
+                    channels[ch] = {
+                        "target": target,
+                        "invert": getattr(item, f"invert_{ch}"),
+                        "default": 1.0 if "occlusion" in target.lower() else 0.0,
+                    }
+
+        if not channels:
+            channels["rgb"] = {"target": "Base Color", "invert": False}
+
+        map_dict = {
+            "id": item.map_id,
+            "name": item.name,
+            "export": bool(item.export),
+            "export_suffix": export_suffix,
+            "color_space": item.color_space,
+            "channels": channels,
+        }
+        if item.is_normal_map:
+            map_dict["normal_format"] = item.normal_format
+
+        new_maps.append(map_dict)
+
+    preset_data["maps"] = new_maps
+    PBRExportPresetManager.save_custom_preset(preset_data, custom_id=preset_id)
+
+
+class PBRMapItem(PropertyGroup):
+    """Data model representing a single texture map in the active preset."""
+
+    map_id: StringProperty(name="Map ID", default="custom_map")
+    name: StringProperty(name="Display Name", default="New Map", update=on_map_item_updated)
+    priority: IntProperty(name="Priority", default=10, min=1, max=1000, update=on_map_item_updated)
+    suffixes_str: StringProperty(
+        name="Suffixes",
+        description="Comma-separated file suffixes (e.g. _BaseColor, _BC, _Albedo)",
+        default="_Custom",
+        update=on_map_item_updated,
+    )
+    color_space: EnumProperty(
+        name="Color Space",
+        items=[("sRGB", "sRGB", "Color data"), ("Non-Color", "Non-Color", "Linear scalar/data mask")],
+        default="Non-Color",
+        update=on_map_item_updated,
+    )
+    is_normal_map: BoolProperty(name="Is Normal Map", default=False, update=on_map_item_updated)
+    normal_format: EnumProperty(
+        name="Normal Format",
+        items=[
+            ("OPENGL", "OpenGL (+Y)", "Standard OpenGL format"),
+            ("DIRECTX", "DirectX (-Y)", "Invert Green channel for Unreal/DirectX"),
+        ],
+        default="OPENGL",
+        update=on_map_item_updated,
+    )
+    is_packed: BoolProperty(name="Channel Packed", default=False, update=on_map_item_updated)
+
+    # Single RGB Routing
+    target_rgb: EnumProperty(
+        name="RGB Target", items=PRINCIPLED_TARGET_ITEMS, default="Base Color", update=on_map_item_updated
+    )
+    target_a: EnumProperty(
+        name="Alpha Target", items=PRINCIPLED_TARGET_ITEMS, default="NONE", update=on_map_item_updated
+    )
+    invert_a: BoolProperty(name="Invert Alpha", default=False, update=on_map_item_updated)
+
+    # Packed R, G, B, A Routing
+    target_r: EnumProperty(
+        name="R Target", items=PRINCIPLED_TARGET_ITEMS, default="Ambient Occlusion", update=on_map_item_updated
+    )
+    invert_r: BoolProperty(name="Invert R", default=False, update=on_map_item_updated)
+    target_g: EnumProperty(
+        name="G Target", items=PRINCIPLED_TARGET_ITEMS, default="Roughness", update=on_map_item_updated
+    )
+    invert_g: BoolProperty(name="Invert G", default=False, update=on_map_item_updated)
+    target_b: EnumProperty(
+        name="B Target", items=PRINCIPLED_TARGET_ITEMS, default="Metallic", update=on_map_item_updated
+    )
+    invert_b: BoolProperty(name="Invert B", default=False, update=on_map_item_updated)
+
+
+class PBRExportMapItem(PropertyGroup):
+    """Data model representing a single texture map in the active export preset."""
+
+    map_id: StringProperty(name="Map ID", default="custom_map")
+    name: StringProperty(name="Display Name", default="New Map", update=on_export_map_item_updated)
+    export: BoolProperty(
+        name="Export", default=True, description="Enable export for this map", update=on_export_map_item_updated
+    )
+    export_suffix: StringProperty(
+        name="Suffix",
+        description="File suffix on export (e.g. _BaseColor, _ORM)",
+        default="_Custom",
+        update=on_export_map_item_updated,
+    )
+    color_space: EnumProperty(
+        name="Color Space",
+        items=[("sRGB", "sRGB", "Color data"), ("Non-Color", "Non-Color", "Linear scalar/data mask")],
+        default="Non-Color",
+        update=on_export_map_item_updated,
+    )
+    is_normal_map: BoolProperty(name="Is Normal Map", default=False, update=on_export_map_item_updated)
+    normal_format: EnumProperty(
+        name="Normal Format",
+        items=[
+            ("OPENGL", "OpenGL (+Y)", "Standard OpenGL format"),
+            ("DIRECTX", "DirectX (-Y)", "Invert Green channel for Unreal/DirectX"),
+        ],
+        default="OPENGL",
+        update=on_export_map_item_updated,
+    )
+    is_packed: BoolProperty(name="Channel Packed", default=False, update=on_export_map_item_updated)
+
+    # Single RGB Routing
+    target_rgb: EnumProperty(
+        name="RGB Target", items=PRINCIPLED_TARGET_ITEMS, default="Base Color", update=on_export_map_item_updated
+    )
+    target_a: EnumProperty(
+        name="Alpha Target", items=PRINCIPLED_TARGET_ITEMS, default="NONE", update=on_export_map_item_updated
+    )
+    invert_a: BoolProperty(name="Invert Alpha", default=False, update=on_export_map_item_updated)
+
+    # Packed R, G, B, A Routing
+    target_r: EnumProperty(
+        name="R Target", items=PRINCIPLED_TARGET_ITEMS, default="Ambient Occlusion", update=on_export_map_item_updated
+    )
+    invert_r: BoolProperty(name="Invert R", default=False, update=on_export_map_item_updated)
+    target_g: EnumProperty(
+        name="G Target", items=PRINCIPLED_TARGET_ITEMS, default="Roughness", update=on_export_map_item_updated
+    )
+    invert_g: BoolProperty(name="Invert G", default=False, update=on_export_map_item_updated)
+    target_b: EnumProperty(
+        name="B Target", items=PRINCIPLED_TARGET_ITEMS, default="Metallic", update=on_export_map_item_updated
+    )
+    invert_b: BoolProperty(name="Invert B", default=False, update=on_export_map_item_updated)
+
+
+ENGINE_TO_FACTORY_PRESET: dict[str, str] = {
+    "UE5": "unreal_engine_5",
+    "UNITY_6": "unity_hdrp_maskmap",
+    "GODOT_4": "godot_4_orm",
+    "MSFS_2024": "msfs_2024_comp",
+}
+
+
 def update_bridge_status_cached(self: Any, context: Any) -> None:
     """Non-blocking status update hook for project directory changes."""
     if not context or not hasattr(context, "scene"):
@@ -101,12 +574,335 @@ def update_bridge_status_cached(self: Any, context: Any) -> None:
         proj_dir = props.engine_project_path
         if not proj_dir:
             props.bridge_status_text = "Project Path not set"
+            props.bridge_connected = False
             return
 
         is_ready, msg = BridgeManager.ping_engine(engine, proj_dir)
+        props.bridge_connected = is_ready
         props.bridge_status_text = msg if is_ready else f"Not Ready: {msg}"
     except Exception as exc:
         logger.debug("Bridge status refresh: %s", exc)
+
+
+def on_target_engine_updated(self: Any, context: Any) -> None:
+    """Synchronizes target engine selection with export preset and bridge status without mutating presets."""
+    if hasattr(self, "export_directory"):
+        try:
+            try:
+                from core.project_detector import detect_engine_project
+            except ImportError:
+                from ..core.project_detector import detect_engine_project
+
+            engine = getattr(self, "target_engine", "UE5")
+            detected = detect_engine_project(self.export_directory, engine)
+            if detected and getattr(self, "engine_project_path", "") != detected:
+                self.engine_project_path = detected
+        except Exception as exc:
+            logger.debug("Auto engine project detection skipped: %s", exc)
+    update_bridge_status_cached(self, context)
+    if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked():
+        return
+    with PresetSyncGuard():
+        engine = getattr(self, "target_engine", "MSFS_2024")
+        export_preset_id = getattr(self, "pbr_export_preset", "")
+        try:
+            from core.pbr_presets import PBRExportPresetManager
+        except ImportError:
+            from ..core.pbr_presets import PBRExportPresetManager
+
+        current_preset = PBRExportPresetManager.get_preset(export_preset_id) if export_preset_id else {}
+        if current_preset.get("target_engine") != engine:
+            factory_id = ENGINE_TO_FACTORY_PRESET.get(engine, "unreal_engine_5")
+            if hasattr(self, "pbr_export_preset"):
+                self.pbr_export_preset = factory_id
+            if hasattr(self, "pbr_preset"):
+                self.pbr_preset = factory_id
+
+            new_preset = PBRExportPresetManager.get_preset(factory_id)
+            if hasattr(self, "pbr_export_texture_strategy"):
+                self.pbr_export_texture_strategy = new_preset.get("strategy", "SMART_AUTO")
+            if hasattr(self, "pbr_export_bit_depth"):
+                self.pbr_export_bit_depth = str(new_preset.get("bit_depth", 8))
+            if hasattr(self, "pbr_export_naming_pattern"):
+                self.pbr_export_naming_pattern = new_preset.get("naming_pattern", "{material}{suffix}")
+            sync_export_maps_from_preset(self, new_preset)
+
+
+def on_export_preset_updated(self: Any, context: Any) -> None:
+    """Synchronizes active export preset with engine container and texture packing parameters."""
+    if StateRestorationGuard.is_active():
+        return
+    export_preset_id = getattr(self, "pbr_export_preset", "")
+    if not export_preset_id:
+        return
+    try:
+        from core.pbr_presets import PBRExportPresetManager
+    except ImportError:
+        from ..core.pbr_presets import PBRExportPresetManager
+
+    # Persist choice across Blender restarts
+    PBRExportPresetManager.set_last_active_preset(export_preset_id)
+
+    if PresetSyncGuard.is_locked():
+        return
+
+    with PresetSyncGuard():
+        preset = PBRExportPresetManager.get_preset(export_preset_id)
+        target_eng = preset.get("target_engine")
+        if target_eng and hasattr(self, "target_engine"):
+            self.target_engine = target_eng
+            update_bridge_status_cached(self, context)
+        if hasattr(self, "pbr_export_texture_strategy"):
+            self.pbr_export_texture_strategy = preset.get("strategy", "SMART_AUTO")
+        if hasattr(self, "pbr_export_bit_depth"):
+            self.pbr_export_bit_depth = str(preset.get("bit_depth", 8))
+        if hasattr(self, "pbr_export_naming_pattern"):
+            self.pbr_export_naming_pattern = preset.get("naming_pattern", "{material}{suffix}")
+        if hasattr(self, "pbr_preset"):
+            self.pbr_preset = export_preset_id
+        sync_export_maps_from_preset(self, preset)
+
+
+def on_import_preset_updated(self: Any, _context: Any) -> None:
+    """Persists active import preset selection across Blender restarts and synchronizes map editor."""
+    if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked() or MapSyncGuard.is_active():
+        return
+    import_preset_id = getattr(self, "pbr_import_preset", "")
+    if not import_preset_id:
+        return
+    PBRImportPresetManager.set_last_active_preset(import_preset_id)
+    preset = PBRImportPresetManager.get_preset(import_preset_id)
+    sync_maps_from_preset(self, preset)
+
+
+def on_legacy_preset_updated(self: Any, context: Any) -> None:
+    """Syncs legacy pbr_preset assignments to pbr_export_preset."""
+    if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked():
+        return
+    legacy_id = getattr(self, "pbr_preset", "")
+    if legacy_id and hasattr(self, "pbr_export_preset"):
+        with PresetSyncGuard():
+            self.pbr_export_preset = legacy_id
+
+
+def _handle_cow_export_setting(self: Any, context: Any, override_key: str, new_value: Any) -> None:
+    """Applies modified setting to custom preset or automatically duplicates factory preset via Copy-on-Write."""
+    if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked():
+        return
+    if not context or not getattr(context, "window_manager", None):
+        return
+
+    preset_id = getattr(self, "pbr_export_preset", "")
+    if not preset_id:
+        return
+
+    if PBRExportPresetManager.is_builtin(preset_id):
+        # Built-in factory preset -> Duplicate with override in atomic transaction
+        new_id = PBRExportPresetManager.duplicate_preset(preset_id, overrides={override_key: new_value})
+        with PresetSyncGuard():
+            self.pbr_export_preset = new_id
+            if hasattr(self, "pbr_preset"):
+                self.pbr_preset = new_id
+        PBRExportPresetManager.set_last_active_preset(new_id)
+    else:
+        # Existing user custom preset -> Persist directly to disk
+        try:
+            pdata = copy.deepcopy(PBRExportPresetManager.get_preset(preset_id))
+            pdata[override_key] = new_value
+            PBRExportPresetManager.save_custom_preset(pdata, custom_id=preset_id)
+        except Exception as exc:
+            logger.debug("Failed auto-saving custom preset '%s': %s", preset_id, exc)
+
+
+def on_export_strategy_updated(self: Any, context: Any) -> None:
+    val = getattr(self, "pbr_export_texture_strategy", "CONVERT_PNG")
+    _handle_cow_export_setting(self, context, "strategy", val)
+
+
+def on_export_bit_depth_updated(self: Any, context: Any) -> None:
+    val = int(getattr(self, "pbr_export_bit_depth", "8"))
+    _handle_cow_export_setting(self, context, "bit_depth", val)
+
+
+def on_export_naming_updated(self: Any, context: Any) -> None:
+    val = getattr(self, "pbr_export_naming_pattern", "{material}{suffix}")
+    _handle_cow_export_setting(self, context, "naming_pattern", val)
+
+
+def on_import_directory_updated(self: Any, _context: Any) -> None:
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "pbr_import_directory", "")
+    try:
+        set_pipeline_setting("pbr_import_directory", val)
+    except Exception as exc:
+        logger.debug("Persist import directory: %s", exc)
+
+
+def on_import_path_mode_updated(self: Any, _context: Any) -> None:
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "pbr_import_path_mode", "RELATIVE")
+    try:
+        set_pipeline_setting("pbr_import_path_mode", val)
+    except Exception as exc:
+        logger.debug("Persist path mode: %s", exc)
+
+
+def on_export_directory_updated(self: Any, context: Any) -> None:
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "export_directory", "")
+    try:
+        set_pipeline_setting("export_directory", val)
+    except Exception as exc:
+        logger.debug("Persist export directory: %s", exc)
+
+    try:
+        try:
+            from core.project_detector import detect_engine_project
+        except ImportError:
+            from ..core.project_detector import detect_engine_project
+
+        engine = getattr(self, "target_engine", "UE5")
+        detected = detect_engine_project(val, engine)
+        if detected and getattr(self, "engine_project_path", "") != detected:
+            self.engine_project_path = detected
+            update_bridge_status_cached(self, context)
+    except Exception as exc:
+        logger.debug("Project auto-detection on export dir update: %s", exc)
+
+
+def on_import_ao_mode_updated(self: Any, _context: Any) -> None:
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "pbr_import_ao_mode", "MULTIPLY")
+    try:
+        set_pipeline_setting("pbr_import_ao_mode", val)
+    except Exception as exc:
+        logger.debug("Persist AO mode: %s", exc)
+
+
+def on_import_preserve_updated(self: Any, _context: Any) -> None:
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "pbr_import_preserve_existing", False)
+    try:
+        set_pipeline_setting("pbr_import_preserve_existing", val)
+    except Exception as exc:
+        logger.debug("Persist preserve existing: %s", exc)
+
+
+def on_engine_project_path_updated(self: Any, context: Any) -> None:
+    update_bridge_status_cached(self, context)
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "engine_project_path", "")
+    try:
+        set_pipeline_setting("engine_project_path", val)
+    except Exception as exc:
+        logger.debug("Persist engine project path: %s", exc)
+
+
+def on_enable_live_sync_updated(self: Any, _context: Any) -> None:
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "enable_live_sync", True)
+    try:
+        set_pipeline_setting("enable_live_sync", val)
+    except Exception as exc:
+        logger.debug("Persist enable live sync: %s", exc)
+
+
+def on_batch_mode_updated(self: Any, _context: Any) -> None:
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "batch_mode", False)
+    try:
+        set_pipeline_setting("batch_mode", val)
+    except Exception as exc:
+        logger.debug("Persist batch mode: %s", exc)
+
+
+def on_batch_source_updated(self: Any, _context: Any) -> None:
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "batch_source_directory", "")
+    try:
+        set_pipeline_setting("batch_source_directory", val)
+    except Exception as exc:
+        logger.debug("Persist batch source: %s", exc)
+
+
+if bpy and hasattr(bpy.app, "handlers"):
+
+    @bpy.app.handlers.persistent
+    def restore_preset_state_on_load(dummy: Any = None) -> None:
+        """Restores last used preset selections and pipeline settings upon startup or file load."""
+        if not bpy or not hasattr(bpy, "data"):
+            return
+
+        state = get_pipeline_state()
+        last_exp = PBRExportPresetManager.get_last_active_preset()
+        last_imp = PBRImportPresetManager.get_last_active_preset()
+
+        with StateRestorationGuard(), PresetSyncGuard():
+            for scene in getattr(bpy.data, "scenes", []):
+                props = getattr(scene, "lod_tool", None)
+                if not props or getattr(props, "is_state_restored", False):
+                    continue
+                props.is_state_restored = True
+                exp_to_set = last_exp or "unreal_engine_5"
+                imp_to_set = last_imp or "unreal_engine_5"
+                if hasattr(props, "pbr_export_preset"):
+                    props.pbr_export_preset = exp_to_set
+                if hasattr(props, "pbr_preset"):
+                    props.pbr_preset = exp_to_set
+                if hasattr(props, "pbr_import_preset"):
+                    props.pbr_import_preset = imp_to_set
+                    preset = PBRImportPresetManager.get_preset(imp_to_set)
+                    sync_maps_from_preset(props, preset)
+
+                # Hydrate persistent preferences
+                if "pbr_import_directory" in state and hasattr(props, "pbr_import_directory"):
+                    props.pbr_import_directory = state["pbr_import_directory"]
+                if "export_directory" in state and hasattr(props, "export_directory"):
+                    props.export_directory = state["export_directory"]
+                if "pbr_import_path_mode" in state and hasattr(props, "pbr_import_path_mode"):
+                    props.pbr_import_path_mode = state["pbr_import_path_mode"]
+                if "pbr_import_ao_mode" in state and hasattr(props, "pbr_import_ao_mode"):
+                    props.pbr_import_ao_mode = state["pbr_import_ao_mode"]
+                if "pbr_import_preserve_existing" in state and hasattr(props, "pbr_import_preserve_existing"):
+                    props.pbr_import_preserve_existing = state["pbr_import_preserve_existing"]
+                if "engine_project_path" in state and hasattr(props, "engine_project_path"):
+                    props.engine_project_path = state["engine_project_path"]
+                if "enable_live_sync" in state and hasattr(props, "enable_live_sync"):
+                    props.enable_live_sync = state["enable_live_sync"]
+                if "batch_mode" in state and hasattr(props, "batch_mode"):
+                    props.batch_mode = state["batch_mode"]
+                if "batch_source_directory" in state and hasattr(props, "batch_source_directory"):
+                    props.batch_source_directory = state["batch_source_directory"]
+else:
+    restore_preset_state_on_load = None
+
+
+def get_pbr_import_preset_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
+    """Dynamic enum items for PBR Texture Set Importer Presets."""
+    try:
+        return PBRImportPresetManager.get_enum_items()
+    except Exception:
+        return [("unreal_engine_5", "Unreal Engine 5 (Packed ORM)", "Default template")]
+
+
+def get_pbr_export_preset_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
+    """Dynamic enum items for Unified Engine Export Presets."""
+    try:
+        return PBRExportPresetManager.get_enum_items()
+    except Exception:
+        return [("unreal_engine_5", "Unreal Engine 5", "Default template")]
+
+
+get_pbr_preset_items = get_pbr_export_preset_items
 
 
 class LODToolSettings(PropertyGroup):
@@ -178,7 +974,7 @@ class LODToolSettings(PropertyGroup):
         ],
         default="MSFS_2024",
         description="Target engine determines naming conventions, metadata hierarchy, texture packing, and export file formats",
-        update=update_bridge_status_cached,
+        update=on_target_engine_updated,
     )
 
     # Asset Category Presets
@@ -380,6 +1176,39 @@ class LODToolSettings(PropertyGroup):
     last_material_cleanup_summary: StringProperty(name="Material Cleanup Summary", default="")
 
     # PBR Texture Set Importer Settings
+    pbr_import_preset: EnumProperty(
+        name="Import Preset",
+        items=get_pbr_import_preset_items,
+        description="Active PBR texture set template matching incoming source texture conventions",
+        update=on_import_preset_updated,
+    )
+    pbr_active_maps: CollectionProperty(type=PBRMapItem)
+    pbr_active_map_index: IntProperty(name="Active Map Index", default=0, min=0)
+    pbr_active_maps_preset_id: StringProperty(name="Active Maps Preset ID", default="")
+    pbr_import_directory: StringProperty(
+        name="Import Directory",
+        subtype="DIR_PATH",
+        default="//Textures/",
+        description="Source directory containing PBR textures to import",
+        update=on_import_directory_updated,
+    )
+    pbr_import_path_mode: EnumProperty(
+        name="Path Mode",
+        items=[
+            ("RELATIVE", "Relative (//)", "Store image paths relative to .blend file (//) if saved"),
+            ("ABSOLUTE", "Absolute", "Store full absolute system paths to textures"),
+        ],
+        default="RELATIVE",
+        description="Whether imported textures use relative (//) or absolute paths",
+        update=on_import_path_mode_updated,
+    )
+    is_state_restored: BoolProperty(name="State Restored", default=False)
+    pbr_preset: EnumProperty(
+        name="Preset",
+        items=get_pbr_export_preset_items,
+        description="Active PBR texture set template (Legacy alias for export preset)",
+        update=on_legacy_preset_updated,
+    )
     pbr_import_ao_mode: EnumProperty(
         name="AO Mode",
         items=[
@@ -392,11 +1221,13 @@ class LODToolSettings(PropertyGroup):
         ],
         default="MULTIPLY",
         description="How Ambient Occlusion maps are wired into the shader graph",
+        update=on_import_ao_mode_updated,
     )
     pbr_import_preserve_existing: BoolProperty(
         name="Preserve Existing Nodes",
         default=False,
         description="Preserve existing non-PBR shader nodes in material when importing texture sets",
+        update=on_import_preserve_updated,
     )
     last_pbr_import_summary: StringProperty(name="PBR Import Summary", default="")
 
@@ -690,6 +1521,55 @@ class LODToolSettings(PropertyGroup):
         default="2048",
         description="Maximum texture resolution for exported PBR channel sets",
     )
+    pbr_export_preset: EnumProperty(
+        name="Export Profile",
+        items=get_pbr_export_preset_items,
+        description="Unified engine export preset determining target engine, channel packing, and naming conventions",
+        update=on_export_preset_updated,
+    )
+    pbr_export_active_maps: CollectionProperty(type=PBRExportMapItem)
+    pbr_export_active_map_index: IntProperty(name="Active Export Map Index", default=0, min=0)
+    pbr_export_active_maps_preset_id: StringProperty(name="Active Export Maps Preset ID", default="")
+    pbr_export_texture_strategy: EnumProperty(
+        name="Texture Strategy",
+        items=[
+            (
+                "SMART_AUTO",
+                "Smart Auto (Zero-Copy or Bake)",
+                "Direct channel extraction for images, automatic Cycles bake only for procedural/unlinked nodes",
+            ),
+            (
+                "PASSTHROUGH",
+                "Direct Passthrough / Zero-Copy",
+                "Direct channel extraction only, fills unlinked channels with defaults, never bakes",
+            ),
+            ("BAKE", "Force Cycles Bake", "Forces full Cycles bake for all material channels to target resolution"),
+            (
+                "CONVERT_PNG",
+                "Convert & Pack (Legacy)",
+                "Re-encode all textures to standard PNG matching preset bit depth",
+            ),
+        ],
+        default="SMART_AUTO",
+        description="PBR texture export processing pipeline strategy",
+        update=on_export_strategy_updated,
+    )
+    pbr_export_naming_pattern: StringProperty(
+        name="Naming Pattern",
+        default="{material}{suffix}",
+        description="Naming pattern for exported textures ({asset}, {material}, {suffix})",
+        update=on_export_naming_updated,
+    )
+    pbr_export_bit_depth: EnumProperty(
+        name="Bit Depth",
+        items=[
+            ("8", "8-Bit PNG", "Standard 8-bit per channel PNG format"),
+            ("16", "16-Bit PNG", "High dynamic range 16-bit per channel PNG format"),
+        ],
+        default="8",
+        description="PNG channel depth for exported texture maps",
+        update=on_export_bit_depth_updated,
+    )
     bake_animations: BoolProperty(
         name="Bake Deform Rig Animations",
         default=True,
@@ -758,7 +1638,13 @@ class LODToolSettings(PropertyGroup):
     forced_lod_index: IntProperty(name="Force LOD Tier", default=0, min=0, max=7)
     lods: CollectionProperty(type=LODLevelItem)
     active_lod_index: IntProperty(name="Active LOD Selection", default=0)
-    export_directory: StringProperty(name="Export Directory", subtype="DIR_PATH", default="//Export/")
+    export_directory: StringProperty(
+        name="Export Directory",
+        subtype="DIR_PATH",
+        default="//Export/",
+        description="Destination folder for exported engine packages",
+        update=on_export_directory_updated,
+    )
     export_base_name: StringProperty(name="Asset Base Name", default="")
 
     # Live Engine Bridge Properties
@@ -767,17 +1653,23 @@ class LODToolSettings(PropertyGroup):
         subtype="DIR_PATH",
         default="",
         description="Root path to active Unreal, Unity, MSFS Community, or Godot project folder",
-        update=update_bridge_status_cached,
+        update=on_engine_project_path_updated,
     )
     enable_live_sync: BoolProperty(
         name="Live Sync on Export",
         default=True,
         description="Automatically trigger engine re-import or compile package upon export",
+        update=on_enable_live_sync_updated,
     )
     bridge_status_text: StringProperty(
         name="Bridge Status",
         default="Bridge Ready",
         description="Cached status report from engine bridge connection handshake",
+    )
+    bridge_connected: BoolProperty(
+        name="Bridge Connected",
+        default=False,
+        description="Cached active connection handshake status with game engine bridge",
     )
 
     # A/B Split-Screen Comparison Preview Properties
@@ -804,11 +1696,18 @@ class LODToolSettings(PropertyGroup):
     )
 
     # Batch Processing Properties
+    batch_mode: BoolProperty(
+        name="Batch Export (.blend files)",
+        default=False,
+        description="Batch-process all .blend files in a source directory with mirrored folder hierarchy",
+        update=on_batch_mode_updated,
+    )
     batch_source_directory: StringProperty(
         name="Source Folder",
         subtype="DIR_PATH",
         default="",
-        description="Directory containing 3D assets to process in batch",
+        description="Directory containing .blend assets to process in batch",
+        update=on_batch_source_updated,
     )
     batch_export_directory: StringProperty(
         name="Export Folder",
@@ -840,6 +1739,8 @@ class LODToolSettings(PropertyGroup):
 
 CLASSES = (
     LODLevelItem,
+    PBRMapItem,
+    PBRExportMapItem,
     LODToolSettings,
 )
 
@@ -862,10 +1763,25 @@ def register_properties() -> None:
     except Exception as exc:
         logger.debug("PointerProperty assignment exception: %s", exc)
 
+    if restore_preset_state_on_load and hasattr(bpy, "app") and hasattr(bpy.app, "handlers"):
+        if hasattr(bpy.app.handlers, "load_post"):
+            if restore_preset_state_on_load not in bpy.app.handlers.load_post:
+                bpy.app.handlers.load_post.append(restore_preset_state_on_load)
+        try:
+            restore_preset_state_on_load(None)
+        except Exception as exc:
+            logger.debug("Immediate preset restore exception: %s", exc)
+
 
 def unregister_properties() -> None:
     if not bpy:
         return
+    if restore_preset_state_on_load and hasattr(bpy, "app") and hasattr(bpy.app, "handlers"):
+        if hasattr(bpy.app.handlers, "load_post") and restore_preset_state_on_load in bpy.app.handlers.load_post:
+            try:
+                bpy.app.handlers.load_post.remove(restore_preset_state_on_load)
+            except (ValueError, KeyError, AttributeError) as exc:
+                logger.debug("Handler removal skipped: %s", exc)
     if hasattr(bpy.types.Scene, "lod_tool"):
         del bpy.types.Scene.lod_tool
     if hasattr(bpy.types.Object, "lod_tool"):

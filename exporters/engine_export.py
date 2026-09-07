@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 try:
@@ -18,10 +19,12 @@ except ImportError:
 try:
     from ..bridges.manager import BridgeManager
     from ..core.animations import AnimationRigSanitizer
+    from ..core.pbr_presets import PBRExportPresetManager
     from ..core.textures import TextureChannelPacker, TexturePoolManager
 except (ImportError, ValueError):
     from bridges.manager import BridgeManager
     from core.animations import AnimationRigSanitizer
+    from core.pbr_presets import PBRExportPresetManager
     from core.textures import TextureChannelPacker, TexturePoolManager
 
 from .godot_export import GodotExporter
@@ -165,37 +168,57 @@ class LOD_OT_pack_pbr_textures(Operator):
             self.report({"WARNING"}, "No materials found on selected or LOD objects.")
             return {"CANCELLED"}
 
-        import re
+        # Resolve active PBR preset
+        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", "")
+        if not preset_id:
+            engine_map = {
+                "UE5": "unreal_engine_5",
+                "UNITY_6": "unity_hdrp_maskmap",
+                "MSFS_2024": "msfs_2024_comp",
+                "GODOT_4": "godot_4_orm",
+            }
+            preset_id = engine_map.get(target_engine, "unreal_engine_5")
 
+        try:
+            preset = PBRExportPresetManager.get_preset(preset_id)
+        except Exception as exc:
+            logger.warning("Could not load export preset '%s', falling back: %s", preset_id, exc)
+            preset = PBRExportPresetManager.get_preset("unreal_engine_5")
+
+        strategy = getattr(props, "pbr_export_texture_strategy", "CONVERT_PNG")
+        bit_depth = int(getattr(props, "pbr_export_bit_depth", "8"))
+        naming_pattern = getattr(props, "pbr_export_naming_pattern", "{material}{suffix}") or "{material}{suffix}"
+        raw_asset = getattr(props, "export_base_name", "").strip()
+        asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_asset) if raw_asset else "SM_Asset"
+
+        all_futures: list[Any] = []
         packed_count = 0
+
         for mat in materials:
-            mat_name = re.sub(r"[^\w\-_\.]", "_", mat.name)
             try:
-                if target_engine == "UE5":
-                    orm_path = os.path.join(tex_dir, f"T_{mat_name}_ORM.png")
-                    TextureChannelPacker.pack_orm_ue5(mat, orm_path, target_size)
-                    norm_img = TextureChannelPacker.get_material_normal_image(mat)
-                    if norm_img:
-                        norm_path = os.path.join(tex_dir, f"T_{mat_name}_Normal_DirectX.png")
-                        TextureChannelPacker.convert_normal_directx(norm_img, norm_path, target_size)
-                    packed_count += 1
-                elif target_engine == "UNITY_6":
-                    mask_path = os.path.join(tex_dir, f"T_{mat_name}_MaskMap.png")
-                    TextureChannelPacker.pack_maskmap_unity(mat, mask_path, target_size)
-                    packed_count += 1
-                elif target_engine == "MSFS_2024":
-                    comp_path = os.path.join(tex_dir, f"T_{mat_name}_COMP.png")
-                    TextureChannelPacker.pack_comp_msfs(mat, comp_path, target_size)
-                    packed_count += 1
-                elif target_engine == "GODOT_4":
-                    orm_path = os.path.join(tex_dir, f"T_{mat_name}_ORM.png")
-                    TextureChannelPacker.pack_orm_godot(mat, orm_path, target_size)
+                futs = TextureChannelPacker.pack_material_preset(
+                    material=mat,
+                    preset=preset,
+                    export_dir=tex_dir,
+                    asset_name=asset_name,
+                    target_size=target_size,
+                    bit_depth=bit_depth,
+                    strategy=strategy,
+                    naming_pattern=naming_pattern,
+                )
+                if futs:
+                    all_futures.extend(futs)
                     packed_count += 1
             except Exception as exc:
                 logger.error("Failed packing texture set for material '%s': %s", mat.name, exc)
 
+        # Synchronize background disk compression barrier
+        if all_futures:
+            TexturePoolManager.wait_all(all_futures, timeout=60.0)
+
         self.report(
-            {"INFO"}, f"Successfully packed {packed_count} PBR texture set(s) for {target_engine} into {tex_dir}"
+            {"INFO"},
+            f"Successfully packed {packed_count} PBR texture set(s) using '{preset.get('name', preset_id)}' into {tex_dir}",
         )
         return {"FINISHED"}
 
@@ -254,12 +277,68 @@ class LOD_OT_sync_live_bridge(Operator):
         proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
 
         ok, msg = BridgeManager.sync_asset(context, target, export_dir, asset_name, proj_dir)
+        props.bridge_connected = ok
+        props.bridge_status_text = msg if ok else f"Not Ready: {msg}"
         if ok:
             self.report({"INFO"}, f"[Live Bridge] {msg}")
             return {"FINISHED"}
         else:
             self.report({"WARNING"}, f"[Live Bridge] {msg}")
             return {"CANCELLED"}
+
+
+class LOD_OT_toggle_live_bridge(Operator):
+    bl_idname = "lod_tool.toggle_live_bridge"
+    bl_label = "Toggle Live Link"
+    bl_description = "Toggle automatic Live Engine sync and verify bridge connection"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        return bool(bpy and hasattr(context.scene, "lod_tool"))
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy:
+            return {"CANCELLED"}
+        props = context.scene.lod_tool
+        engine = props.target_engine
+
+        # If already enabled, clicking disconnects / turns it OFF
+        if props.enable_live_sync:
+            props.enable_live_sync = False
+            props.bridge_connected = False
+            props.bridge_status_text = "Live Link Disabled"
+            self.report({"INFO"}, "[Live Link] Disconnected.")
+            return {"FINISHED"}
+
+        # Enable Live Sync and verify connection
+        props.enable_live_sync = True
+
+        # Attempt project auto-detection
+        try:
+            try:
+                from core.project_detector import detect_engine_project
+            except ImportError:
+                from ..core.project_detector import detect_engine_project
+
+            detected = detect_engine_project(props.export_directory, engine)
+            if detected:
+                props.engine_project_path = detected
+        except Exception as exc:
+            logger.debug("Project detection during toggle: %s", exc)
+
+        proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
+        is_ready, msg = BridgeManager.ping_engine(engine, proj_dir)
+
+        props.bridge_connected = is_ready
+        props.bridge_status_text = msg if is_ready else f"Not Ready: {msg}"
+
+        if is_ready:
+            self.report({"INFO"}, f"[Live Link] Connected to {engine}: {msg}")
+        else:
+            self.report({"WARNING"}, f"[Live Link] {engine} Offline: {msg}")
+
+        return {"FINISHED"}
 
 
 class LOD_OT_export_engine_package(Operator):
@@ -294,7 +373,6 @@ class LOD_OT_export_engine_package(Operator):
         if props.export_packed_textures:
             try:
                 bpy.ops.lod_tool.pack_pbr_textures()
-                TexturePoolManager.wait_all([], timeout=30.0)
             except (RuntimeError, AttributeError, OSError) as exc:
                 logger.warning("Auto PBR texture packing failed during export: %s", exc)
 
@@ -331,6 +409,7 @@ class LOD_OT_export_engine_package(Operator):
             if props.enable_live_sync:
                 proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
                 bridge_ok, bridge_msg = BridgeManager.sync_asset(context, target, export_dir, asset_name, proj_dir)
+                props.bridge_connected = bridge_ok
                 if bridge_ok:
                     self.report({"INFO"}, f"[Live Bridge] {bridge_msg}")
                 else:
@@ -349,6 +428,7 @@ def register_exporters() -> None:
         LOD_OT_pack_pbr_textures,
         LOD_OT_bake_rig_animation,
         LOD_OT_sync_live_bridge,
+        LOD_OT_toggle_live_bridge,
         LOD_OT_export_engine_package,
     ):
         try:
@@ -366,6 +446,7 @@ def unregister_exporters() -> None:
         return
     for cls in (
         LOD_OT_export_engine_package,
+        LOD_OT_toggle_live_bridge,
         LOD_OT_sync_live_bridge,
         LOD_OT_bake_rig_animation,
         LOD_OT_pack_pbr_textures,

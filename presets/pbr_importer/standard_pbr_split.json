@@ -1,0 +1,226 @@
+{
+  "name": "Standard PBR (Split Maps)",
+  "version": 2,
+  "description": "Standard PBR with individual textures per channel (Substance Default)",
+  "target_engine": "UE5",
+  "strategy": "CONVERT_PNG",
+  "bit_depth": 8,
+  "naming_pattern": "{material}{suffix}",
+  "maps": [
+    {
+      "id": "base_color",
+      "name": "Base Color",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_BaseColor",
+      "suffixes": [
+        "_BaseColor",
+        "_BC",
+        "_Albedo",
+        "_Diff",
+        "_Diffuse",
+        "_Col",
+        "_Color"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        },
+        "a": {
+          "target": "Alpha",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "roughness",
+      "name": "Roughness",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Roughness",
+      "suffixes": [
+        "_Roughness",
+        "_Rough",
+        "_RGH"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        }
+      }
+    },
+    {
+      "id": "glossiness",
+      "name": "Glossiness (Inverted)",
+      "priority": 10,
+      "export": false,
+      "export_suffix": "_Glossiness",
+      "suffixes": [
+        "_Glossiness",
+        "_Gloss",
+        "_Smoothness"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Roughness",
+          "invert": true,
+          "default": 0.5
+        }
+      }
+    },
+    {
+      "id": "metallic",
+      "name": "Metallic",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Metallic",
+      "suffixes": [
+        "_Metallic",
+        "_Metalness",
+        "_Metal",
+        "_MET"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "normal_gl",
+      "name": "Normal Map (OpenGL)",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Normal",
+      "suffixes": [
+        "_Normal_GL",
+        "_Normal",
+        "_Norm",
+        "_NRM",
+        "_N"
+      ],
+      "color_space": "Non-Color",
+      "normal_format": "OPENGL",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "normal_dx",
+      "name": "Normal Map (DirectX)",
+      "priority": 20,
+      "export": false,
+      "export_suffix": "_Normal_DirectX",
+      "suffixes": [
+        "_Normal_DX",
+        "_Norm_DX",
+        "_NRM_DX"
+      ],
+      "color_space": "Non-Color",
+      "normal_format": "DIRECTX",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "ao",
+      "name": "Ambient Occlusion",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_AO",
+      "suffixes": [
+        "_AO",
+        "_AmbientOcclusion",
+        "_Occlusion",
+        "_Occ"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        }
+      }
+    },
+    {
+      "id": "displacement",
+      "name": "Displacement / Height",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Displacement",
+      "suffixes": [
+        "_Height",
+        "_Displacement",
+        "_Disp",
+        "_Bump",
+        "_H"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Displacement",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "opacity",
+      "name": "Opacity / Alpha",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Opacity",
+      "suffixes": [
+        "_Opacity",
+        "_Alpha",
+        "_Transp",
+        "_A"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Alpha",
+          "invert": false,
+          "default": 1.0
+        }
+      }
+    },
+    {
+      "id": "emissive",
+      "name": "Emissive",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Emissive",
+      "suffixes": [
+        "_Emissive",
+        "_Emission",
+        "_Emit",
+        "_E"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ],
+  "schema_type": "omnimesh_pbr_import"
+}

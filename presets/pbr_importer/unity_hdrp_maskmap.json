@@ -1,0 +1,114 @@
+{
+  "name": "Unity HDRP (MaskMap)",
+  "version": 2,
+  "description": "Unity High Definition Render Pipeline (BaseMap, MaskMap [R: Metal, G: AO, B: Detail, A: Smoothness], Normal OpenGL)",
+  "target_engine": "UNITY_6",
+  "strategy": "CONVERT_PNG",
+  "bit_depth": 16,
+  "naming_pattern": "{material}{suffix}",
+  "maps": [
+    {
+      "id": "base_map",
+      "name": "Base Map",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_BaseMap",
+      "suffixes": [
+        "_BaseMap",
+        "_AlbedoTransparency",
+        "_MainTex",
+        "_Albedo",
+        "_Diffuse",
+        "_Col"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        },
+        "a": {
+          "target": "Alpha",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "mask_map",
+      "name": "Mask Map",
+      "priority": 50,
+      "export": true,
+      "export_suffix": "_MaskMap",
+      "suffixes": [
+        "_MaskMap",
+        "_Mask"
+      ],
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        },
+        "g": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        },
+        "b": {
+          "target": "Detail",
+          "invert": false,
+          "default": 0.0
+        },
+        "a": {
+          "target": "Roughness",
+          "invert": true,
+          "default": 0.5
+        }
+      }
+    },
+    {
+      "id": "normal",
+      "name": "Normal Map (OpenGL)",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Normal",
+      "suffixes": [
+        "_Normal_GL",
+        "_Normal",
+        "_Norm",
+        "_BumpMap",
+        "_NRM"
+      ],
+      "color_space": "Non-Color",
+      "normal_format": "OPENGL",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "emissive",
+      "name": "Emissive",
+      "priority": 10,
+      "export": true,
+      "export_suffix": "_Emission",
+      "suffixes": [
+        "_Emission",
+        "_Emissive",
+        "_Emit",
+        "_E"
+      ],
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ],
+  "schema_type": "omnimesh_pbr_import"
+}

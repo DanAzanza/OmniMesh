@@ -1,0 +1,88 @@
+{
+  "schema_type": "omnimesh_pbr_export",
+  "name": "Standard PBR (Split Maps)",
+  "version": 2,
+  "description": "Universal discrete texture export without channel packing",
+  "target_engine": "UE5",
+  "strategy": "CONVERT_PNG",
+  "bit_depth": 8,
+  "naming_pattern": "{material}{suffix}",
+  "maps": [
+    {
+      "id": "base_color",
+      "name": "Base Color",
+      "export_suffix": "_BaseColor",
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Base Color",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "roughness",
+      "name": "Roughness",
+      "export_suffix": "_Roughness",
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Roughness",
+          "invert": false,
+          "default": 0.5
+        }
+      }
+    },
+    {
+      "id": "metallic",
+      "name": "Metallic",
+      "export_suffix": "_Metallic",
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Metallic",
+          "invert": false,
+          "default": 0.0
+        }
+      }
+    },
+    {
+      "id": "ambient_occlusion",
+      "name": "Ambient Occlusion",
+      "export_suffix": "_AO",
+      "color_space": "Non-Color",
+      "channels": {
+        "r": {
+          "target": "Ambient Occlusion",
+          "invert": false,
+          "default": 1.0
+        }
+      }
+    },
+    {
+      "id": "normal",
+      "name": "Normal Map (OpenGL)",
+      "export_suffix": "_Normal",
+      "color_space": "Non-Color",
+      "normal_format": "OPENGL",
+      "channels": {
+        "rgb": {
+          "target": "Normal",
+          "invert": false
+        }
+      }
+    },
+    {
+      "id": "emissive",
+      "name": "Emissive",
+      "export_suffix": "_Emissive",
+      "color_space": "sRGB",
+      "channels": {
+        "rgb": {
+          "target": "Emission Color",
+          "invert": false
+        }
+      }
+    }
+  ]
+}

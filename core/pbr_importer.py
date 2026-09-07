@@ -2,10 +2,12 @@
 OmniMesh PBR Texture Importer & Multi-Channel Shader Graph Builder.
 Architected for Blender 4.2+ LTS & Blender 5.2 LTS (EEVEE Next, Principled BSDF V2, AgX / OpenColorIO).
 Features:
-- Token-bounded regex semantic classification with negative lookaheads and UDIM stripping.
-- OCIO AgX/ACES robust color space resolution.
-- Non-destructive DirectX normal inversion & packed channel demuxing (ORM/COMP/MaskMap).
-- Principled BSDF V2 socket compatibility layer.
+- Dynamic JSON preset-driven semantic classification with UDIM and tag stripping.
+- Priority-based socket conflict arbitration.
+- Hardened channel demuxing (RGB, R, G, B via SeparateColor, Alpha tapped directly).
+- Anti-chrome mirror guard on missing alpha.
+- Type-safe ShaderNodeMix RGBA socket resolution across Blender 4.2+ & 5.2 LTS.
+- Non-destructive DirectX normal map green-channel inversion.
 - Longest-prefix tokenized material slot matcher.
 """
 
@@ -14,72 +16,40 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any
-
-logger = logging.getLogger("OmniMesh.PBRImporter")
+from typing import Any, Optional
 
 try:
     import bpy
 except ImportError:
     bpy = None
 
+try:
+    from core.pbr_presets import (
+        DEFAULT_PRESET_ID,
+        PBRImportPresetManager,
+        PBRImporterPresetManager,
+    )
+except (ImportError, ValueError):
+    from .pbr_presets import (
+        DEFAULT_PRESET_ID,
+        PBRImportPresetManager,
+        PBRImporterPresetManager,
+    )
+
+logger = logging.getLogger("OmniMesh.PBRImporter")
+
 
 class PBRSemanticClassifier:
     """
-    Hardened semantic texture classifier with UDIM stripping, resolution filtering,
-    and token-bounded regex matching.
+    Dynamic semantic texture classifier supporting JSON preset templates,
+    UDIM stripping, resolution filtering, and token-bounded regex matching.
     """
 
-    # Resolution, UDIM, and variation suffixes to strip before token matching
     STRIP_PATTERNS = [
         re.compile(r"[._-](?:10\d{2}|u\d+_v\d+)(?=\.[^.]+$|$)", re.IGNORECASE),  # UDIM tiles (1001-1099)
         re.compile(r"[._-](?:[1-8]k|1024|2048|4096|8192)(?=\.[^.]+$|$)", re.IGNORECASE),  # Resolution tags
         re.compile(r"[._-](?:lod[0-4]|proxy|high|low)(?=\.[^.]+$|$)", re.IGNORECASE),  # LOD/Mesh tags
         re.compile(r"\.\d{3}$"),  # Blender duplicate extensions (.001)
-    ]
-
-    # Strict token definitions with explicit delimiters to prevent single-letter stem false positives
-    SEMANTIC_RULES: list[tuple[str, re.Pattern[str]]] = [
-        # Packed Formats (Highest priority to prevent individual channel capture)
-        ("PACKED_MASKMAP", re.compile(r"(?:^|[._-])(?:maskmap|mask_map|mask)(?:[._-]|$)", re.IGNORECASE)),
-        ("PACKED_ORM", re.compile(r"(?:^|[._-])(?:orm|ao_rough_metal|arm|ord)(?:[._-]|$)", re.IGNORECASE)),
-        ("PACKED_COMP", re.compile(r"(?:^|[._-])(?:comp|composite)(?:[._-]|$)", re.IGNORECASE)),
-        ("PACKED_METALLICGLOSS", re.compile(r"(?:^|[._-])(?:metallicgloss|metalgloss)(?:[._-]|$)", re.IGNORECASE)),
-        # Normal Maps (DirectX must be tested before generic/OpenGL)
-        (
-            "NORMAL_DIRECTX",
-            re.compile(
-                r"(?:^|[._-])(?:normal_?dx|nor_?dx|nrm_?dx|n_?dx|normal_directx|n_directx)(?:[._-]|$)", re.IGNORECASE
-            ),
-        ),
-        (
-            "NORMAL_OPENGL",
-            re.compile(r"(?:^|[._-])(?:normal_?gl|nor_?gl|nrm_?gl|normal|nor|nrm|n)(?:[._-]|$)", re.IGNORECASE),
-        ),
-        # Roughness vs Glossiness
-        ("ROUGHNESS", re.compile(r"(?:^|[._-])(?:roughness|rough|rgh|r)(?:[._-]|$)", re.IGNORECASE)),
-        (
-            "GLOSSINESS",
-            re.compile(r"(?:^|[._-])(?:glossiness|gloss|gls|smoothness|smooth|g)(?:[._-]|$)", re.IGNORECASE),
-        ),
-        # Metallic
-        ("METALLIC", re.compile(r"(?:^|[._-])(?:metallic|metalness|metal|met|m)(?:[._-]|$)", re.IGNORECASE)),
-        # Base Color / Albedo
-        (
-            "BASE_COLOR",
-            re.compile(r"(?:^|[._-])(?:base_?color|albedo|alb|diffuse|diff|col|color|d)(?:[._-]|$)", re.IGNORECASE),
-        ),
-        # Ambient Occlusion
-        (
-            "AMBIENT_OCCLUSION",
-            re.compile(r"(?:^|[._-])(?:ambient_?occlusion|ao|occlusion|occ)(?:[._-]|$)", re.IGNORECASE),
-        ),
-        # Emission
-        ("EMISSION", re.compile(r"(?:^|[._-])(?:emission|emissive|emit|e)(?:[._-]|$)", re.IGNORECASE)),
-        # Opacity / Alpha
-        ("OPACITY", re.compile(r"(?:^|[._-])(?:opacity|alpha|transparency|mask_opacity|a)(?:[._-]|$)", re.IGNORECASE)),
-        # Height / Displacement
-        ("DISPLACEMENT", re.compile(r"(?:^|[._-])(?:height|displacement|disp|bump|h)(?:[._-]|$)", re.IGNORECASE)),
     ]
 
     @classmethod
@@ -91,12 +61,51 @@ class PBRSemanticClassifier:
         return stem
 
     @classmethod
-    def classify(cls, filename: str) -> str | None:
-        """Returns the semantic texture channel type for a given filename."""
+    def classify_with_preset(cls, filename: str, preset: dict[str, Any]) -> Optional[tuple[str, dict[str, Any]]]:
+        """
+        Classifies filename against a preset's map definitions.
+        Sorts all candidate suffixes by length descending to ensure longer tokens
+        (e.g. '_Normal_DX') match before shorter prefixes (e.g. '_Normal').
+        Returns (map_id, map_dict) or None.
+        """
         clean = cls.clean_stem(filename)
-        for semantic_type, regex in cls.SEMANTIC_RULES:
-            if regex.search(clean):
-                return semantic_type
+        maps = preset.get("maps", [])
+
+        # Flatten (suffix, map_id, map_dict) candidates
+        candidates: list[tuple[str, str, dict[str, Any]]] = []
+        for m in maps:
+            map_id = m.get("id", "")
+            for s in m.get("suffixes", []):
+                candidates.append((s, map_id, m))
+
+        # Sort by length descending for greedy match priority
+        candidates.sort(key=lambda x: len(x[0]), reverse=True)
+
+        for suffix, map_id, map_def in candidates:
+            # Token boundary delimiter check: allows leading/trailing underscore, dash, dot, or boundary
+            s_clean = suffix.lstrip("._-")
+            pattern = re.compile(rf"(?:^|[._-]){re.escape(s_clean)}(?:[._-]|$)", re.IGNORECASE)
+            if pattern.search(clean):
+                return map_id, map_def
+
+        return None
+
+    @classmethod
+    def classify(cls, filename: str) -> Optional[str]:
+        """Backward-compatible fallback classification using default preset."""
+        preset = PBRImporterPresetManager.get_preset(DEFAULT_PRESET_ID)
+        res = cls.classify_with_preset(filename, preset)
+        if res:
+            # Map default preset IDs to legacy semantic types if needed
+            map_id = res[0].upper()
+            if map_id == "BASE_COLOR":
+                return "BASE_COLOR"
+            if map_id == "ORM":
+                return "PACKED_ORM"
+            if map_id == "NORMAL":
+                normal_fmt = res[1].get("normal_format", "OPENGL")
+                return "NORMAL_DIRECTX" if normal_fmt == "DIRECTX" else "NORMAL_OPENGL"
+            return map_id
         return None
 
 
@@ -141,7 +150,8 @@ class OCIOColorSpaceResolver:
 
 class ShaderGraphBuilder:
     """
-    Constructs or updates canonical Principled BSDF V2 node trees with clean grid layout.
+    Constructs or updates canonical Principled BSDF V2 node trees with clean grid layout,
+    arbitrary channel demuxing, type-safe mix nodes, and conflict arbitration.
     """
 
     NODE_X_SPACING = 300
@@ -158,29 +168,99 @@ class ShaderGraphBuilder:
                 return sock
         return None
 
+    @staticmethod
+    def get_mix_rgba_socket(mix_node: Any, identifier: str, is_output: bool = False) -> Any:
+        """
+        Type-safe RGBA socket resolver for ShaderNodeMix across Blender 4.2+ and 5.2 LTS.
+        Guards against duplicate socket names where inputs.get('A') returns the Float socket!
+        """
+        sockets = mix_node.outputs if is_output else mix_node.inputs
+        for s in sockets:
+            if getattr(s, "name", "") == identifier and getattr(s, "type", "") == "RGBA":
+                return s
+
+        candidates = [s for s in sockets if getattr(s, "type", "") == "RGBA"]
+        if identifier == "A" and len(candidates) >= 1:
+            return candidates[0]
+        if identifier == "B" and len(candidates) >= 2:
+            return candidates[1]
+        if identifier == "Result" and len(candidates) >= 1:
+            return candidates[0]
+
+        # Final index fallback if names and types cannot be determined
+        if is_output and len(mix_node.outputs) > 2:
+            return mix_node.outputs[2]
+        if not is_output and len(mix_node.inputs) > 7:
+            return mix_node.inputs[6] if identifier == "A" else mix_node.inputs[7]
+
+        return None
+
+    @classmethod
+    def resolve_texture_path(cls, raw_path: str, mode: str = "RELATIVE") -> tuple[str, bool]:
+        """
+        Resolves a texture path according to requested mode ('RELATIVE' vs 'ABSOLUTE').
+        Returns (resolved_path, is_relative).
+        Guards against unsaved files and Windows cross-drive boundaries.
+        """
+        if not raw_path or not bpy:
+            return raw_path, False
+
+        # First expand Blender's relative path syntax '//' to real absolute path
+        abs_path = os.path.abspath(bpy.path.abspath(raw_path)).replace("\\", "/")
+
+        if mode == "ABSOLUTE":
+            return abs_path, False
+
+        # If RELATIVE requested:
+        if not getattr(bpy.data, "is_saved", False) or not getattr(bpy.data, "filepath", ""):
+            return abs_path, False
+
+        blend_dir = os.path.dirname(bpy.path.abspath(bpy.data.filepath))
+
+        # Check cross-drive boundary on Windows
+        abs_drive, _ = os.path.splitdrive(abs_path)
+        blend_drive, _ = os.path.splitdrive(blend_dir)
+        if abs_drive.lower() != blend_drive.lower():
+            return abs_path, False
+
+        try:
+            rel = bpy.path.relpath(abs_path).replace("\\", "/")
+            return rel, True
+        except Exception:
+            return abs_path, False
+
     @classmethod
     def build_pbr_graph(
         cls,
         material: Any,
         texture_map: dict[str, str],
+        preset: Optional[dict[str, Any]] = None,
         preserve_existing: bool = False,
         ao_blend_mode: str = "MULTIPLY",
-    ) -> None:
-        """Constructs a deterministic PBR shader network."""
-        if not bpy or not material:
-            return
+        path_mode: str = "RELATIVE",
+    ) -> bool:
+        """
+        Constructs a deterministic PBR shader network driven by the active preset.
+        Handles arbitrary channel demuxing, invert math, type-safe AO mix, and normal map conversions.
+        """
+        if not bpy or not material or not texture_map:
+            return False
+
+        if preset is None:
+            preset = PBRImportPresetManager.get_preset(DEFAULT_PRESET_ID)
+
         material.use_nodes = True
         nt = material.node_tree
         nodes = nt.nodes
         links = nt.links
 
-        # Locate or create Output Material node
+        # 1. Locate or create Output Material node
         output_node = next((n for n in nodes if getattr(n, "type", "") == "OUTPUT_MATERIAL"), None)
         if not output_node:
             output_node = nodes.new(type="ShaderNodeOutputMaterial")
             output_node.location = (600, 300)
 
-        # Locate or create Principled BSDF node
+        # 2. Locate or create Principled BSDF node
         bsdf_node = next((n for n in nodes if getattr(n, "type", "") == "BSDF_PRINCIPLED"), None)
         if not bsdf_node:
             bsdf_node = nodes.new(type="ShaderNodeBsdfPrincipled")
@@ -194,226 +274,273 @@ class ShaderGraphBuilder:
                 if node not in keep_nodes:
                     nodes.remove(node)
 
-        # Shared UV & Mapping Coordinates
+        # 3. Coordinate Mapping
         tex_coord = nodes.new(type="ShaderNodeTexCoord")
-        tex_coord.location = (-1000, 0)
+        tex_coord.location = (-1200, 0)
         mapping = nodes.new(type="ShaderNodeMapping")
-        mapping.location = (-800, 0)
+        mapping.location = (-1000, 0)
         links.new(tex_coord.outputs["UV"], mapping.inputs["Vector"])
 
-        y_offset = 600
-        x_tex = -550
-        x_proc = -250
+        # 4. Conflict Arbitration & Route Plan
+        # Resolve map definitions for active files
+        maps_by_id = {m.get("id"): m for m in preset.get("maps", [])}
+        active_routes: list[dict[str, Any]] = []
 
-        # 1. Base Color
-        if "BASE_COLOR" in texture_map:
-            img = bpy.data.images.load(texture_map["BASE_COLOR"], check_existing=True)
-            OCIOColorSpaceResolver.apply_colorspace(img, is_data=False)
-            tex_node = nodes.new(type="ShaderNodeTexImage")
-            tex_node.image = img
-            tex_node.location = (x_tex, y_offset)
-            links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
+        for key, filepath in texture_map.items():
+            map_def = maps_by_id.get(key)
+            if not map_def:
+                # Try case-insensitive lookup
+                map_def = next((m for m in preset.get("maps", []) if m.get("id", "").lower() == key.lower()), None)
+            if not map_def:
+                continue
 
-            base_sock = cls.get_bsdf_socket(bsdf_node, ["Base Color", "BaseColor", "Albedo"])
-            if base_sock:
-                if "AMBIENT_OCCLUSION" in texture_map and ao_blend_mode == "MULTIPLY":
-                    ao_img = bpy.data.images.load(texture_map["AMBIENT_OCCLUSION"], check_existing=True)
-                    OCIOColorSpaceResolver.apply_colorspace(ao_img, is_data=True)
-                    ao_node = nodes.new(type="ShaderNodeTexImage")
-                    ao_node.image = ao_img
-                    ao_node.location = (x_tex, y_offset - cls.NODE_Y_SPACING)
-                    links.new(mapping.outputs["Vector"], ao_node.inputs["Vector"])
+            priority = int(map_def.get("priority", 10))
+            channels = map_def.get("channels", {})
+            for ch_key, ch_info in channels.items():
+                target = ch_info.get("target", "")
+                invert = bool(ch_info.get("invert", False))
+                active_routes.append(
+                    {
+                        "map_id": map_def.get("id"),
+                        "priority": priority,
+                        "filepath": filepath,
+                        "color_space": map_def.get("color_space", "Non-Color"),
+                        "normal_format": map_def.get("normal_format", "NONE"),
+                        "channel": ch_key.lower(),
+                        "target": target,
+                        "invert": invert,
+                    }
+                )
 
-                    mix_node = nodes.new(type="ShaderNodeMix")
-                    if hasattr(mix_node, "data_type"):
-                        mix_node.data_type = "RGBA"
-                    mix_node.blend_type = "MULTIPLY"
-                    if len(mix_node.inputs) > 0 and hasattr(mix_node.inputs[0], "default_value"):
-                        mix_node.inputs[0].default_value = 1.0  # Factor
-                    mix_node.location = (x_proc, y_offset)
+        if not active_routes:
+            return False
 
-                    # Connect Mix RGBA sockets
-                    col_a_sock = mix_node.inputs.get("A") or mix_node.inputs[6]
-                    col_b_sock = mix_node.inputs.get("B") or mix_node.inputs[7]
-                    col_res_sock = mix_node.outputs.get("Result") or mix_node.outputs[2]
+        # Sort routes by priority ascending so highest priority overrides lower
+        active_routes.sort(key=lambda x: x["priority"])
+        target_winners: dict[str, dict[str, Any]] = {}
+        for r in active_routes:
+            target_winners[r["target"]] = r
 
-                    links.new(tex_node.outputs["Color"], col_a_sock)
-                    links.new(ao_node.outputs["Color"], col_b_sock)
-                    links.new(col_res_sock, base_sock)
-                    y_offset -= cls.NODE_Y_SPACING
+        # 5. Node Placement State
+        y_cursor = 600
+        x_tex = -750
+        x_proc = -450
+        x_post = -150
+
+        loaded_tex_nodes: dict[str, Any] = {}
+        loaded_sep_nodes: dict[str, Any] = {}
+
+        def get_or_create_tex_node(filepath: str, color_space: str) -> Any:
+            nonlocal y_cursor
+            if filepath in loaded_tex_nodes:
+                return loaded_tex_nodes[filepath]
+
+            final_path, is_rel = cls.resolve_texture_path(filepath, mode=path_mode)
+            abs_disk_path = bpy.path.abspath(final_path)
+            img = bpy.data.images.load(abs_disk_path, check_existing=True)
+            if is_rel and hasattr(img, "filepath"):
+                img.filepath = final_path
+
+            is_data = color_space != "sRGB"
+            OCIOColorSpaceResolver.apply_colorspace(img, is_data=is_data)
+
+            t_node = nodes.new(type="ShaderNodeTexImage")
+            t_node.image = img
+            t_node.location = (x_tex, y_cursor)
+            links.new(mapping.outputs["Vector"], t_node.inputs["Vector"])
+            loaded_tex_nodes[filepath] = t_node
+            y_cursor -= cls.NODE_Y_SPACING
+            return t_node
+
+        def get_or_create_sep_node(tex_node: Any, y_loc: float) -> Any:
+            if tex_node in loaded_sep_nodes:
+                return loaded_sep_nodes[tex_node]
+            s_node = nodes.new(type="ShaderNodeSeparateColor")
+            s_node.location = (x_proc, y_loc)
+            links.new(tex_node.outputs["Color"], s_node.inputs["Color"])
+            loaded_sep_nodes[tex_node] = s_node
+            return s_node
+
+        # Cache resolved sockets for Base Color and AO to handle multiplicative mixing
+        base_color_source = None
+        ao_source = None
+        has_any_link = False
+
+        # 6. Execute Channel Routing for Resolved Winners
+        for target, route in target_winners.items():
+            filepath = route["filepath"]
+            ch = route["channel"]
+            invert = route["invert"]
+            t_node = get_or_create_tex_node(filepath, route["color_space"])
+            img = getattr(t_node, "image", None)
+
+            # Resolve source output socket
+            source_sock = None
+            if ch == "rgb":
+                source_sock = t_node.outputs.get("Color")
+            elif ch == "a":
+                # Guard against 100% mirror chrome on missing alpha channel
+                num_channels = getattr(img, "channels", 4)
+                if invert and num_channels < 4:
+                    logger.warning(
+                        "Image '%s' has %s channels (no Alpha). Skipping inverted Alpha routing.",
+                        getattr(img, "name", "unknown"),
+                        num_channels,
+                    )
+                    continue
+                source_sock = t_node.outputs.get("Alpha")
+            elif ch in {"r", "g", "b"}:
+                sep_node = get_or_create_sep_node(t_node, t_node.location.y)
+                sock_name = {"r": "Red", "g": "Green", "b": "Blue"}[ch]
+                source_sock = sep_node.outputs.get(sock_name)
+
+            if not source_sock:
+                continue
+
+            # Invert handler (1.0 - x)
+            if invert:
+                inv_node = nodes.new(type="ShaderNodeMath")
+                inv_node.operation = "SUBTRACT"
+                inv_node.inputs[0].default_value = 1.0
+                inv_node.location = (x_post, t_node.location.y)
+                links.new(source_sock, inv_node.inputs[1])
+                source_sock = inv_node.outputs.get("Value")
+
+            # Route to target socket
+            if target == "Base Color":
+                base_color_source = source_sock
+            elif target == "Ambient Occlusion":
+                ao_source = source_sock
+            elif target == "Normal":
+                norm_fmt = route.get("normal_format", "OPENGL")
+                norm_node = nodes.new(type="ShaderNodeNormalMap")
+                norm_node.location = (x_post, t_node.location.y)
+
+                if norm_fmt == "DIRECTX":
+                    # Invert Green channel non-destructively
+                    sep_norm = nodes.new(type="ShaderNodeSeparateColor")
+                    sep_norm.location = (x_proc, t_node.location.y)
+                    links.new(source_sock, sep_norm.inputs["Color"])
+
+                    inv_green = nodes.new(type="ShaderNodeMath")
+                    inv_green.operation = "SUBTRACT"
+                    inv_green.inputs[0].default_value = 1.0
+                    inv_green.location = (x_proc + 180, t_node.location.y - 60)
+                    links.new(sep_norm.outputs["Green"], inv_green.inputs[1])
+
+                    comb_norm = nodes.new(type="ShaderNodeCombineColor")
+                    comb_norm.location = (x_proc + 360, t_node.location.y)
+                    links.new(sep_norm.outputs["Red"], comb_norm.inputs["Red"])
+                    links.new(inv_green.outputs["Value"], comb_norm.inputs["Green"])
+                    links.new(sep_norm.outputs["Blue"], comb_norm.inputs["Blue"])
+
+                    links.new(comb_norm.outputs["Color"], norm_node.inputs["Color"])
                 else:
-                    links.new(tex_node.outputs["Color"], base_sock)
+                    links.new(source_sock, norm_node.inputs["Color"])
 
-            # Check if Alpha is embedded in BaseColor
-            if "OPACITY" not in texture_map and getattr(img, "channels", 3) == 4:
-                alpha_sock = cls.get_bsdf_socket(bsdf_node, ["Alpha"])
-                if alpha_sock:
-                    links.new(tex_node.outputs["Alpha"], alpha_sock)
-                    if hasattr(material, "blend_method"):
-                        material.blend_method = "CLIP"
-
-            y_offset -= cls.NODE_Y_SPACING
-
-        # 2. Packed ORM / COMP / MaskMap Demuxing
-        if "PACKED_ORM" in texture_map or "PACKED_COMP" in texture_map:
-            key = "PACKED_ORM" if "PACKED_ORM" in texture_map else "PACKED_COMP"
-            img = bpy.data.images.load(texture_map[key], check_existing=True)
-            OCIOColorSpaceResolver.apply_colorspace(img, is_data=True)
-            tex_node = nodes.new(type="ShaderNodeTexImage")
-            tex_node.image = img
-            tex_node.location = (x_tex, y_offset)
-            links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
-
-            sep_node = nodes.new(type="ShaderNodeSeparateColor")
-            sep_node.location = (x_proc, y_offset)
-            links.new(tex_node.outputs["Color"], sep_node.inputs["Color"])
-
-            # ORM: R=AO, G=Roughness, B=Metallic
-            rough_sock = cls.get_bsdf_socket(bsdf_node, ["Roughness"])
-            metal_sock = cls.get_bsdf_socket(bsdf_node, ["Metallic", "Metalness"])
-            if rough_sock:
-                links.new(sep_node.outputs["Green"], rough_sock)
-            if metal_sock:
-                links.new(sep_node.outputs["Blue"], metal_sock)
-
-            y_offset -= cls.NODE_Y_SPACING
-
-        # 3. Individual Metallic & Roughness / Glossiness
-        else:
-            if "METALLIC" in texture_map:
-                img = bpy.data.images.load(texture_map["METALLIC"], check_existing=True)
-                OCIOColorSpaceResolver.apply_colorspace(img, is_data=True)
-                tex_node = nodes.new(type="ShaderNodeTexImage")
-                tex_node.image = img
-                tex_node.location = (x_tex, y_offset)
-                links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
-                metal_sock = cls.get_bsdf_socket(bsdf_node, ["Metallic", "Metalness"])
-                if metal_sock:
-                    links.new(tex_node.outputs["Color"], metal_sock)
-                y_offset -= cls.NODE_Y_SPACING
-
-            if "ROUGHNESS" in texture_map:
-                img = bpy.data.images.load(texture_map["ROUGHNESS"], check_existing=True)
-                OCIOColorSpaceResolver.apply_colorspace(img, is_data=True)
-                tex_node = nodes.new(type="ShaderNodeTexImage")
-                tex_node.image = img
-                tex_node.location = (x_tex, y_offset)
-                links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
-                rough_sock = cls.get_bsdf_socket(bsdf_node, ["Roughness"])
-                if rough_sock:
-                    links.new(tex_node.outputs["Color"], rough_sock)
-                y_offset -= cls.NODE_Y_SPACING
-
-            elif "GLOSSINESS" in texture_map:
-                img = bpy.data.images.load(texture_map["GLOSSINESS"], check_existing=True)
-                OCIOColorSpaceResolver.apply_colorspace(img, is_data=True)
-                tex_node = nodes.new(type="ShaderNodeTexImage")
-                tex_node.image = img
-                tex_node.location = (x_tex, y_offset)
-                links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
-
-                # Invert: 1.0 - Gloss = Roughness
-                math_node = nodes.new(type="ShaderNodeMath")
-                math_node.operation = "SUBTRACT"
-                math_node.inputs[0].default_value = 1.0
-                math_node.location = (x_proc, y_offset)
-                links.new(tex_node.outputs["Color"], math_node.inputs[1])
-
-                rough_sock = cls.get_bsdf_socket(bsdf_node, ["Roughness"])
-                if rough_sock:
-                    links.new(math_node.outputs["Value"], rough_sock)
-                y_offset -= cls.NODE_Y_SPACING
-
-        # 4. Normal Map (DirectX Inversion vs OpenGL)
-        normal_key = (
-            "NORMAL_DIRECTX"
-            if "NORMAL_DIRECTX" in texture_map
-            else ("NORMAL_OPENGL" if "NORMAL_OPENGL" in texture_map else None)
-        )
-        if normal_key:
-            img = bpy.data.images.load(texture_map[normal_key], check_existing=True)
-            OCIOColorSpaceResolver.apply_colorspace(img, is_data=True)
-            tex_node = nodes.new(type="ShaderNodeTexImage")
-            tex_node.image = img
-            tex_node.location = (x_tex, y_offset)
-            links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
-
-            norm_node = nodes.new(type="ShaderNodeNormalMap")
-            norm_node.location = (x_proc, y_offset)
-
-            if normal_key == "NORMAL_DIRECTX":
-                # Non-destructive DirectX Green-channel inversion
-                sep_color = nodes.new(type="ShaderNodeSeparateColor")
-                sep_color.location = (x_tex + 250, y_offset)
-                links.new(tex_node.outputs["Color"], sep_color.inputs["Color"])
-
-                inv_green = nodes.new(type="ShaderNodeMath")
-                inv_green.operation = "SUBTRACT"
-                inv_green.inputs[0].default_value = 1.0
-                inv_green.location = (x_tex + 400, y_offset - 80)
-                links.new(sep_color.outputs["Green"], inv_green.inputs[1])
-
-                comb_color = nodes.new(type="ShaderNodeCombineColor")
-                comb_color.location = (x_tex + 550, y_offset)
-                links.new(sep_color.outputs["Red"], comb_color.inputs["Red"])
-                links.new(inv_green.outputs["Value"], comb_color.inputs["Green"])
-                links.new(sep_color.outputs["Blue"], comb_color.inputs["Blue"])
-
-                links.new(comb_color.outputs["Color"], norm_node.inputs["Color"])
+                dest_sock = cls.get_bsdf_socket(bsdf_node, ["Normal"])
+                if dest_sock:
+                    links.new(norm_node.outputs["Normal"], dest_sock)
+                    has_any_link = True
             else:
-                links.new(tex_node.outputs["Color"], norm_node.inputs["Color"])
+                dest_sock = None
+                if target in {"Roughness"}:
+                    dest_sock = cls.get_bsdf_socket(bsdf_node, ["Roughness"])
+                elif target in {"Metallic", "Metalness"}:
+                    dest_sock = cls.get_bsdf_socket(bsdf_node, ["Metallic", "Metalness"])
+                elif target in {"Emission Color", "Emission"}:
+                    dest_sock = cls.get_bsdf_socket(bsdf_node, ["Emission Color", "Emission"])
+                    strength_sock = cls.get_bsdf_socket(bsdf_node, ["Emission Strength"])
+                    if strength_sock and not strength_sock.is_linked:
+                        strength_sock.default_value = 1.0
+                elif target in {"Alpha", "Opacity"}:
+                    dest_sock = cls.get_bsdf_socket(bsdf_node, ["Alpha"])
+                    if hasattr(material, "surface_render_method"):
+                        material.surface_render_method = "DITHERED"
+                    if hasattr(material, "blend_method"):
+                        try:
+                            material.blend_method = "CLIP"
+                        except (AttributeError, TypeError):
+                            pass
+                elif target in {"Displacement", "Height"}:
+                    # Connect to Material Output Displacement via Displacement node
+                    disp_node = nodes.new(type="ShaderNodeDisplacement")
+                    disp_node.location = (300, 100)
+                    links.new(source_sock, disp_node.inputs["Height"])
+                    if "Displacement" in output_node.inputs:
+                        links.new(disp_node.outputs["Displacement"], output_node.inputs["Displacement"])
+                        has_any_link = True
+                else:
+                    dest_sock = cls.get_bsdf_socket(bsdf_node, [target])
 
-            normal_sock = cls.get_bsdf_socket(bsdf_node, ["Normal"])
-            if normal_sock:
-                links.new(norm_node.outputs["Normal"], normal_sock)
-            y_offset -= cls.NODE_Y_SPACING
+                if dest_sock:
+                    links.new(source_sock, dest_sock)
+                    has_any_link = True
 
-        # 5. Emission
-        if "EMISSION" in texture_map:
-            img = bpy.data.images.load(texture_map["EMISSION"], check_existing=True)
-            OCIOColorSpaceResolver.apply_colorspace(img, is_data=False)
-            tex_node = nodes.new(type="ShaderNodeTexImage")
-            tex_node.image = img
-            tex_node.location = (x_tex, y_offset)
-            links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
+        # 7. AO Multiplicative Blending into Base Color
+        bsdf_base = cls.get_bsdf_socket(bsdf_node, ["Base Color", "BaseColor", "Albedo"])
+        if bsdf_base:
+            if base_color_source and ao_source and ao_blend_mode == "MULTIPLY":
+                mix_node = nodes.new(type="ShaderNodeMix")
+                if hasattr(mix_node, "data_type"):
+                    mix_node.data_type = "RGBA"
+                mix_node.blend_type = "MULTIPLY"
+                if hasattr(mix_node, "clamp_result"):
+                    mix_node.clamp_result = True
+                mix_node.location = (x_post, 600)
 
-            emit_sock = cls.get_bsdf_socket(bsdf_node, ["Emission Color", "Emission"])
-            if emit_sock:
-                links.new(tex_node.outputs["Color"], emit_sock)
-            emit_strength = cls.get_bsdf_socket(bsdf_node, ["Emission Strength"])
-            if emit_strength and not getattr(emit_strength, "is_linked", False):
-                emit_strength.default_value = 1.0
-            y_offset -= cls.NODE_Y_SPACING
+                # Set Factor to 1.0 on Value socket
+                for in_s in mix_node.inputs:
+                    if getattr(in_s, "name", "") == "Factor" and getattr(in_s, "type", "") == "VALUE":
+                        in_s.default_value = 1.0
+                        break
 
-        # 6. Opacity / Alpha
-        if "OPACITY" in texture_map:
-            img = bpy.data.images.load(texture_map["OPACITY"], check_existing=True)
-            OCIOColorSpaceResolver.apply_colorspace(img, is_data=True)
-            tex_node = nodes.new(type="ShaderNodeTexImage")
-            tex_node.image = img
-            tex_node.location = (x_tex, y_offset)
-            links.new(mapping.outputs["Vector"], tex_node.inputs["Vector"])
+                col_a = cls.get_mix_rgba_socket(mix_node, "A", is_output=False)
+                col_b = cls.get_mix_rgba_socket(mix_node, "B", is_output=False)
+                res_sock = cls.get_mix_rgba_socket(mix_node, "Result", is_output=True)
 
-            alpha_sock = cls.get_bsdf_socket(bsdf_node, ["Alpha"])
-            if alpha_sock:
-                links.new(tex_node.outputs["Color"], alpha_sock)
-                if hasattr(material, "blend_method"):
-                    material.blend_method = "CLIP"
-            y_offset -= cls.NODE_Y_SPACING
+                if col_a and col_b and res_sock:
+                    links.new(base_color_source, col_a)
+                    links.new(ao_source, col_b)
+                    links.new(res_sock, bsdf_base)
+                    has_any_link = True
+                else:
+                    links.new(base_color_source, bsdf_base)
+                    has_any_link = True
+            elif base_color_source:
+                links.new(base_color_source, bsdf_base)
+                has_any_link = True
+
+        # 8. Clean up orphan images if not preserving
+        if not preserve_existing and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "images"):
+            for img in list(bpy.data.images):
+                if getattr(img, "users", 0) == 0:
+                    try:
+                        bpy.data.images.remove(img)
+                    except Exception as exc:
+                        logger.debug("Orphan image removal skipped: %s", exc)
+
+        return has_any_link
 
 
 class BatchMaterialSlotMatcher:
     """
-    Performs tokenized, longest-prefix matching to map texture sets to active mesh material slots.
+    Performs tokenized, longest-prefix matching to map texture sets to active mesh material slots
+    using the active preset's map rules.
     """
 
     @classmethod
-    def match_directory_to_slots(cls, obj: Any, folder_path: str) -> dict[str, dict[str, str]]:
+    def match_directory_to_slots(
+        cls, obj: Any, folder_path: str, preset: Optional[dict[str, Any]] = None
+    ) -> dict[str, dict[str, str]]:
         """
-        Returns a mapping of material_name -> {semantic_type: filepath}.
+        Returns a mapping of material_name -> {map_id: filepath} using active preset.
         """
         if not folder_path or not os.path.isdir(folder_path) or not obj or not getattr(obj, "material_slots", None):
             return {}
+
+        if preset is None:
+            preset = PBRImporterPresetManager.get_preset(DEFAULT_PRESET_ID)
 
         valid_exts = {".png", ".jpg", ".jpeg", ".tga", ".exr", ".tif", ".tiff", ".webp", ".dds"}
         try:
@@ -433,10 +560,11 @@ class BatchMaterialSlotMatcher:
         for filepath in all_files:
             filename = os.path.basename(filepath)
             stem = PBRSemanticClassifier.clean_stem(filename)
-            semantic_type = PBRSemanticClassifier.classify(filename)
+            res = PBRSemanticClassifier.classify_with_preset(filename, preset)
 
-            if not semantic_type:
+            if not res:
                 continue
+            map_id = res[0]
 
             matched_slot = None
             for s_name in slot_names:
@@ -449,6 +577,21 @@ class BatchMaterialSlotMatcher:
                 matched_slot = slot_names[0]
 
             if matched_slot:
-                results[matched_slot][semantic_type] = filepath
+                existing = results[matched_slot].get(map_id)
+                if existing:
+                    is_aux = any(k in filename.lower() for k in ("billboard", "proxy", "preview", "thumbnail"))
+                    existing_is_aux = any(
+                        k in os.path.basename(existing).lower() for k in ("billboard", "proxy", "preview", "thumbnail")
+                    )
+                    slot_is_aux = any(k in matched_slot.lower() for k in ("billboard", "proxy", "preview", "thumbnail"))
+
+                    if not slot_is_aux:
+                        if is_aux and not existing_is_aux:
+                            continue
+                        if not is_aux and existing_is_aux:
+                            results[matched_slot][map_id] = filepath
+                            continue
+
+                results[matched_slot][map_id] = filepath
 
         return results
