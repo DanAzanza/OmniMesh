@@ -19,11 +19,23 @@ except ImportError:
 try:
     from core.collision import CollisionManager
     from core.impostor import ImpostorManager
-    from ui.utils import get_selected_mesh_objects, resolve_lod_context, safe_report
+    from ui.utils import (
+        get_lod0_mesh_objects,
+        get_selected_mesh_objects,
+        resolve_asset_base_name,
+        resolve_lod_context,
+        safe_report,
+    )
 except (ImportError, ValueError):
     from ..core.collision import CollisionManager
     from ..core.impostor import ImpostorManager
-    from .utils import get_selected_mesh_objects, resolve_lod_context, safe_report
+    from .utils import (
+        get_lod0_mesh_objects,
+        get_selected_mesh_objects,
+        resolve_asset_base_name,
+        resolve_lod_context,
+        safe_report,
+    )
 
 
 class LOD_OT_generate_impostor(Operator):
@@ -109,7 +121,7 @@ class LOD_OT_generate_collision_hulls(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(context and get_selected_mesh_objects(context))
+        return bool(context and (get_selected_mesh_objects(context) or get_lod0_mesh_objects(context)))
 
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context:
@@ -118,11 +130,16 @@ class LOD_OT_generate_collision_hulls(Operator):
         if not props:
             props = context.scene.lod_tool
 
-        mesh_objs = get_selected_mesh_objects(context)
-        base_name = props.export_base_name or (
-            context.active_object.name if context.active_object else mesh_objs[0].name
-        )
-        base_name = base_name.split("_LOD")[0]
+        # Always resolve all true LOD0 source meshes for the asset/collection
+        mesh_objs = get_lod0_mesh_objects(context)
+        if not mesh_objs:
+            mesh_objs = get_selected_mesh_objects(context)
+
+        if not mesh_objs:
+            safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found for collision generation.")
+            return {"CANCELLED"}
+
+        base_name = resolve_asset_base_name(context, mesh_objs)
 
         created_hulls = CollisionManager.generate_colliders_for_objects(
             mesh_objs,
@@ -153,9 +170,11 @@ class LOD_OT_remove_collision_hulls(Operator):
         if not props:
             props = context.scene.lod_tool
 
-        mesh_objs = get_selected_mesh_objects(context)
-        base_name = props.export_base_name or (context.active_object.name if context.active_object else "Asset")
-        base_name = base_name.split("_LOD")[0]
+        mesh_objs = get_lod0_mesh_objects(context)
+        if not mesh_objs:
+            mesh_objs = get_selected_mesh_objects(context)
+
+        base_name = resolve_asset_base_name(context, mesh_objs)
 
         removed = CollisionManager.remove_colliders_for_objects(mesh_objs, base_name)
         props.last_generated_collider_count = 0

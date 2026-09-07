@@ -244,20 +244,28 @@ class CollisionDecomposer:
     @classmethod
     def decompose_mesh_to_hulls(
         cls,
-        source_obj: Any,
+        source_obj: Any = None,
         k_target: int = 4,
         max_verts_per_hull: int = 32,
         concavity_threshold: float = 0.05,
+        bm_source: Any = None,
     ) -> List[Any]:
         """
         Hierarchical Concavity-Driven Convex Decomposition (ACD).
         Returns list of hardened BMesh objects representing convex collision hulls.
+        Accepts either source_obj (with .data) or a pre-assembled bm_source BMesh.
         """
-        if not bmesh or not source_obj or not hasattr(source_obj, "data") or not source_obj.data:
+        if not bmesh:
             return []
 
-        bm_master = bmesh.new()
-        bm_master.from_mesh(source_obj.data)
+        if bm_source is not None:
+            bm_master = bm_source.copy()
+        elif source_obj and hasattr(source_obj, "data") and source_obj.data:
+            bm_master = bmesh.new()
+            bm_master.from_mesh(source_obj.data)
+        else:
+            return []
+
         if len(bm_master.verts) < 4:
             bm_master.free()
             return []
@@ -362,22 +370,28 @@ class CollisionManager:
         hull_index = 1
 
         if mode == "CONSOLIDATED" and len(mesh_objs) > 1:
-            # Combine all objects into single temporary BMesh
+            # Combine all objects into single temporary BMesh in world coordinates
             bm_unified = bmesh.new()
+            temp_meshes_to_clean = []
             for obj in mesh_objs:
                 bm_temp = bmesh.new()
                 bm_temp.from_mesh(obj.data)
                 bmesh.ops.transform(bm_temp, matrix=obj.matrix_world, verts=bm_temp.verts[:])
-                bm_temp.verts.ensure_lookup_table()
-                bm_unified.from_mesh(obj.data)
+                temp_m = bpy.data.meshes.new("_om_temp_sub")
+                bm_temp.to_mesh(temp_m)
                 bm_temp.free()
+                bm_unified.from_mesh(temp_m)
+                temp_meshes_to_clean.append(temp_m)
 
-            # Decompose unified
+            for temp_m in temp_meshes_to_clean:
+                bpy.data.meshes.remove(temp_m)
+
+            # Decompose unified geometry
             hulls = CollisionDecomposer.decompose_mesh_to_hulls(
-                mesh_objs[0],
                 k_target=hull_count,
                 max_verts_per_hull=max_verts_per_hull,
                 concavity_threshold=concavity_threshold,
+                bm_source=bm_unified,
             )
             bm_unified.free()
 
@@ -391,6 +405,7 @@ class CollisionManager:
                 c_obj.display_type = "WIRE"
                 c_obj.show_wire = True
                 c_obj["_is_collider"] = True
+                c_obj["_om_asset_base"] = base_name
                 target_coll.objects.link(c_obj)
                 created_collider_objs.append(c_obj)
                 hull_index += 1
@@ -430,6 +445,7 @@ class CollisionManager:
                     c_obj.display_type = "WIRE"
                     c_obj.show_wire = True
                     c_obj["_is_collider"] = True
+                    c_obj["_om_asset_base"] = base_name
                     target_coll.objects.link(c_obj)
                     created_collider_objs.append(c_obj)
                     hull_index += 1
@@ -440,7 +456,8 @@ class CollisionManager:
     @classmethod
     def remove_colliders_for_objects(cls, mesh_objs: List[Any], base_name: str) -> int:
         """
-        Purges existing collider objects and meshes matching `{base_name}_Collider_*`.
+        Purges existing collider objects and meshes scoped strictly to `{base_name}`.
+        Does not affect colliders of other assets in the scene.
         """
         if not bpy:
             return 0
@@ -448,22 +465,44 @@ class CollisionManager:
         coll_name = f"{base_name}_Colliders"
         removed_count = 0
 
-        # Scan scene objects
+        target_coll = bpy.data.collections.get(coll_name) if hasattr(bpy.data, "collections") else None
         to_remove = []
-        for obj in bpy.data.objects:
-            if obj.get("_is_collider", False) or (f"{base_name}_Collider_" in obj.name):
-                to_remove.append(obj)
+
+        # 1. Scope to target collection if it exists
+        if target_coll and hasattr(target_coll, "objects"):
+            for obj in list(target_coll.objects):
+                if obj.get("_is_collider", False) or "_Collider_" in getattr(obj, "name", ""):
+                    to_remove.append(obj)
+
+        # 2. Scope to scene objects matching this base_name or its mesh component names
+        sub_bases = tuple(f"{obj.name.split('_LOD')[0]}_Collider_" for obj in mesh_objs if hasattr(obj, "name"))
+        if hasattr(bpy.data, "objects"):
+            for obj in bpy.data.objects:
+                if obj in to_remove:
+                    continue
+                is_tagged = obj.get("_om_asset_base") == base_name and obj.get("_is_collider", False)
+                name = getattr(obj, "name", "")
+                is_named = name.startswith(f"{base_name}_Collider_") or (bool(sub_bases) and name.startswith(sub_bases))
+                if is_tagged or is_named:
+                    to_remove.append(obj)
 
         for obj in to_remove:
             mesh_data = obj.data if hasattr(obj, "data") else None
-            bpy.data.objects.remove(obj, do_unlink=True)
-            if mesh_data and mesh_data.users == 0:
-                bpy.data.meshes.remove(mesh_data, do_unlink=True)
+            if hasattr(bpy.data, "objects") and hasattr(bpy.data.objects, "remove"):
+                try:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                except TypeError:
+                    bpy.data.objects.remove(obj)
+            if mesh_data and hasattr(mesh_data, "users") and mesh_data.users == 0:
+                if hasattr(bpy.data, "meshes") and hasattr(bpy.data.meshes, "remove"):
+                    try:
+                        bpy.data.meshes.remove(mesh_data, do_unlink=True)
+                    except TypeError:
+                        bpy.data.meshes.remove(mesh_data)
             removed_count += 1
 
         # Remove empty collection
-        target_coll = bpy.data.collections.get(coll_name)
-        if target_coll and len(target_coll.objects) == 0:
+        if target_coll and hasattr(target_coll, "objects") and len(target_coll.objects) == 0:
             bpy.data.collections.remove(target_coll)
 
         return removed_count

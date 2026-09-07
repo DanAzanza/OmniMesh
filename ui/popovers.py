@@ -164,6 +164,33 @@ class OMNIMESH_PT_popover_materials(Panel):
         layout.prop(props, "mat_cleanup_purge_orphans_blendfile", text="Purge Orphan Materials from .blend")
 
 
+class OMNIMESH_PT_popover_collision(Panel):
+    """Popover for convex collision hull generation and physics decomposition settings."""
+
+    bl_idname = "OMNIMESH_PT_popover_collision"
+    bl_label = "Collision Hull Settings"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "HEADER"
+    bl_ui_units_x = 16
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        layout.label(text="Physics Decomposition", icon="MOD_PHYSICS")
+        layout.prop(props, "collision_decomposition_mode", text="Mode")
+
+        if props.collision_decomposition_mode in {"PER_OBJECT", "CONSOLIDATED"}:
+            layout.prop(props, "collision_hull_count", text="Hull Count")
+            layout.prop(props, "collision_concavity_threshold", text="Concavity (m)")
+
+        layout.separator()
+        layout.label(text="Engine Constraints", icon="PREFERENCES")
+        layout.prop(props, "collision_max_verts_per_hull", text="Max Verts / Hull")
+
+
 # =========================================================================
 # 3. LODs POPOVERS: CONFIGURE & GENERATION
 # =========================================================================
@@ -478,6 +505,7 @@ POPOVER_CLASSES = (
     OMNIMESH_PT_popover_import_preset,
     OMNIMESH_PT_popover_sanitize,
     OMNIMESH_PT_popover_materials,
+    OMNIMESH_PT_popover_collision,
     OMNIMESH_PT_popover_configure,
     OMNIMESH_PT_popover_generate,
     OMNIMESH_PT_popover_export,

@@ -14,8 +14,10 @@ from ui.operators import (
     LOD_OT_clean_and_repair_materials,
     LOD_OT_clean_and_repair_mesh,
     LOD_OT_generate_all,
+    LOD_OT_generate_collision_hulls,
     LOD_OT_import_pbr_set,
     LOD_OT_inspect_lod0,
+    LOD_OT_remove_collision_hulls,
     get_associated_armature,
     get_selected_mesh_objects,
     is_object_valid,
@@ -32,7 +34,7 @@ from ui.panel import (
     register_panel,
     unregister_panel,
 )
-from ui.popovers import POPOVER_CLASSES
+from ui.popovers import OMNIMESH_PT_popover_collision, POPOVER_CLASSES
 from ui.properties import register_properties, unregister_properties
 
 
@@ -61,7 +63,7 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_inspection_sub.bl_order == 0
 
     # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
-    assert len(POPOVER_CLASSES) == 9
+    assert len(POPOVER_CLASSES) == 10
     for popover_cls in POPOVER_CLASSES:
         assert getattr(popover_cls, "bl_space_type", None) == "VIEW_3D"
         assert getattr(popover_cls, "bl_region_type", None) == "HEADER"
@@ -73,7 +75,7 @@ def test_panel_class_hierarchy_and_order():
     # Registration tuple (parent-first topological order)
     assert len(PRIMARY_PANELS) == 4
     assert len(SUBPANEL_CLASSES) == 1
-    assert len(PANEL_CLASSES) == 14
+    assert len(PANEL_CLASSES) == 15
     assert PANEL_CLASSES[0] is OMNIMESH_PT_import
     assert PANEL_CLASSES[1] is OMNIMESH_PT_modify
     assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
@@ -137,7 +139,8 @@ def test_fix_lod0_operators_poll_and_exec_mocked():
     assert LOD_OT_inspect_lod0.poll(None) is False
     assert LOD_OT_analyze_and_configure.poll(None) is False
     assert LOD_OT_clean_and_repair_mesh.poll(None) is False
-    assert LOD_OT_generate_all.poll(None) is False
+    assert LOD_OT_generate_collision_hulls.poll(mock_context) is True
+    assert LOD_OT_generate_collision_hulls.poll(None) is False
 
     # Execute fallback when bpy is None
     op_inspect = LOD_OT_inspect_lod0()
@@ -160,6 +163,12 @@ def test_fix_lod0_operators_poll_and_exec_mocked():
 
     op_auto_pbr = LOD_OT_auto_match_pbr_folder()
     assert op_auto_pbr.execute(None) == {"FINISHED"}
+
+    op_col_gen = LOD_OT_generate_collision_hulls()
+    assert op_col_gen.execute(None) == {"FINISHED"}
+
+    op_col_rem = LOD_OT_remove_collision_hulls()
+    assert op_col_rem.execute(None) == {"FINISHED"}
 
 
 def test_ui_list_draw_item_mock():
@@ -402,3 +411,46 @@ def test_preset_delete_button_disabled_for_factory_presets():
     is_builtin_exp = PBRExportPresetManager.is_builtin(export_preset_id)
     enabled_exp_factory = not is_builtin_exp
     assert enabled_exp_factory is False, "Export X-Button must be disabled for factory presets"
+
+
+def test_modify_panel_collision_row_and_popover(monkeypatch):
+    """Verify OMNIMESH_PT_modify and OMNIMESH_PT_popover_collision draw without exceptions."""
+    import ui.panel as panel_mod
+    import ui.popovers as popovers_mod
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
+    monkeypatch.setattr(popovers_mod, "bpy", mock_bpy)
+
+    panel_modify = OMNIMESH_PT_modify()
+    popover_col = OMNIMESH_PT_popover_collision()
+
+    mock_context = MagicMock()
+    mock_props = MagicMock()
+    mock_mesh = MagicMock()
+    mock_mesh.name = "SM_Rock"
+    mock_mesh.type = "MESH"
+    mock_mesh.get.return_value = False
+
+    mock_context.scene.lod_tool = mock_props
+    mock_context.active_object = mock_mesh
+    mock_context.selected_objects = [mock_mesh]
+
+    mock_props.export_base_name = ""
+    mock_props.last_material_cleanup_summary = ""
+    mock_props.last_generated_collider_count = 3
+    mock_props.collision_decomposition_mode = "PER_OBJECT"
+    mock_props.collision_hull_count = 4
+    mock_props.collision_concavity_threshold = 0.05
+    mock_props.collision_max_verts_per_hull = 32
+
+    # Draw OMNIMESH_PT_modify
+    mock_layout = MagicMock()
+    panel_modify.layout = mock_layout
+    panel_modify.draw(mock_context)
+    assert mock_layout.row.called
+
+    # Draw OMNIMESH_PT_popover_collision
+    popover_col.layout = mock_layout
+    popover_col.draw(mock_context)
+    assert mock_layout.prop.called

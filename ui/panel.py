@@ -27,7 +27,7 @@ try:
         PBRExportPresetManager,
         PBRImportPresetManager,
     )
-    from .operators import get_selected_mesh_objects
+    from .operators import get_selected_mesh_objects, resolve_asset_base_name
     from .popovers import POPOVER_CLASSES
 except (ImportError, ValueError):
     from core.pbr_presets import (
@@ -35,7 +35,7 @@ except (ImportError, ValueError):
         PBRExportPresetManager,
         PBRImportPresetManager,
     )
-    from ui.operators import get_selected_mesh_objects
+    from ui.operators import get_selected_mesh_objects, resolve_asset_base_name
     from ui.popovers import POPOVER_CLASSES
 
 
@@ -142,19 +142,42 @@ class OMNIMESH_PT_modify(Panel):
 
         # 2. Action Row 1: Mesh Sanitization + Gear Popover
         row_san = layout.row(align=True)
-        row_san.scale_y = 1.3
-        row_san.operator("lod_tool.clean_and_repair_mesh", text="🧹 Sanitize Base Mesh", icon="BRUSH_DATA")
+        row_san.scale_y = 1.25
+        row_san.operator("lod_tool.clean_and_repair_mesh", text="Sanitize Base Mesh", icon="BRUSH_DATA")
         row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
 
         # 3. Action Row 2: Material Cleanup + Gear Popover
         row_mat = layout.row(align=True)
         row_mat.scale_y = 1.25
-        row_mat.operator("lod_tool.clean_and_repair_materials", text="🎨 Clean Materials", icon="MATERIAL_DATA")
+        row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
         row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
 
         if props.last_material_cleanup_summary:
             box_stat = layout.box()
             box_stat.label(text=props.last_material_cleanup_summary, icon="CHECKMARK")
+
+        # 4. Action Row 3: Collision Hulls + Delete + Gear Popover
+        row_col = layout.row(align=True)
+        row_col.scale_y = 1.25
+        row_col.operator("lod_tool.generate_collision_hulls", text="Generate Colliders", icon="MOD_PHYSICS")
+
+        # Determine if colliders exist for the active asset base collection
+        base_name = resolve_asset_base_name(context)
+        coll_name = f"{base_name}_Colliders" if base_name else ""
+        collider_count = 0
+        if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections"):
+            target_coll = bpy.data.collections.get(coll_name)
+            if target_coll and hasattr(target_coll, "objects"):
+                collider_count = len(
+                    [o for o in target_coll.objects if o.get("_is_collider", False) or "_Collider_" in o.name]
+                )
+        if collider_count == 0 and getattr(props, "last_generated_collider_count", 0) > 0:
+            collider_count = props.last_generated_collider_count
+
+        sub_del = row_col.row(align=True)
+        sub_del.enabled = collider_count > 0
+        sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
+        row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
 
 
 # =========================================================================

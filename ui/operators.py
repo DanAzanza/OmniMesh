@@ -62,8 +62,10 @@ try:
     from ui.split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
     from ui.utils import (
         get_associated_armature,
+        get_lod0_mesh_objects,
         get_selected_mesh_objects,
         is_object_valid,
+        resolve_asset_base_name,
         resolve_lod_context,
     )
 except (ImportError, ValueError):
@@ -109,8 +111,10 @@ except (ImportError, ValueError):
     from .split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
     from .utils import (
         get_associated_armature,
+        get_lod0_mesh_objects,
         get_selected_mesh_objects,
         is_object_valid,
+        resolve_asset_base_name,
         resolve_lod_context,
     )
 
@@ -143,8 +147,10 @@ def unregister_operators() -> None:
 
 __all__ = [
     "is_object_valid",
+    "get_lod0_mesh_objects",
     "get_selected_mesh_objects",
     "get_associated_armature",
+    "resolve_asset_base_name",
     "resolve_lod_context",
     "LOD_OT_inspect_lod0",
     "LOD_OT_analyze_and_configure",
