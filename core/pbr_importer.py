@@ -36,7 +36,7 @@ except (ImportError, ValueError):
         PBRImporterPresetManager,
     )
 
-logger = logging.getLogger("OmniMesh.PBRImporter")
+logger = logging.getLogger(__name__)
 
 
 class PBRSemanticClassifier:

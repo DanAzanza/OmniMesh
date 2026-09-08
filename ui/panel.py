@@ -372,9 +372,9 @@ class OMNIMESH_PT_lods_testing(Panel):
         row_test.use_property_split = False
         row_test.scale_y = 1.15
         if props.is_simulator_running:
-            row_test.operator("lod_tool.toggle_live_simulator", text="Stop Simulator", icon="CANCEL")
+            row_test.operator("lod_tool.toggle_simulator", text="Stop Simulator", icon="CANCEL")
         else:
-            row_test.operator("lod_tool.toggle_live_simulator", text="Live Simulator", icon="PLAY")
+            row_test.operator("lod_tool.toggle_simulator", text="Live Simulator", icon="PLAY")
 
         if props.is_split_active:
             row_test.operator("lod_tool.toggle_split_preview", text="Exit Split", icon="CANCEL")

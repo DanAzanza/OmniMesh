@@ -137,7 +137,7 @@ class GodotExporter:
 
         context.view_layer.objects.active = all_objs[0]
 
-        gltf_path = os.path.join(export_dir, f"{asset_name}.gltf")
+        gltf_path = os.path.join(export_dir, f"{clean_name}.gltf")
         try:
             bpy.ops.export_scene.gltf(
                 filepath=gltf_path,

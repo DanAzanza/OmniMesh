@@ -16,7 +16,7 @@ import logging
 import math
 from typing import Any
 
-logger = logging.getLogger("OmniMesh.Slender")
+logger = logging.getLogger(__name__)
 
 try:
     import bmesh

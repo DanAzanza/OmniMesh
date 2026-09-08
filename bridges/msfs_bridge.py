@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 from typing import Any, List, Optional, Tuple
 
@@ -119,7 +120,7 @@ class MSFS2024LiveBridge(EngineBridgeBase):
         if not os.path.exists(package_def_xml):
             return False, f"Package definition XML not found at: {package_def_xml}"
 
-        staging_dir = os.path.join(os.environ.get("TEMP", "C:/Temp"), "OmniMesh_MSFS_Staging")
+        staging_dir = os.path.join(tempfile.gettempdir(), "OmniMesh_MSFS_Staging")
         os.makedirs(staging_dir, exist_ok=True)
 
         creation_flags = 0

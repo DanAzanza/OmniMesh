@@ -188,8 +188,17 @@ class LOD_OT_toggle_simulator(Operator):
 
 
 # Alias class for backward compatibility
-class LOD_OT_toggle_live_simulator(LOD_OT_toggle_simulator):
+class LOD_OT_toggle_live_simulator(Operator):
+    """Alias operator for backward compatibility delegating to primary operator."""
+
     bl_idname = "lod_tool.toggle_live_simulator"
+    bl_label = "Toggle LOD Simulator"
+    bl_options = {"INTERNAL"}
+
+    def execute(self, context: Any) -> set[str]:
+        if bpy and hasattr(bpy.ops.lod_tool, "toggle_simulator"):
+            return bpy.ops.lod_tool.toggle_simulator()
+        return {"CANCELLED"}
 
 
 def register_simulator_ops() -> None:

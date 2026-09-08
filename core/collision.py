@@ -372,43 +372,58 @@ class CollisionManager:
         if mode == "CONSOLIDATED" and len(mesh_objs) > 1:
             # Combine all objects into single temporary BMesh in world coordinates
             bm_unified = bmesh.new()
-            temp_meshes_to_clean = []
-            for obj in mesh_objs:
-                bm_temp = bmesh.new()
-                bm_temp.from_mesh(obj.data)
-                bmesh.ops.transform(bm_temp, matrix=obj.matrix_world, verts=bm_temp.verts[:])
-                temp_m = bpy.data.meshes.new("_om_temp_sub")
-                bm_temp.to_mesh(temp_m)
-                bm_temp.free()
-                bm_unified.from_mesh(temp_m)
-                temp_meshes_to_clean.append(temp_m)
+            temp_meshes_to_clean: list[Any] = []
+            try:
+                for obj in mesh_objs:
+                    bm_temp = bmesh.new()
+                    try:
+                        bm_temp.from_mesh(obj.data)
+                        bmesh.ops.transform(bm_temp, matrix=obj.matrix_world, verts=bm_temp.verts[:])
+                        temp_m = bpy.data.meshes.new("_om_temp_sub")
+                        bm_temp.to_mesh(temp_m)
+                        temp_meshes_to_clean.append(temp_m)
+                        bm_unified.from_mesh(temp_m)
+                    finally:
+                        bm_temp.free()
 
-            for temp_m in temp_meshes_to_clean:
-                bpy.data.meshes.remove(temp_m)
+                for temp_m in temp_meshes_to_clean:
+                    if temp_m in bpy.data.meshes.values():
+                        bpy.data.meshes.remove(temp_m)
+                temp_meshes_to_clean.clear()
 
-            # Decompose unified geometry
-            hulls = CollisionDecomposer.decompose_mesh_to_hulls(
-                k_target=hull_count,
-                max_verts_per_hull=max_verts_per_hull,
-                concavity_threshold=concavity_threshold,
-                bm_source=bm_unified,
-            )
-            bm_unified.free()
+                # Decompose unified geometry
+                hulls = CollisionDecomposer.decompose_mesh_to_hulls(
+                    k_target=hull_count,
+                    max_verts_per_hull=max_verts_per_hull,
+                    concavity_threshold=concavity_threshold,
+                    bm_source=bm_unified,
+                )
+            finally:
+                bm_unified.free()
+                for temp_m in temp_meshes_to_clean:
+                    if temp_m in bpy.data.meshes.values():
+                        bpy.data.meshes.remove(temp_m)
 
-            for bm_hull in hulls:
-                c_name = f"{base_name}_Collider_{hull_index:02d}"
-                c_mesh = bpy.data.meshes.new(f"{c_name}_Mesh")
-                bm_hull.to_mesh(c_mesh)
-                bm_hull.free()
+            try:
+                for bm_hull in hulls:
+                    c_name = f"{base_name}_Collider_{hull_index:02d}"
+                    c_mesh = bpy.data.meshes.new(f"{c_name}_Mesh")
+                    bm_hull.to_mesh(c_mesh)
 
-                c_obj = bpy.data.objects.new(c_name, c_mesh)
-                c_obj.display_type = "WIRE"
-                c_obj.show_wire = True
-                c_obj["_is_collider"] = True
-                c_obj["_om_asset_base"] = base_name
-                target_coll.objects.link(c_obj)
-                created_collider_objs.append(c_obj)
-                hull_index += 1
+                    c_obj = bpy.data.objects.new(c_name, c_mesh)
+                    c_obj.display_type = "WIRE"
+                    c_obj.show_wire = True
+                    c_obj["_is_collider"] = True
+                    c_obj["_om_asset_base"] = base_name
+                    target_coll.objects.link(c_obj)
+                    created_collider_objs.append(c_obj)
+                    hull_index += 1
+            finally:
+                for bm_hull in hulls:
+                    try:
+                        bm_hull.free()
+                    except Exception as exc:
+                        logger.debug("bm_hull.free() skipped: %s", exc)
         else:
             # PER_OBJECT Area-Weighted Decomposition
             total_area = sum(sum(p.area for p in obj.data.polygons) for obj in mesh_objs) or 1.0
@@ -426,29 +441,35 @@ class CollisionManager:
                     concavity_threshold=concavity_threshold,
                 )
 
-                for bm_hull in hulls:
-                    c_name = f"{sub_base}_Collider_{hull_index:02d}"
-                    c_mesh = bpy.data.meshes.new(f"{c_name}_Mesh")
-                    bm_hull.to_mesh(c_mesh)
-                    bm_hull.free()
+                try:
+                    for bm_hull in hulls:
+                        c_name = f"{sub_base}_Collider_{hull_index:02d}"
+                        c_mesh = bpy.data.meshes.new(f"{c_name}_Mesh")
+                        bm_hull.to_mesh(c_mesh)
 
-                    c_obj = bpy.data.objects.new(c_name, c_mesh)
-                    # Inherit transform & parent relationship
-                    c_obj.matrix_world = obj.matrix_world.copy()
-                    if obj.parent:
-                        c_obj.parent = obj.parent
-                        c_obj.parent_type = obj.parent_type
-                        if hasattr(obj, "parent_bone") and obj.parent_bone:
-                            c_obj.parent_bone = obj.parent_bone
-                        c_obj.matrix_parent_inverse = obj.matrix_parent_inverse.copy()
+                        c_obj = bpy.data.objects.new(c_name, c_mesh)
+                        # Inherit transform & parent relationship
+                        c_obj.matrix_world = obj.matrix_world.copy()
+                        if obj.parent:
+                            c_obj.parent = obj.parent
+                            c_obj.parent_type = obj.parent_type
+                            if hasattr(obj, "parent_bone") and obj.parent_bone:
+                                c_obj.parent_bone = obj.parent_bone
+                            c_obj.matrix_parent_inverse = obj.matrix_parent_inverse.copy()
 
-                    c_obj.display_type = "WIRE"
-                    c_obj.show_wire = True
-                    c_obj["_is_collider"] = True
-                    c_obj["_om_asset_base"] = base_name
-                    target_coll.objects.link(c_obj)
-                    created_collider_objs.append(c_obj)
-                    hull_index += 1
+                        c_obj.display_type = "WIRE"
+                        c_obj.show_wire = True
+                        c_obj["_is_collider"] = True
+                        c_obj["_om_asset_base"] = sub_base
+                        target_coll.objects.link(c_obj)
+                        created_collider_objs.append(c_obj)
+                        hull_index += 1
+                finally:
+                    for bm_hull in hulls:
+                        try:
+                            bm_hull.free()
+                        except Exception as exc:
+                            logger.debug("bm_hull.free() skipped: %s", exc)
 
         logger.info("Generated %d collision hulls in collection '%s'", len(created_collider_objs), coll_name)
         return created_collider_objs

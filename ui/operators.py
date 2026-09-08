@@ -131,31 +131,64 @@ except (ImportError, ValueError):
         resolve_lod_context,
     )
 
+try:
+    from ui.export_ops import EXPORT_OPS_CLASSES
+except (ImportError, ValueError):
+    try:
+        from .export_ops import EXPORT_OPS_CLASSES
+    except (ImportError, ValueError):
+        EXPORT_OPS_CLASSES = ()
+
+try:
+    from ui.preset_ops import PRESET_OPERATOR_CLASSES
+except (ImportError, ValueError):
+    try:
+        from .preset_ops import PRESET_OPERATOR_CLASSES
+    except (ImportError, ValueError):
+        PRESET_OPERATOR_CLASSES = ()
+
 OPERATOR_CLASSES = [
     *CLEANUP_OPERATOR_CLASSES,
     *LOD_OPERATOR_CLASSES,
     *HULL_IMPOSTOR_OPERATOR_CLASSES,
     *PBR_OPERATOR_CLASSES,
+    *PRESET_OPERATOR_CLASSES,
     *CHUNK_OPERATOR_CLASSES,
+    *EXPORT_OPS_CLASSES,
 ]
 
 
 def register_operators() -> None:
     if not bpy:
         return
+    registered = set()
     for cls in OPERATOR_CLASSES:
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        if cls in registered:
+            continue
+        registered.add(cls)
+        existing = getattr(bpy.types, cls.__name__, None)
+        if existing is not None:
+            try:
+                bpy.utils.unregister_class(existing)
+            except Exception as exc:
+                logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
         bpy.utils.register_class(cls)
 
 
 def unregister_operators() -> None:
     if not bpy:
         return
+    unregistered = set()
     for cls in reversed(OPERATOR_CLASSES):
-        bpy.utils.unregister_class(cls)
+        if cls in unregistered:
+            continue
+        unregistered.add(cls)
+        existing = getattr(bpy.types, cls.__name__, None)
+        if existing is not None:
+            try:
+                bpy.utils.unregister_class(existing)
+            except Exception as exc:
+                logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
 
 
 __all__ = [

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-import sys
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +19,9 @@ bl_info = {
     "description": "Screen-Space Error driven LOD generation, topology sanitization, occlusion culling, collision hulls, multi-mesh hierarchies, skeletal rigging, bone pruning, billboard impostors, real-time viewport simulator, and multi-engine export (MSFS 2024, UE5, Unity 6, Godot 4)",
     "category": "Mesh",
 }
+
+_OMNIMESH_RELOAD = "_OMNIMESH_INITIALIZED" in locals()
+_OMNIMESH_INITIALIZED = True
 
 if __package__:
     from . import bridges
@@ -105,47 +107,70 @@ else:
     )
 
 # Dynamic reloading for live development sessions
-if "bpy" in locals() and "bpy" in sys.modules:
-    importlib.reload(metrics)
-    importlib.reload(modifiers)
-    importlib.reload(sanitizer)
-    importlib.reload(occlusion)
-    importlib.reload(collision)
-    importlib.reload(impostor)
-    importlib.reload(decimator)
-    importlib.reload(chunking)
-    importlib.reload(materials)
-    importlib.reload(pbr_importer)
-    importlib.reload(pbr_presets)
-    importlib.reload(pivot)
-    importlib.reload(slender)
-    importlib.reload(normals)
-    importlib.reload(hierarchy)
-    importlib.reload(rigging)
-    importlib.reload(textures)
-    importlib.reload(animations)
-    importlib.reload(batch)
+if _OMNIMESH_RELOAD:
+    try:
+        unreg = globals().get("unregister")
+        if callable(unreg):
+            unreg()
+    except Exception as exc:
+        logger.debug("Pre-reload unregister exception: %s", exc)
+
+    # 1. Core modules
+    for mod in (
+        metrics,
+        modifiers,
+        sanitizer,
+        occlusion,
+        collision,
+        impostor,
+        decimator,
+        chunking,
+        materials,
+        pbr_importer,
+        pbr_presets,
+        pivot,
+        slender,
+        normals,
+        hierarchy,
+        rigging,
+        textures,
+        animations,
+        batch,
+        simulator,
+    ):
+        importlib.reload(mod)
+
+    # 2. Exporters
+    for mod in (
+        msfs_export,
+        ue5_export,
+        unity_export,
+        godot_export,
+        engine_export,
+    ):
+        importlib.reload(mod)
+
+    # 3. Bridges
     importlib.reload(bridges)
-    importlib.reload(simulator)
-    importlib.reload(properties)
-    importlib.reload(lists)
-    importlib.reload(utils)
-    importlib.reload(cleanup_ops)
-    importlib.reload(chunk_ops)
-    importlib.reload(hull_impostor_ops)
-    importlib.reload(lod_ops)
-    importlib.reload(pbr_ops)
-    importlib.reload(operators)
-    importlib.reload(panel)
-    importlib.reload(simulator_ops)
-    importlib.reload(batch_panel)
-    importlib.reload(split_preview)
-    importlib.reload(hud)
-    importlib.reload(msfs_export)
-    importlib.reload(ue5_export)
-    importlib.reload(unity_export)
-    importlib.reload(godot_export)
-    importlib.reload(engine_export)
+
+    # 4. UI Layer
+    for mod in (
+        properties,
+        lists,
+        utils,
+        cleanup_ops,
+        chunk_ops,
+        hull_impostor_ops,
+        lod_ops,
+        pbr_ops,
+        operators,
+        panel,
+        simulator_ops,
+        batch_panel,
+        split_preview,
+        hud,
+    ):
+        importlib.reload(mod)
 
 
 def register():
@@ -176,6 +201,11 @@ def unregister():
             fn()
         except Exception as exc:
             logger.debug("Failed unregistering %s: %s", getattr(fn, "__name__", "fn"), exc)
+
+    try:
+        textures.TexturePoolManager.shutdown()
+    except Exception as exc:
+        logger.debug("Texture pool shutdown exception: %s", exc)
 
 
 if __name__ == "__main__":

@@ -5,32 +5,13 @@ Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture, Animatio
 from __future__ import annotations
 
 import logging
-import os
-import re
 from typing import Any
 
 try:
     import bpy
-    from bpy.types import Operator
 except ImportError:
     bpy = None
-    Operator = object
 
-try:
-    from ..bridges.manager import BridgeManager
-    from ..core.animations import AnimationRigSanitizer
-    from ..core.pbr_presets import PBRExportPresetManager
-    from ..core.textures import TextureChannelPacker, TexturePoolManager
-except (ImportError, ValueError):
-    from bridges.manager import BridgeManager
-    from core.animations import AnimationRigSanitizer
-    from core.pbr_presets import PBRExportPresetManager
-    from core.textures import TextureChannelPacker, TexturePoolManager
-
-from .godot_export import GodotExporter
-from .msfs_export import MSFSExporter
-from .ue5_export import UE5Exporter
-from .unity_export import UnityExporter
 
 logger = logging.getLogger(__name__)
 
@@ -115,343 +96,47 @@ class PreFlightValidator:
         return errors
 
 
-class LOD_OT_pack_pbr_textures(Operator):
-    bl_idname = "lod_tool.pack_pbr_textures"
-    bl_label = "Pack & Export Textures"
-    bl_description = "Channel-pack PBR textures for the selected target game engine"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bool(
-            bpy and context and (getattr(context, "active_object", None) or getattr(context.scene, "lod_tool", None))
+try:
+    from ui.export_ops import (
+        EXPORT_OPS_CLASSES,
+        LOD_OT_bake_rig_animation,
+        LOD_OT_export_engine_package,
+        LOD_OT_pack_pbr_textures,
+        LOD_OT_sync_live_bridge,
+        LOD_OT_toggle_live_bridge,
+        register_export_ops,
+        unregister_export_ops,
+    )
+except (ImportError, ValueError):
+    try:
+        from ..ui.export_ops import (
+            EXPORT_OPS_CLASSES,
+            LOD_OT_bake_rig_animation,
+            LOD_OT_export_engine_package,
+            LOD_OT_pack_pbr_textures,
+            LOD_OT_sync_live_bridge,
+            LOD_OT_toggle_live_bridge,
+            register_export_ops,
+            unregister_export_ops,
         )
-
-    def execute(self, context: Any) -> set[str]:
-        if not bpy or not context:
-            return {"CANCELLED"}
-        props = getattr(context.scene, "lod_tool", None)
-        if not props:
-            self.report({"ERROR"}, "LOD tool scene properties not found.")
-            return {"CANCELLED"}
-
-        export_dir = (
-            bpy.path.abspath(props.export_directory) if props.export_directory else bpy.path.abspath("//Export/")
-        )
-        tex_dir = os.path.join(export_dir, "Textures")
-        os.makedirs(tex_dir, exist_ok=True)
-
-        res_str = str(getattr(props, "texture_max_resolution", "2048"))
-        if res_str.isdigit():
-            res = int(res_str)
-            target_size = (res, res)
-        else:
-            target_size = (2048, 2048)
-
-        target_engine = props.target_engine
-
-        materials: set[Any] = set()
-        objs_to_check = list(context.selected_objects) if getattr(context, "selected_objects", None) else []
-        if not objs_to_check and getattr(context, "active_object", None):
-            objs_to_check.append(context.active_object)
-        if not objs_to_check and len(props.lods) > 0:
-            for tier in props.lods:
-                if tier.generated_obj:
-                    objs_to_check.append(tier.generated_obj)
-
-        for obj in objs_to_check:
-            for slot in getattr(obj, "material_slots", []):
-                if slot.material:
-                    materials.add(slot.material)
-
-        if not materials:
-            self.report({"WARNING"}, "No materials found on selected or LOD objects.")
-            return {"CANCELLED"}
-
-        # Resolve active PBR preset
-        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", "")
-        if not preset_id:
-            engine_map = {
-                "UE5": "unreal_engine_5",
-                "UNITY_6": "unity_hdrp_maskmap",
-                "MSFS_2024": "msfs_2024_comp",
-                "GODOT_4": "godot_4_orm",
-            }
-            preset_id = engine_map.get(target_engine, "unreal_engine_5")
-
-        try:
-            preset = PBRExportPresetManager.get_preset(preset_id)
-        except Exception as exc:
-            logger.warning("Could not load export preset '%s', falling back: %s", preset_id, exc)
-            preset = PBRExportPresetManager.get_preset("unreal_engine_5")
-
-        strategy = getattr(props, "pbr_export_texture_strategy", "CONVERT_PNG")
-        bit_depth = int(getattr(props, "pbr_export_bit_depth", "8"))
-        naming_pattern = getattr(props, "pbr_export_naming_pattern", "{material}{suffix}") or "{material}{suffix}"
-        raw_asset = getattr(props, "export_base_name", "").strip()
-        asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_asset) if raw_asset else "SM_Asset"
-
-        all_futures: list[Any] = []
-        packed_count = 0
-
-        for mat in materials:
-            try:
-                futs = TextureChannelPacker.pack_material_preset(
-                    material=mat,
-                    preset=preset,
-                    export_dir=tex_dir,
-                    asset_name=asset_name,
-                    target_size=target_size,
-                    bit_depth=bit_depth,
-                    strategy=strategy,
-                    naming_pattern=naming_pattern,
-                )
-                if futs:
-                    all_futures.extend(futs)
-                    packed_count += 1
-            except Exception as exc:
-                logger.error("Failed packing texture set for material '%s': %s", mat.name, exc)
-
-        # Synchronize background disk compression barrier
-        if all_futures:
-            TexturePoolManager.wait_all(all_futures, timeout=60.0)
-
-        self.report(
-            {"INFO"},
-            f"Successfully packed {packed_count} PBR texture set(s) using '{preset.get('name', preset_id)}' into {tex_dir}",
-        )
-        return {"FINISHED"}
-
-
-class LOD_OT_bake_rig_animation(Operator):
-    bl_idname = "lod_tool.bake_rig_animation"
-    bl_label = "Bake & Validate Animation"
-    bl_description = "Bake evaluated depsgraph deform bone matrices (IK to FK) for clean engine export"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        if not bpy or not context:
-            return False
-        obj = getattr(context, "active_object", None)
-        return bool(obj and (obj.type == "ARMATURE" or (obj.parent and obj.parent.type == "ARMATURE")))
-
-    def execute(self, context: Any) -> set[str]:
-        if not bpy:
-            return {"CANCELLED"}
-        obj = context.active_object
-        armature = obj if obj.type == "ARMATURE" else obj.parent
-
-        if not armature or not armature.animation_data or not armature.animation_data.action:
-            self.report({"WARNING"}, "No active Action found on Armature.")
-            return {"CANCELLED"}
-
-        action = armature.animation_data.action
-        baked = AnimationRigSanitizer.bake_deform_animation(context, armature, action)
-        if baked:
-            AnimationRigSanitizer.setup_clean_nla_export(armature, baked)
-            self.report({"INFO"}, f"Successfully baked deform Action '{baked.name}' and assigned to solo NLA track.")
-            return {"FINISHED"}
-        else:
-            self.report({"ERROR"}, "Failed to bake deform animation.")
-            return {"CANCELLED"}
-
-
-class LOD_OT_sync_live_bridge(Operator):
-    bl_idname = "lod_tool.sync_live_bridge"
-    bl_label = "Sync to Engine"
-    bl_description = "Synchronize exported asset and textures with active game engine or project directory"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bool(bpy and hasattr(context.scene, "lod_tool"))
-
-    def execute(self, context: Any) -> set[str]:
-        if not bpy:
-            return {"CANCELLED"}
-        props = context.scene.lod_tool
-        export_dir = bpy.path.abspath(props.export_directory)
-        asset_name = props.export_base_name or "SM_Asset"
-        target = props.target_engine
-        proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
-
-        ok, msg = BridgeManager.sync_asset(context, target, export_dir, asset_name, proj_dir)
-        props.bridge_connected = ok
-        props.bridge_status_text = msg if ok else f"Not Ready: {msg}"
-        if ok:
-            self.report({"INFO"}, f"[Live Bridge] {msg}")
-            return {"FINISHED"}
-        else:
-            self.report({"WARNING"}, f"[Live Bridge] {msg}")
-            return {"CANCELLED"}
-
-
-class LOD_OT_toggle_live_bridge(Operator):
-    bl_idname = "lod_tool.toggle_live_bridge"
-    bl_label = "Toggle Live Link"
-    bl_description = "Toggle automatic Live Engine sync and verify bridge connection"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bool(bpy and hasattr(context.scene, "lod_tool"))
-
-    def execute(self, context: Any) -> set[str]:
-        if not bpy:
-            return {"CANCELLED"}
-        props = context.scene.lod_tool
-        engine = props.target_engine
-
-        # If already enabled, clicking disconnects / turns it OFF
-        if props.enable_live_sync:
-            props.enable_live_sync = False
-            props.bridge_connected = False
-            props.bridge_status_text = "Live Link Disabled"
-            self.report({"INFO"}, "[Live Link] Disconnected.")
-            return {"FINISHED"}
-
-        # Enable Live Sync and verify connection
-        props.enable_live_sync = True
-
-        # Attempt project auto-detection
-        try:
-            try:
-                from core.project_detector import detect_engine_project
-            except ImportError:
-                from ..core.project_detector import detect_engine_project
-
-            detected = detect_engine_project(props.export_directory, engine)
-            if detected:
-                props.engine_project_path = detected
-        except Exception as exc:
-            logger.debug("Project detection during toggle: %s", exc)
-
-        proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
-        is_ready, msg = BridgeManager.ping_engine(engine, proj_dir)
-
-        props.bridge_connected = is_ready
-        props.bridge_status_text = msg if is_ready else f"Not Ready: {msg}"
-
-        if is_ready:
-            self.report({"INFO"}, f"[Live Link] Connected to {engine}: {msg}")
-        else:
-            self.report({"WARNING"}, f"[Live Link] {engine} Offline: {msg}")
-
-        return {"FINISHED"}
-
-
-class LOD_OT_export_engine_package(Operator):
-    bl_idname = "lod_tool.export_engine_package"
-    bl_label = "1-Click Export Asset"
-    bl_description = "Export complete LOD package with meshes, packed PBR textures, and baked animations"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bool(bpy and hasattr(context.scene, "lod_tool") and len(context.scene.lod_tool.lods) > 0)
-
-    def execute(self, context: Any) -> set[str]:
-        if not bpy:
-            return {"CANCELLED"}
-        props = context.scene.lod_tool
-
-        errors = PreFlightValidator.run_checks(context)
-        if errors:
-            for err in errors:
-                self.report({"ERROR"}, f"[Pre-Flight Gate] {err}")
-            return {"CANCELLED"}
-
-        export_dir = bpy.path.abspath(props.export_directory)
-        import re
-
-        raw_name = props.export_base_name.strip() if props.export_base_name else "SM_Asset"
-        asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name) or "SM_Asset"
-        target = props.target_engine
-
-        # Auto-pack PBR textures if enabled
-        if props.export_packed_textures:
-            try:
-                bpy.ops.lod_tool.pack_pbr_textures()
-            except (RuntimeError, AttributeError, OSError) as exc:
-                logger.warning("Auto PBR texture packing failed during export: %s", exc)
-
-        # Auto-bake Armature animation if enabled
-        if props.bake_animations and context.active_object:
-            obj = context.active_object
-            armature = (
-                obj
-                if obj.type == "ARMATURE"
-                else (obj.parent if obj.parent and obj.parent.type == "ARMATURE" else None)
-            )
-            if armature and armature.animation_data and armature.animation_data.action:
-                try:
-                    bpy.ops.lod_tool.bake_rig_animation()
-                except (RuntimeError, AttributeError, ValueError) as exc:
-                    logger.warning("Auto animation baking failed during export: %s", exc)
-
-        success = False
-        message = ""
-
-        if target == "MSFS_2024":
-            success, message = MSFSExporter.export_asset(context, export_dir, asset_name)
-        elif target == "UE5":
-            success, message = UE5Exporter.export_asset(context, export_dir, asset_name)
-        elif target == "UNITY_6":
-            success, message = UnityExporter.export_asset(context, export_dir, asset_name)
-        elif target == "GODOT_4":
-            success, message = GodotExporter.export_asset(context, export_dir, asset_name)
-
-        if success:
-            self.report({"INFO"}, f"[LOD Export] {message}")
-
-            # Auto Live Bridge Trigger if enabled
-            if props.enable_live_sync:
-                proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
-                bridge_ok, bridge_msg = BridgeManager.sync_asset(context, target, export_dir, asset_name, proj_dir)
-                props.bridge_connected = bridge_ok
-                if bridge_ok:
-                    self.report({"INFO"}, f"[Live Bridge] {bridge_msg}")
-                else:
-                    self.report({"WARNING"}, f"[Live Bridge] {bridge_msg}")
-
-            return {"FINISHED"}
-        else:
-            self.report({"ERROR"}, f"[LOD Export Failed] {message}")
-            return {"CANCELLED"}
+    except (ImportError, ValueError):
+        EXPORT_OPS_CLASSES = ()  # type: ignore
+        LOD_OT_bake_rig_animation = None  # type: ignore
+        LOD_OT_export_engine_package = None  # type: ignore
+        LOD_OT_pack_pbr_textures = None  # type: ignore
+        LOD_OT_sync_live_bridge = None  # type: ignore
+        LOD_OT_toggle_live_bridge = None  # type: ignore
+        register_export_ops = None  # type: ignore
+        unregister_export_ops = None  # type: ignore
 
 
 def register_exporters() -> None:
-    if not bpy:
-        return
-    for cls in (
-        LOD_OT_pack_pbr_textures,
-        LOD_OT_bake_rig_animation,
-        LOD_OT_sync_live_bridge,
-        LOD_OT_toggle_live_bridge,
-        LOD_OT_export_engine_package,
-    ):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        try:
-            bpy.utils.register_class(cls)
-        except Exception as exc:
-            logger.debug("Safe register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    """Delegates operator registration to ui.export_ops."""
+    if register_export_ops:
+        register_export_ops()
 
 
 def unregister_exporters() -> None:
-    if not bpy:
-        return
-    for cls in (
-        LOD_OT_export_engine_package,
-        LOD_OT_toggle_live_bridge,
-        LOD_OT_sync_live_bridge,
-        LOD_OT_bake_rig_animation,
-        LOD_OT_pack_pbr_textures,
-    ):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    """Delegates operator unregistration to ui.export_ops."""
+    if unregister_export_ops:
+        unregister_export_ops()

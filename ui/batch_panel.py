@@ -100,7 +100,7 @@ class OMNIMESH_OT_batch_process(Operator):
         self._processed_count = 0
         self._current_proc = None
         self._current_file = ""
-        self._abort_requested = False
+        type(self)._abort_requested = False
         self._source_root = src_dir
         self._export_root = export_dir
 
@@ -125,7 +125,8 @@ class OMNIMESH_OT_batch_process(Operator):
         return {"RUNNING_MODAL"}
 
     def modal(self, context: Any, event: Any) -> set[str]:
-        if event.type == "ESC" or self._abort_requested:
+        if event.type == "ESC" or type(self)._abort_requested:
+            type(self)._abort_requested = False
             return self.cancel_batch(context, "Batch processing aborted by user.")
 
         if event.type == "TIMER":
@@ -229,6 +230,7 @@ class OMNIMESH_OT_batch_process(Operator):
                 except OSError:
                     pass
         self._current_proc = None
+        type(self)._abort_requested = False
 
         if context and hasattr(context.scene, "lod_tool"):
             context.scene.lod_tool.is_batch_running = False
@@ -256,10 +258,12 @@ def register_batch_ops() -> None:
     if not bpy:
         return
     for cls in (OMNIMESH_OT_batch_cancel, OMNIMESH_OT_batch_process):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
+        existing = getattr(bpy.types, cls.__name__, None)
+        if existing is not None:
+            try:
+                bpy.utils.unregister_class(existing)
+            except Exception as exc:
+                logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
         bpy.utils.register_class(cls)
 
 
@@ -267,7 +271,9 @@ def unregister_batch_ops() -> None:
     if not bpy:
         return
     for cls in (OMNIMESH_OT_batch_process, OMNIMESH_OT_batch_cancel):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
+        existing = getattr(bpy.types, cls.__name__, None)
+        if existing is not None:
+            try:
+                bpy.utils.unregister_class(existing)
+            except Exception as exc:
+                logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)

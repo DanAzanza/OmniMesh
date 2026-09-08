@@ -184,7 +184,7 @@ class UE5Exporter:
                 c_obj.select_set(True)
             context.view_layer.objects.active = lod_group_empty
 
-        fbx_path = os.path.join(export_dir, f"{asset_name}.fbx")
+        fbx_path = os.path.join(export_dir, f"{clean_name}.fbx")
 
         try:
             bpy.ops.export_scene.fbx(

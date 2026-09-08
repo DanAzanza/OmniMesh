@@ -16,7 +16,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
-logger = logging.getLogger("OmniMesh.Chunking")
+logger = logging.getLogger(__name__)
 
 try:
     import bmesh

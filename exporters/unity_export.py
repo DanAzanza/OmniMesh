@@ -105,7 +105,7 @@ class UnityExporter:
 
         context.view_layer.objects.active = export_objects[0]
 
-        fbx_path = os.path.join(export_dir, f"{asset_name}.fbx")
+        fbx_path = os.path.join(export_dir, f"{clean_name}.fbx")
 
         try:
             bpy.ops.export_scene.fbx(

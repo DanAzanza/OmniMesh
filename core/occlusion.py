@@ -236,8 +236,16 @@ class HardenedOcclusionCuller:
         if not opaque_faces or not BVHTree:
             return {"culled_faces": 0, "culled_islands": 0}
 
-        # Build BVH tree over opaque geometry
-        bvh_opaque = BVHTree.FromBMesh(bm, epsilon=1e-5)
+        # Build BVH tree strictly over opaque geometry with explicit face index mapping
+        if len(opaque_faces) == len(bm.faces):
+            bvh_opaque = BVHTree.FromBMesh(bm, epsilon=1e-5)
+            opaque_face_map: list[int] = [f.index for f in bm.faces]
+        else:
+            polys = [[v.index for v in f.verts] for f in opaque_faces]
+            verts = [v.co for v in bm.verts]
+            bvh_opaque = BVHTree.FromPolygons(verts, polys, epsilon=1e-5)
+            opaque_face_map = [f.index for f in opaque_faces]
+
         if not bvh_opaque:
             return {"culled_faces": 0, "culled_islands": 0}
 
@@ -270,9 +278,8 @@ class HardenedOcclusionCuller:
 
                 ray_dir = (face_center - view_pos).normalized()
                 hit_loc, _, hit_idx, _ = bvh_opaque.ray_cast(view_pos, ray_dir)
-                if hit_idx is not None and hit_idx < len(bm.faces):
-                    hit_face = bm.faces[hit_idx]
-                    visible_face_indices.add(hit_face.index)
+                if hit_idx is not None and hit_idx < len(opaque_face_map):
+                    visible_face_indices.add(opaque_face_map[hit_idx])
 
         # Pass B: Candidate Centroid Egress
         num_egress_rays = max(8, min(32, ray_density))

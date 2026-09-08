@@ -11,6 +11,7 @@ Provides 3-tiered architecture:
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Dict, List, Set, Tuple
 
 logger = logging.getLogger(__name__)
@@ -108,9 +109,7 @@ class MeshSanitizer:
                             if hasattr(n1, "dot"):
                                 n_dot = n1.dot(n2)
                             else:
-                                n_dot = (n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) / (
-                                    mathutils.sqrt(n1_sq * n2_sq) if mathutils else (n1_sq * n2_sq) ** 0.5
-                                )
+                                n_dot = (n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) / math.sqrt(n1_sq * n2_sq)
                             if n_dot > 0.999:  # Exact duplicate coplanar face
                                 is_duplicate = True
                                 break

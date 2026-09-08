@@ -257,7 +257,3 @@ class UnityLiveBridge(EngineBridgeBase):
             return False, f"Failed copying asset files to Unity project: {exc}"
 
         return True, f"Synced {clean_asset} ({copied_count} items) to Unity: Assets/OmniMesh_Exports/{clean_asset}/"
-
-
-# Class alias for backward compatibility
-UnityBridge = UnityLiveBridge

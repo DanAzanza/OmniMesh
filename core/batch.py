@@ -13,9 +13,10 @@ import math
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, ClassVar, Optional
 
 try:
     import bpy
@@ -34,11 +35,7 @@ try:
     from .normals import NormalManager
     from .pbr_presets import PBRImporterPresetManager
     from .sanitizer import MeshSanitizer
-    from .textures import TextureChannelPacker
-    from ..exporters.godot_export import GodotExporter
-    from ..exporters.msfs_export import MSFSExporter
-    from ..exporters.ue5_export import UE5Exporter
-    from ..exporters.unity_export import UnityExporter
+    from .textures import TextureChannelPacker, TexturePoolManager
 except (ImportError, ValueError):
     from core.decimator import MeshDecimator
     from core.materials import MaterialOptimizer
@@ -51,11 +48,7 @@ except (ImportError, ValueError):
     from core.normals import NormalManager
     from core.pbr_presets import PBRImporterPresetManager
     from core.sanitizer import MeshSanitizer
-    from core.textures import TextureChannelPacker
-    from exporters.godot_export import GodotExporter
-    from exporters.msfs_export import MSFSExporter
-    from exporters.ue5_export import UE5Exporter
-    from exporters.unity_export import UnityExporter
+    from core.textures import TextureChannelPacker, TexturePoolManager
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +57,51 @@ SUPPORTED_EXTENSIONS = (".fbx", ".obj", ".gltf", ".glb")
 
 class BatchProcessorEngine:
     """Core batch processing engine with high memory isolation and pipeline orchestration."""
+
+    _exporters: ClassVar[dict[str, Callable[[Any, str, str], tuple[bool, str]]]] = {}
+
+    @classmethod
+    def register_exporter(cls, engine: str, handler: Callable[[Any, str, str], tuple[bool, str]]) -> None:
+        """Registers a serialization handler for a target engine."""
+        cls._exporters[engine] = handler
+
+    @classmethod
+    def _get_exporter(cls, engine: str) -> Optional[Callable[[Any, str, str], tuple[bool, str]]]:
+        """Resolves target engine exporter handler with lazy fallback to avoid circular imports."""
+        if engine in cls._exporters:
+            return cls._exporters[engine]
+        try:
+            if engine == "MSFS_2024":
+                try:
+                    from exporters.msfs_export import MSFSExporter
+                except (ImportError, ValueError):
+                    from ..exporters.msfs_export import MSFSExporter
+
+                return MSFSExporter.export_asset
+            elif engine == "UE5":
+                try:
+                    from exporters.ue5_export import UE5Exporter
+                except (ImportError, ValueError):
+                    from ..exporters.ue5_export import UE5Exporter
+
+                return UE5Exporter.export_asset
+            elif engine == "UNITY_6":
+                try:
+                    from exporters.unity_export import UnityExporter
+                except (ImportError, ValueError):
+                    from ..exporters.unity_export import UnityExporter
+
+                return UnityExporter.export_asset
+            elif engine == "GODOT_4":
+                try:
+                    from exporters.godot_export import GodotExporter
+                except (ImportError, ValueError):
+                    from ..exporters.godot_export import GodotExporter
+
+                return GodotExporter.export_asset
+        except (ImportError, ValueError) as exc:
+            logger.debug("Lazy exporter load failed for engine '%s': %s", engine, exc)
+        return None
 
     @staticmethod
     def discover_assets(
@@ -183,7 +221,13 @@ class BatchProcessorEngine:
     ) -> subprocess.Popen:
         """Launches an isolated headless background Blender process to export a single .blend asset."""
         blender_exe = bpy.app.binary_path if bpy else "blender"
-        worker_script = os.path.join(os.path.dirname(__file__), "batch_worker.py")
+        addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        scripts_worker = os.path.join(addon_dir, "scripts", "batch_worker.py")
+        worker_script = (
+            scripts_worker
+            if os.path.exists(scripts_worker)
+            else os.path.join(os.path.dirname(__file__), "batch_worker.py")
+        )
 
         cmd = [
             blender_exe,
@@ -204,12 +248,15 @@ class BatchProcessorEngine:
         if asset_name:
             cmd.extend(["--asset-name", asset_name])
 
-        return subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        popen_kwargs: dict[str, Any] = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+        }
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+
+        return subprocess.Popen(cmd, **popen_kwargs)
 
     @classmethod
     def import_asset_file(cls, filepath: str) -> list[Any]:
@@ -432,9 +479,10 @@ class BatchProcessorEngine:
                 props, "pbr_export_naming_pattern", preset.get("naming_pattern", "{material}{suffix}")
             )
 
+            all_tex_futures: list[Any] = []
             for mat in unique_mats:
                 try:
-                    TextureChannelPacker.pack_material_preset(
+                    futs = TextureChannelPacker.pack_material_preset(
                         material=mat,
                         preset=preset,
                         export_dir=tex_dir,
@@ -444,6 +492,8 @@ class BatchProcessorEngine:
                         strategy=strategy,
                         naming_pattern=naming_pattern,
                     )
+                    if futs:
+                        all_tex_futures.extend(futs)
                 except Exception as exc:
                     logger.warning(
                         "Preset-based texture packing failed for '%s', using fallback: %s",
@@ -452,21 +502,33 @@ class BatchProcessorEngine:
                     )
                     m_name = getattr(mat, "name", "Mat").replace(" ", "_")
                     if target_engine == "UE5":
-                        TextureChannelPacker.pack_orm_ue5(
+                        f_fallback = TextureChannelPacker.pack_orm_ue5(
                             mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048)
                         )
+                        if f_fallback:
+                            all_tex_futures.append(f_fallback)
                     elif target_engine == "UNITY_6":
-                        TextureChannelPacker.pack_maskmap_unity(
+                        f_fallback = TextureChannelPacker.pack_maskmap_unity(
                             mat, os.path.join(tex_dir, f"T_{m_name}_MaskMap.png"), (2048, 2048)
                         )
+                        if f_fallback:
+                            all_tex_futures.append(f_fallback)
                     elif target_engine == "MSFS_2024":
-                        TextureChannelPacker.pack_comp_msfs(
+                        f_fallback = TextureChannelPacker.pack_comp_msfs(
                             mat, os.path.join(tex_dir, f"T_{m_name}_COMP.png"), (2048, 2048)
                         )
+                        if f_fallback:
+                            all_tex_futures.append(f_fallback)
                     elif target_engine == "GODOT_4":
-                        TextureChannelPacker.pack_orm_godot(
+                        f_fallback = TextureChannelPacker.pack_orm_godot(
                             mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048)
                         )
+                        if f_fallback:
+                            all_tex_futures.append(f_fallback)
+
+            # Join barrier: ensure all background texture compression writes finish before packaging
+            if all_tex_futures:
+                TexturePoolManager.wait_all(all_tex_futures, timeout=60.0)
 
             # 5. Export Multi-Engine Package
             if props:
@@ -476,14 +538,11 @@ class BatchProcessorEngine:
 
             export_ok = False
             export_msg = ""
-            if target_engine == "MSFS_2024":
-                export_ok, export_msg = MSFSExporter.export_asset(context, asset_export_dir, base_name)
-            elif target_engine == "UE5":
-                export_ok, export_msg = UE5Exporter.export_asset(context, asset_export_dir, base_name)
-            elif target_engine == "UNITY_6":
-                export_ok, export_msg = UnityExporter.export_asset(context, asset_export_dir, base_name)
-            elif target_engine == "GODOT_4":
-                export_ok, export_msg = GodotExporter.export_asset(context, asset_export_dir, base_name)
+            exporter = cls._get_exporter(target_engine)
+            if exporter:
+                export_ok, export_msg = exporter(context, asset_export_dir, base_name)
+            else:
+                export_ok, export_msg = False, f"Unsupported engine '{target_engine}'"
 
             reduction = ((initial_tris - final_lod_tris) / max(1, initial_tris)) * 100.0
             result["final_tris"] = final_lod_tris

@@ -483,30 +483,31 @@ class ImpostorManager:
         if not bm:
             return None
 
-        # Align object location/pivot with master asset so engine exporters don't fail origin validation
-        ref_obj = mesh_objs[0] if mesh_objs else None
-        if ref_obj and hasattr(ref_obj, "matrix_world"):
-            ref_pivot = ref_obj.matrix_world.translation.copy()
-            dx = center_x - ref_pivot.x
-            dy = center_y - ref_pivot.y
-            dz = -ref_pivot.z
-            for v in bm.verts:
-                v.co.x += dx
-                v.co.y += dy
-                v.co.z += dz
-            impostor_loc = ref_pivot
-        else:
-            impostor_loc = Vector((center_x, center_y, 0.0))
-
-        # Create Blender Mesh & Object
         impostor_name = f"{base_name}_LOD_Impostor"
         existing = bpy.data.objects.get(impostor_name)
         if existing:
             bpy.data.objects.remove(existing, do_unlink=True)
 
         impostor_mesh = bpy.data.meshes.new(f"{impostor_name}_Mesh")
-        bm.to_mesh(impostor_mesh)
-        bm.free()
+        try:
+            # Align object location/pivot with master asset so engine exporters don't fail origin validation
+            ref_obj = mesh_objs[0] if mesh_objs else None
+            if ref_obj and hasattr(ref_obj, "matrix_world"):
+                ref_pivot = ref_obj.matrix_world.translation.copy()
+                dx = center_x - ref_pivot.x
+                dy = center_y - ref_pivot.y
+                dz = -ref_pivot.z
+                for v in bm.verts:
+                    v.co.x += dx
+                    v.co.y += dy
+                    v.co.z += dz
+                impostor_loc = ref_pivot
+            else:
+                impostor_loc = Vector((center_x, center_y, 0.0))
+
+            bm.to_mesh(impostor_mesh)
+        finally:
+            bm.free()
 
         impostor_obj = bpy.data.objects.new(impostor_name, impostor_mesh)
         impostor_obj.location = impostor_loc

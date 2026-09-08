@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-logger = logging.getLogger("OmniMesh.Hierarchy")
+logger = logging.getLogger(__name__)
 
 try:
     import bmesh

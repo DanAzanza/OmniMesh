@@ -43,10 +43,8 @@ def set_pipeline_setting(key: str, value: Any) -> None:
     BasePresetManager.set_pipeline_setting(key, value)
 
 
-if not hasattr(sys, "_omnimesh_preset_cache"):
-    sys._omnimesh_preset_cache = {}
-if not hasattr(sys, "_omnimesh_preset_lock"):
-    sys._omnimesh_preset_lock = threading.Lock()
+_PRESET_CACHE: dict[str, dict[str, Any]] = {}
+_PRESET_LOCK = threading.Lock()
 
 
 class BasePresetManager:
@@ -83,11 +81,11 @@ class BasePresetManager:
 
     @classmethod
     def _get_category_cache(cls) -> dict[str, dict[str, Any]]:
-        return sys._omnimesh_preset_cache.setdefault(cls.CATEGORY, {})
+        return _PRESET_CACHE.setdefault(cls.CATEGORY, {})
 
     @classmethod
     def _get_category_lock(cls) -> threading.Lock:
-        return sys._omnimesh_preset_lock
+        return _PRESET_LOCK
 
     @classmethod
     def get_state_file(cls) -> Path:
@@ -120,36 +118,37 @@ class BasePresetManager:
     @classmethod
     def set_pipeline_setting(cls, key: str, value: Any) -> None:
         """Persists a single pipeline setting to user_state.json with atomic replacement."""
-        sf = cls.get_state_file()
-        data = cls.get_pipeline_state()
-        if data.get(key) == value:
-            return
+        with cls._get_category_lock():
+            sf = cls.get_state_file()
+            data = cls.get_pipeline_state()
+            if data.get(key) == value:
+                return
 
-        data[key] = value
-        target_dir = sf.parent
-        target_dir.mkdir(parents=True, exist_ok=True)
+            data[key] = value
+            target_dir = sf.parent
+            target_dir.mkdir(parents=True, exist_ok=True)
 
-        fd, tmp_path = tempfile.mkstemp(dir=str(target_dir), prefix="om_state_", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+            fd, tmp_path = tempfile.mkstemp(dir=str(target_dir), prefix="om_state_", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
 
-            backoff = (0.05, 0.1, 0.2, 0.4, 0.8)
-            for attempt, delay in enumerate(backoff):
-                try:
-                    os.replace(tmp_path, sf)
-                    break
-                except OSError:
-                    if attempt == len(backoff) - 1:
-                        raise
-                    time.sleep(delay)
-        except Exception as exc:
-            logger.debug("Failed saving pipeline setting '%s' to '%s': %s", key, sf, exc)
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+                backoff = (0.05, 0.1, 0.2, 0.4, 0.8)
+                for attempt, delay in enumerate(backoff):
+                    try:
+                        os.replace(tmp_path, sf)
+                        break
+                    except OSError:
+                        if attempt == len(backoff) - 1:
+                            raise
+                        time.sleep(delay)
+            except Exception as exc:
+                logger.debug("Failed saving pipeline setting '%s' to '%s': %s", key, sf, exc)
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
 
     @classmethod
     def get_builtin_dir(cls) -> Path:
