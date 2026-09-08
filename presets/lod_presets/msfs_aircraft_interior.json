@@ -1,0 +1,46 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "MSFS Aircraft (Interior & Cabin)",
+  "version": 2,
+  "description": "Official MSFS SDK LOD guidelines for Aircraft Cockpit & Cabin interior (400k ceiling down to 6 tris)",
+  "target_engine": "MSFS_2024",
+  "budget_mode": "ABSOLUTE",
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris": 400000,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 70.0,
+      "target_tris": 200000,
+      "target_tris_pct": 50.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 40.0,
+      "target_tris": 50000,
+      "target_tris_pct": 12.5
+    },
+    {
+      "name": "LOD3",
+      "screen_size_pct": 20.0,
+      "target_tris": 1000,
+      "target_tris_pct": 0.25
+    },
+    {
+      "name": "LOD4",
+      "screen_size_pct": 10.0,
+      "target_tris": 200,
+      "target_tris_pct": 0.05
+    },
+    {
+      "name": "LOD5",
+      "screen_size_pct": 5.0,
+      "target_tris": 6,
+      "target_tris_pct": 0.0015
+    }
+  ]
+}

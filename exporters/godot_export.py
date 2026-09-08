@@ -99,16 +99,24 @@ class GodotExporter:
                 logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
 
             tier_idx = 0
-            for i in range(10):
-                if f"_LOD{i}" in obj.name:
-                    tier_idx = i
-                    break
+            is_impostor_obj = "_Impostor" in obj.name or bool(obj.get("_is_impostor", False))
+            if is_impostor_obj:
+                tier_idx = len(props.lods) if props and len(props.lods) > 0 else 3
+            else:
+                for i in range(10):
+                    if f"_LOD{i}" in obj.name:
+                        tier_idx = i
+                        break
 
             dist_begin = 0.0
             dist_end = 100.0
             if props and len(props.lods) > 0:
-                dist_begin = 0.0 if tier_idx == 0 else props.lods[min(tier_idx - 1, len(props.lods) - 1)].distance_m
-                dist_end = props.lods[min(tier_idx, len(props.lods) - 1)].distance_m
+                if is_impostor_obj:
+                    dist_begin = props.lods[-1].distance_m
+                    dist_end = max(dist_begin * 3.0, dist_begin + 200.0)
+                else:
+                    dist_begin = 0.0 if tier_idx == 0 else props.lods[min(tier_idx - 1, len(props.lods) - 1)].distance_m
+                    dist_end = props.lods[min(tier_idx, len(props.lods) - 1)].distance_m
 
             obj["visibility_range_begin"] = dist_begin
             obj["visibility_range_end"] = dist_end

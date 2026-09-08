@@ -419,15 +419,37 @@ class MeshChunkSlicer:
                     continue
 
             chunk_bm.verts.ensure_lookup_table()
+            chunk_bm.verts.index_update()
             chunk_bm.edges.ensure_lookup_table()
+            chunk_bm.edges.index_update()
             chunk_bm.faces.ensure_lookup_table()
+            chunk_bm.faces.index_update()
 
-            # Identify boundary vertices on the cut seams
+            # Identify boundary vertices on the actual cut seams
             seam_vert_indices: set[int] = set()
+            world_mat = source_obj.matrix_world if source_obj else None
+            cut_tol = 1e-3  # 1mm tolerance for bisect cutting planes
+            has_cuts = bool(
+                grid_spec.x_cut_planes or grid_spec.y_cut_planes or (grid_spec.split_z and grid_spec.z_cut_planes)
+            )
+
             for edge in chunk_bm.edges:
                 if getattr(edge, "is_boundary", False):
                     for v in edge.verts:
-                        seam_vert_indices.add(v.index)
+                        if has_cuts:
+                            wco = world_mat @ v.co if world_mat else v.co
+                            is_on_cut = (
+                                any(abs(wco.x - xp) < cut_tol for xp in grid_spec.x_cut_planes)
+                                or any(abs(wco.y - yp) < cut_tol for yp in grid_spec.y_cut_planes)
+                                or (
+                                    grid_spec.split_z
+                                    and any(abs(wco.z - zp) < cut_tol for zp in grid_spec.z_cut_planes)
+                                )
+                            )
+                            if is_on_cut:
+                                seam_vert_indices.add(v.index)
+                        else:
+                            seam_vert_indices.add(v.index)
 
             # Create Mesh Data and Object
             chunk_mesh = bpy.data.meshes.new(name=f"{chunk_name}_Mesh")
@@ -447,18 +469,18 @@ class MeshChunkSlicer:
             elif bpy.context.collection:
                 bpy.context.collection.objects.link(chunk_obj)
 
-            # Create OMNIMESH_SEAM_LOCKED vertex group
-            if seam_vert_indices:
-                vg = chunk_obj.vertex_groups.new(name=SEAM_GROUP_NAME)
-                vg.add(list(seam_vert_indices), 1.0, "REPLACE")
-
             # Center local pivot to chunk's local bounding box center
             MeshChunkSlicer._recenter_pivot_stationary(chunk_obj)
 
             # Transfer loop normals from uncut source mesh
             NormalManager.reproject_custom_split_normals(chunk_obj, source_obj)
-            NormalManager.ensure_sharp_edge_attribute(chunk_mesh)
-            chunk_mesh.update()
+            NormalManager.ensure_sharp_edge_attribute(chunk_obj.data)
+            chunk_obj.data.update()
+
+            # Create OMNIMESH_SEAM_LOCKED vertex group on final mesh data-block
+            if seam_vert_indices:
+                vg = chunk_obj.vertex_groups.new(name=SEAM_GROUP_NAME)
+                vg.add(list(seam_vert_indices), 1.0, "REPLACE")
 
             return chunk_obj
 

@@ -1,0 +1,25 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "Mobile / VR (Aggressive)",
+  "version": 2,
+  "description": "Aggressive 3-tier decimation progression for Mobile and XR/VR standalone hardware",
+  "target_engine": "GODOT_4",
+  "budget_mode": "PERCENTAGE",
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 35.0,
+      "target_tris_pct": 35.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 10.0,
+      "target_tris_pct": 10.0
+    }
+  ]
+}

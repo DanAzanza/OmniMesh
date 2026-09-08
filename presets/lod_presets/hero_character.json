@@ -1,0 +1,31 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "Hero Character / Skeletal",
+  "version": 2,
+  "description": "High-fidelity 4-tier progression with strict silhouette & normal protection for characters and hero props",
+  "target_engine": "UE5",
+  "budget_mode": "PERCENTAGE",
+  "tau_sse": 0.5,
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 60.0,
+      "target_tris_pct": 60.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 35.0,
+      "target_tris_pct": 35.0
+    },
+    {
+      "name": "LOD3",
+      "screen_size_pct": 15.0,
+      "target_tris_pct": 15.0
+    }
+  ]
+}

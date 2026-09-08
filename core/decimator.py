@@ -22,14 +22,19 @@ except ImportError:
 
 class MeshDecimator:
     @staticmethod
-    def tag_boundaries_and_uv_seams(bm: Any) -> set[int]:
+    def tag_boundaries_and_uv_seams(
+        bm: Any,
+        pin_uv_seams: bool = True,
+        pin_material_borders: bool = True,
+        pin_sharp_edges: bool = True,
+    ) -> set[int]:
         """
         Identifies and tags all vertices belonging to:
         1. Open geometric boundaries (is_boundary or wire/loose edges)
         2. Non-manifold edge junctions (> 2 linked faces)
-        3. Marked sharp edges and seam edges
-        4. Material slot boundary edges
-        5. UV seams across active/all UV layers (winding-order independent)
+        3. Marked sharp edges and seam edges (if pin_sharp_edges)
+        4. Material slot boundary edges (if pin_material_borders)
+        5. UV seams across active/all UV layers (if pin_uv_seams)
         """
         pinned_vert_indices: set[int] = set()
         if not bm or not hasattr(bm, "verts") or not hasattr(bm, "edges"):
@@ -44,7 +49,7 @@ class MeshDecimator:
             logger.debug("Decimator lookup table init error: %s", exc)
             return pinned_vert_indices
 
-        # 1. Tag Boundaries & Non-Manifold Junctions
+        # 1. Tag Boundaries & Non-Manifold Junctions (Always protected for topological integrity)
         for edge in bm.edges:
             if not getattr(edge, "is_valid", False):
                 continue
@@ -54,25 +59,27 @@ class MeshDecimator:
                     pinned_vert_indices.add(v.index)
 
         # 2. Tag Sharp Marks & Seam Edges
-        for edge in bm.edges:
-            if not getattr(edge, "is_valid", False):
-                continue
-            if getattr(edge, "seam", False) or not getattr(edge, "smooth", True):
-                for v in getattr(edge, "verts", []):
-                    pinned_vert_indices.add(v.index)
+        if pin_sharp_edges:
+            for edge in bm.edges:
+                if not getattr(edge, "is_valid", False):
+                    continue
+                if getattr(edge, "seam", False) or not getattr(edge, "smooth", True):
+                    for v in getattr(edge, "verts", []):
+                        pinned_vert_indices.add(v.index)
 
         # 3. Tag Material Boundaries
-        for edge in bm.edges:
-            if not getattr(edge, "is_valid", False) or len(getattr(edge, "link_faces", [])) != 2:
-                continue
-            f1, f2 = edge.link_faces[0], edge.link_faces[1]
-            if getattr(f1, "material_index", 0) != getattr(f2, "material_index", 0):
-                for v in getattr(edge, "verts", []):
-                    pinned_vert_indices.add(v.index)
+        if pin_material_borders:
+            for edge in bm.edges:
+                if not getattr(edge, "is_valid", False) or len(getattr(edge, "link_faces", [])) != 2:
+                    continue
+                f1, f2 = edge.link_faces[0], edge.link_faces[1]
+                if getattr(f1, "material_index", 0) != getattr(f2, "material_index", 0):
+                    for v in getattr(edge, "verts", []):
+                        pinned_vert_indices.add(v.index)
 
         # 4. Tag UV Seams across Face Loops (Winding-Order Invariant)
         uv_layers = []
-        if hasattr(bm, "loops") and hasattr(bm.loops, "layers") and hasattr(bm.loops.layers, "uv"):
+        if pin_uv_seams and hasattr(bm, "loops") and hasattr(bm.loops, "layers") and hasattr(bm.loops.layers, "uv"):
             uv_layers = (
                 list(bm.loops.layers.uv.values()) if hasattr(bm.loops.layers.uv, "values") else list(bm.loops.layers.uv)
             )

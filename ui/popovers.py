@@ -37,61 +37,6 @@ except (ImportError, ValueError):
 
 
 # =========================================================================
-# 1. IMPORT POPOVER
-# =========================================================================
-
-
-class OMNIMESH_PT_popover_import(Panel):
-    """Popover for PBR texture import settings."""
-
-    bl_idname = "OMNIMESH_PT_popover_import"
-    bl_label = "PBR Import Settings"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 16
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = context.scene.lod_tool
-
-        layout.label(text="Texture Routing & Protection", icon="IMAGE_DATA")
-        layout.prop(props, "pbr_import_ao_mode", text="AO Routing")
-        layout.prop(props, "pbr_import_preserve_existing", text="Preserve Other Nodes")
-
-        layout.separator()
-        layout.label(text="Active Preset Mapping", icon="SETTINGS")
-
-        try:
-            from core.pbr_presets import DEFAULT_PRESET_ID, PBRImporterPresetManager
-        except (ImportError, ValueError):
-            from ..core.pbr_presets import DEFAULT_PRESET_ID, PBRImporterPresetManager
-
-        preset_id = getattr(props, "pbr_import_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
-        try:
-            preset = PBRImporterPresetManager.get_preset(preset_id)
-            box = layout.box()
-            box.label(text=preset.get("name", preset_id), icon="PRESET")
-            desc = preset.get("description", "")
-            if desc:
-                box.label(text=desc)
-
-            maps = preset.get("maps", [])
-            col = box.column(align=True)
-            for m in maps:
-                suffixes_str = ", ".join(m.get("suffixes", [])[:4])
-                if len(m.get("suffixes", [])) > 4:
-                    suffixes_str += ", ..."
-                row = col.row()
-                row.label(text=m.get("name", m.get("id")), icon="LAYER_USED")
-                row.label(text=f"({suffixes_str})")
-
-            box.operator("lod_tool.reset_pbr_preset", text="Reset to Built-in Default", icon="LOOP_BACK")
-        except Exception as exc:
-            layout.label(text=f"Error loading preset: {exc}", icon="ERROR")
-
-
 # =========================================================================
 # 2. MODIFY POPOVERS: SANITIZE & MATERIALS
 # =========================================================================
@@ -112,11 +57,17 @@ class OMNIMESH_PT_popover_sanitize(Panel):
         layout = self.layout
         props = context.scene.lod_tool
 
+        # 1. Transform & Modifiers
         layout.label(text="Transform & Modifiers", icon="OBJECT_ORIGIN")
-        layout.operator("lod_tool.apply_transforms", text="Apply Scale & Rotation", icon="CHECKMARK")
-        layout.operator("lod_tool.apply_all_modifiers", text="Bake / Apply Modifiers", icon="MODIFIER")
+        layout.prop(props, "cleanup_auto_apply_transforms", text="Auto-Apply Transforms")
+        layout.prop(props, "cleanup_apply_modifiers", text="Bake / Apply Modifiers")
+        row_t = layout.row(align=True)
+        row_t.operator("lod_tool.apply_transforms", text="Apply Transforms", icon="CHECKMARK")
+        row_t.operator("lod_tool.apply_all_modifiers", text="Apply Modifiers", icon="MODIFIER")
 
         layout.separator()
+
+        # 2. Topology Repair Options
         layout.label(text="Topology Repair Options", icon="PREFERENCES")
         layout.prop(props, "cleanup_enable_split_non_manifold", text="Repair Non-Manifold & Bowties")
         layout.prop(props, "cleanup_normal_policy", text="Normals")
@@ -250,6 +201,178 @@ class OMNIMESH_PT_popover_generate(Panel):
         layout.prop(props, "max_bone_influences", text="Max Bone Influences")
         layout.prop(props, "enable_bone_pruning", text="Leaf Bone Pruning")
         layout.prop(props, "purge_shape_keys", text="Purge Distant Shape Keys")
+
+
+class OMNIMESH_PT_popover_lod_preset(Panel):
+    """Popover for configuring the selected LOD preset, generation tolerances, and rigging heuristics."""
+
+    bl_idname = "OMNIMESH_PT_popover_lod_preset"
+    bl_label = "LOD Profile Settings"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "HEADER"
+    bl_ui_units_x = 22
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        try:
+            from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
+        except (ImportError, ValueError):
+            from ..core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
+
+        preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+        preset = LODPresetManager.get_preset(preset_id)
+
+        layout.label(text=preset.get("name", preset_id), icon="PRESET")
+        desc = preset.get("description", "")
+        if desc:
+            layout.label(text=desc)
+
+        layout.separator()
+        layout.label(text="LOD Tiers & Screen Thresholds", icon="MESH_DATA")
+        layout.prop(props, "lod_preset_budget_mode", text="Budget Mode")
+
+        row = layout.row()
+        active_count = len(props.lod_preset_active_tiers)
+        list_rows = max(3, min(active_count, 6))
+        row.template_list(
+            "OMNIMESH_UL_preset_tiers",
+            "",
+            props,
+            "lod_preset_active_tiers",
+            props,
+            "lod_preset_active_tier_index",
+            rows=list_rows,
+            maxrows=7,
+        )
+        col_btn = row.column(align=True)
+        col_btn.operator("lod_tool.add_preset_tier", icon="ADD", text="")
+        sub_rem = col_btn.column(align=True)
+        sub_rem.enabled = len(props.lod_preset_active_tiers) > 1
+        sub_rem.operator("lod_tool.remove_preset_tier", icon="REMOVE", text="")
+
+        tiers = props.lod_preset_active_tiers
+        idx = props.lod_preset_active_tier_index
+        if 0 <= idx < len(tiers):
+            active_tier = tiers[idx]
+            box_detail = layout.box()
+            col = box_detail.column(align=True)
+            col.prop(active_tier, "name", text="Tier Name")
+            col.prop(active_tier, "screen_size_pct", text="Screen Size (%)", slider=True)
+            if props.lod_preset_budget_mode == "PERCENTAGE":
+                col.prop(active_tier, "target_tris_pct", text="Target Triangles (%)", slider=True)
+            else:
+                col.prop(active_tier, "target_tris", text="Target Triangles (Abs)")
+
+        layout.separator()
+        row_sync = layout.row(align=True)
+        row_sync.operator("lod_tool.apply_preset_tiers", text="Apply to Scene", icon="CHECKMARK")
+        row_sync.operator("lod_tool.capture_scene_tiers", text="Capture from Scene", icon="IMPORT")
+        row_sync.operator("lod_tool.save_preset_tiers", text="Save Preset", icon="FILE_TICK")
+
+        layout.separator()
+        layout.label(text="Billboard Impostor LOD", icon="IMAGE_PLANE")
+        layout.prop(props, "enable_impostor_lod", text="Enable Impostor LOD")
+        if props.enable_impostor_lod:
+            box_imp = layout.box()
+            box_imp.use_property_split = True
+            box_imp.use_property_decorate = False
+            box_imp.prop(props, "impostor_mode", text="Mode")
+            box_imp.prop(props, "impostor_resolution", text="Resolution")
+            box_imp.prop(props, "impostor_replace_last_lod", text="Final LOD Tier")
+            row_imp_act = box_imp.row(align=True)
+            row_imp_act.operator("lod_tool.generate_impostor", text="Generate Billboard", icon="IMAGE_PLANE")
+            row_imp_act.operator("lod_tool.remove_impostor", text="", icon="X")
+
+        layout.separator()
+        layout.label(text="Occlusion & Slender Culling", icon="HIDE_OFF")
+        box_cull = layout.box()
+        box_cull.use_property_split = True
+        box_cull.use_property_decorate = False
+        box_cull.prop(props, "enable_occlusion_culling", text="Interior Culling")
+        if props.enable_occlusion_culling:
+            box_cull.prop(props, "occlusion_lod_start", text="Start Tier")
+            box_cull.prop(props, "occlusion_ray_density", text="Ray Samples")
+            box_cull.prop(props, "occlusion_evaluate_alpha", text="Eval Alpha")
+        box_cull.prop(props, "enable_slender_culling", text="Slender Culling")
+
+        layout.separator()
+        layout.label(text="Spatial Chunking & Slicing", icon="MESH_GRID")
+        layout.prop(props, "enable_spatial_chunking", text="Enable Spatial Chunking")
+        if props.enable_spatial_chunking:
+            box_chunk = layout.box()
+            box_chunk.use_property_split = True
+            box_chunk.use_property_decorate = False
+            box_chunk.prop(props, "chunk_partitioning_mode", text="Partitioning")
+            if props.chunk_partitioning_mode == "ADAPTIVE_CLUSTERING":
+                box_chunk.prop(props, "adaptive_cluster_target_polys", text="Max Polys/Cluster")
+            box_chunk.prop(props, "chunk_cell_size", text="Cell Size (m)")
+            box_chunk.prop(props, "chunk_split_z", text="Split Vertical Z")
+            if props.chunk_split_z:
+                box_chunk.prop(props, "chunk_cell_size_z", text="Z Cell Size (m)")
+            box_chunk.prop(props, "enable_hlod", text="Enable HLOD")
+            if props.enable_hlod:
+                box_chunk.prop(props, "hlod_start_tier", text="HLOD Start Tier")
+
+        layout.separator()
+        layout.label(text="Screen & Error Tolerances", icon="RESTRICT_VIEW_OFF")
+        layout.prop(props, "tau_sse", slider=True, text="Visual Stability (SSE)")
+        layout.prop(props, "cull_screen_size_pct", slider=True, text="Cull Screen Size (%)")
+        layout.prop(props, "preserve_silhouette", text="Protect Silhouettes")
+        layout.prop(props, "pin_uv_seams", text="Pin UV Seams")
+        layout.prop(props, "pin_material_borders", text="Pin Material Borders")
+
+        layout.separator()
+        layout.label(text="Hierarchy & Draw-Calls", icon="OUTLINER_OB_GROUP_INSTANCE")
+        layout.prop(props, "hierarchy_mode", text="Mode")
+        if props.hierarchy_mode == "MERGE_AT_TIER":
+            layout.prop(props, "merge_start_tier", text="Merge From Tier")
+        layout.prop(props, "preserve_slot_indexing", text="Preserve Slot Indexing")
+
+        layout.separator()
+        layout.label(text="Rigging & Deform Kinematics", icon="ARMATURE_DATA")
+        layout.prop(props, "max_bone_influences", text="Max Bone Influences")
+        layout.prop(props, "enable_bone_pruning", text="Leaf Bone Pruning")
+        layout.prop(props, "purge_shape_keys", text="Purge Distant Shape Keys")
+
+        layout.separator()
+        row_act = layout.row(align=True)
+        row_act.operator("lod_tool.analyze_and_configure", text="Reset to Factory", icon="LOOP_BACK")
+        if LODPresetManager.is_user_preset(preset_id):
+            row_act.operator("lod_tool.delete_lod_preset", text="Delete Preset", icon="TRASH")
+
+
+class OMNIMESH_PT_popover_impostor(Panel):
+    """Dedicated Quick Configuration Popover for Billboard Impostors."""
+
+    bl_label = "Billboard Impostor Settings"
+    bl_idname = "OMNIMESH_PT_popover_impostor"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "HEADER"
+    bl_ui_units_x = 18
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        layout.label(text="Billboard Impostor Settings", icon="IMAGE_PLANE")
+        box = layout.box()
+        box.use_property_split = True
+        box.use_property_decorate = False
+        box.prop(props, "impostor_mode", text="Mode")
+        box.prop(props, "impostor_resolution", text="Resolution")
+        box.prop(props, "impostor_replace_last_lod", text="Final LOD Tier")
+
+        layout.separator()
+        row_act = layout.row(align=True)
+        row_act.scale_y = 1.25
+        row_act.operator("lod_tool.generate_impostor", text="Generate", icon="IMAGE_PLANE")
+        row_act.operator("lod_tool.remove_impostor", text="Remove", icon="X")
 
 
 # =========================================================================
@@ -429,6 +552,12 @@ class OMNIMESH_PT_popover_export_preset(Panel):
         layout.prop(props, "pbr_export_naming_pattern", text="Naming Pattern")
 
         layout.separator()
+        layout.label(text="Package Pipeline Toggles", icon="PACKAGE")
+        layout.prop(props, "export_packed_textures", text="Pack PBR Textures on Export")
+        layout.prop(props, "bake_animations", text="Bake Skeletal Animations")
+        layout.prop(props, "engine_project_path", text="Engine Project Path (Bridge)")
+
+        layout.separator()
         layout.label(text="Export Maps & Channel Routing", icon="NODE_MATERIAL")
 
         row = layout.row()
@@ -480,35 +609,15 @@ class OMNIMESH_PT_popover_export_preset(Panel):
                     row_ch.prop(active_map, f"invert_{ch}", text="Invert")
 
 
-class OMNIMESH_PT_popover_bridge(Panel):
-    """Popover for Live Engine Bridge connection settings."""
-
-    bl_idname = "OMNIMESH_PT_popover_bridge"
-    bl_label = "Live Bridge Settings"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 16
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = context.scene.lod_tool
-
-        layout.label(text="Live Bridge Connection", icon="LINKED")
-        layout.prop(props, "engine_project_path", text="Project Path")
-        layout.prop(props, "enable_live_sync", text="Auto-Sync on Export")
-
-
 POPOVER_CLASSES = (
-    OMNIMESH_PT_popover_import,
     OMNIMESH_PT_popover_import_preset,
     OMNIMESH_PT_popover_sanitize,
     OMNIMESH_PT_popover_materials,
     OMNIMESH_PT_popover_collision,
     OMNIMESH_PT_popover_configure,
     OMNIMESH_PT_popover_generate,
+    OMNIMESH_PT_popover_lod_preset,
+    OMNIMESH_PT_popover_impostor,
     OMNIMESH_PT_popover_export,
     OMNIMESH_PT_popover_export_preset,
-    OMNIMESH_PT_popover_bridge,
 )

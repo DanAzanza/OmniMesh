@@ -1,0 +1,25 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "Godot 4 (Standard)",
+  "version": 2,
+  "description": "Standard 3-tier visibility range progression for Godot 4",
+  "target_engine": "GODOT_4",
+  "budget_mode": "PERCENTAGE",
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 50.0,
+      "target_tris_pct": 50.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 20.0,
+      "target_tris_pct": 20.0
+    }
+  ]
+}

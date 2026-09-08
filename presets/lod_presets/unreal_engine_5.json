@@ -1,0 +1,30 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "Unreal Engine 5 (Standard)",
+  "version": 2,
+  "description": "Standard 4-tier logarithmic progression for Unreal Engine 5",
+  "target_engine": "UE5",
+  "budget_mode": "PERCENTAGE",
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 50.0,
+      "target_tris_pct": 50.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 25.0,
+      "target_tris_pct": 25.0
+    },
+    {
+      "name": "LOD3",
+      "screen_size_pct": 12.0,
+      "target_tris_pct": 12.0
+    }
+  ]
+}

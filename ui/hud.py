@@ -24,6 +24,53 @@ except ImportError:
 class LODViewportHUD:
     _handler = None
     _cached_data = {}
+    _toast_message: str = ""
+    _toast_time: float = 0.0
+    _toast_duration: float = 3.5
+
+    @classmethod
+    def show_toast(cls, message: str, duration: float = 3.5) -> None:
+        """Display a transient notification badge at the bottom of the 3D Viewport."""
+        import time
+
+        cls._toast_message = message
+        cls._toast_time = time.time()
+        cls._toast_duration = duration
+        cls.tag_redraw()
+
+        if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+
+            def _auto_dismiss() -> None:
+                if cls._toast_message and time.time() - cls._toast_time >= cls._toast_duration:
+                    cls.clear_toast()
+
+            try:
+                bpy.app.timers.register(_auto_dismiss, first_interval=duration + 0.05)
+            except Exception as exc:
+                logger.debug("Failed registering auto_dismiss timer: %s", exc)
+
+    @classmethod
+    def clear_toast(cls) -> None:
+        """Dismiss the toast notification immediately."""
+        if cls._toast_message:
+            cls._toast_message = ""
+            cls._toast_time = 0.0
+            cls.tag_redraw()
+
+    @classmethod
+    def tag_redraw(cls) -> None:
+        """Tag all 3D viewports for redraw."""
+        if not bpy or not hasattr(bpy, "context"):
+            return
+        try:
+            wm = getattr(bpy.context, "window_manager", None)
+            if wm and hasattr(wm, "windows"):
+                for window in wm.windows:
+                    for area in getattr(getattr(window, "screen", None), "areas", []):
+                        if getattr(area, "type", "") == "VIEW_3D":
+                            area.tag_redraw()
+        except Exception as exc:
+            logger.debug("Failed tagging viewport redraw: %s", exc)
 
     @classmethod
     def update_cache(cls, context: Any) -> None:
@@ -81,8 +128,71 @@ class LODViewportHUD:
             cls._cached_data["is_simulating"] = False
 
     @classmethod
+    def _draw_toast_px(cls, scale: float) -> None:
+        if not cls._toast_message or not blf or not gpu or not bpy:
+            return
+        try:
+            font_id = 0
+            text = cls._toast_message
+            blf.size(font_id, int(12 * scale))
+            dims = blf.dimensions(font_id, text)
+            text_w = dims[0]
+            text_h = dims[1]
+
+            region = getattr(bpy.context, "region", None) if bpy.context else None
+            reg_w = getattr(region, "width", 800)
+            pad_x = int(14 * scale)
+            pad_y = int(6 * scale)
+            box_w = int(text_w + pad_x * 2)
+            box_h = int(text_h + pad_y * 2)
+            x_pos = int((reg_w - box_w) / 2)
+            y_pos = int(25 * scale)
+
+            vertices = (
+                (x_pos, y_pos),
+                (x_pos + box_w, y_pos),
+                (x_pos, y_pos + box_h),
+                (x_pos + box_w, y_pos + box_h),
+            )
+            indices = ((0, 1, 2), (2, 1, 3))
+            shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+            batch = batch_for_shader(shader, "TRIS", {"pos": vertices}, indices=indices)
+
+            gpu.state.blend_set("ALPHA")
+            try:
+                shader.bind()
+                shader.uniform_float("color", (0.05, 0.08, 0.12, 0.88))
+                batch.draw(shader)
+            finally:
+                gpu.state.blend_set("NONE")
+
+            blf.position(font_id, x_pos + pad_x, y_pos + pad_y + int(1 * scale), 0)
+            blf.color(font_id, 0.35, 0.95, 0.65, 1.0)
+            blf.draw(font_id, text)
+        except Exception as exc:
+            logger.debug("Toast draw exception: %s", exc)
+
+    @classmethod
     def draw_callback_px(cls) -> None:
-        if not cls._cached_data or not cls._cached_data.get("is_active") or not gpu or not blf or not bpy:
+        if not gpu or not blf or not bpy:
+            return
+
+        scale = (
+            bpy.context.preferences.system.ui_scale if (bpy.context and hasattr(bpy.context, "preferences")) else 1.0
+        )
+
+        # 1. Draw transient toast notification at bottom of viewport
+        if cls._toast_message:
+            import time
+
+            elapsed = time.time() - cls._toast_time
+            if elapsed > cls._toast_duration:
+                cls._toast_message = ""
+            else:
+                cls._draw_toast_px(scale)
+
+        # 2. Draw persistent monitor HUD if active
+        if not cls._cached_data or not cls._cached_data.get("is_active"):
             return
 
         # Check if HUD is toggled off in scene properties
@@ -91,11 +201,6 @@ class LODViewportHUD:
             return
 
         try:
-            scale = (
-                bpy.context.preferences.system.ui_scale
-                if (bpy.context and hasattr(bpy.context, "preferences"))
-                else 1.0
-            )
             font_id = 0
             x_offset = int(40 * scale)
             y_offset = int(120 * scale)
@@ -187,6 +292,9 @@ class LODViewportHUD:
             except (RuntimeError, AttributeError, ValueError) as exc:
                 logger.debug("HUD register failed: %s", exc)
                 cls._handler = None
+        if hasattr(bpy.app, "handlers") and hasattr(bpy.app.handlers, "depsgraph_update_post"):
+            if on_depsgraph_clear_toast not in bpy.app.handlers.depsgraph_update_post:
+                bpy.app.handlers.depsgraph_update_post.append(on_depsgraph_clear_toast)
 
     @classmethod
     def unregister(cls) -> None:
@@ -198,3 +306,19 @@ class LODViewportHUD:
             except (RuntimeError, ValueError) as exc:
                 logger.debug("HUD draw handler removal exception: %s", exc)
             cls._handler = None
+        if hasattr(bpy.app, "handlers") and hasattr(bpy.app.handlers, "depsgraph_update_post"):
+            if on_depsgraph_clear_toast in bpy.app.handlers.depsgraph_update_post:
+                bpy.app.handlers.depsgraph_update_post.remove(on_depsgraph_clear_toast)
+
+
+def on_depsgraph_clear_toast(scene: Any = None, depsgraph: Any = None) -> None:
+    """Safely check if toast duration has expired upon depsgraph updates."""
+    if LODViewportHUD._toast_message:
+        import time
+
+        if time.time() - LODViewportHUD._toast_time >= LODViewportHUD._toast_duration:
+            LODViewportHUD.clear_toast()
+
+
+if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "handlers"):
+    on_depsgraph_clear_toast = bpy.app.handlers.persistent(on_depsgraph_clear_toast)

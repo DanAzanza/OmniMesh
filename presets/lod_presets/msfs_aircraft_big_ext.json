@@ -1,0 +1,46 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "MSFS Aircraft (Big - Exterior)",
+  "version": 2,
+  "description": "Official MSFS SDK LOD guidelines for Passenger Jet exterior (300k ceiling down to 100 tris)",
+  "target_engine": "MSFS_2024",
+  "budget_mode": "ABSOLUTE",
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris": 300000,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 70.0,
+      "target_tris": 150000,
+      "target_tris_pct": 50.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 40.0,
+      "target_tris": 70000,
+      "target_tris_pct": 23.3
+    },
+    {
+      "name": "LOD3",
+      "screen_size_pct": 15.0,
+      "target_tris": 20000,
+      "target_tris_pct": 6.7
+    },
+    {
+      "name": "LOD4",
+      "screen_size_pct": 5.0,
+      "target_tris": 5000,
+      "target_tris_pct": 1.7
+    },
+    {
+      "name": "LOD5",
+      "screen_size_pct": 0.5,
+      "target_tris": 100,
+      "target_tris_pct": 0.03
+    }
+  ]
+}

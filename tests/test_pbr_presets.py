@@ -481,11 +481,9 @@ def test_omnimesh_ul_export_preset_maps_draw_item():
     mock_layout = MagicMock()
     mock_row = MagicMock()
     mock_col = MagicMock()
-    mock_layout.row.return_value = mock_row
-    mock_row.split.return_value = mock_col
-
     mock_col_name = MagicMock()
-    mock_col.split.return_value = mock_col_name
+    mock_layout.row.return_value = mock_row
+    mock_row.split.side_effect = [mock_col, mock_col_name]
 
     # Export map item
     export_item = MagicMock()
@@ -497,4 +495,4 @@ def test_omnimesh_ul_export_preset_maps_draw_item():
     ul.draw_item(None, mock_layout, None, export_item, None, None, None)
     mock_col.prop.assert_any_call(export_item, "export", text="")
     mock_col_name.label.assert_any_call(text="Normal Map", icon="SNAP_NORMAL")
-    mock_col_name.label.assert_any_call(text="(_Normal)")
+    mock_row.label.assert_any_call(text="(_Normal)")

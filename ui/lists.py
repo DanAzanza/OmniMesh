@@ -18,7 +18,7 @@ except ImportError:
 
 
 class LOD_UL_tier_list(UIList):
-    """Responsive 3-column UIList for LOD tiers."""
+    """Responsive UIList for LOD tiers (Solo/Name, Tris Budget, Distance)."""
 
     def draw_item(
         self,
@@ -32,23 +32,51 @@ class LOD_UL_tier_list(UIList):
         index: int = 0,
         flt_flag: int = 0,
     ) -> None:
+        if not item:
+            return
         if self.layout_type in {"DEFAULT", "COMPACT"}:
             row = layout.row(align=True)
+            row.use_property_split = False
 
-            # Column 1: LOD Tier Badge & Mesh Icon (~30% width)
-            col_lod = row.split(factor=0.30, align=True)
-            col_lod.label(text=f"LOD{item.lod_index}", icon="MESH_DATA")
+            # Column 1: Solo toggle & Tier name (~30% width)
+            col1 = row.split(factor=0.30, align=True)
+            is_solo = getattr(item, "is_soloed", False)
+            solo_icon = "HIDE_OFF" if is_solo else "HIDE_ON"
+            op = col1.operator("lod_tool.solo_tier", text="", icon=solo_icon, emboss=False)
+            op.tier_index = index
+            tier_name = getattr(item, "name", f"LOD{index}")
+            col1.label(text=tier_name)
 
-            # Column 2: Screen Size Percentage (~35% width)
-            col_pct = col_lod.split(factor=0.50, align=True)
-            col_pct.prop(item, "screen_size_pct", text="", emboss=False)
+            # Column 2: Tris budget % and absolute count (~49% width)
+            col2 = row.split(factor=0.70, align=True)
+            pct = getattr(item, "target_tris_pct", 100.0)
+            try:
+                pct_val = float(pct)
+            except (ValueError, TypeError):
+                pct_val = 100.0
 
-            # Column 3: Triangle Count badge (~35% width)
-            if item.actual_tris > 0:
-                tris_label = f"{item.actual_tris:,} tris"
-            else:
-                tris_label = f"~{item.target_tris:,} tris"
-            col_pct.label(text=tris_label)
+            tris = getattr(item, "actual_tris", 0) or getattr(item, "target_tris", 0)
+            try:
+                tris_val = int(tris)
+                if tris_val >= 1000:
+                    tris_str = f"{tris_val / 1000:.1f}k"
+                elif tris_val > 0:
+                    tris_str = f"{tris_val}"
+                else:
+                    tris_str = "-"
+            except (ValueError, TypeError):
+                tris_str = "-"
+            col2.label(text=f"{pct_val:.0f}% ({tris_str})")
+
+            # Column 3: Distance (~21% width)
+            col3 = row
+            dist = getattr(item, "distance_m", 0.0)
+            try:
+                dist_val = float(dist)
+                dist_str = f"{dist_val:.0f}m" if dist_val >= 100 else f"{dist_val:.1f}m"
+            except (ValueError, TypeError):
+                dist_str = "0m"
+            col3.label(text=dist_str)
 
 
 class OMNIMESH_UL_preset_maps(UIList):
@@ -118,8 +146,8 @@ class OMNIMESH_UL_export_preset_maps(UIList):
         if self.layout_type in {"DEFAULT", "COMPACT"}:
             row = layout.row(align=True)
 
-            # Column 1: Export toggle checkbox (~15% width)
-            col_toggle = row.split(factor=0.15, align=True)
+            # Column 1: Export toggle checkbox (~12% width)
+            col_toggle = row.split(factor=0.12, align=True)
             col_toggle.prop(item, "export", text="")
 
             is_normal = getattr(item, "is_normal_map", False)
@@ -135,19 +163,54 @@ class OMNIMESH_UL_export_preset_maps(UIList):
             else:
                 icon = "IMAGE_DATA"
 
-            # Column 2: Map Name + Icon (~60% of remainder)
-            col_name = col_toggle.split(factor=0.60, align=True)
+            # Column 2: Map Name + Icon (~65% of remainder)
+            col_name = row.split(factor=0.65, align=True)
             col_name.label(text=getattr(item, "name", "Map"), icon=icon)
 
-            # Column 3: Suffix badge
+            # Column 3: Suffix badge (remainder)
             suffix = getattr(item, "export_suffix", "").strip()
-            col_name.label(text=f"({suffix})" if suffix else "")
+            row.label(text=f"({suffix})" if suffix else "")
+
+
+class OMNIMESH_UL_preset_tiers(UIList):
+    """Interactive list displaying LOD tier curve templates in the active preset."""
+
+    def draw_item(
+        self,
+        context: Any,
+        layout: Any,
+        _data: Any,
+        item: Any,
+        _icon: Any,
+        _active_data: Any,
+        _active_propname: Any,
+        index: int = 0,
+        _flt_flag: int = 0,
+    ) -> None:
+        if not item:
+            return
+        if self.layout_type in {"DEFAULT", "COMPACT"}:
+            row = layout.row(align=True)
+
+            tier_name = getattr(item, "name", f"LOD{index}")
+
+            # Column 1: Tier Name (~28% width)
+            col_name = row.split(factor=0.28, align=True)
+            col_name.label(text=tier_name, icon="MESH_DATA")
+
+            # Column 2: Screen Size % (~50% of remainder -> ~36% total)
+            col_screen = row.split(factor=0.50, align=True)
+            col_screen.prop(item, "screen_size_pct", text="", slider=True)
+
+            # Column 3: Budget (% slider, remaining ~36% total)
+            row.prop(item, "target_tris_pct", text="", slider=True)
 
 
 classes = (
     LOD_UL_tier_list,
     OMNIMESH_UL_preset_maps,
     OMNIMESH_UL_export_preset_maps,
+    OMNIMESH_UL_preset_tiers,
 )
 
 

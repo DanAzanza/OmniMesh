@@ -14,18 +14,48 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
+    from ..core.lod_presets import (
+        DEFAULT_LOD_PRESET_ID,
+        LODPresetManager,
+    )
+    from ..core.metrics import (
+        compute_bounding_sphere,
+        compute_distance_from_screen_size,
+        compute_vertical_fov,
+    )
     from ..core.pbr_presets import (
         PBRExportPresetManager,
         PBRImportPresetManager,
         get_pipeline_state,
         set_pipeline_setting,
     )
+    from .utils import (
+        get_asset_base_meshes,
+        get_asset_enum_items,
+        get_asset_existing_lods,
+        resolve_effective_asset_name,
+    )
 except (ImportError, ValueError):
+    from core.lod_presets import (
+        DEFAULT_LOD_PRESET_ID,
+        LODPresetManager,
+    )
+    from core.metrics import (
+        compute_bounding_sphere,
+        compute_distance_from_screen_size,
+        compute_vertical_fov,
+    )
     from core.pbr_presets import (
         PBRExportPresetManager,
         PBRImportPresetManager,
         get_pipeline_state,
         set_pipeline_setting,
+    )
+    from ui.utils import (
+        get_asset_base_meshes,
+        get_asset_enum_items,
+        get_asset_existing_lods,
+        resolve_effective_asset_name,
     )
 
 try:
@@ -70,6 +100,30 @@ except ImportError:
         return None
 
 
+def on_tier_target_pct_updated(self: Any, context: Any) -> None:
+    """Synchronizes target_tris when target_tris_pct is modified."""
+    if not context or not hasattr(context, "scene"):
+        return
+    props = getattr(context.scene, "lod_tool", None)
+    if props and props.base_triangles > 0:
+        val = max(12, int(props.base_triangles * (self.target_tris_pct / 100.0)))
+        if self.target_tris != val:
+            self["target_tris"] = val
+            self["triangle_target"] = val
+
+
+def on_tier_target_tris_updated(self: Any, context: Any) -> None:
+    """Synchronizes target_tris_pct when target_tris is modified."""
+    if not context or not hasattr(context, "scene"):
+        return
+    props = getattr(context.scene, "lod_tool", None)
+    if props and props.base_triangles > 0:
+        pct = round((self.target_tris / props.base_triangles) * 100.0, 1)
+        clamped = max(0.01, min(100.0, pct))
+        if abs(self.target_tris_pct - clamped) > 0.05:
+            self["target_tris_pct"] = clamped
+
+
 class LODLevelItem(PropertyGroup):
     """Data model representing a single generated or configured LOD tier."""
 
@@ -93,12 +147,51 @@ class LODLevelItem(PropertyGroup):
         description="Calculated camera distance for this tier transition",
     )
     triangle_target: IntProperty(name="Target Tris", default=0, min=0)
-    target_tris: IntProperty(name="Target Tris", default=0, min=0)
+    target_tris: IntProperty(name="Target Tris", default=0, min=0, update=on_tier_target_tris_updated)
     actual_triangles: IntProperty(name="Actual Tris", default=0, min=0)
     actual_tris: IntProperty(name="Actual Tris", default=0, min=0)
     reduction_pct: FloatProperty(name="Reduction %", default=0.0, precision=1)
     mat_slots_count: IntProperty(name="Material Slots", default=0, min=0)
-    delta_world: FloatProperty(name="Allowed Error (m)", default=0.0, min=0.0, precision=4)
+    target_tris_pct: FloatProperty(
+        name="Target Tris %",
+        default=100.0,
+        min=0.001,
+        max=100.0,
+        subtype="PERCENTAGE",
+        precision=1,
+        description="Target triangle budget percentage relative to LOD0",
+        update=on_tier_target_pct_updated,
+    )
+    is_soloed: BoolProperty(
+        name="Solo Viewport",
+        default=False,
+        description="Whether this tier is currently isolated in the 3D Viewport",
+    )
+    is_impostor: BoolProperty(
+        name="Is Impostor",
+        default=False,
+        description="Whether this tier is an impostor billboard representation",
+    )
+    state: EnumProperty(
+        name="State",
+        items=[
+            ("SOURCE", "Source", "Original base mesh source geometry"),
+            ("BAKED", "Baked", "Existing in scene and synchronized with configured parameters"),
+            ("PLANNED", "Planned", "Projected tier not yet generated in the scene"),
+            ("OUT_OF_SYNC", "Out of Sync", "Existing tier modified since last bake"),
+        ],
+        default="PLANNED",
+    )
+    last_baked_target_pct: FloatProperty(
+        name="Last Baked Target %",
+        default=-1.0,
+        precision=2,
+    )
+    last_baked_screen_pct: FloatProperty(
+        name="Last Baked Screen %",
+        default=-1.0,
+        precision=2,
+    )
     generated_obj: PointerProperty(name="Mesh Object", type=bpy.types.Object if bpy else object)
 
 
@@ -119,6 +212,218 @@ class PresetSyncGuard:
         return cls._depth > 0
 
     is_active = is_locked
+
+
+def on_preset_tier_item_updated(self: Any, context: Any) -> None:
+    """Flags active preset as modified when a tier setting is changed."""
+    if not context or not hasattr(context, "scene"):
+        return
+    if PresetSyncGuard.is_locked() or StateRestorationGuard.is_active():
+        return
+    props = getattr(context.scene, "lod_tool", None)
+    if props:
+        props.lod_preset_is_dirty = True
+
+
+def on_lod_preset_property_modified(self: Any, context: Any) -> None:
+    """Flags active LOD preset as modified when any preset-backed setting changes."""
+    if not context or not hasattr(context, "scene"):
+        return
+    if PresetSyncGuard.is_locked() or StateRestorationGuard.is_active():
+        return
+    props = getattr(context.scene, "lod_tool", None)
+    if props:
+        props.lod_preset_is_dirty = True
+
+
+def on_split_preview_updated(self: Any, context: Any) -> None:
+    """Forces 3D viewport redraw when split preview ratio or comparison tier changes."""
+    if not bpy or not context:
+        return
+    wm = getattr(context, "window_manager", None)
+    if not wm:
+        return
+    for window in getattr(wm, "windows", []):
+        screen = getattr(window, "screen", None)
+        if screen:
+            for area in getattr(screen, "areas", []):
+                if getattr(area, "type", "") == "VIEW_3D":
+                    area.tag_redraw()
+
+
+class LODPresetTierItem(PropertyGroup):
+    """Data model representing a template tier within a configurable LOD preset."""
+
+    name: StringProperty(name="Tier Name", default="LOD0", update=on_preset_tier_item_updated)
+    screen_size_pct: FloatProperty(
+        name="Screen Size %",
+        default=100.0,
+        min=0.01,
+        max=100.0,
+        subtype="PERCENTAGE",
+        precision=1,
+        update=on_preset_tier_item_updated,
+    )
+    target_tris_pct: FloatProperty(
+        name="Target Tris %",
+        default=100.0,
+        min=0.001,
+        max=100.0,
+        subtype="PERCENTAGE",
+        precision=2,
+        update=on_preset_tier_item_updated,
+    )
+    target_tris: IntProperty(
+        name="Target Tris",
+        default=100000,
+        min=1,
+        update=on_preset_tier_item_updated,
+    )
+
+
+def sync_preset_tiers_from_preset(props: Any, preset: dict[str, Any]) -> None:
+    """Populates ephemeral LOD preset tiers, chunking, impostor, culling, and pinning from preset under sync guard."""
+    if not hasattr(props, "lod_preset_active_tiers"):
+        return
+    preset_id = preset.get("id", "") or preset.get("_id", "") or getattr(props, "lod_preset", "")
+    with PresetSyncGuard():
+        props.lod_preset_active_tiers.clear()
+        props.lod_preset_active_id = str(preset_id)
+        props.lod_preset_budget_mode = str(preset.get("budget_mode", "PERCENTAGE"))
+
+        for t in preset.get("tiers", []):
+            item = props.lod_preset_active_tiers.add()
+            item.name = str(t.get("name", "LOD"))
+            item.screen_size_pct = float(t.get("screen_size_pct", 100.0))
+            item.target_tris_pct = float(t.get("target_tris_pct", 100.0))
+            if "target_tris" in t:
+                item.target_tris = int(t.get("target_tris", 1000))
+            else:
+                base = getattr(props, "base_triangles", 0) or 100000
+                item.target_tris = max(1, int(base * (item.target_tris_pct / 100.0)))
+        props.lod_preset_active_tier_index = 0
+
+        # Hydrate chunking settings
+        chunk_cfg = preset.get("chunking", {})
+        if isinstance(chunk_cfg, dict):
+            if hasattr(props, "enable_spatial_chunking"):
+                props.enable_spatial_chunking = bool(chunk_cfg.get("enabled", False))
+            if hasattr(props, "chunk_cell_size"):
+                props.chunk_cell_size = float(chunk_cfg.get("cell_size", 32.0))
+            if hasattr(props, "chunk_split_z"):
+                props.chunk_split_z = bool(chunk_cfg.get("split_z", False))
+            if hasattr(props, "chunk_cell_size_z"):
+                props.chunk_cell_size_z = float(chunk_cfg.get("cell_size_z", 32.0))
+            if hasattr(props, "chunk_partitioning_mode"):
+                props.chunk_partitioning_mode = str(chunk_cfg.get("partitioning_mode", "UNIFORM_GRID"))
+            if hasattr(props, "adaptive_cluster_target_polys"):
+                props.adaptive_cluster_target_polys = int(chunk_cfg.get("adaptive_target_polys", 50000))
+            if hasattr(props, "enable_hlod"):
+                props.enable_hlod = bool(chunk_cfg.get("enable_hlod", True))
+            if hasattr(props, "hlod_start_tier"):
+                props.hlod_start_tier = int(chunk_cfg.get("hlod_start_tier", 2))
+
+        # Hydrate impostor settings
+        imp_cfg = preset.get("impostor", {})
+        if isinstance(imp_cfg, dict):
+            if hasattr(props, "enable_impostor_lod"):
+                props.enable_impostor_lod = bool(imp_cfg.get("enabled", False))
+            if hasattr(props, "impostor_mode"):
+                props.impostor_mode = str(imp_cfg.get("mode", "CROSS_QUADS"))
+            if hasattr(props, "impostor_resolution"):
+                props.impostor_resolution = str(imp_cfg.get("resolution", "2048"))
+            if hasattr(props, "impostor_replace_last_lod"):
+                props.impostor_replace_last_lod = bool(imp_cfg.get("replace_last_lod", True))
+
+        # Hydrate culling settings
+        cull_cfg = preset.get("culling", {})
+        if isinstance(cull_cfg, dict):
+            if hasattr(props, "enable_occlusion_culling"):
+                props.enable_occlusion_culling = bool(cull_cfg.get("occlusion_enabled", True))
+            if hasattr(props, "occlusion_lod_start"):
+                props.occlusion_lod_start = int(cull_cfg.get("occlusion_lod_start", 1))
+            if hasattr(props, "occlusion_ray_density"):
+                props.occlusion_ray_density = int(cull_cfg.get("occlusion_ray_density", 16))
+            if hasattr(props, "occlusion_evaluate_alpha"):
+                props.occlusion_evaluate_alpha = bool(cull_cfg.get("occlusion_evaluate_alpha", True))
+            if hasattr(props, "enable_slender_culling"):
+                props.enable_slender_culling = bool(cull_cfg.get("slender_enabled", True))
+
+        # Hydrate seam pinning settings
+        pin_cfg = preset.get("pinning", {})
+        if isinstance(pin_cfg, dict):
+            if hasattr(props, "pin_uv_seams"):
+                props.pin_uv_seams = bool(pin_cfg.get("pin_uv_seams", True))
+            if hasattr(props, "pin_material_borders"):
+                props.pin_material_borders = bool(pin_cfg.get("pin_material_borders", True))
+
+        # Hydrate tau_sse
+        if "tau_sse" in preset and hasattr(props, "tau_sse"):
+            props.tau_sse = float(preset["tau_sse"])
+
+        # Guarantee pristine dirty state at end of hydration
+        props.lod_preset_is_dirty = False
+
+
+def sync_preset_tiers_to_preset(props: Any, preset_id: str | None = None) -> str:
+    """Serializes active LOD preset tiers, chunking, impostor, culling, and pinning to JSON on disk."""
+    try:
+        from ..core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
+    except (ImportError, ValueError):
+        from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
+
+    target_id: str = str(preset_id or getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID)
+
+    preset_data = copy.deepcopy(LODPresetManager.get_preset(target_id))
+    preset_data["budget_mode"] = getattr(props, "lod_preset_budget_mode", "PERCENTAGE")
+    preset_data["version"] = 2
+    if hasattr(props, "tau_sse"):
+        preset_data["tau_sse"] = round(float(props.tau_sse), 3)
+
+    new_tiers: list[dict[str, Any]] = []
+    for item in props.lod_preset_active_tiers:
+        tier_dict: dict[str, Any] = {
+            "name": item.name,
+            "screen_size_pct": round(item.screen_size_pct, 2),
+            "target_tris_pct": round(item.target_tris_pct, 2),
+            "is_pinned": bool(getattr(item, "is_pinned", False)),
+            "is_impostor": bool(getattr(item, "is_impostor", False)),
+        }
+        new_tiers.append(tier_dict)
+    preset_data["tiers"] = new_tiers
+
+    # Serialize chunking block
+    preset_data["spatial_chunking"] = {
+        "enabled": bool(getattr(props, "enable_spatial_chunking", False)),
+        "max_chunk_size_m": float(getattr(props, "spatial_chunk_size", 50.0)),
+        "max_tris_per_chunk": int(getattr(props, "spatial_chunk_max_tris", 15000)),
+        "generation_mode": str(getattr(props, "spatial_chunk_mode", "AUTOMATIC")),
+    }
+
+    # Serialize impostor block
+    preset_data["impostor"] = {
+        "enabled": bool(getattr(props, "enable_impostor_lod", False)),
+        "texture_resolution": int(getattr(props, "impostor_texture_resolution", 1024)),
+        "angle_steps": int(getattr(props, "impostor_angle_steps", 16)),
+    }
+
+    # Serialize slender culling block
+    preset_data["slender_feature_culling"] = {
+        "enabled": bool(getattr(props, "enable_slender_culling", False)),
+        "threshold_px": float(getattr(props, "slender_culling_threshold_px", 1.5)),
+    }
+
+    # Serialize seam pinning block
+    preset_data["pinning"] = {
+        "pin_uv_seams": bool(getattr(props, "pin_uv_seams", True)),
+        "pin_material_borders": bool(getattr(props, "pin_material_borders", True)),
+    }
+
+    # Direct unrestricted save to preset
+    LODPresetManager.save_custom_preset(preset_data, custom_id=target_id)
+    props.lod_preset_active_id = target_id
+    props.lod_preset_is_dirty = False
+    return target_id
 
 
 class StateRestorationGuard:
@@ -381,9 +686,9 @@ def sync_export_maps_to_preset(props: Any) -> None:
         return
 
     try:
-        from core.pbr_presets import PBRExportPresetManager
-    except ImportError:
         from ..core.pbr_presets import PBRExportPresetManager
+    except (ImportError, ValueError):
+        from core.pbr_presets import PBRExportPresetManager
 
     preset_id = getattr(props, "pbr_export_preset", "") or PBRExportPresetManager.DEFAULT_PRESET_ID
 
@@ -845,6 +1150,7 @@ if bpy and hasattr(bpy.app, "handlers"):
         state = get_pipeline_state()
         last_exp = PBRExportPresetManager.get_last_active_preset()
         last_imp = PBRImportPresetManager.get_last_active_preset()
+        last_lod = LODPresetManager.get_last_active_preset()
 
         with StateRestorationGuard(), PresetSyncGuard():
             for scene in getattr(bpy.data, "scenes", []):
@@ -854,6 +1160,7 @@ if bpy and hasattr(bpy.app, "handlers"):
                 props.is_state_restored = True
                 exp_to_set = last_exp or "unreal_engine_5"
                 imp_to_set = last_imp or "unreal_engine_5"
+                lod_to_set = last_lod or "unreal_engine_5"
                 if hasattr(props, "pbr_export_preset"):
                     props.pbr_export_preset = exp_to_set
                 if hasattr(props, "pbr_preset"):
@@ -862,6 +1169,10 @@ if bpy and hasattr(bpy.app, "handlers"):
                     props.pbr_import_preset = imp_to_set
                     preset = PBRImportPresetManager.get_preset(imp_to_set)
                     sync_maps_from_preset(props, preset)
+                if hasattr(props, "lod_preset"):
+                    props.lod_preset = lod_to_set
+                    lod_preset_data = LODPresetManager.get_preset(lod_to_set)
+                    sync_preset_tiers_from_preset(props, lod_preset_data)
 
                 # Hydrate persistent preferences
                 if "pbr_import_directory" in state and hasattr(props, "pbr_import_directory"):
@@ -884,6 +1195,152 @@ if bpy and hasattr(bpy.app, "handlers"):
                     props.batch_source_directory = state["batch_source_directory"]
 else:
     restore_preset_state_on_load = None
+
+
+def get_lod_preset_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
+    """Dynamic enum items for LOD Tier Configuration Presets."""
+    try:
+        return LODPresetManager.get_enum_items()
+    except Exception:
+        return [("unreal_engine_5", "Unreal Engine 5 (Standard)", "Default template")]
+
+
+def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") -> None:
+    """
+    Projects preset LOD tiers onto props.lods based on the resolved asset and preset definition.
+    Inspects scene Ist-Zustand:
+    - Tier 0 is marked SOURCE (read-only baseline).
+    - If sibling collections exist in the scene, compares targets with last baked values:
+      sets BAKED if matching, or OUT_OF_SYNC if modified.
+    - If collection does not exist in the scene, sets PLANNED.
+    """
+    if not props:
+        return
+
+    ctx = context or getattr(bpy, "context", None)
+    if not asset_name and ctx:
+        asset_name = resolve_effective_asset_name(ctx, props)
+
+    base_meshes = get_asset_base_meshes(ctx, asset_name) if (ctx and asset_name) else []
+    existing_lods = get_asset_existing_lods(ctx, asset_name) if (ctx and asset_name) else {}
+
+    # Calculate bounding envelope & metrics
+    all_coords = []
+    base_tris = 0
+    total_mat_slots = 0
+    for obj in base_meshes:
+        base_tris += len(obj.data.polygons) if hasattr(obj, "data") and hasattr(obj.data, "polygons") else 0
+        total_mat_slots += len(obj.material_slots) if hasattr(obj, "material_slots") else 0
+        m_w = getattr(obj, "matrix_world", None)
+        if m_w and hasattr(obj, "data") and hasattr(obj.data, "vertices"):
+            all_coords.extend([m_w @ v.co for v in obj.data.vertices])
+
+    radius = 1.0
+    center = (0.0, 0.0, 0.0)
+    if all_coords:
+        center, radius = compute_bounding_sphere(all_coords)
+
+    cam_angle = 1.0471975511965976  # 60 deg
+    sensor_fit = "AUTO"
+    res_x = 1920
+    res_y = 1080
+    if ctx and hasattr(ctx, "scene"):
+        cam = getattr(ctx.scene, "camera", None)
+        if cam and getattr(cam, "type", "") == "CAMERA":
+            cam_angle = cam.data.angle
+            sensor_fit = cam.data.sensor_fit
+        render = getattr(ctx.scene, "render", None)
+        if render:
+            res_x = render.resolution_x
+            res_y = max(1, render.resolution_y)
+
+    aspect_ratio = res_x / float(res_y)
+    fov_v = compute_vertical_fov(cam_angle, aspect_ratio, sensor_fit)
+
+    props.bounding_radius = radius
+    props.bounding_center = center
+    props.base_triangles = base_tris
+    props.screen_coverage_lod0 = 100.0
+    props.is_configured = True
+    if asset_name and asset_name not in ("AUTO", "NONE", "Asset"):
+        props.export_base_name = asset_name
+
+    preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+    preset_data = LODPresetManager.get_preset(preset_id)
+    preset_tiers = preset_data.get("tiers", [])
+
+    props.lods.clear()
+    for i, t_def in enumerate(preset_tiers):
+        item = props.lods.add()
+        item.name = str(t_def.get("name", f"LOD{i}"))
+        item.lod_index = i
+        item.level_index = i
+        s_pct = float(t_def.get("screen_size_pct", 100.0 if i == 0 else 50.0))
+        item.screen_size_pct = s_pct
+
+        t_pct = float(t_def.get("target_tris_pct", 100.0 if i == 0 else 50.0))
+        item.target_tris_pct = t_pct
+        item.target_tris = (
+            max(6, int(base_tris * (t_pct / 100.0))) if base_tris > 0 else int(t_def.get("target_tris", 10000))
+        )
+        item.triangle_target = item.target_tris
+        item.is_soloed = False
+        item.is_impostor = bool(t_def.get("is_impostor", False))
+
+        s_frac = s_pct / 100.0
+        dist = compute_distance_from_screen_size(radius, s_frac, fov_v)
+        item.distance_m = dist
+        item.mat_slots_count = total_mat_slots if i < 2 else max(1, total_mat_slots - (i - 1))
+
+        # State detection
+        if i == 0:
+            item.state = "SOURCE"
+            item.actual_tris = base_tris
+            item.actual_triangles = base_tris
+            item.last_baked_target_pct = 100.0
+            item.last_baked_screen_pct = 100.0
+            if base_meshes:
+                item.generated_obj = base_meshes[0]
+        else:
+            exist_info = existing_lods.get(i)
+            if exist_info and exist_info.get("meshes"):
+                item.actual_tris = exist_info.get("actual_tris", 0)
+                item.actual_triangles = item.actual_tris
+                item.last_baked_target_pct = t_pct
+                item.last_baked_screen_pct = s_pct
+                item.state = "BAKED"
+                item.generated_obj = exist_info["meshes"][0]
+            else:
+                item.state = "PLANNED"
+                item.actual_tris = 0
+                item.actual_triangles = 0
+                item.last_baked_target_pct = -1.0
+                item.last_baked_screen_pct = -1.0
+
+    props.active_lod_index = 0
+
+
+def on_lod_preset_updated(self: Any, context: Any) -> None:
+    """Synchronizes active LOD preset choice and projects tiers onto current asset."""
+    if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked():
+        return
+    preset_id = getattr(self, "lod_preset", "")
+    if not preset_id:
+        return
+    LODPresetManager.set_last_active_preset(preset_id)
+    preset = LODPresetManager.get_preset(preset_id)
+    sync_preset_tiers_from_preset(self, preset)
+    try:
+        project_preset_tiers(self, context)
+    except Exception as exc:
+        logger.debug("Automatic tier projection skipped: %s", exc)
+
+
+def on_lod_budget_mode_updated(self: Any, context: Any) -> None:
+    """Updates active preset dirty state when budget mode is modified."""
+    if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked():
+        return
+    self.lod_preset_is_dirty = True
 
 
 def get_pbr_import_preset_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
@@ -930,6 +1387,12 @@ class LODToolSettings(PropertyGroup):
         default="",
         description="Name of the root LOD0 collection to process in Collection Mode",
     )
+    active_asset: EnumProperty(
+        name="Asset Collection",
+        items=get_asset_enum_items,
+        description="Target root asset collection for LOD configuration and generation",
+        update=lambda self, context: project_preset_tiers(self, context),
+    )
     preserve_pivot_empty: BoolProperty(
         name="Preserve Pivot Empty",
         default=True,
@@ -950,6 +1413,8 @@ class LODToolSettings(PropertyGroup):
     preflight_inspected: BoolProperty(name="Preflight Inspected", default=False)
     preflight_summary_text: StringProperty(name="Preflight Summary", default="Not Inspected")
     preflight_loose_verts: IntProperty(name="Loose Vertices", default=0)
+    preflight_loose_edges: IntProperty(name="Loose Edges", default=0)
+    preflight_non_manifold_edges: IntProperty(name="Non-Manifold Edges", default=0)
     preflight_degenerate_tris: IntProperty(name="Degenerate Triangles", default=0)
     preflight_unapplied_scale: BoolProperty(name="Unapplied Scale Detected", default=False)
     preflight_missing_materials: IntProperty(name="Missing Material Slots", default=0)
@@ -1050,11 +1515,13 @@ class LODToolSettings(PropertyGroup):
         name="Pin UV Seams",
         default=True,
         description="Locks UV boundary edges from collapsing to eliminate texture seam popping",
+        update=on_lod_preset_property_modified,
     )
     pin_material_borders: BoolProperty(
         name="Pin Material Borders",
         default=True,
         description="Prevents edges on material slot transitions from warping",
+        update=on_lod_preset_property_modified,
     )
 
     # Mesh Cleanup & Topology Repair Settings
@@ -1062,6 +1529,11 @@ class LODToolSettings(PropertyGroup):
         name="Auto-Sanitize Before LOD",
         default=True,
         description="Automatically run safe Tier 0 geometric hygiene before generating LOD tiers",
+    )
+    cleanup_auto_apply_transforms: BoolProperty(
+        name="Auto-Apply Scale & Rotation",
+        default=False,
+        description="Automatically apply scale and rotation transforms before mesh sanitization (skips multi-user, shape keys, and animated objects)",
     )
     cleanup_apply_modifiers: BoolProperty(
         name="Apply Modifiers (Bake Viewport)",
@@ -1232,6 +1704,12 @@ class LODToolSettings(PropertyGroup):
     last_pbr_import_summary: StringProperty(name="PBR Import Summary", default="")
 
     # Billboard Impostor Generator Settings
+    enable_impostor_lod: BoolProperty(
+        name="Enable Impostor LOD",
+        default=False,
+        description="Generate distant camera billboard impostor for this asset",
+        update=on_lod_preset_property_modified,
+    )
     impostor_mode: EnumProperty(
         name="Impostor Mode",
         items=[
@@ -1258,21 +1736,25 @@ class LODToolSettings(PropertyGroup):
         ],
         default="CROSS_QUADS",
         description="Billboard geometry type and multi-angle projection layout",
+        update=on_lod_preset_property_modified,
     )
     impostor_resolution: EnumProperty(
         name="Atlas Resolution",
         items=[
+            ("512", "512 x 512 (Low/Mobile)", "512px square atlas"),
             ("1024", "1024 x 1024 (1K)", "1024px square atlas"),
             ("2048", "2048 x 2048 (2K)", "2048px square atlas"),
             ("4096", "4096 x 4096 (4K)", "4096px square atlas"),
         ],
         default="2048",
         description="Texture resolution for baked Impostor PBR atlas maps",
+        update=on_lod_preset_property_modified,
     )
     impostor_replace_last_lod: BoolProperty(
         name="Use as Final LOD Tier",
         default=True,
         description="Automatically assign the generated Impostor billboard as the final LOD tier in the scene",
+        update=on_lod_preset_property_modified,
     )
     last_impostor_status: StringProperty(name="Last Impostor Status", default="")
 
@@ -1281,6 +1763,7 @@ class LODToolSettings(PropertyGroup):
         name="Cull Interior Geometry",
         default=True,
         description="Automatically detect and delete non-visible internal polygons (cockpit innards, unseen machinery)",
+        update=on_lod_preset_property_modified,
     )
     occlusion_lod_start: IntProperty(
         name="Cull From LOD",
@@ -1288,6 +1771,7 @@ class LODToolSettings(PropertyGroup):
         min=1,
         max=6,
         description="LOD tier at which interior occlusion removal begins (LOD0 is strictly preserved)",
+        update=on_lod_preset_property_modified,
     )
     occlusion_ray_density: IntProperty(
         name="Ray Samples",
@@ -1295,11 +1779,13 @@ class LODToolSettings(PropertyGroup):
         min=4,
         max=64,
         description="Number of stratified ingress and egress raycast samples per surface cluster",
+        update=on_lod_preset_property_modified,
     )
     occlusion_evaluate_alpha: BoolProperty(
         name="Evaluate Transparency",
         default=True,
         description="Analyze glass shaders and alpha-cutout textures to allow rays to penetrate windows and see interiors",
+        update=on_lod_preset_property_modified,
     )
     last_culled_faces_count: IntProperty(name="Last Culled Faces", default=0)
     last_culled_islands_count: IntProperty(name="Last Culled Islands", default=0)
@@ -1309,6 +1795,7 @@ class LODToolSettings(PropertyGroup):
         name="Cull Sub-Pixel Cables & Railings",
         default=True,
         description="Automatically remove sub-pixel thin cables, railings, and wires using the LOD Screen-Space Error Bound",
+        update=on_lod_preset_property_modified,
     )
     last_culled_slender_count: IntProperty(name="Last Culled Slender Features", default=0)
 
@@ -1635,7 +2122,26 @@ class LODToolSettings(PropertyGroup):
     preview_screen_pct: FloatProperty(
         name="Preview Screen %", default=100.0, min=0.01, max=100.0, subtype="PERCENTAGE", precision=1
     )
-    forced_lod_index: IntProperty(name="Force LOD Tier", default=0, min=0, max=7)
+    lod_preset: EnumProperty(
+        name="LOD Preset",
+        items=get_lod_preset_items,
+        description="Active LOD tier configuration template determining screen coverage and tri reduction curves",
+        update=on_lod_preset_updated,
+    )
+    lod_preset_budget_mode: EnumProperty(
+        name="Budget Mode",
+        items=[
+            ("PERCENTAGE", "Percentage", "Relative triangle reduction percentage across tiers"),
+            ("ABSOLUTE", "Absolute Tris", "Explicit absolute triangle budget per tier"),
+        ],
+        default="PERCENTAGE",
+        description="Whether target budgets are specified as relative percentages or absolute triangle counts",
+        update=on_lod_budget_mode_updated,
+    )
+    lod_preset_active_tiers: CollectionProperty(type=LODPresetTierItem)
+    lod_preset_active_tier_index: IntProperty(name="Active Preset Tier Index", default=0, min=0)
+    lod_preset_active_id: StringProperty(name="Active Preset ID", default="")
+    lod_preset_is_dirty: BoolProperty(name="Preset Modified", default=False)
     lods: CollectionProperty(type=LODLevelItem)
     active_lod_index: IntProperty(name="Active LOD Selection", default=0)
     export_directory: StringProperty(
@@ -1686,6 +2192,7 @@ class LODToolSettings(PropertyGroup):
         subtype="FACTOR",
         precision=2,
         description="Horizontal screen split position (0.0 = Left only, 1.0 = Right only)",
+        update=on_split_preview_updated,
     )
     split_compare_tier: IntProperty(
         name="Compare Tier",
@@ -1693,6 +2200,7 @@ class LODToolSettings(PropertyGroup):
         min=1,
         max=7,
         description="LOD tier index to compare against LOD0 Master",
+        update=on_split_preview_updated,
     )
 
     # Batch Processing Properties
@@ -1739,6 +2247,7 @@ class LODToolSettings(PropertyGroup):
 
 CLASSES = (
     LODLevelItem,
+    LODPresetTierItem,
     PBRMapItem,
     PBRExportMapItem,
     LODToolSettings,

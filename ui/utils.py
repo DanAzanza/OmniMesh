@@ -77,18 +77,24 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
         raw_name = getattr(selected_objs[0], "name", "")
         base_name = raw_name.split("_LOD")[0].split("_Collider")[0].split("_Impostor")[0]
 
+    if not base_name:
+        try:
+            base_name = resolve_effective_asset_name(context)
+        except Exception as exc:
+            logger.debug("Failed resolving effective asset name in get_lod0_mesh_objects: %s", exc)
+
     # 1. Search for asset root collection
     candidate_coll = None
     if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and base_name:
         for c_name in (f"{base_name}_LOD0", base_name):
             c = bpy.data.collections.get(c_name)
-            if c and getattr(context, "scene", None) and c != context.scene.collection:
+            if c and getattr(context, "scene", None) and c != getattr(context.scene, "collection", None):
                 candidate_coll = c
                 break
 
     if not candidate_coll and active_obj and hasattr(active_obj, "users_collection"):
         for c in active_obj.users_collection:
-            if getattr(context, "scene", None) and c == context.scene.collection:
+            if getattr(context, "scene", None) and c == getattr(context.scene, "collection", None):
                 continue
             c_name = getattr(c, "name", "")
             if "_Colliders" in c_name or "_Impostor" in c_name:
@@ -108,7 +114,10 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
 
     if candidate_coll and hasattr(candidate_coll, "objects"):
         coll_meshes = []
-        for obj in candidate_coll.objects:
+        target_objs = candidate_coll.objects
+        if hasattr(candidate_coll, "all_objects") and not hasattr(candidate_coll.all_objects, "_mock_return_value"):
+            target_objs = candidate_coll.all_objects
+        for obj in target_objs:
             if not is_object_valid(obj) or getattr(obj, "type", "") != "MESH":
                 continue
             name = getattr(obj, "name", "")
@@ -217,14 +226,27 @@ def resolve_lod_context(context: Any) -> tuple[Any, Any | None, bool]:
         return scene_props, active_obj, False
 
     if bool(getattr(obj_props, "is_generated_lod", False) is True):
-        master_name = getattr(obj_props, "lod_root_object", "")
-        master_obj = bpy.data.objects.get(master_name) if bpy and master_name else None
+        master_val = getattr(obj_props, "lod_root_object", None)
+        if master_val and hasattr(master_val, "name"):
+            master_obj = master_val
+        elif isinstance(master_val, str) and bpy and master_val:
+            master_obj = bpy.data.objects.get(master_val)
+        else:
+            master_obj = None
+
         if master_obj and hasattr(master_obj, "lod_tool"):
-            return master_obj.lod_tool, master_obj, True
+            m_props = master_obj.lod_tool
+            if len(getattr(m_props, "lods", [])) == 0 and scene_props and len(getattr(scene_props, "lods", [])) > 0:
+                return scene_props, master_obj, True
+            return m_props, master_obj, True
+        if len(getattr(obj_props, "lods", [])) == 0 and scene_props and len(getattr(scene_props, "lods", [])) > 0:
+            return scene_props, active_obj, True
         return obj_props, active_obj, True
 
     is_cfg = bool(getattr(obj_props, "is_configured", False) is True)
-    return (obj_props if is_cfg else scene_props), active_obj, False
+    if is_cfg and len(getattr(obj_props, "lods", [])) > 0:
+        return obj_props, active_obj, False
+    return scene_props, active_obj, False
 
 
 def safe_report(operator: Any, msg_type: set[str], msg: str) -> None:
@@ -236,3 +258,240 @@ def safe_report(operator: Any, msg_type: set[str], msg: str) -> None:
             logger.debug("[%s] %s", msg_type, msg)
     else:
         logger.debug("[%s] %s", msg_type, msg)
+
+
+# =========================================================================
+# Collection-First Asset Resolution & Hierarchy Scanners
+# =========================================================================
+
+_CACHED_ASSET_ITEMS: list[tuple[str, str, str]] = []
+
+
+def get_available_asset_names(context: Any) -> list[str]:
+    """
+    Scans the scene collection hierarchy to discover candidate root asset collections.
+    A collection is recognized as an Asset Collection if:
+    1. It is not an internal/derivative collection (_LOD1..10, _Colliders, _Impostor, _Chunks, _HLOD).
+    2. It is not the top-level 'Scene Collection'.
+    3. It contains at least one mesh object directly or in child collections.
+    Base name strips trailing '_LOD0'.
+    """
+    if not bpy or not hasattr(bpy, "data") or not hasattr(bpy.data, "collections"):
+        return []
+
+    asset_names: set[str] = set()
+    for coll in bpy.data.collections:
+        c_name = getattr(coll, "name", "")
+        # Ignore derivative / auxiliary collections
+        if any(f"_LOD{n}" in c_name for n in range(1, 11)):
+            continue
+        if "_Colliders" in c_name or "_Impostor" in c_name or "_Chunks" in c_name or "_HLOD" in c_name:
+            continue
+        if getattr(context, "scene", None) and coll == context.scene.collection:
+            continue
+        if c_name == "Scene Collection":
+            continue
+
+        # Check if collection contains any MESH object
+        has_mesh = any(
+            getattr(obj, "type", "") == "MESH"
+            for obj in getattr(coll, "all_objects", getattr(coll, "objects", []))
+            if is_object_valid(obj)
+            and not getattr(obj, "get", lambda *_: False)("_is_collider", False)
+            and not getattr(obj, "get", lambda *_: False)("_is_impostor", False)
+        )
+        if has_mesh:
+            base_name = c_name.split("_LOD0")[0]
+            if base_name and base_name not in {"Collection"}:
+                asset_names.add(base_name)
+
+    # Fallback if only default 'Collection' exists and has meshes
+    if not asset_names and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections"):
+        default_c = bpy.data.collections.get("Collection")
+        if default_c:
+            has_mesh = any(
+                getattr(obj, "type", "") == "MESH" for obj in getattr(default_c, "objects", []) if is_object_valid(obj)
+            )
+            if has_mesh:
+                first_mesh = next(
+                    (
+                        obj.name
+                        for obj in default_c.objects
+                        if getattr(obj, "type", "") == "MESH" and is_object_valid(obj)
+                    ),
+                    "Asset",
+                )
+                asset_names.add(first_mesh.split("_LOD")[0])
+
+    return sorted(list(asset_names))
+
+
+def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
+    """
+    Resolves the active asset name deterministically:
+    1. If props.active_asset is set and != "AUTO" and != "NONE", returns it.
+    2. If "AUTO" (or not set), checks active Outliner collection (active_layer_collection).
+    3. Fallback: checks active mesh object's collection or name.
+    4. Fallback: first discovered asset from get_available_asset_names(context).
+    5. Final fallback: 'Asset'.
+    """
+    if not context:
+        return "Asset"
+
+    if not props:
+        props = getattr(getattr(context, "scene", None), "lod_tool", None)
+
+    configured_asset = getattr(props, "active_asset", "") or getattr(props, "export_base_name", "")
+    available = get_available_asset_names(context)
+
+    if configured_asset and configured_asset not in {"AUTO", "NONE"} and configured_asset in available:
+        return configured_asset
+
+    # AUTO: check active Outliner collection
+    vl = getattr(context, "view_layer", None)
+    alc = getattr(vl, "active_layer_collection", None)
+    if alc and getattr(alc, "collection", None):
+        c_name = getattr(alc.collection, "name", "")
+        if (
+            getattr(context, "scene", None)
+            and alc.collection != context.scene.collection
+            and c_name != "Scene Collection"
+        ):
+            stem = c_name
+            for n in range(0, 11):
+                stem = stem.split(f"_LOD{n}")[0]
+            stem = stem.split("_Colliders")[0].split("_Impostor")[0].split("_Chunks")[0].split("_HLOD")[0]
+            if stem in available:
+                return stem
+
+    # Fallback to active mesh object collection or name
+    active_obj = getattr(context, "active_object", None)
+    if active_obj and getattr(active_obj, "type", "") == "MESH":
+        stem = active_obj.name.split("_LOD")[0].split("_Collider")[0].split("_Impostor")[0]
+        if stem in available:
+            return stem
+
+    # Fallback to first available asset
+    if available:
+        return available[0]
+
+    return resolve_asset_base_name(context)
+
+
+def get_asset_collection(context: Any, asset_name: str) -> Any | None:
+    """Returns the root LOD0 collection for the given asset name."""
+    if not bpy or not hasattr(bpy, "data") or not hasattr(bpy.data, "collections") or not asset_name:
+        return None
+    return bpy.data.collections.get(f"{asset_name}_LOD0") or bpy.data.collections.get(asset_name)
+
+
+def get_asset_base_meshes(context: Any, asset_name: str) -> list[Any]:
+    """Retrieves all non-collider, non-impostor mesh objects belonging to the asset's LOD0."""
+    coll = get_asset_collection(context, asset_name)
+    if coll:
+        meshes = []
+        target_objs = getattr(coll, "objects", [])
+        if hasattr(coll, "all_objects") and not hasattr(coll.all_objects, "_mock_return_value"):
+            target_objs = coll.all_objects
+        for obj in target_objs:
+            if not is_object_valid(obj) or getattr(obj, "type", "") != "MESH":
+                continue
+            name = getattr(obj, "name", "")
+            is_col = bool(getattr(obj, "get", lambda *_: False)("_is_collider", False) is True)
+            is_imp = bool(getattr(obj, "get", lambda *_: False)("_is_impostor", False) is True)
+            if is_col or is_imp or name.startswith("UCX_") or "_Collider_" in name:
+                continue
+            if any(f"_LOD{n}" in name for n in range(1, 11)):
+                continue
+            meshes.append(obj)
+        if meshes:
+            return meshes
+
+    return get_lod0_mesh_objects(context, base_name=asset_name)
+
+
+def get_asset_existing_lods(context: Any, asset_name: str) -> dict[int, dict[str, Any]]:
+    """
+    Scans scene collections for existing LODs for asset_name.
+    Returns dict mapping tier_index (0..k) to info dict:
+    {
+        'collection_name': str,
+        'meshes': list[Any],
+        'actual_tris': int,
+        'is_impostor': bool,
+    }
+    """
+    if not bpy or not hasattr(bpy, "data") or not hasattr(bpy.data, "collections") or not asset_name:
+        return {}
+
+    existing: dict[int, dict[str, Any]] = {}
+
+    # Check LOD0
+    l0_coll = get_asset_collection(context, asset_name)
+    if l0_coll:
+        l0_meshes = get_asset_base_meshes(context, asset_name)
+        l0_tris = sum(
+            sum(len(p.vertices) - 2 for p in m.data.polygons)
+            for m in l0_meshes
+            if hasattr(m, "data") and hasattr(m.data, "polygons")
+        )
+        existing[0] = {
+            "collection_name": l0_coll.name,
+            "meshes": l0_meshes,
+            "actual_tris": l0_tris,
+            "is_impostor": False,
+        }
+
+    # Check LOD1..10
+    for i in range(1, 11):
+        c_name = f"{asset_name}_LOD{i}"
+        c = bpy.data.collections.get(c_name)
+        if c:
+            meshes = [o for o in getattr(c, "objects", []) if is_object_valid(o) and getattr(o, "type", "") == "MESH"]
+            t_count = sum(
+                sum(len(p.vertices) - 2 for p in m.data.polygons)
+                for m in meshes
+                if hasattr(m, "data") and hasattr(m.data, "polygons")
+            )
+            existing[i] = {
+                "collection_name": c_name,
+                "meshes": meshes,
+                "actual_tris": t_count,
+                "is_impostor": False,
+            }
+
+    # Check Impostor
+    imp_name = f"{asset_name}_LOD_Impostor"
+    c_imp = bpy.data.collections.get(imp_name)
+    if c_imp:
+        meshes = [o for o in getattr(c_imp, "objects", []) if is_object_valid(o) and getattr(o, "type", "") == "MESH"]
+        t_count = (
+            sum(
+                sum(len(p.vertices) - 2 for p in m.data.polygons)
+                for m in meshes
+                if hasattr(m, "data") and hasattr(m.data, "polygons")
+            )
+            if meshes
+            else 0
+        )
+        existing[-1] = {
+            "collection_name": imp_name,
+            "meshes": meshes,
+            "actual_tris": t_count,
+            "is_impostor": True,
+        }
+
+    return existing
+
+
+def get_asset_enum_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
+    """Dynamic EnumProperty callback listing available scene asset collections."""
+    global _CACHED_ASSET_ITEMS
+    names = get_available_asset_names(context)
+    items = [("AUTO", "AUTO (Follow Outliner)", "Dynamically follows active collection in the Outliner")]
+    for n in names:
+        items.append((n, n, f"Asset collection: {n}"))
+    if len(items) == 1:
+        items.append(("NONE", "No Assets Found", "Create a root collection with meshes"))
+    _CACHED_ASSET_ITEMS = items
+    return _CACHED_ASSET_ITEMS

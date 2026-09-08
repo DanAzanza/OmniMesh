@@ -47,14 +47,20 @@ class MSFSExporter:
             "    <LODS>",
         ]
 
-        num_tiers = len(tiers)
+        # Ensure descending sort by screen_size_pct
+        sorted_tiers = sorted(tiers, key=lambda t: float(t.get("screen_size_pct", 0.0)), reverse=True)
+        num_tiers = len(sorted_tiers)
         if num_tiers == 0:
             lines.append(f'        <LOD minSize="0" ModelFile="{escaped_asset_name}_LOD0.gltf"/>')
         else:
+            last_min_size = float("inf")
             for i in range(num_tiers):
                 # Descending minSize: minSize for LOD_i is the screen percentage of the NEXT tier
                 if i < num_tiers - 1:
-                    raw_val = round(float(tiers[i + 1].get("screen_size_pct", 0.0)), 2)
+                    raw_val = round(float(sorted_tiers[i + 1].get("screen_size_pct", 0.0)), 2)
+                    if raw_val >= last_min_size:
+                        raw_val = max(0.0, round(last_min_size - 0.1, 2))
+                    last_min_size = raw_val
                     min_size_str = str(int(raw_val)) if raw_val == int(raw_val) else str(raw_val)
                 else:
                     min_size_str = "0"
@@ -93,16 +99,29 @@ class MSFSExporter:
             # Gather all objects belonging to this LOD tier
             tier_objs: list[Any] = []
 
-            # Check 1: Sibling collections (e.g. Model for LOD0, Model_LOD1..k for tiers)
+            # Check 1: Sibling collections (e.g. Model for LOD0, Model_LOD1..k, Chunks, HLOD)
             if i == 0:
                 sibling_coll = (
-                    bpy.data.collections.get(clean_name)
+                    bpy.data.collections.get(f"{clean_name}_Chunks_LOD0")
+                    or bpy.data.collections.get(clean_name)
                     or bpy.data.collections.get(f"{clean_name}_LOD0")
+                    or (bpy.data.collections.get(f"{props.export_base_name}_Chunks_LOD0") if props else None)
                     or (bpy.data.collections.get(props.export_base_name) if props else None)
                 )
             else:
-                sibling_coll = bpy.data.collections.get(f"{clean_name}_LOD{i}") or (
-                    bpy.data.collections.get(f"{props.export_base_name}_LOD{i}") if props else None
+                sibling_coll = (
+                    bpy.data.collections.get(f"{clean_name}_Chunks_LOD{i}")
+                    or bpy.data.collections.get(f"{clean_name}_HLOD_LOD{i}")
+                    or bpy.data.collections.get(f"{clean_name}_LOD{i}")
+                    or (bpy.data.collections.get(f"{clean_name}_LOD_Impostor") if i == len(props.lods) - 1 else None)
+                    or (bpy.data.collections.get(f"{props.export_base_name}_Chunks_LOD{i}") if props else None)
+                    or (bpy.data.collections.get(f"{props.export_base_name}_HLOD_LOD{i}") if props else None)
+                    or (bpy.data.collections.get(f"{props.export_base_name}_LOD{i}") if props else None)
+                    or (
+                        bpy.data.collections.get(f"{props.export_base_name}_LOD_Impostor")
+                        if props and i == len(props.lods) - 1
+                        else None
+                    )
                 )
 
             if sibling_coll:

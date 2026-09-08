@@ -1,0 +1,30 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "Unity 6 HDRP (Standard)",
+  "version": 2,
+  "description": "Standard 4-tier progression for Unity 6 HDRP LOD Group",
+  "target_engine": "UNITY_6",
+  "budget_mode": "PERCENTAGE",
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 60.0,
+      "target_tris_pct": 60.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 30.0,
+      "target_tris_pct": 30.0
+    },
+    {
+      "name": "LOD3",
+      "screen_size_pct": 10.0,
+      "target_tris_pct": 10.0
+    }
+  ]
+}

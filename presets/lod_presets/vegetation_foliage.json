@@ -1,0 +1,37 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "Vegetation & Foliage (Impostor)",
+  "version": 2,
+  "description": "Optimized 4-tier tree and plant progression with automatic billboard impostor",
+  "target_engine": "UE5",
+  "budget_mode": "PERCENTAGE",
+  "tau_sse": 1.2,
+  "impostor": {
+    "enabled": true,
+    "mode": "CROSS_QUADS",
+    "resolution": "2048",
+    "replace_last_lod": true
+  },
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 50.0,
+      "target_tris_pct": 50.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 25.0,
+      "target_tris_pct": 20.0
+    },
+    {
+      "name": "LOD3",
+      "screen_size_pct": 10.0,
+      "target_tris_pct": 5.0
+    }
+  ]
+}

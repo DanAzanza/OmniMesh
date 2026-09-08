@@ -28,7 +28,6 @@ from ui.panel import (
     SUBPANEL_CLASSES,
     OMNIMESH_PT_export,
     OMNIMESH_PT_import,
-    OMNIMESH_PT_inspection_sub,
     OMNIMESH_PT_lods,
     OMNIMESH_PT_modify,
     register_panel,
@@ -57,10 +56,9 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_export.bl_category == "OmniMesh"
     assert OMNIMESH_PT_export.bl_order == 3
 
-    # Subpanels
-    assert OMNIMESH_PT_inspection_sub.bl_parent_id == "OMNIMESH_PT_lods"
-    assert OMNIMESH_PT_inspection_sub.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_inspection_sub.bl_order == 0
+    # Subpanels (testing subpanel registered under Panel 3)
+    assert len(SUBPANEL_CLASSES) == 1
+    assert SUBPANEL_CLASSES[0].bl_idname == "OMNIMESH_PT_lods_testing"
 
     # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
     assert len(POPOVER_CLASSES) == 10
@@ -80,7 +78,7 @@ def test_panel_class_hierarchy_and_order():
     assert PANEL_CLASSES[1] is OMNIMESH_PT_modify
     assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
     assert PANEL_CLASSES[3] is OMNIMESH_PT_export
-    assert PANEL_CLASSES[4] is OMNIMESH_PT_inspection_sub
+    assert PANEL_CLASSES[4] is SUBPANEL_CLASSES[0]
     for idx, pop_cls in enumerate(POPOVER_CLASSES):
         assert PANEL_CLASSES[5 + idx] is pop_cls
 
@@ -187,6 +185,7 @@ def test_ui_list_draw_item_mock():
     mock_item.screen_size_pct = 100.0
     mock_item.actual_tris = 5000
     mock_item.target_tris = 5000
+    mock_item.distance_m = 15.0
 
     ui_list.layout_type = "DEFAULT"
     ui_list.draw_item(
@@ -454,3 +453,196 @@ def test_modify_panel_collision_row_and_popover(monkeypatch):
     popover_col.layout = mock_layout
     popover_col.draw(mock_context)
     assert mock_layout.prop.called
+
+
+def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
+    """Verify OMNIMESH_PT_modify and OMNIMESH_PT_popover_sanitize draw correctly with preflight diagnostics."""
+    import ui.panel as panel_mod
+    import ui.popovers as popovers_mod
+    from ui.panel import OMNIMESH_PT_modify
+    from ui.popovers import OMNIMESH_PT_popover_sanitize
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
+    monkeypatch.setattr(popovers_mod, "bpy", mock_bpy)
+
+    panel_modify = OMNIMESH_PT_modify()
+    popover_san = OMNIMESH_PT_popover_sanitize()
+
+    mock_context = MagicMock()
+    mock_props = MagicMock()
+    mock_mesh = MagicMock()
+    mock_mesh.name = "SM_Chair"
+    mock_mesh.type = "MESH"
+    mock_mesh.get.return_value = False
+
+    mock_context.scene.lod_tool = mock_props
+    mock_context.active_object = mock_mesh
+    mock_context.selected_objects = [mock_mesh]
+
+    mock_props.export_base_name = ""
+    mock_props.last_cleanup_summary = "Cleaned: 2 loose verts."
+    mock_props.last_material_cleanup_summary = "Cleaned: 1 slot purged."
+    mock_props.last_generated_collider_count = 0
+
+    # 1. Verify Modify Panel draw with 3 clean rows
+    mock_layout = MagicMock()
+    panel_modify.layout = mock_layout
+    panel_modify.draw(mock_context)
+    assert mock_layout.row.called
+
+    # 2. Verify Popover Sanitize draw when preflight inspected with issues
+    mock_props.preflight_inspected = True
+    mock_props.preflight_is_clean = False
+    mock_props.preflight_summary_text = "⚠ Issues: 2 Loose Verts"
+    mock_props.preflight_unapplied_scale = True
+    mock_props.preflight_loose_verts = 2
+    mock_props.preflight_loose_edges = 0
+    mock_props.preflight_non_manifold_edges = 1
+    mock_props.preflight_degenerate_tris = 0
+    mock_props.cleanup_enable_weld = True
+    mock_props.cleanup_enable_fill_holes = True
+
+    mock_san_layout = MagicMock()
+    popover_san.layout = mock_san_layout
+    popover_san.draw(mock_context)
+    assert mock_san_layout.label.called
+    assert mock_san_layout.prop.called
+
+    # 3. Verify Popover Sanitize draw when preflight is clean
+    mock_props.preflight_is_clean = True
+    mock_props.preflight_unapplied_scale = False
+    mock_props.preflight_loose_verts = 0
+    mock_props.preflight_non_manifold_edges = 0
+    popover_san.draw(mock_context)
+
+
+def test_viewport_hud_toast_lifecycle():
+    """Verify LODViewportHUD toast notification show, clear, and draw lifecycle."""
+    from ui.hud import LODViewportHUD, on_depsgraph_clear_toast
+    import time
+
+    # 1. Show toast
+    LODViewportHUD.show_toast("Cleaned: 1 transform(s) applied.")
+    assert LODViewportHUD._toast_message == "Cleaned: 1 transform(s) applied."
+    assert LODViewportHUD._toast_time > 0
+
+    # 2. Draw callback with toast
+    LODViewportHUD.draw_callback_px()
+
+    # 3. Depsgraph update grace period check
+    on_depsgraph_clear_toast(None, None)
+    # Right away (< duration), toast shouldn't be dismissed immediately
+    # Simulate elapsed time > duration (3.5s)
+    LODViewportHUD._toast_time = time.time() - 4.0
+    on_depsgraph_clear_toast(None, None)
+    assert LODViewportHUD._toast_message == ""
+
+    # 4. Explicit clear toast
+    LODViewportHUD.show_toast("Another message")
+    assert LODViewportHUD._toast_message == "Another message"
+    LODViewportHUD.clear_toast()
+    assert LODViewportHUD._toast_message == ""
+
+
+def test_collection_first_tier_projection_and_reset():
+    """Verify collection-first tier projection, state badges, and reset operator."""
+    from ui.lod_ops import LOD_OT_reset_to_preset
+
+    mock_context = MagicMock()
+    mock_props = MagicMock()
+    mock_context.scene.lod_tool = mock_props
+
+    # Mock tier items
+    created_tiers = []
+
+    def mock_add():
+        tier = MagicMock()
+        tier.name = f"LOD{len(created_tiers)}"
+        tier.target_tris_pct = 100.0 if not created_tiers else 50.0
+        tier.screen_size_pct = 100.0 if not created_tiers else 50.0
+        tier.actual_tris = 0
+        tier.state = "PLANNED"
+        tier.last_baked_target_pct = -1.0
+        created_tiers.append(tier)
+        return tier
+
+    mock_props.lods.add = mock_add
+    mock_props.lods.clear = lambda: created_tiers.clear()
+    mock_props.lods.__iter__ = lambda self: iter(created_tiers)
+    mock_props.lods.__len__ = lambda self: len(created_tiers)
+
+    # Test reset_to_preset operator
+    op_reset = LOD_OT_reset_to_preset()
+    assert op_reset.execute(None) == {"FINISHED"}
+    assert op_reset.execute(mock_context) == {"FINISHED"}
+
+
+def test_panel2_modify_collection_first_and_lod0_only(monkeypatch):
+    """Verify Panel 2 Modify draws cleanly without selection and operators target LOD0 only."""
+    import ui.cleanup_ops as cleanup_ops
+    import ui.panel as panel_mod
+    import ui.utils as ui_utils
+    from ui.cleanup_ops import (
+        LOD_OT_apply_all_modifiers,
+        LOD_OT_apply_transforms,
+        LOD_OT_clean_and_repair_materials,
+        LOD_OT_clean_and_repair_mesh,
+    )
+    from ui.panel import OMNIMESH_PT_modify
+    from ui.utils import get_lod0_mesh_objects
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(ui_utils, "bpy", mock_bpy)
+    monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
+    monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
+
+    # Setup LOD0 mesh and derivative LOD mesh
+    mesh_lod0 = MagicMock()
+    mesh_lod0.name = "Suzanne"
+    mesh_lod0.type = "MESH"
+    mesh_lod0.get.return_value = False
+    mesh_lod0.data = MagicMock()
+    mesh_lod0.data.users = 1
+    mesh_lod0.data.shape_keys = None
+    mesh_lod0.animation_data = None
+    mesh_lod0.material_slots = []
+
+    mesh_lod1 = MagicMock()
+    mesh_lod1.name = "Suzanne_LOD1"
+    mesh_lod1.type = "MESH"
+    mesh_lod1.get.return_value = False
+
+    coll_root = MagicMock()
+    coll_root.name = "Suzanne"
+    coll_root.objects = [mesh_lod0]
+
+    mock_bpy.data.collections.get.side_effect = lambda name: coll_root if name in {"Suzanne", "Suzanne_LOD0"} else None
+
+    # Context with zero viewport selection
+    mock_context = MagicMock()
+    mock_context.scene.collection = MagicMock()
+    mock_context.active_object = None
+    mock_context.selected_objects = []
+    mock_props = MagicMock()
+    mock_props.active_asset = "Suzanne"
+    mock_props.export_base_name = "Suzanne"
+    mock_context.scene.lod_tool = mock_props
+
+    # 1. Verify get_lod0_mesh_objects finds LOD0 mesh and excludes derivative LODs
+    lod0_meshes = get_lod0_mesh_objects(mock_context)
+    assert len(lod0_meshes) == 1
+    assert lod0_meshes[0].name == "Suzanne"
+
+    # 2. Verify Panel 2 Modify draws without 'No Mesh Selected' box
+    panel_modify = OMNIMESH_PT_modify()
+    mock_layout = MagicMock()
+    panel_modify.layout = mock_layout
+    panel_modify.draw(mock_context)
+    assert mock_layout.row.called
+
+    # 3. Verify Operators poll True even with zero selection
+    assert LOD_OT_clean_and_repair_mesh.poll(mock_context) is True
+    assert LOD_OT_clean_and_repair_materials.poll(mock_context) is True
+    assert LOD_OT_apply_all_modifiers.poll(mock_context) is True
+    assert LOD_OT_apply_transforms.poll(mock_context) is True

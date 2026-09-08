@@ -47,7 +47,7 @@ class LOD_OT_toggle_simulator(Operator):
         if not props.is_simulator_active and not props.is_simulator_running:
             return self.cancel_simulation(context)
 
-        if event.type in {"ESC", "RIGHTMOUSE"} and event.value == "PRESS":
+        if event.type == "ESC" and event.value == "PRESS":
             return self.cancel_simulation(context)
 
         if event.type == "TIMER":
@@ -73,23 +73,25 @@ class LOD_OT_toggle_simulator(Operator):
                     continue
                 for area in window.screen.areas:
                     if area.type == "VIEW_3D":
-                        for space in area.spaces:
-                            if space.type == "VIEW_3D":
-                                space_3d = space
-                                region_3d = getattr(space, "region_3d", None)
-                                for reg in area.regions:
-                                    if reg.type == "WINDOW":
-                                        region = reg
-                                        break
-                        if space_3d:
-                            break
+                        space_3d = area.spaces.active
+                        for reg in area.regions:
+                            if reg.type == "WINDOW":
+                                region_3d = reg.data
+                                region = reg
+                                break
+                        break
                 if space_3d:
                     break
 
         cam_pos, fov_v, is_persp = extract_viewport_camera_params(space_3d, region_3d, region, context.scene)
 
         virtual_override = None
-        if getattr(props, "virtual_distance_override", 0.0) > 0.0:
+        if (
+            getattr(props, "virtual_screen_override_active", False)
+            and getattr(props, "virtual_screen_size_pct", 0.0) > 0.0
+        ):
+            virtual_override = min(100.0, max(0.01, float(props.virtual_screen_size_pct)))
+        elif getattr(props, "virtual_distance_override", 0.0) > 0.0:
             virtual_dist = props.virtual_distance_override
             # Convert virtual distance to equivalent screen size percentage
             radius = 1.0

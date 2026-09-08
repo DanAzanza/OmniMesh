@@ -101,12 +101,18 @@ class UE5Exporter:
                     break
 
         # Unhide all LOD objects in the view layer before selection
+        orig_imp_names: dict[Any, str] = {}
+        last_lod_idx = len(export_objects) - 1
         for obj in export_objects:
             try:
                 obj.hide_set(False, view_layer=context.view_layer)
                 obj.hide_viewport = False
             except (RuntimeError, AttributeError) as exc:
                 logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
+
+            if "_Impostor" in obj.name or bool(obj.get("_is_impostor", False)):
+                orig_imp_names[obj] = obj.name
+                obj.name = f"{asset_name}_LOD{last_lod_idx}"
 
         # Unhide colliders and rename to UCX_{asset_name}_{idx:02d} for UE5
         orig_collider_names: dict[Any, str] = {}
@@ -204,3 +210,9 @@ class UE5Exporter:
                     c_obj.name = orig_name
                 except Exception as exc:
                     logger.debug("Restoring collider name failed: %s", exc)
+            # Restore original impostor names in Blender
+            for imp_obj, orig_name in orig_imp_names.items():
+                try:
+                    imp_obj.name = orig_name
+                except Exception as exc:
+                    logger.debug("Restoring impostor name failed: %s", exc)

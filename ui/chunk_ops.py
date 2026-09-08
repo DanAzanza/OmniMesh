@@ -24,17 +24,17 @@ except ImportError:
     Operator = object
 
 try:
-    from core.chunking import HLODClusterMerger, MeshChunkSlicer, SpatialGridSpec
-    from core.decimator import MeshDecimator
-    from core.hierarchy import LayerCollectionGuard
-    from core.materials import MaterialOptimizer
-    from ui.utils import get_selected_mesh_objects, resolve_lod_context, safe_report
-except (ImportError, ValueError):
     from ..core.chunking import HLODClusterMerger, MeshChunkSlicer, SpatialGridSpec
     from ..core.decimator import MeshDecimator
     from ..core.hierarchy import LayerCollectionGuard
     from ..core.materials import MaterialOptimizer
     from .utils import get_selected_mesh_objects, resolve_lod_context, safe_report
+except (ImportError, ValueError):
+    from core.chunking import HLODClusterMerger, MeshChunkSlicer, SpatialGridSpec
+    from core.decimator import MeshDecimator
+    from core.hierarchy import LayerCollectionGuard
+    from core.materials import MaterialOptimizer
+    from ui.utils import get_selected_mesh_objects, resolve_lod_context, safe_report
 
 
 class LOD_OT_spatial_chunk_and_generate(Operator):
@@ -78,6 +78,14 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
         )
 
         total_cells = grid_spec.num_cells_x * grid_spec.num_cells_y * (grid_spec.num_cells_z if split_z else 1)
+        if grid_spec.num_cells_x == 1 and grid_spec.num_cells_y == 1 and (not split_z or grid_spec.num_cells_z == 1):
+            safe_report(
+                self,
+                {"WARNING"},
+                f"Asset bounds are smaller than cell size ({cell_size:.1f}m). Use standard 'Generate LODs'.",
+            )
+            return {"CANCELLED"}
+
         logger.info(
             "Spatial Grid initialized: %dx%d (%d cells total, %.1fm x %.1fm)",
             grid_spec.num_cells_x,
@@ -115,6 +123,18 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
             safe_report(self, {"ERROR"}, "No chunks generated from mesh.")
             return {"CANCELLED"}
 
+        # Resolve tier decimation ratios from active preset or scene LOD configuration
+        lod1_ratio = 0.5
+        hlod_ratio = 0.15
+        if len(props.lods) >= 2:
+            lod1_ratio = max(0.01, min(0.99, props.lods[1].target_tris_pct / 100.0))
+            hlod_idx = min(len(props.lods) - 1, max(2, int(props.hlod_start_tier)))
+            hlod_ratio = max(0.005, min(0.5, props.lods[hlod_idx].target_tris_pct / 100.0))
+        elif len(props.lod_preset_active_tiers) >= 2:
+            lod1_ratio = max(0.01, min(0.99, props.lod_preset_active_tiers[1].target_tris_pct / 100.0))
+            hlod_idx = min(len(props.lod_preset_active_tiers) - 1, max(2, int(props.hlod_start_tier)))
+            hlod_ratio = max(0.005, min(0.5, props.lod_preset_active_tiers[hlod_idx].target_tris_pct / 100.0))
+
         # 4. Generate LOD1 with Seam Protection
         lod1_coll_name = f"{base_name}_Chunks_LOD1"
         lod1_coll = bpy.data.collections.get(lod1_coll_name)
@@ -141,7 +161,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
                 # Decimate with strict boundary pinning
                 MeshDecimator.execute_decimate_qem(
                     obj=c_obj,
-                    target_ratio=0.5,
+                    target_ratio=lod1_ratio,
                     use_curvature_weight=True,
                     group_name="OMNIMESH_SEAM_LOCKED",
                     vertex_group_factor=1.0,
@@ -168,11 +188,11 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
                     # Global aggressive decimation without seam boundary lock
                     MeshDecimator.execute_decimate_qem(
                         obj=hlod_obj,
-                        target_ratio=0.15,
+                        target_ratio=hlod_ratio,
                         use_curvature_weight=False,
                         cleanup_group=True,
                     )
-                    logger.info("Generated HLOD mesh: %s", hlod_obj.name)
+                    logger.info("Generated HLOD mesh: %s (ratio %.3f)", hlod_obj.name, hlod_ratio)
             except Exception as exc:
                 logger.error("HLOD cluster merging failed: %s", exc, exc_info=True)
                 safe_report(self, {"WARNING"}, f"HLOD merging failed: {exc}")

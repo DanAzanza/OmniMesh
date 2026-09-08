@@ -1,0 +1,26 @@
+{
+  "schema_type": "omnimesh_lod_preset",
+  "name": "Scene Prop / Environment",
+  "version": 2,
+  "description": "Standard 3-tier balanced progression for environment props and clutter",
+  "target_engine": "UE5",
+  "budget_mode": "PERCENTAGE",
+  "tau_sse": 0.8,
+  "tiers": [
+    {
+      "name": "LOD0",
+      "screen_size_pct": 100.0,
+      "target_tris_pct": 100.0
+    },
+    {
+      "name": "LOD1",
+      "screen_size_pct": 50.0,
+      "target_tris_pct": 50.0
+    },
+    {
+      "name": "LOD2",
+      "screen_size_pct": 20.0,
+      "target_tris_pct": 20.0
+    }
+  ]
+}

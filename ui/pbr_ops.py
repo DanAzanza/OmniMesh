@@ -21,6 +21,10 @@ except ImportError:
     Operator = object
 
 try:
+    from ..core.lod_presets import (
+        DEFAULT_LOD_PRESET_ID,
+        LODPresetManager,
+    )
     from ..core.pbr_importer import (
         BatchMaterialSlotMatcher,
         PBRSemanticClassifier,
@@ -33,6 +37,10 @@ try:
     )
     from .utils import resolve_lod_context, safe_report
 except (ImportError, ValueError):
+    from core.lod_presets import (
+        DEFAULT_LOD_PRESET_ID,
+        LODPresetManager,
+    )
     from core.pbr_importer import (
         BatchMaterialSlotMatcher,
         PBRSemanticClassifier,
@@ -138,7 +146,8 @@ class LOD_OT_import_pbr_set(Operator):
             if len(active_obj.material_slots) == 0:
                 active_obj.data.materials.append(mat)
             else:
-                active_obj.material_slots[0].material = mat
+                act_idx = max(0, min(active_obj.active_material_index, len(active_obj.material_slots) - 1))
+                active_obj.material_slots[act_idx].material = mat
             summary = f"Imported {len(tex_dict)} map(s) using '{preset.get('name', preset_id)}'"
             if hasattr(props, "last_pbr_import_summary"):
                 props.last_pbr_import_summary = summary
@@ -359,6 +368,7 @@ class LOD_OT_duplicate_preset(Operator):
             items=[
                 ("EXPORT", "Export Preset", "Duplicate active export preset"),
                 ("IMPORT", "Import Preset", "Duplicate active import preset"),
+                ("LOD", "LOD Preset", "Duplicate active LOD preset"),
             ],
             default="EXPORT",
         )
@@ -386,6 +396,9 @@ class LOD_OT_duplicate_preset(Operator):
         if self.preset_type == "IMPORT":
             source_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
             preset = PBRImportPresetManager.get_preset(source_id)
+        elif self.preset_type == "LOD":
+            source_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+            preset = LODPresetManager.get_preset(source_id)
         else:
             source_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
             preset = PBRExportPresetManager.get_preset(source_id)
@@ -413,6 +426,9 @@ class LOD_OT_duplicate_preset(Operator):
         if self.preset_type == "IMPORT":
             source_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
             mgr = PBRImportPresetManager
+        elif self.preset_type == "LOD":
+            source_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+            mgr = LODPresetManager
         else:
             source_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
             mgr = PBRExportPresetManager
@@ -437,6 +453,9 @@ class LOD_OT_duplicate_preset(Operator):
                         if sync_maps_from_preset:
                             preset_data = mgr.get_preset(target_nid)
                             sync_maps_from_preset(target_prop, preset_data)
+                elif self.preset_type == "LOD":
+                    if hasattr(target_prop, "lod_preset"):
+                        target_prop.lod_preset = target_nid
                 else:
                     if hasattr(target_prop, "pbr_export_preset"):
                         target_prop.pbr_export_preset = target_nid
@@ -857,6 +876,74 @@ class LOD_OT_delete_export_preset(Operator):
             return {"CANCELLED"}
 
 
+class LOD_OT_delete_lod_preset(Operator):
+    """Permanently delete active custom LOD preset and cleanly reset to factory default."""
+
+    bl_idname = "lod_tool.delete_lod_preset"
+    bl_label = "Delete Custom Preset"
+    bl_description = "Deletes the active custom LOD preset file and resets to factory default"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def invoke(self, context: Any, event: Any) -> set[str]:
+        if not bpy:
+            return {"FINISHED"}
+        props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
+        if not props:
+            props, _, _ = resolve_lod_context(context)
+        preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+        if not LODPresetManager.is_user_preset(preset_id):
+            safe_report(self, {"ERROR"}, "Cannot delete unmodified factory presets.")
+            return {"CANCELLED"}
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context: Any) -> set[str]:
+        targets = []
+        if context and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
+            targets.append(context.scene.lod_tool)
+        obj_props, _, _ = resolve_lod_context(context)
+        if obj_props and obj_props not in targets:
+            targets.append(obj_props)
+
+        props = targets[0] if targets else None
+        preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+
+        if not LODPresetManager.is_user_preset(preset_id):
+            safe_report(self, {"ERROR"}, "Cannot delete unmodified factory presets.")
+            return {"CANCELLED"}
+
+        try:
+            is_shipped_template = (LODPresetManager.get_builtin_dir() / f"{preset_id}.json").is_file()
+            fallback_id = preset_id if is_shipped_template else LODPresetManager.DEFAULT_PRESET_ID
+            for p in targets:
+                if hasattr(p, "lod_preset") and p.lod_preset == preset_id:
+                    p.lod_preset = fallback_id
+
+            success = LODPresetManager.delete_custom_preset(preset_id)
+            if success:
+                try:
+                    from ui.properties import sync_preset_tiers_from_preset
+                except ImportError:
+                    from .properties import sync_preset_tiers_from_preset
+                for p in targets:
+                    active_pid = getattr(p, "lod_preset", fallback_id)
+                    restored = LODPresetManager.get_preset(active_pid)
+                    sync_preset_tiers_from_preset(p, restored)
+
+                msg = (
+                    f"Reset LOD preset '{preset_id}' to factory defaults."
+                    if is_shipped_template
+                    else f"Deleted custom LOD preset '{preset_id}'."
+                )
+                safe_report(self, {"INFO"}, msg)
+                return {"FINISHED"}
+            safe_report(self, {"WARNING"}, f"Could not find or delete LOD preset '{preset_id}'.")
+            return {"CANCELLED"}
+        except Exception as exc:
+            logger.error("Failed to delete custom LOD preset '%s': %s", preset_id, exc, exc_info=True)
+            safe_report(self, {"ERROR"}, f"Delete failed: {exc}")
+            return {"CANCELLED"}
+
+
 PBR_OPERATOR_CLASSES = (
     LOD_OT_import_pbr_set,
     LOD_OT_auto_match_pbr_folder,
@@ -872,4 +959,5 @@ PBR_OPERATOR_CLASSES = (
     LOD_OT_save_export_preset,
     LOD_OT_delete_import_preset,
     LOD_OT_delete_export_preset,
+    LOD_OT_delete_lod_preset,
 )
