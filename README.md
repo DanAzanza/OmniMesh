@@ -1,56 +1,106 @@
 # OmniMesh 🚀
-### All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigging, Real-Time LOD Simulation & Multi-Engine Pipeline for Blender (4.2+ & 5.2 LTS)
+### All-in-One 3D Mesh Optimization, Physics Collision, LOD Engine & Live Multi-Engine Pipeline for Blender (4.2+ & 5.2 LTS)
 
 [![Blender 4.2+ / 5.2 LTS](https://img.shields.io/badge/Blender-4.2%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-14%20passed%20%28100%25%29-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-261%20passed%20%28100%25%29-brightgreen.svg)]()
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5%20%7C%20Unity%206%20%7C%20Godot%204-purple.svg)]()
 
-**OmniMesh** is an enterprise-grade 3D mesh processing pipeline and LOD engine developed by **Daniel** ([@DanAzanza](https://github.com/DanAzanza)) for Blender. It bridges the gap between raw, multi-million polygon photogrammetry/DCC models and game-ready production assets for **Microsoft Flight Simulator 2024**, **Unreal Engine 5**, **Unity 6**, and **Godot 4**.
+**OmniMesh** is an open-source, production-grade 3D mesh optimization and engine-export pipeline for **Blender 4.2+ and 5.2 LTS**. 
+
+It bridges the gap between raw, multi-million-polygon photogrammetry, CAD, sculpted heroes, or kitbash models and ready-to-ship game assets. Instead of running destructive decimation scripts or paying thousands of dollars for proprietary external software, OmniMesh provides a seamless, non-destructive 4-step pipeline directly inside Blender with live synchronization to **Unreal Engine 5**, **Unity 6**, **Godot 4**, and **Microsoft Flight Simulator 2024 / 2020**.
 
 ---
 
-## 🌟 Key Pillars & Features
+## ⚡ Why OmniMesh?
 
-### 1. 📐 Screen-Space Error Bound (SSE) Mathematics
-Instead of relying on arbitrary reduction percentages, OmniMesh couples every decimation and cleanup parameter directly to human eye perception and viewport resolution ($H = 1080\text{px}$):
+Optimizing 3D assets for modern real-time engines usually means choosing between destructive built-in tools or expensive, isolated commercial software. OmniMesh combines the mathematical rigor of high-end enterprise tools with native Blender integration.
+
+| Feature / Capability | Blender Standard (Decimate) | Proprietary Tools (Simplygon / InstaLOD) | OmniMesh 🚀 |
+| :--- | :---: | :---: | :---: |
+| **Pricing & License** | Free (Built-in) | Commercial Subscription ($$$ per seat) | **100% Free & Open Source (GPL-3.0)** |
+| **Workflow** | Destructive modifier stack | Standalone external app / FBX roundtrip | **100% Native & Non-Destructive inside Blender** |
+| **Hard-Surface & Normal Integrity** | ❌ Destroys custom normals (black gouges) | ✔️ Good | **✔️ High-Precision Split Normal Reprojection** |
+| **Skinned Rigs & Armatures** | ❌ Breaks vertex weights & tears meshes | ✔️ Good | **✔️ GPU Weight Clamping & Leaf-Bone Pruning** |
+| **Physics Collision Hulls** | ❌ None | ⚠️ Limited / Separate steps | **✔️ Auto Convex Decomposition (ACD / UCX)** |
+| **Billboard Impostors** | ❌ None | ✔️ Expensive module | **✔️ 8-Way & Octahedral with Gutter Dilation** |
+| **Massive Open-World Assets** | ❌ Manual slicing | ✔️ Expensive HLOD module | **✔️ Spatial Grid Chunking & Seam-Locking** |
+| **PBR Texture Packing** | ❌ Manual Shader Nodes | ❌ Limited | **✔️ Auto-Packs ORM, MaskMap, COMP & Split** |
+| **Engine Live-Sync** | ❌ Manual export/import | ❌ File-based | **✔️ Real-Time Bridges (UE5, Unity, Godot, MSFS)** |
+| **Perceptual Error Metric** | ❌ Arbitrary % reduction | ✔️ Screen-Space Error | **✔️ Screen-Space Error Bound (SSE) in Pixels** |
+
+---
+
+## 🔄 The 4-Step Production Pipeline
+
+OmniMesh organizes your asset pipeline into four sequential, ergonomic N-Panel tabs:
+
+```mermaid
+graph LR
+    A["1. Import<br/>PBR Auto-Matching"] --> B["2. Modify<br/>Sanitize & Physics"]
+    B --> C["3. LODs<br/>SSE & Live Sim"]
+    C --> D["4. Engine Export<br/>Live Bridge & Packages"]
+```
+
+### 1. 📥 Import (PBR Texture Auto-Matcher)
+* **Zero-Setup Texturing**: Drop an asset folder into Blender. OmniMesh automatically inspects image filenames, resolves color spaces (sRGB vs. Non-Color), and wires up complete Principled BSDF shader networks.
+* **Smart Channel Demuxing**: Unpacks or repacks metallic, roughness, and ambient occlusion channels. Automatically handles DirectX (-Y) to OpenGL (+Y) normal map conversion.
+* **Engine Presets**: Shipped with battle-tested presets for UE5, Unity HDRP/URP, Godot 4 ORM, and MSFS 2024 COMP.
+
+### 2. 🛡️ Modify (Sanitize, Repair & Physics Colliders)
+* **Base Mesh Sanitization**: Eliminates zero-length edges, zero-area faces, duplicate faces, and resolves non-manifold bowties without ruining geometry.
+* **Material AST Deduplication**: Hashes shader node networks to eliminate identical duplicate material slots (`.001`, `.002`) and strips orphaned nodes.
+* **Automatic Convex Decomposition (ACD)**: Generates hierarchical physics collision hulls with SVD splitting planes, zero-volume planar extrusion guards, and PhysX/Jolt vertex budget clamping (e.g. 64 verts max).
+* **Slender & Sub-Pixel Feature Culling**: Evaluates curved wires, antennas, and railings via invariant hydraulic calipers ($t = 4V/A$) to cull sub-pixel noise without degrading silhouettes.
+
+### 3. 📐 LODs (Perceptual SSE & Live Simulation)
+* **Screen-Space Error (SSE)**: Decimation tolerances are computed from viewport pixel resolution and viewing distance—not arbitrary reduction percentages.
+* **Split Normal & UV Shield**: Preserves CAD bevels, hard-surface custom split normals, and UV seams using non-destructive data transfer and pinning.
+* **Skeletal Rigging Guard**: Clamps GPU bone weights to 4 (glTF/Unity/Mobile) or 8 (UE5), normalizes weights ($\sum w = 1.0$), and recursively prunes micro leaf bones (fingers, facial rigs) on distant LODs.
+* **Octahedral Impostors**: Generates 8-way or full-sphere octahedral billboard cards with tangent-space normal maps and morphological gutter dilation.
+* **Live Viewport Simulator**: 25 Hz non-blocking modal simulation with a real-time HUD (active tris, distance in meters, screen %) and a Unity-style virtual distance slider.
+* **A/B Split-Screen Viewport**: Drag an interactive split slider directly across the 3D viewport to inspect visual parity between LOD0 and any lower LOD tier.
+
+### 4. 📦 Engine Export & Live Bridges
+* **1-Click Packaging**: Automatically exports game-ready packages with correct hierarchies, naming conventions, and channel-packed PBR textures.
+* **Live Engine Bridges**:
+  * **Unreal Engine 5**: Live communication via Python Remote Execution (port 6776) / Web Remote Control (port 30010), instanced static mesh matching, and `UCX_` collision setup.
+  * **Unity 6**: Installs `OmniMeshUnityPostprocessor.cs`, auto-creates `LODGroup` components, sets up convex `MeshCollider` objects, and configures URP/HDRP MaskMaps.
+  * **Godot 4**: Generates `OmniMeshPostImport.gd`, sets up Visibility Ranges, and routes ORM materials.
+  * **MSFS 2024 / 2020**: Multi-hive registry SDK discovery, compiles packages via `fspackagetool.exe`, and generates official SDK-compliant `ModelInfo` XML with `<LOD minSize="...">`.
+* **Batch Processing**: Process entire directories of `.blend` files in headless background workers.
+
+---
+
+## 🧠 Deep-Dive Architecture & Core Technologies
+
+### 1. 📐 Screen-Space Error Bound (SSE)
+Instead of guessing decimation percentages (e.g. "reduce by 50%"), OmniMesh couples tolerances directly to human eye perception and viewport resolution ($H = 1080\text{px}$):
 
 $$\delta_{\text{world}} = \frac{2 \cdot \tau_{\text{sse}} \cdot r_{\text{bound}}}{S_{\text{frac}} \cdot H}$$
 
 * **Coupled Tolerances**: Merge distance $\epsilon$, feature dissolution $w_{\text{crit}}$, planar angle $\theta_{\text{limit}}$, and QEM ratio are derived deterministically from the user's Visual Stability threshold $\tau_{\text{sse}}$ (0.2px to 3.0px).
 * **Perceptual Logarithmic Progression**: Automatically generates logarithmic screen-size tiers matching physical camera distance curves.
 
-### 2. 🛡️ Deep Topology Sanitization Gate
-* **Degenerate Geometry Collapse**: Zero-length edges and zero-area faces are eliminated in pure BMesh.
-* **Non-Manifold & Bowtie Repair**: Resolves complex topological defects, edges sharing $>2$ faces, and isolated island noise.
-* **CAD Custom Normal & UV Boundary Preservation**: Protects UV seams, sharp edge marks, and reprojects high-precision split normals via `DATA_TRANSFER` without dark shading gouges.
-
-### 3. 🦴 Skeletal Rigging, GPU Clamping & Bone Pruning
+### 2. 🦴 Skeletal Rigging, GPU Clamping & Bone Pruning
 * **GPU 4/8-Influence Clamping**: Restricts active bone weights per vertex to **4** (glTF/Mobile/Unity) or **8** (Unreal Engine 5) and normalizes $\sum w = 1.0$.
 * **Zero-Sum Singularity Guard**: Eliminates shader NaN / GPU crash vectors by falling back to the parent anchor bone if micro-weights are stripped.
-* **Recursive Kinematic Leaf-Bone Pruning**: Measures the projected screen diameter of vertices assigned to leaf bones (fingers, facial bones, jewelry). If $< 1.5\text{px}$, weights collapse recursively into parent bones, stripping unused vertex groups from distance LODs.
-* **Shape Key & Morph Target Stripper**: Resets facial blendshapes to Basis (`0.0`) and purges shape keys on LOD $\ge 2$ to prevent mesh tearing.
-
-### 4. 🗂️ Multi-Mesh Hierarchies & Draw-Call Consolidation
-* **Mode A (`Preserve Hierarchy`)**: Preserves all submesh objects independently across all LOD tiers.
-* **Mode B (`Merge Distant Tiers`)**: Consolidates compatible submeshes into a single draw-call mesh at distant tiers (e.g. LOD3..LOD6).
-* **Rest-Pose Coordinate Inversion**: Seamlessly merges bone-parented static props into skinned meshes without pose baking distortion:
+* **Recursive Kinematic Leaf-Bone Pruning**: Measures projected screen diameter of vertices assigned to leaf bones (fingers, facial bones, jewelry). If $< 1.5\text{px}$, weights collapse recursively into parent bones, stripping unused vertex groups from distance LODs.
+* **Rest-Pose Coordinate Inversion**: Merges bone-parented static props into skinned meshes without pose baking distortion:
 
 $$\mathbf{M}_{S \to M_{\text{rest}}} = \mathbf{M}_{M_{\text{rest\_world}}}^{-1} \cdot \mathbf{M}_{\text{Arm\_world}} \cdot \mathbf{M}_{B_{\text{bone\_local}}} \cdot \mathbf{M}_{S_{\text{parent\_inv}}} \cdot \mathbf{M}_{S_{\text{basis}}}$$
 
-### 5. 🎮 Real-Time Viewport LOD Simulator
-* **Live Orbit Simulation**: Non-blocking modal loop (25 Hz) with mouse pass-through (`PASS_THROUGH`) that dynamically evaluates camera distance and switches all scene assets independently in real time.
-* **Unity-Style Virtual Distance Slider**: Drag a slider in the N-Panel to preview an asset transitioning across all LOD tiers without moving the camera.
-* **Differential Visibility Updates**: Eliminates depsgraph recursion and leaves the artist's `Ctrl+Z` Undo history 100% clean.
-* **Live 2D GPU HUD**: Displays active LOD tier, distance in meters, screen percentage, and active triangle count in the 3D viewport.
+### 3. 🗺️ Spatial Chunking & HLOD
+* **2.5D AABB Grid & Adaptive Poly Clustering**: Slices massive architectural scenes, terrain, or open-world assets into uniform or density-adaptive spatial cells.
+* **Seam-Pinning Engine**: Boundary vertices on cut planes are locked into `OMNIMESH_SEAM_LOCKED` vertex groups, preventing cracks and light leaks between adjacent chunks when decimated.
+* **HLOD Merging**: Consolidates distant chunk clusters into unified draw-call meshes with merged material palettes.
 
-### 6. 📦 1-Click Multi-Engine Exporters
-* **Microsoft Flight Simulator 2020 / 2024**: Exports glTF 2.0 separate buffers alongside official SDK-compliant `ModelInfo` XML files with exact `<LOD minSize="...">` tags.
-* **Unreal Engine 5**: Exports FBX with native `LODGroup` empty hierarchies for static meshes and direct Armature skeletal mesh hierarchies.
-* **Unity 6**: Exports FBX with standard `_LOD0..N` naming conventions recognized automatically by Unity's LOD Group component.
-* **Godot 4.x**: Exports glTF 2.0 with visibility range metadata.
+### 4. 🌲 Octahedral & 8-Way Billboard Impostors
+* **Hemispherical & Full-Sphere Mapping**: Renders 8-way planar cards or octahedral projected surfaces.
+* **Tangent-Space Normal Encoding**: Full normal-mapped depth with OpenGL (+Y) and DirectX (-Y) channel routing.
+* **Morphological Gutter Dilation**: Vectorized pixel dilation eliminates dark fringe mipmap bleeding at extreme camera angles.
 
 ---
 
@@ -70,14 +120,14 @@ Tested across **100 photogrammetry and hero game assets** from Epic Games FabLib
 
 ## 📥 Installation
 
-### Method A: Blender 4.2+ Extension (Recommended)
+### Method A: Blender 4.2+ / 5.2 LTS Extension (Recommended)
 1. Download the latest `omnimesh-v1.2.0.zip` from [Releases](https://github.com/DanAzanza/OmniMesh/releases).
-2. In Blender, navigate to `Edit` > `Preferences` > `Add-ons` / `Get Extensions`.
-3. Click the gear icon (top right) > **Install from Disk...** and select the `.zip` file.
-4. Enable **OmniMesh**.
+2. In Blender, navigate to `Edit` > `Preferences` > `Get Extensions` (or `Add-ons`).
+3. Click the **Repositories** / gear icon (top right) > **Install from Disk...**
+4. Select `omnimesh-v1.2.0.zip`. OmniMesh will install and enable automatically.
 
 ### Method B: Manual Installation
-Copy the repository directory into your Blender scripts folder:
+Clone or copy the repository into your Blender scripts folder:
 * **Windows**: `%APPDATA%\Blender Foundation\Blender\5.2\scripts\addons\omnimesh`
 * **Linux**: `~/.config/blender/5.2/scripts/addons/omnimesh`
 * **macOS**: `~/Library/Application Support/Blender/5.2/scripts/addons/omnimesh`
@@ -86,22 +136,25 @@ Copy the repository directory into your Blender scripts folder:
 
 ## 🚀 Quickstart Guide
 
-1. Open Blender and select one or more 3D meshes (or a rigged character with Armature).
-2. Open the 3D Viewport sidebar (`N`-key) and click the **OmniMesh** tab.
-3. Choose your **Target Engine** (*MSFS 2024, Unreal Engine 5, Unity 6, Godot 4*).
-4. Adjust **Visual Stability (SSE)** (default `0.80px`) and click **"Analyze & Auto-Configure"**.
-5. Click **"Generate All LODs"**.
-6. Click **"Start Live Simulator"** to inspect dynamic switching in the viewport or use the **Virtual Distance Slider**!
-7. Set your export directory and click **"1-Click Export Asset"**.
+1. **Select Mesh or Rig**: Select your target object(s) or character armature in the 3D Viewport.
+2. **Open OmniMesh**: Press `N` in the 3D Viewport to open the sidebar and switch to the **OmniMesh** tab.
+3. **Step 1 - Import (Optional)**: If you have raw textures, point to the folder and click **"Import PBR Textures"**.
+4. **Step 2 - Modify**: Click **"Sanitize Base Mesh"** and **"Generate Colliders"** to create game-ready physics hulls.
+5. **Step 3 - LODs**: Select an engine preset (*Unreal Engine 5, Unity 6, Godot 4, MSFS 2024*), choose your target fidelity via **Visual Stability (SSE)**, and click **"Generate All LODs"**.
+6. **Inspect**: Click **"Live Simulator"** to orbit around your asset and watch LOD transitions dynamically, or drag the **Virtual Distance** slider.
+7. **Step 4 - Export**: Set your target export directory and click **"Export"** (or toggle **Live Link** for instant synchronization with your engine).
 
 ---
 
 ## 🛠️ Automated Testing & Quality Gate
 
-OmniMesh includes a complete test & lint suite:
+OmniMesh maintains a deterministic, strict CI quality gate with **261 unit & integration tests**:
 
 ```bash
-# Run pytest test suite
+# Run CI verification (dependencies, linter, formatter, type checker, tests)
+python scripts/verify_ci.py
+
+# Run pytest directly
 python -m pytest -v
 
 # Run Ruff linter & formatting check
