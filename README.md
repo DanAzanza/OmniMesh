@@ -21,7 +21,9 @@ Optimizing 3D assets for modern real-time engines usually means choosing between
 | Feature / Capability | Blender Standard (Decimate) | Proprietary Tools (Simplygon / InstaLOD) | OmniMesh 🚀 |
 | :--- | :---: | :---: | :---: |
 | **Pricing & License** | Free (Built-in) | Commercial Subscription ($$$ per seat) | **100% Free & Open Source (GPL-3.0)** |
-| **Workflow** | Destructive modifier stack | Standalone external app / FBX roundtrip | **100% Native & Non-Destructive inside Blender** |
+| **Workflow Paradigm** | Destructive modifier stack | Standalone external app / FBX roundtrip | **100% Native & Non-Destructive inside Blender** |
+| **Selection Model** | Manual viewport selection (misses submeshes) | Manual per-mesh selection | **Collection-First: Zero selection required** |
+| **Multi-Part Assets** | Manual per-object decimation | Manual hierarchy setup | **Sub-collections under LOD0 = Separate exported objects** |
 | **Hard-Surface & Normal Integrity** | ❌ Destroys custom normals (black gouges) | ✔️ Good | **✔️ High-Precision Split Normal Reprojection** |
 | **Skinned Rigs & Armatures** | ❌ Breaks vertex weights & tears meshes | ✔️ Good | **✔️ GPU Weight Clamping & Leaf-Bone Pruning** |
 | **Physics Collision Hulls** | ❌ None | ⚠️ Limited / Separate steps | **✔️ Auto Convex Decomposition (ACD / UCX)** |
@@ -30,6 +32,35 @@ Optimizing 3D assets for modern real-time engines usually means choosing between
 | **PBR Texture Packing** | ❌ Manual Shader Nodes | ❌ Limited | **✔️ Auto-Packs ORM, MaskMap, COMP & Split** |
 | **Engine Live-Sync** | ❌ Manual export/import | ❌ File-based | **✔️ Real-Time Bridges (UE5, Unity, Godot, MSFS)** |
 | **Perceptual Error Metric** | ❌ Arbitrary % reduction | ✔️ Screen-Space Error | **✔️ Screen-Space Error Bound (SSE) in Pixels** |
+
+---
+
+## 🗂️ Collection-First Architecture (Zero Viewport Selection Required)
+
+Unlike traditional Blender add-ons that force artists to manually select objects or active meshes in the 3D viewport, OmniMesh operates entirely on an **Outliner Collection-First** paradigm.
+
+### Outliner Structure & Hierarchy Rules
+1. **Master Collection (`{Asset}_LOD0` or `{Asset}`)**: The root collection represents your primary high-fidelity asset.
+2. **Sub-Collections = Separate Exported Objects**: Any sub-collection located under `{Asset}_LOD0` is treated as an independent, modular sub-object and will be decimated, processed, and exported as a distinct object.
+3. **Automated Non-Destructive Siblings**: OmniMesh generates all derivative tiers into dedicated sibling collections without ever modifying or overwriting your original LOD0 geometry:
+   - `{Asset}_LOD1`, `{Asset}_LOD2`, ... `{Asset}_LODk` (mirrored sub-object hierarchy)
+   - `{Asset}_Colliders` (convex physics hulls)
+   - `{Asset}_LOD_Impostor` (octahedral / billboard impostor)
+
+```text
+Scene Collection
+└── Vehicle_LOD0/               <-- Root Asset Collection (LOD0 Source)
+    ├── Body/                   <-- Sub-Collection = Treated & exported as separate object
+    │   └── Body_Mesh
+    ├── Wheels/                 <-- Sub-Collection = Treated & exported as separate object
+    │   ├── Wheel_FL
+    │   ├── Wheel_FR
+    │   └── ...
+    └── Interior/               <-- Sub-Collection = Treated & exported as separate object
+        └── Dashboard_Mesh
+```
+
+> **No Viewport Selection Needed**: You never have to select objects in the 3D viewport before clicking operators. OmniMesh automatically resolves the active asset collection from the Outliner or property dropdown, guaranteeing 100% consistent results across multi-part vehicles, architectural models, and complex character hierarchies.
 
 ---
 
@@ -136,11 +167,11 @@ Clone or copy the repository into your Blender scripts folder:
 
 ## 🚀 Quickstart Guide
 
-1. **Select Mesh or Rig**: Select your target object(s) or character armature in the 3D Viewport.
-2. **Open OmniMesh**: Press `N` in the 3D Viewport to open the sidebar and switch to the **OmniMesh** tab.
-3. **Step 1 - Import (Optional)**: If you have raw textures, point to the folder and click **"Import PBR Textures"**.
-4. **Step 2 - Modify**: Click **"Sanitize Base Mesh"** and **"Generate Colliders"** to create game-ready physics hulls.
-5. **Step 3 - LODs**: Select an engine preset (*Unreal Engine 5, Unity 6, Godot 4, MSFS 2024*), choose your target fidelity via **Visual Stability (SSE)**, and click **"Generate All LODs"**.
+1. **Collection-First Setup (No Selection Needed)**: Group your asset into a root collection named `{Asset}_LOD0` (e.g. `Vehicle_LOD0`). Any sub-collections inside `{Asset}_LOD0` are automatically treated and exported as separate modular objects. No viewport selection is required!
+2. **Open OmniMesh**: Press `N` in the 3D Viewport to open the sidebar and switch to the **OmniMesh** tab. OmniMesh automatically resolves your active asset collection.
+3. **Step 1 - Import (Optional)**: If you have raw textures, point to the folder and click **"Import PBR Textures"** to auto-wire the shader graph.
+4. **Step 2 - Modify**: Click **"Sanitize Base Mesh"** to repair topology and **"Generate Colliders"** to create game-ready physics hulls.
+5. **Step 3 - LODs**: Select your target engine preset (*Unreal Engine 5, Unity 6, Godot 4, MSFS 2024*), choose your target fidelity via **Visual Stability (SSE)**, and click **"Generate All LODs"**.
 6. **Inspect**: Click **"Live Simulator"** to orbit around your asset and watch LOD transitions dynamically, or drag the **Virtual Distance** slider.
 7. **Step 4 - Export**: Set your target export directory and click **"Export"** (or toggle **Live Link** for instant synchronization with your engine).
 
