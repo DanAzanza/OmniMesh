@@ -8,7 +8,9 @@
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5%20%7C%20Unity%206%20%7C%20Godot%204-purple.svg)]()
 
-**OmniMesh** is an open-source, production-grade 3D mesh optimization and engine-export pipeline for **Blender 4.2+ and 5.2 LTS**. 
+> ⚠️ **Work in Progress (WIP):** This project is actively under development and may change significantly over time.
+
+**OmniMesh** is an open-source, production-grade 3D mesh optimization and engine-export pipeline for **Blender 4.2+ and 5.2 LTS**.
 
 It bridges the gap between raw, multi-million-polygon photogrammetry, CAD, sculpted heroes, or kitbash models and ready-to-ship game assets. Instead of running destructive decimation scripts or paying thousands of dollars for proprietary external software, OmniMesh provides a seamless, non-destructive 4-step pipeline directly inside Blender with live synchronization to **Unreal Engine 5**, **Unity 6**, **Godot 4**, and **Microsoft Flight Simulator 2024 / 2020**.
 
@@ -152,10 +154,10 @@ Tested across **100 photogrammetry and hero game assets** from Epic Games FabLib
 ## 📥 Installation
 
 ### Method A: Blender 4.2+ / 5.2 LTS Extension (Recommended)
-1. Download the latest `omnimesh-v1.2.0.zip` from [Releases](https://github.com/DanAzanza/OmniMesh/releases).
+1. Download a Zip of the Code. When the plugin reaches a finished state, there will be a release. at [Releases](https://github.com/DanAzanza/OmniMesh/releases).
 2. In Blender, navigate to `Edit` > `Preferences` > `Get Extensions` (or `Add-ons`).
 3. Click the **Repositories** / gear icon (top right) > **Install from Disk...**
-4. Select `omnimesh-v1.2.0.zip`. OmniMesh will install and enable automatically.
+4. Select th Zip-File. OmniMesh will install and enable automatically.
 
 ### Method B: Manual Installation
 Clone or copy the repository into your Blender scripts folder:
@@ -203,7 +205,7 @@ python scripts/build_extension.py
 
 ## 👤 Author & Maintainer
 
-Developed with ❤️ by **Daniel** ([@DanAzanza](https://github.com/DanAzanza)).
+Developed with ❤️ by **Daniel Azanza** ([@DanAzanza](https://github.com/DanAzanza)).
 
 ---
 
