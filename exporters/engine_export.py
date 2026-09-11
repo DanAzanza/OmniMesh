@@ -131,12 +131,10 @@ except (ImportError, ValueError):
 
 
 def register_exporters() -> None:
-    """Delegates operator registration to ui.export_ops."""
-    if register_export_ops:
-        register_export_ops()
+    """Delegates exporter registration (operators are centrally registered in ui.operators)."""
+    pass
 
 
 def unregister_exporters() -> None:
-    """Delegates operator unregistration to ui.export_ops."""
-    if unregister_export_ops:
-        unregister_export_ops()
+    """Delegates exporter unregistration (operators are centrally unregistered in ui.operators)."""
+    pass

@@ -713,5 +713,18 @@ class LODToolSettings(PropertyGroup):
     batch_processed_count: IntProperty(name="Processed Assets", default=0)
     batch_current_asset: StringProperty(name="Current Asset", default="")
 
+    # MSFS Spatial Configuration
+    msfs_spatial_cfg_path: StringProperty(
+        name="MSFS Config File",
+        subtype="FILE_PATH",
+        default="",
+        description="Path to target flight_model.cfg for spatial configuration synchronization",
+    )
+    msfs_spatial_status: StringProperty(
+        name="MSFS Spatial Status",
+        default="Ready",
+        description="Current status or last synchronized backup file",
+    )
+
 
 __all__ = ["LODToolSettings"]

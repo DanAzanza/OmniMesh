@@ -484,6 +484,45 @@ class OMNIMESH_PT_export(Panel):
             row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Offline", icon="COLOR_RED")
 
 
+class OMNIMESH_PT_export_msfs_spatial(Panel):
+    """Subpanel: MSFS 2020 & 2024 Aircraft Spatial Configuration (Contact Points, Fuel, Datum)."""
+
+    bl_label = "MSFS Spatial Config"
+    bl_idname = "OMNIMESH_PT_export_msfs_spatial"
+    bl_parent_id = "OMNIMESH_PT_export"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "OmniMesh"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        box = layout.box()
+        box.use_property_split = True
+        box.use_property_decorate = False
+        box.prop(props, "msfs_spatial_cfg_path", text="Config File")
+
+        row = box.row(align=True)
+        row.use_property_split = False
+        row.scale_y = 1.2
+        row.operator("omnimesh.import_msfs_spatial", text="Import Empties", icon="IMPORT")
+
+        row_sync = row.row(align=True)
+        row_sync.enabled = bool(props.msfs_spatial_cfg_path)
+        row_sync.operator("omnimesh.export_msfs_spatial", text="Sync to CFG", icon="FILE_REFRESH")
+
+        row_snap = box.row(align=True)
+        row_snap.use_property_split = False
+        row_snap.operator("omnimesh.snap_msfs_point_to_vertex", text="Snap Marker to Vertex", icon="SNAP_VERTEX")
+
+        if props.msfs_spatial_status:
+            box.label(text=props.msfs_spatial_status, icon="INFO")
+
+
 # Strict Parent-First Topological Registration Order
 PRIMARY_PANELS = (
     OMNIMESH_PT_import,
@@ -492,7 +531,10 @@ PRIMARY_PANELS = (
     OMNIMESH_PT_export,
 )
 
-SUBPANEL_CLASSES = (OMNIMESH_PT_lods_testing,)
+SUBPANEL_CLASSES = (
+    OMNIMESH_PT_lods_testing,
+    OMNIMESH_PT_export_msfs_spatial,
+)
 
 PANEL_CLASSES = PRIMARY_PANELS + SUBPANEL_CLASSES + POPOVER_CLASSES
 

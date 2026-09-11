@@ -56,6 +56,7 @@ if __package__:
         hull_impostor_ops,
         lists,
         lod_ops,
+        msfs_spatial_ops,
         operators,
         panel,
         pbr_ops,
@@ -97,6 +98,7 @@ else:
         hull_impostor_ops,
         lists,
         lod_ops,
+        msfs_spatial_ops,
         operators,
         panel,
         pbr_ops,
@@ -169,6 +171,7 @@ if _OMNIMESH_RELOAD:
         batch_panel,
         split_preview,
         hud,
+        msfs_spatial_ops,
     ):
         importlib.reload(mod)
 
@@ -177,6 +180,7 @@ def register():
     properties.register_properties()
     lists.register_lists()
     operators.register_operators()
+    msfs_spatial_ops.register()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
     batch_panel.register_batch_ops()
@@ -193,6 +197,7 @@ def unregister():
         batch_panel.unregister_batch_ops,
         simulator_ops.unregister_simulator_ops,
         panel.unregister_panel,
+        msfs_spatial_ops.unregister,
         operators.unregister_operators,
         lists.unregister_lists,
         properties.unregister_properties,

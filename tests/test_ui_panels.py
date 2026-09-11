@@ -56,9 +56,10 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_export.bl_category == "OmniMesh"
     assert OMNIMESH_PT_export.bl_order == 3
 
-    # Subpanels (testing subpanel registered under Panel 3)
-    assert len(SUBPANEL_CLASSES) == 1
+    # Subpanels (testing subpanel under Panel 3, MSFS spatial subpanel under Panel 4)
+    assert len(SUBPANEL_CLASSES) == 2
     assert SUBPANEL_CLASSES[0].bl_idname == "OMNIMESH_PT_lods_testing"
+    assert SUBPANEL_CLASSES[1].bl_idname == "OMNIMESH_PT_export_msfs_spatial"
 
     # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
     assert len(POPOVER_CLASSES) == 10
@@ -72,15 +73,16 @@ def test_panel_class_hierarchy_and_order():
 
     # Registration tuple (parent-first topological order)
     assert len(PRIMARY_PANELS) == 4
-    assert len(SUBPANEL_CLASSES) == 1
-    assert len(PANEL_CLASSES) == 15
+    assert len(SUBPANEL_CLASSES) == 2
+    assert len(PANEL_CLASSES) == 16
     assert PANEL_CLASSES[0] is OMNIMESH_PT_import
     assert PANEL_CLASSES[1] is OMNIMESH_PT_modify
     assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
     assert PANEL_CLASSES[3] is OMNIMESH_PT_export
     assert PANEL_CLASSES[4] is SUBPANEL_CLASSES[0]
+    assert PANEL_CLASSES[5] is SUBPANEL_CLASSES[1]
     for idx, pop_cls in enumerate(POPOVER_CLASSES):
-        assert PANEL_CLASSES[5 + idx] is pop_cls
+        assert PANEL_CLASSES[6 + idx] is pop_cls
 
 
 def test_operator_helpers_mocked():
