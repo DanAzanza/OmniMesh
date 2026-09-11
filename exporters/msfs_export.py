@@ -25,7 +25,12 @@ except ImportError:
 
 class MSFSExporter:
     @staticmethod
-    def generate_model_info_xml(asset_name: str, tiers: list[dict[str, Any]], guid_str: str = "") -> str:
+    def generate_model_info_xml(
+        asset_name: str,
+        tiers: list[dict[str, Any]],
+        guid_str: str = "",
+        cull_screen_size_pct: float = 0.0,
+    ) -> str:
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
         clean_guid = (
             guid_str.strip().strip("{}").upper() if guid_str and guid_str.strip() else str(uuid.uuid4()).upper()
@@ -50,8 +55,13 @@ class MSFSExporter:
         # Ensure descending sort by screen_size_pct
         sorted_tiers = sorted(tiers, key=lambda t: float(t.get("screen_size_pct", 0.0)), reverse=True)
         num_tiers = len(sorted_tiers)
+
         if num_tiers == 0:
-            lines.append(f'        <LOD minSize="0" ModelFile="{escaped_asset_name}_LOD0.gltf"/>')
+            min_cull = str(round(cull_screen_size_pct, 2)) if cull_screen_size_pct > 0 else "0"
+            lines.append(f'        <LOD minSize="{min_cull}" ModelFile="{escaped_asset_name}_LOD0.gltf"/>')
+        elif num_tiers == 1:
+            min_cull = str(round(cull_screen_size_pct, 2)) if cull_screen_size_pct > 0 else "0"
+            lines.append(f'        <LOD minSize="{min_cull}" ModelFile="{escaped_asset_name}_LOD0.gltf"/>')
         else:
             last_min_size = float("inf")
             for i in range(num_tiers):
@@ -63,7 +73,8 @@ class MSFSExporter:
                     last_min_size = raw_val
                     min_size_str = str(int(raw_val)) if raw_val == int(raw_val) else str(raw_val)
                 else:
-                    min_size_str = "0"
+                    cull_val = round(cull_screen_size_pct, 2) if cull_screen_size_pct > 0 else 0.0
+                    min_size_str = str(int(cull_val)) if cull_val == int(cull_val) else str(cull_val)
 
                 model_file = f"{escaped_asset_name}_LOD{i}.gltf"
                 lines.append(f'        <LOD minSize="{min_size_str}" ModelFile="{model_file}"/>')
@@ -166,7 +177,8 @@ class MSFSExporter:
         if exported_tiers == 0:
             return False, "No valid LOD objects found to export."
 
-        xml_content = cls.generate_model_info_xml(clean_name, tier_data)
+        cull_pct = float(getattr(props, "cull_screen_size_pct", 0.5)) if props else 0.5
+        xml_content = cls.generate_model_info_xml(clean_name, tier_data, cull_screen_size_pct=cull_pct)
         xml_path = os.path.join(export_dir, f"{clean_name}.xml")
         try:
             with open(xml_path, "w", encoding="utf-8") as f:

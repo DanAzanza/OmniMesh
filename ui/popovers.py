@@ -204,7 +204,7 @@ class OMNIMESH_PT_popover_generate(Panel):
 
 
 class OMNIMESH_PT_popover_lod_preset(Panel):
-    """Popover for configuring the selected LOD preset, generation tolerances, and rigging heuristics."""
+    """Popover for configuring the active LOD preset, quality curve, and generation heuristics."""
 
     bl_idname = "OMNIMESH_PT_popover_lod_preset"
     bl_label = "LOD Profile Settings"
@@ -226,18 +226,23 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
         preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
         preset = LODPresetManager.get_preset(preset_id)
 
+        # 1. Header & Quality Curve
         layout.label(text=preset.get("name", preset_id), icon="PRESET")
         desc = preset.get("description", "")
         if desc:
             layout.label(text=desc)
 
+        layout.prop(props, "tau_sse", slider=True, text="Visual Stability (τ)")
+
         layout.separator()
-        layout.label(text="LOD Tiers & Screen Thresholds", icon="MESH_DATA")
-        layout.prop(props, "lod_preset_budget_mode", text="Budget Mode")
+
+        # 2. Preset Tiers (Compact Overview)
+        row_hdr = layout.row(align=True)
+        row_hdr.label(text="Preset Tiers & Budgets", icon="MESH_DATA")
 
         row = layout.row()
         active_count = len(props.lod_preset_active_tiers)
-        list_rows = max(3, min(active_count, 6))
+        list_rows = max(3, min(active_count, 5))
         row.template_list(
             "OMNIMESH_UL_preset_tiers",
             "",
@@ -246,7 +251,7 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
             props,
             "lod_preset_active_tier_index",
             rows=list_rows,
-            maxrows=7,
+            maxrows=5,
         )
         col_btn = row.column(align=True)
         col_btn.operator("lod_tool.add_preset_tier", icon="ADD", text="")
@@ -254,44 +259,23 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
         sub_rem.enabled = len(props.lod_preset_active_tiers) > 1
         sub_rem.operator("lod_tool.remove_preset_tier", icon="REMOVE", text="")
 
-        tiers = props.lod_preset_active_tiers
-        idx = props.lod_preset_active_tier_index
-        if 0 <= idx < len(tiers):
-            active_tier = tiers[idx]
-            box_detail = layout.box()
-            col = box_detail.column(align=True)
-            col.prop(active_tier, "name", text="Tier Name")
-            col.prop(active_tier, "screen_size_pct", text="Screen Size (%)", slider=True)
-            if props.lod_preset_budget_mode == "PERCENTAGE":
-                col.prop(active_tier, "target_tris_pct", text="Target Triangles (%)", slider=True)
-            else:
-                col.prop(active_tier, "target_tris", text="Target Triangles (Abs)")
+        # Cull Screen Size threshold immediately beneath the tiers
+        row_cull = layout.row(align=True)
+        row_cull.prop(props, "cull_screen_size_pct", slider=True, text="Cull at Screen Size")
 
         layout.separator()
-        row_sync = layout.row(align=True)
-        row_sync.operator("lod_tool.apply_preset_tiers", text="Apply to Scene", icon="CHECKMARK")
-        row_sync.operator("lod_tool.capture_scene_tiers", text="Capture from Scene", icon="IMPORT")
-        row_sync.operator("lod_tool.save_preset_tiers", text="Save Preset", icon="FILE_TICK")
 
-        layout.separator()
-        layout.label(text="Billboard Impostor LOD", icon="IMAGE_PLANE")
-        layout.prop(props, "enable_impostor_lod", text="Enable Impostor LOD")
-        if props.enable_impostor_lod:
-            box_imp = layout.box()
-            box_imp.use_property_split = True
-            box_imp.use_property_decorate = False
-            box_imp.prop(props, "impostor_mode", text="Mode")
-            box_imp.prop(props, "impostor_resolution", text="Resolution")
-            box_imp.prop(props, "impostor_replace_last_lod", text="Final LOD Tier")
-            row_imp_act = box_imp.row(align=True)
-            row_imp_act.operator("lod_tool.generate_impostor", text="Generate Billboard", icon="IMAGE_PLANE")
-            row_imp_act.operator("lod_tool.remove_impostor", text="", icon="X")
+        # 3. Hierarchy & Draw-Calls
+        box_hier = layout.box()
+        box_hier.use_property_split = True
+        box_hier.use_property_decorate = False
+        box_hier.prop(props, "consolidate_hierarchy", text="Consolidate Hierarchy")
 
-        layout.separator()
-        layout.label(text="Occlusion & Slender Culling", icon="HIDE_OFF")
+        # 4. Occlusion & Slender Culling
         box_cull = layout.box()
         box_cull.use_property_split = True
         box_cull.use_property_decorate = False
+        box_cull.label(text="Occlusion & Slender Culling", icon="HIDE_OFF")
         box_cull.prop(props, "enable_occlusion_culling", text="Interior Culling")
         if props.enable_occlusion_culling:
             box_cull.prop(props, "occlusion_lod_start", text="Start Tier")
@@ -299,13 +283,13 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
             box_cull.prop(props, "occlusion_evaluate_alpha", text="Eval Alpha")
         box_cull.prop(props, "enable_slender_culling", text="Slender Culling")
 
-        layout.separator()
-        layout.label(text="Spatial Chunking & Slicing", icon="MESH_GRID")
-        layout.prop(props, "enable_spatial_chunking", text="Enable Spatial Chunking")
+        # 5. Spatial Chunking & HLOD
+        box_chunk = layout.box()
+        box_chunk.use_property_split = True
+        box_chunk.use_property_decorate = False
+        box_chunk.label(text="Spatial Chunking & HLOD", icon="MESH_GRID")
+        box_chunk.prop(props, "enable_spatial_chunking", text="Enable Chunking")
         if props.enable_spatial_chunking:
-            box_chunk = layout.box()
-            box_chunk.use_property_split = True
-            box_chunk.use_property_decorate = False
             box_chunk.prop(props, "chunk_partitioning_mode", text="Partitioning")
             if props.chunk_partitioning_mode == "ADAPTIVE_CLUSTERING":
                 box_chunk.prop(props, "adaptive_cluster_target_polys", text="Max Polys/Cluster")
@@ -317,26 +301,25 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
             if props.enable_hlod:
                 box_chunk.prop(props, "hlod_start_tier", text="HLOD Start Tier")
 
-        layout.separator()
-        layout.label(text="Screen & Error Tolerances", icon="RESTRICT_VIEW_OFF")
-        layout.prop(props, "tau_sse", slider=True, text="Visual Stability (SSE)")
-        layout.prop(props, "cull_screen_size_pct", slider=True, text="Cull Screen Size (%)")
-        layout.prop(props, "preserve_silhouette", text="Protect Silhouettes")
-        layout.prop(props, "pin_uv_seams", text="Pin UV Seams")
-        layout.prop(props, "pin_material_borders", text="Pin Material Borders")
-
-        layout.separator()
-        layout.label(text="Hierarchy & Draw-Calls", icon="OUTLINER_OB_GROUP_INSTANCE")
-        layout.prop(props, "hierarchy_mode", text="Mode")
-        if props.hierarchy_mode == "MERGE_AT_TIER":
-            layout.prop(props, "merge_start_tier", text="Merge From Tier")
-        layout.prop(props, "preserve_slot_indexing", text="Preserve Slot Indexing")
-
-        layout.separator()
-        layout.label(text="Rigging & Deform Kinematics", icon="ARMATURE_DATA")
-        layout.prop(props, "max_bone_influences", text="Max Bone Influences")
-        layout.prop(props, "enable_bone_pruning", text="Leaf Bone Pruning")
-        layout.prop(props, "purge_shape_keys", text="Purge Distant Shape Keys")
+        # 6. Billboard Impostor
+        box_imp = layout.box()
+        box_imp.use_property_split = True
+        box_imp.use_property_decorate = False
+        box_imp.label(text="Billboard Impostor", icon="IMAGE_PLANE")
+        box_imp.prop(props, "enable_impostor_lod", text="Enable Impostor")
+        if props.enable_impostor_lod:
+            box_imp.prop(props, "impostor_mode", text="Mode")
+            box_imp.prop(props, "auto_impostor_resolution", text="Auto Resolution")
+            if not getattr(props, "auto_impostor_resolution", True):
+                box_imp.prop(props, "impostor_resolution", text="Resolution")
+            else:
+                # Informational label of calculated resolution
+                s_pct = props.lods[-1].screen_size_pct if len(props.lods) > 0 else 5.0
+                target_px = max(256, min(4096, int(2048 * (s_pct / 10.0))))
+                calc_res = 1 << (target_px - 1).bit_length()
+                calc_res = max(256, min(4096, calc_res))
+                row_calc = box_imp.row()
+                row_calc.label(text=f"Calculated: {calc_res}×{calc_res}", icon="INFO")
 
         layout.separator()
         row_act = layout.row(align=True)

@@ -335,6 +335,10 @@ class OMNIMESH_PT_lods(Panel):
                         slider=True,
                     )
 
+            # Cull Screen Size directly below the final LOD card (completes visibility lifecycle)
+            row_cull = box_lod.row(align=True)
+            row_cull.prop(props, "cull_screen_size_pct", text="Cull at Screen Size", slider=True)
+
             row_add = box_lod.row(align=True)
             row_add.operator("lod_tool.add_lod_tier", text="Add LOD Tier", icon="ADD")
         else:

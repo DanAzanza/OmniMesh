@@ -199,22 +199,27 @@ class LODToolSettings(PropertyGroup):
 
     # Error Metrics and Screen Parameters
     tau_sse: FloatProperty(
-        name="Error Bound Factor", default=0.8, min=0.1, max=5.0, precision=2, description="SSE tolerance multiplier"
+        name="Visual Stability (SSE)",
+        default=0.08,
+        min=0.01,
+        max=2.0,
+        precision=2,
+        subtype="PERCENTAGE",
+        description="Screen-Space Error bound in percentage of screen height",
+        update=on_lod_preset_property_modified,
     )
     preserve_silhouette: BoolProperty(
-        name="Preserve Silhouettes", default=True, description="Protect high-curvature silhouette and boundary edges"
+        name="Preserve Silhouettes", default=True, description="Legacy silhouette protection (deprecated)"
     )
     pin_uv_seams: BoolProperty(
         name="Pin UV Seams",
         default=True,
-        description="Locks UV boundary edges from collapsing to eliminate texture seam popping",
-        update=on_lod_preset_property_modified,
+        description="Locks UV boundary edges from collapsing (always active)",
     )
     pin_material_borders: BoolProperty(
         name="Pin Material Borders",
         default=True,
-        description="Prevents edges on material slot transitions from warping",
-        update=on_lod_preset_property_modified,
+        description="Prevents edges on material slot transitions from warping (always active)",
     )
 
     # Mesh Cleanup & Topology Repair Settings
@@ -364,6 +369,12 @@ class LODToolSettings(PropertyGroup):
         description="Texture resolution for baked Impostor PBR atlas maps",
         update=on_lod_preset_property_modified,
     )
+    auto_impostor_resolution: BoolProperty(
+        name="Auto-Calculate Resolution",
+        default=True,
+        description="Automatically derive atlas resolution from switching screen size",
+        update=on_lod_preset_property_modified,
+    )
     impostor_replace_last_lod: BoolProperty(
         name="Use as Final LOD Tier",
         default=True,
@@ -432,6 +443,12 @@ class LODToolSettings(PropertyGroup):
     last_generated_collider_count: IntProperty(name="Last Collider Count", default=0)
 
     # Multi-Object Hierarchy & Merging Settings
+    consolidate_hierarchy: BoolProperty(
+        name="Consolidate Hierarchy (Merge LOD1+)",
+        default=False,
+        description="Merge multi-mesh accessories into single consolidated mesh at distant LODs (saves draw calls)",
+        update=on_lod_preset_property_modified,
+    )
     hierarchy_mode: EnumProperty(
         name="Hierarchy Mode",
         items=HIERARCHY_MODE_ITEMS,

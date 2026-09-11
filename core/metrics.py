@@ -94,33 +94,51 @@ def compute_screen_size_from_distance(radius: float, distance: float, vertical_f
 
 
 def compute_screen_space_error_bound(
-    radius: float, screen_size_fraction: float, tau_sse_pixels: float = 1.0, screen_height_px: int = 1080
+    radius: float,
+    screen_size_fraction: float,
+    tau_sse_pct: float = 0.08,
+    screen_height_px: int = 1080,
+    tau_sse_pixels: float | None = None,
 ) -> float:
     """
     Computes the maximum allowable world-space error delta_world (in meters)
-    to ensure screen-space deviation <= tau_sse pixels at screen size S.
-    Formula: delta_world = (2 * tau_sse * r) / (S * H)
+    to ensure screen-space deviation <= tau_sse_pct percent of screen height.
+
+    Formula: delta_world = (2 * tau_fraction * r) / S
+    where tau_fraction = tau_sse_pct / 100.0.
+    Screen height H cancels out completely, making the bound resolution-independent.
     """
+    if tau_sse_pixels is not None:
+        tau_sse_pct = tau_sse_pixels
+
     s_clamped = max(0.001, min(1.0, screen_size_fraction))
-    h = max(240, screen_height_px)
-    tau = max(0.1, tau_sse_pixels)
     r = max(1e-4, radius)
-    return (2.0 * tau * r) / (s_clamped * h)
+
+    # Legacy compatibility: if tau_sse_pct >= 0.4, interpret as raw pixel count at 1080p
+    if tau_sse_pct >= 0.4 and screen_height_px > 0:
+        tau_frac = tau_sse_pct / float(screen_height_px)
+    else:
+        tau_frac = max(0.0001, tau_sse_pct / 100.0)
+
+    return (2.0 * tau_frac * r) / s_clamped
 
 
 def compute_coupled_tolerances(
     radius: float,
     screen_size_fraction: float,
-    tau_sse_pixels: float = 1.0,
+    tau_sse_pct: float = 0.08,
     screen_height_px: int = 1080,
     local_curvature_radius: float = 0.1,
+    tau_sse_pixels: float | None = None,
 ) -> dict[str, float]:
     """
     Derives all decimation and cleanup tolerances from the master Screen-Space Error bound.
     """
+    if tau_sse_pixels is not None:
+        tau_sse_pct = tau_sse_pixels
     s = max(0.001, min(1.0, screen_size_fraction))
     r = max(1e-4, radius)
-    delta_world = compute_screen_space_error_bound(r, s, tau_sse_pixels, screen_height_px)
+    delta_world = compute_screen_space_error_bound(r, s, tau_sse_pct, screen_height_px)
 
     # 1. Epsilon Merge Distance (clamped between 1µm and 5% of radius)
     epsilon_merge = max(1e-6, min(r * 0.05, delta_world / 8.0))
@@ -139,7 +157,9 @@ def compute_coupled_tolerances(
     area_crit = (math.pi / 4.0) * (delta_world**2)
 
     # 5. Perceptual Power-Law QEM Decimation Ratio
-    gamma = 1.5 * math.sqrt(max(0.2, tau_sse_pixels))
+    # Calibrated against nominal baseline where 0.10% (0.001 fraction) corresponds to nominal 1.0px @ 1080p
+    nominal_pct = 0.10 if tau_sse_pct < 0.4 else 1.0
+    gamma = 1.5 * math.sqrt(max(0.01, tau_sse_pct) / nominal_pct)
     qem_ratio = max(0.005, min(1.0, math.pow(s, gamma)))
 
     return {
@@ -150,7 +170,7 @@ def compute_coupled_tolerances(
         "area_crit": area_crit,
         "qem_ratio": qem_ratio,
         "screen_size_fraction": s,
-        "tau_sse": tau_sse_pixels,
+        "tau_sse": tau_sse_pct,
     }
 
 

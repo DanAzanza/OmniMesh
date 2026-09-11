@@ -71,16 +71,25 @@ class SlenderFeatureCuller:
 
     @staticmethod
     def compute_world_tolerance(
-        tau_sse: float, screen_size_pct: float, resolution_y: int, root_radius_m: float
+        tau_sse: float, screen_size_pct: float, resolution_y: int = 1080, root_radius_m: float = 1.0
     ) -> float:
         """
         Computes maximum allowable world-space thickness below which an element is sub-pixel:
-        delta_world = tau_sse * (2 * R_root / (S_frac * R_y))
+        delta_world = (2 * tau_frac * R_root) / S_frac
+
+        If tau_sse >= 0.4, it is treated as legacy pixel tolerance:
+        delta_world = (tau_sse * 2 * R_root) / (S_frac * resolution_y)
         """
         s_frac = max(0.0001, screen_size_pct / 100.0)
-        if resolution_y <= 0 or s_frac <= 0:
+        if s_frac <= 0 or root_radius_m <= 0:
             return 0.0
-        return (tau_sse * 2.0 * root_radius_m) / (s_frac * resolution_y)
+
+        if tau_sse >= 0.4 and resolution_y > 0:
+            tau_frac = tau_sse / float(resolution_y)
+        else:
+            tau_frac = max(0.0001, tau_sse / 100.0)
+
+        return (tau_frac * 2.0 * root_radius_m) / s_frac
 
     @classmethod
     def analyze_island_geometry(cls, face_group: list[Any]) -> dict[str, float]:
@@ -163,8 +172,8 @@ class SlenderFeatureCuller:
         screen_size_pct: float,
         resolution_y: int = 1080,
         root_radius_m: float = 1.0,
-        tau_sse: float = 1.0,
-        protect_silhouettes: bool = True,
+        tau_sse: float = 0.08,
+        protect_silhouettes: bool = False,
     ) -> dict[str, int]:
         """
         Identifies and removes all sub-pixel small parts and slender face islands from BMesh.
@@ -210,19 +219,11 @@ class SlenderFeatureCuller:
         culled_faces: list[Any] = []
         culled_islands_count = 0
 
-        # Structural protection threshold: elements spanning > 35% of root bounding radius
-        structural_limit = root_radius_m * 0.7 if protect_silhouettes else float("inf")
-
         for island in islands:
             analysis = cls.analyze_island_geometry(island)
             thickness = analysis["thickness"]
             aspect_ratio = analysis["aspect_ratio"]
             max_dim = analysis["max_dim"]
-
-            # Silhouette protection: only protect genuinely THICK structural spans (thickness > delta_world)
-            # If thickness <= delta_world, the feature is sub-pixel (< 1px on screen) and MUST be culled.
-            if protect_silhouettes and max_dim >= structural_limit and thickness > delta_world:
-                continue
 
             # Culling conditions:
             # 1. Small compact sub-pixel part (bolts, screws, micro-debris): max_dim <= delta_world

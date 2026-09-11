@@ -111,12 +111,19 @@ class GodotExporter:
             dist_begin = 0.0
             dist_end = 100.0
             if props and len(props.lods) > 0:
+                cull_pct = max(0.01, float(getattr(props, "cull_screen_size_pct", 0.5)))
+                last_dist = props.lods[-1].distance_m or 50.0
+                cull_dist = max(last_dist * 1.5, last_dist * (props.lods[-1].screen_size_pct / cull_pct))
+
                 if is_impostor_obj:
                     dist_begin = props.lods[-1].distance_m
-                    dist_end = max(dist_begin * 3.0, dist_begin + 200.0)
+                    dist_end = cull_dist
                 else:
                     dist_begin = 0.0 if tier_idx == 0 else props.lods[min(tier_idx - 1, len(props.lods) - 1)].distance_m
-                    dist_end = props.lods[min(tier_idx, len(props.lods) - 1)].distance_m
+                    if tier_idx >= len(props.lods) - 1:
+                        dist_end = cull_dist
+                    else:
+                        dist_end = props.lods[min(tier_idx, len(props.lods) - 1)].distance_m
 
             obj["visibility_range_begin"] = dist_begin
             obj["visibility_range_end"] = dist_end

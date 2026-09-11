@@ -438,6 +438,7 @@ class ImpostorManager:
         mode: str = "CROSS_QUADS",
         target_engine: str = "UE5",
         target_collection_name: str = "",
+        atlas_resolution: int = 2048,
     ) -> Any:
         """
         Constructs and links the Impostor billboard object in Blender.

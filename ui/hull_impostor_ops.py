@@ -64,12 +64,27 @@ class LOD_OT_generate_impostor(Operator):
 
         target_coll_name = f"{base_name}_LOD_Impostor"
 
+        # Resolution calculation
+        if getattr(props, "auto_impostor_resolution", True):
+            # Derive resolution from screen size (nominal ~10% screen size -> 1024, clamp 256..4096 next pow 2)
+            s_pct = props.lods[-1].screen_size_pct if props and len(props.lods) > 0 else 5.0
+            target_px = max(256, min(4096, int(2048 * (s_pct / 10.0))))
+            # Next power of 2
+            calc_res = 1 << (target_px - 1).bit_length()
+            calc_res = max(256, min(4096, calc_res))
+        else:
+            try:
+                calc_res = int(getattr(props, "impostor_resolution", "2048"))
+            except (ValueError, TypeError):
+                calc_res = 2048
+
         res = ImpostorManager.generate_impostor_for_objects(
             mesh_objs,
             base_name,
             mode=props.impostor_mode,
             target_engine=getattr(props, "target_engine", "UE5"),
             target_collection_name=target_coll_name,
+            atlas_resolution=calc_res,
         )
 
         if not res:

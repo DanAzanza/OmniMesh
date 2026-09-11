@@ -158,7 +158,11 @@ def generate_all_lods(
             for i, tier in enumerate(props.lods):
                 s_frac = tier.screen_size_pct / 100.0
                 tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
-                should_merge = props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier
+                should_merge = i >= 1 and (
+                    getattr(props, "consolidate_hierarchy", False)
+                    or props.hierarchy_mode == "MERGE_ALL"
+                    or (props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier)
+                )
 
                 tier_coll = all_tier_collections[i]
 
@@ -222,7 +226,6 @@ def generate_all_lods(
                                 resolution_y=render.resolution_y,
                                 root_radius_m=radius,
                                 tau_sse=props.tau_sse,
-                                protect_silhouettes=props.preserve_silhouette,
                             )
                             props.last_culled_slender_count += res_slender.get("culled_islands", 0)
 
@@ -324,7 +327,6 @@ def generate_all_lods(
                                     resolution_y=render.resolution_y,
                                     root_radius_m=radius,
                                     tau_sse=props.tau_sse,
-                                    protect_silhouettes=props.preserve_silhouette,
                                 )
                                 props.last_culled_slender_count += res_slender.get("culled_islands", 0)
 

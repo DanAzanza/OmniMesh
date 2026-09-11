@@ -160,6 +160,30 @@ class LODPresetManager(BasePresetManager):
             "pin_material_borders": bool(pin_dict.get("pin_material_borders", True)),
         }
 
+        # Validate cull_screen_size_pct
+        cull_pct = float(data.get("cull_screen_size_pct", 0.5))
+        validated_cull_screen = max(0.01, min(10.0, cull_pct))
+
+        # Validate hierarchy consolidation
+        consolidate_hier = bool(
+            data.get("consolidate_hierarchy", data.get("hierarchy_mode") in {"MERGE_ALL", "MERGE_AT_TIER"})
+        )
+
+        # Validate tau_sse / tau_sse_pct migration
+        if "tau_sse_pct" in data:
+            tau_val = float(data["tau_sse_pct"])
+        elif "tau_sse" in data:
+            raw_tau = float(data["tau_sse"])
+            # If >= 0.4, convert legacy raw pixel baseline (1080p) to screen percentage
+            if raw_tau >= 0.4:
+                tau_val = round((raw_tau / 1080.0) * 100.0, 3)
+            else:
+                tau_val = raw_tau
+        else:
+            tau_val = 0.08
+
+        validated_tau = max(0.01, min(5.0, tau_val))
+
         validated = dict(data)
         validated["name"] = name
         validated["budget_mode"] = budget_mode
@@ -169,10 +193,13 @@ class LODPresetManager(BasePresetManager):
         validated["culling"] = validated_cull
         validated["pinning"] = validated_pin
         validated["schema_type"] = cls.SCHEMA_TYPE
-        validated["version"] = int(data.get("version", 2))
+        validated["version"] = max(3, int(data.get("version", 2)))
         validated["target_engine"] = str(data.get("target_engine", "UE5"))
         validated["description"] = str(data.get("description", ""))
-        validated["tau_sse"] = max(0.05, min(10.0, float(data.get("tau_sse", 0.8))))
+        validated["tau_sse"] = validated_tau
+        validated["tau_sse_pct"] = validated_tau
+        validated["cull_screen_size_pct"] = validated_cull_screen
+        validated["consolidate_hierarchy"] = consolidate_hier
         return validated
 
     @classmethod

@@ -296,8 +296,17 @@ def sync_preset_tiers_from_preset(props: Any, preset: dict[str, Any]) -> None:
                 props.pin_material_borders = bool(pin_cfg.get("pin_material_borders", True))
 
         # Hydrate tau_sse
-        if "tau_sse" in preset and hasattr(props, "tau_sse"):
-            props.tau_sse = float(preset["tau_sse"])
+        if hasattr(props, "tau_sse"):
+            raw_tau = preset.get("tau_sse_pct", preset.get("tau_sse", 0.08))
+            props.tau_sse = float(raw_tau)
+
+        # Hydrate cull_screen_size_pct
+        if "cull_screen_size_pct" in preset and hasattr(props, "cull_screen_size_pct"):
+            props.cull_screen_size_pct = float(preset["cull_screen_size_pct"])
+
+        # Hydrate consolidate_hierarchy
+        if hasattr(props, "consolidate_hierarchy"):
+            props.consolidate_hierarchy = bool(preset.get("consolidate_hierarchy", False))
 
         # Guarantee pristine dirty state at end of hydration
         props.lod_preset_is_dirty = False
@@ -309,9 +318,14 @@ def sync_preset_tiers_to_preset(props: Any, preset_id: str | None = None) -> str
 
     preset_data = copy.deepcopy(LODPresetManager.get_preset(target_id))
     preset_data["budget_mode"] = getattr(props, "lod_preset_budget_mode", "PERCENTAGE")
-    preset_data["version"] = 2
+    preset_data["version"] = 3
     if hasattr(props, "tau_sse"):
         preset_data["tau_sse"] = round(float(props.tau_sse), 3)
+        preset_data["tau_sse_pct"] = round(float(props.tau_sse), 3)
+    if hasattr(props, "cull_screen_size_pct"):
+        preset_data["cull_screen_size_pct"] = round(float(props.cull_screen_size_pct), 2)
+    if hasattr(props, "consolidate_hierarchy"):
+        preset_data["consolidate_hierarchy"] = bool(props.consolidate_hierarchy)
 
     new_tiers: list[dict[str, Any]] = []
     for item in props.lod_preset_active_tiers:
