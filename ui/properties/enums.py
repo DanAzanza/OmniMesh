@@ -187,3 +187,18 @@ BATCH_FILE_FORMATS_ITEMS: list[tuple[str, str, str]] = [
     ("GLTF", "glTF / GLB (*.gltf, *.glb)", "Process glTF/GLB files only"),
     ("BLEND", "Blender (*.blend)", "Process .blend files only"),
 ]
+
+ENGINE_IMPORT_MODEL_TARGET_ITEMS: list[tuple[str, str, str]] = [
+    ("EXTERIOR_ONLY", "Exterior Only", "Import exterior airframe LODs (normal model)"),
+    ("INTERIOR_ONLY", "Interior Only", "Import interior / cockpit flight deck LODs"),
+    (
+        "BOTH_SEPARATE",
+        "Both (Separate Collections)",
+        "Import both exterior and interior into dedicated sibling collections",
+    ),
+]
+
+MSFS_GEAR_STATE_ITEMS: list[tuple[str, str, str]] = [
+    ("STATIC_COMPRESSED", "Static (Compressed)", "Landing gear in model is compressed under aircraft weight"),
+    ("UNCOMPRESSED_EXTENDED", "Uncompressed (Extended)", "Landing gear in model is fully extended without load"),
+]

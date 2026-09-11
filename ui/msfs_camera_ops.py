@@ -8,16 +8,22 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Optional
 
 try:
     import bpy
+    from bpy.props import StringProperty
     from bpy.types import Collection, Object, Operator
 except ImportError:
     bpy = None
     Collection = object
     Object = object
     Operator = object
+
+    def StringProperty(**kwargs: Any) -> Any:
+        return ""
+
 
 try:
     from ..core.msfs_cst_parser import MSFSCSTParser
@@ -44,26 +50,49 @@ except (ImportError, ValueError):
 
 logger = logging.getLogger(__name__)
 
-CAMERAS_COLLECTION_NAME = "MSFS_Spatial_Cameras"
 DATUM_POINT_ID = "WEIGHT_AND_BALANCE:reference_datum_position"
 
 
-def get_or_create_cameras_collection(context: Any) -> Optional[Collection]:
-    """Finds or creates the MSFS_Spatial_Cameras collection in the active scene."""
+def find_cameras_collection(context: Any) -> Optional[Collection]:
+    """Finds existing cameras collection by role tag, asset name, or legacy name."""
     if not bpy:
         return None
+    for col in bpy.data.collections:
+        if col.get("_omnimesh_role") == "CAMERAS":
+            return col
+    props = getattr(getattr(context, "scene", None), "lod_tool", None)
+    asset_name = getattr(props, "export_base_name", "") if props else ""
+    if asset_name and f"{asset_name}_Cameras" in bpy.data.collections:
+        return bpy.data.collections[f"{asset_name}_Cameras"]
+    for name in ("Cameras", "MSFS_Spatial_Cameras"):
+        if name in bpy.data.collections:
+            return bpy.data.collections[name]
+    return None
 
-    scene = context.scene
-    col = bpy.data.collections.get(CAMERAS_COLLECTION_NAME)
-    if not col:
-        col = bpy.data.collections.new(CAMERAS_COLLECTION_NAME)
-        # Check if parent MSFS_Spatial_Config exists
-        parent_col = bpy.data.collections.get("MSFS_Spatial_Config")
-        if parent_col:
-            parent_col.children.link(col)
-        else:
-            scene.collection.children.link(col)
-    return col
+
+def get_or_create_cameras_collection(
+    context: Any, asset_name: str = "", is_interior: bool = False
+) -> Optional[Collection]:
+    """Finds or creates the dedicated cameras collection in the active scene."""
+    if not bpy or not context:
+        return None
+
+    props = getattr(context.scene, "lod_tool", None)
+    base_asset = asset_name or (getattr(props, "export_base_name", "") if props else "") or "Asset"
+    target_asset = f"{base_asset}_Interior" if is_interior and not base_asset.endswith("_Interior") else base_asset
+
+    try:
+        from .utils import get_or_create_engine_import_collection
+
+        return get_or_create_engine_import_collection(context, target_asset, "CAMERAS")
+    except Exception:
+        col_name = f"{target_asset}_Cameras"
+        col = bpy.data.collections.get(col_name)
+        if not col:
+            col = bpy.data.collections.new(col_name)
+            context.scene.collection.children.link(col)
+            col["_omnimesh_role"] = "CAMERAS"
+        return col
 
 
 class OMNIMESH_OT_import_msfs_cameras(Operator):
@@ -74,15 +103,11 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
     bl_description = "Parse cameras.cfg and create/update Blender cameras for pilot and external views"
     bl_options = {"REGISTER", "UNDO"}
 
-    filepath: Any = (
-        bpy.props.StringProperty(
-            name="File Path",
-            description="Path to cameras.cfg",
-            subtype="FILE_PATH",
-            default="",
-        )
-        if bpy
-        else ""
+    filepath: StringProperty(
+        name="File Path",
+        description="Path to cameras.cfg",
+        subtype="FILE_PATH",
+        default="",
     )
 
     @classmethod
@@ -114,17 +139,34 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
             self.report({"ERROR"}, f"Failed parsing cameras.cfg: {exc}")
             return {"CANCELLED"}
 
-        col = get_or_create_cameras_collection(context)
-        if not col:
+        props = getattr(context.scene, "lod_tool", None)
+        base_asset = getattr(props, "export_base_name", "") if props else ""
+        if not base_asset:
+            base_asset = "Asset"
+
+        # Check if interior model is part of this scene
+        has_interior = (
+            f"{base_asset}_Interior" in bpy.data.collections
+            or bpy.data.collections.get(f"{base_asset}_Interior_LOD0") is not None
+        )
+
+        ext_col = get_or_create_cameras_collection(context, asset_name=base_asset, is_interior=False)
+        inte_col = (
+            get_or_create_cameras_collection(context, asset_name=base_asset, is_interior=True) if has_interior else None
+        )
+
+        target_eye_col = inte_col or ext_col
+        if not target_eye_col:
             self.report({"ERROR"}, "Could not create cameras collection.")
             return {"CANCELLED"}
 
         # 1. Resolve Datum Position from active scene or companion flight_model.cfg
-        datum_empty: Optional[Object] = None
-        for obj in context.scene.objects:
-            if obj.get("msfs_id") == DATUM_POINT_ID:
-                datum_empty = obj
-                break
+        datum_empty: Optional[Object] = bpy.data.objects.get("Datum") or bpy.data.objects.get("MSFS_Datum")
+        if not datum_empty:
+            for obj in context.scene.objects:
+                if obj.get("msfs_id") == DATUM_POINT_ID:
+                    datum_empty = obj
+                    break
 
         # 2. Setup Eyepoint Marker (in Blender meters relative to datum)
         eyepoint_ft = cam_config.eyepoint_ft
@@ -135,16 +177,18 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
         )
 
         eye_empty: Optional[Object] = None
-        for obj in col.objects:
-            if obj.get("msfs_id") == "VIEWS:eyepoint":
+        for obj in target_eye_col.objects:
+            if obj.get("msfs_id") == "VIEWS:eyepoint" or obj.name in ("Eyepoint", "MSFS_Eyepoint"):
                 eye_empty = obj
                 break
 
         if not eye_empty:
-            eye_empty = bpy.data.objects.new("MSFS_Eyepoint", None)
-            col.objects.link(eye_empty)
+            eye_empty = bpy.data.objects.new("Eyepoint", None)
+            target_eye_col.objects.link(eye_empty)
             if datum_empty:
                 eye_empty.parent = datum_empty
+        else:
+            eye_empty.name = "Eyepoint"
 
         if eye_empty is None:
             self.report({"ERROR"}, "Failed to create Eyepoint empty.")
@@ -161,10 +205,15 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
         # 3. Spawn / Update Blender Camera Objects
         count = 0
         for cam in cam_config.cameras:
-            cam_name = f"MSFS_Cam_{cam.index}_{cam.title or cam.category}"
-            cam_obj: Optional[Object] = None
+            clean_title = re.sub(r"[^\w]", "_", cam.title or cam.category or f"Cam_{cam.index}").strip("_")
+            cam_name = f"Cam_{cam.index}_{clean_title}"
+            is_vc = cam.origin == "Virtual Cockpit"
+            target_col = inte_col if is_vc and inte_col else ext_col
+            if not target_col:
+                continue
 
-            for obj in col.objects:
+            cam_obj: Optional[Object] = None
+            for obj in target_col.objects:
                 if obj.get("msfs_camera_guid") == cam.guid or obj.get("msfs_camera_index") == cam.index:
                     cam_obj = obj
                     break
@@ -172,8 +221,9 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
             if not cam_obj:
                 camera_data = bpy.data.cameras.new(name=cam_name)
                 cam_obj = bpy.data.objects.new(cam_name, camera_data)
-                col.objects.link(cam_obj)
+                target_col.objects.link(cam_obj)
             else:
+                cam_obj.name = cam_name
                 camera_data = cam_obj.data
 
             if cam_obj is None or camera_data is None:
@@ -195,12 +245,14 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
             # Blender space: X=Lat, Y=Long, Z=Vert
             offset_blender_m = (init_x, init_z, init_y)
 
-            if cam.origin == "Virtual Cockpit":
+            if is_vc and eye_empty:
                 # Relative to Eyepoint
                 cam_obj.parent = eye_empty
                 cam_obj.location = offset_blender_m
+            elif datum_empty:
+                cam_obj.parent = datum_empty
+                cam_obj.location = offset_blender_m
             else:
-                # "Center" -> Model space (relative to mesh origin)
                 cam_obj.parent = None
                 cam_obj.location = offset_blender_m
 
@@ -214,7 +266,6 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
             cam_obj["msfs_camera_subcategory"] = cam.subcategory
             count += 1
 
-        props = getattr(context.scene, "lod_tool", None)
         if props:
             props.msfs_cameras_cfg_path = target_file
             props.msfs_spatial_status = f"Imported {count} cameras"
@@ -254,17 +305,28 @@ class OMNIMESH_OT_export_msfs_cameras(Operator):
             self.report({"ERROR"}, f"Failed reading {target_file}: {exc}")
             return {"CANCELLED"}
 
-        col = bpy.data.collections.get(CAMERAS_COLLECTION_NAME)
-        if not col:
-            self.report({"WARNING"}, "No MSFS cameras collection found.")
+        # Collect candidate cameras and eyepoint across all collections in the scene
+        candidate_objs = [
+            o
+            for o in getattr(context.scene, "objects", [])
+            if o.get("msfs_camera_index") is not None or o.get("msfs_id") == "VIEWS:eyepoint"
+        ]
+        if not candidate_objs and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
+            candidate_objs = [
+                o
+                for o in bpy.data.objects
+                if o.get("msfs_camera_index") is not None or o.get("msfs_id") == "VIEWS:eyepoint"
+            ]
+        if not candidate_objs:
+            self.report({"WARNING"}, "No cameras found in scene to synchronize.")
             return {"CANCELLED"}
 
         depsgraph = context.evaluated_depsgraph_get()
 
         # Check for modified eyepoint
         eye_empty: Optional[Object] = None
-        for obj in col.objects:
-            if obj.get("msfs_id") == "VIEWS:eyepoint":
+        for obj in candidate_objs:
+            if obj.get("msfs_id") == "VIEWS:eyepoint" or obj.name in ("Eyepoint", "MSFS_Eyepoint"):
                 eye_empty = obj
                 break
 
@@ -280,7 +342,7 @@ class OMNIMESH_OT_export_msfs_cameras(Operator):
 
         updated_cams: dict[str, CameraDefinition] = {}
 
-        for obj in col.objects:
+        for obj in candidate_objs:
             guid = obj.get("msfs_camera_guid")
             idx = obj.get("msfs_camera_index")
             if guid is None and idx is None:
@@ -395,23 +457,35 @@ class OMNIMESH_OT_restore_scene_camera(Operator):
     def poll(cls, context: Any) -> bool:
         if not bpy or not context or not context.scene:
             return False
-        prev_name = context.scene.get("omnimesh_previous_scene_camera")
-        return bool(prev_name and prev_name in bpy.data.objects)
+        has_prev = bool(context.scene.get("omnimesh_previous_scene_camera"))
+        is_msfs_cam = bool(context.scene.camera and context.scene.camera.get("msfs_camera_index") is not None)
+        return has_prev or is_msfs_cam
 
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context or not context.scene:
             return {"CANCELLED"}
 
         prev_name = context.scene.get("omnimesh_previous_scene_camera")
-        if not prev_name or prev_name not in bpy.data.objects:
-            self.report({"WARNING"}, "No previous scene camera recorded.")
-            return {"CANCELLED"}
+        if prev_name and prev_name in bpy.data.objects:
+            orig_cam = bpy.data.objects[prev_name]
+            context.scene.camera = orig_cam
+            self.report({"INFO"}, f"Restored active camera to {orig_cam.name}")
+        else:
+            context.scene.camera = None
+            self.report({"INFO"}, "Exited camera view to free perspective.")
 
-        orig_cam = bpy.data.objects[prev_name]
-        context.scene.camera = orig_cam
-        del context.scene["omnimesh_previous_scene_camera"]
+        if "omnimesh_previous_scene_camera" in context.scene:
+            del context.scene["omnimesh_previous_scene_camera"]
 
-        self.report({"INFO"}, f"Restored active camera to {orig_cam.name}")
+        # Reset 3D viewport back to User Perspective
+        if hasattr(context, "screen") and context.screen:
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    for space in area.spaces:
+                        if space.type == "VIEW_3D":
+                            space.region_3d.view_perspective = "PERSP"
+                            break
+
         return {"FINISHED"}
 
 

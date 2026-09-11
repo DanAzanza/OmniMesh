@@ -14,12 +14,17 @@ from typing import Any, Optional
 
 try:
     import bpy
+    from bpy.props import StringProperty
     from bpy.types import Collection, Object, Operator
 except ImportError:
     bpy = None
     Collection = object
     Object = object
     Operator = object
+
+    def StringProperty(**kwargs: Any) -> Any:
+        return ""
+
 
 try:
     from ..core.msfs_cst_parser import MSFSCSTParser
@@ -44,32 +49,47 @@ except (ImportError, ValueError):
 
 logger = logging.getLogger(__name__)
 
-LIGHTS_COLLECTION_NAME = "MSFS_Spatial_Lights"
-PARENT_COLLECTION_NAME = "MSFS_Spatial_Config"
+
+def find_lights_collection(context: Any) -> Optional[Collection]:
+    """Finds existing lights collection by role tag, asset name, or legacy name."""
+    if not bpy:
+        return None
+    for col in bpy.data.collections:
+        if col.get("_omnimesh_role") == "LIGHTS":
+            return col
+    props = getattr(getattr(context, "scene", None), "lod_tool", None)
+    asset_name = getattr(props, "export_base_name", "") if props else ""
+    if asset_name and f"{asset_name}_Lights" in bpy.data.collections:
+        return bpy.data.collections[f"{asset_name}_Lights"]
+    for name in ("Lights", "MSFS_Spatial_Lights"):
+        if name in bpy.data.collections:
+            return bpy.data.collections[name]
+    return None
 
 
 def get_or_create_lights_collection(context: Any) -> Optional[Collection]:
-    """Finds or creates the dedicated MSFS_Spatial_Lights collection in the active scene."""
-    if not bpy:
+    """Finds or creates the dedicated lights collection in the active scene."""
+    if not bpy or not context:
         return None
 
-    scene = context.scene
-    parent_col = bpy.data.collections.get(PARENT_COLLECTION_NAME)
-    if not parent_col:
-        parent_col = bpy.data.collections.new(PARENT_COLLECTION_NAME)
-        scene.collection.children.link(parent_col)
+    existing = find_lights_collection(context)
+    if existing:
+        return existing
 
-    lights_col = bpy.data.collections.get(LIGHTS_COLLECTION_NAME)
-    if not lights_col:
-        lights_col = bpy.data.collections.new(LIGHTS_COLLECTION_NAME)
-        parent_col.children.link(lights_col)
-    elif lights_col.name not in parent_col.children:
-        try:
-            parent_col.children.link(lights_col)
-        except RuntimeError:
-            pass
+    props = getattr(context.scene, "lod_tool", None)
+    asset_name = getattr(props, "export_base_name", "") if props else ""
+    if not asset_name:
+        asset_name = "Asset"
 
-    return lights_col
+    try:
+        from .utils import get_or_create_engine_import_collection
+
+        return get_or_create_engine_import_collection(context, asset_name, "LIGHTS")
+    except Exception:
+        col = bpy.data.collections.new(f"{asset_name}_Lights")
+        context.scene.collection.children.link(col)
+        col["_omnimesh_role"] = "LIGHTS"
+        return col
 
 
 class OMNIMESH_OT_import_msfs_lights(Operator):
@@ -80,24 +100,16 @@ class OMNIMESH_OT_import_msfs_lights(Operator):
     bl_description = "Parse [LIGHTS] from systems.cfg or light.cfg and spawn visual Point/Spot lights"
     bl_options = {"REGISTER", "UNDO"}
 
-    filepath: Any = (
-        bpy.props.StringProperty(
-            name="File Path",
-            description="Path to systems.cfg or light.cfg",
-            subtype="FILE_PATH",
-            default="",
-        )
-        if bpy
-        else ""
+    filepath: StringProperty(
+        name="File Path",
+        description="Path to systems.cfg or light.cfg",
+        subtype="FILE_PATH",
+        default="",
     )
 
-    filter_glob: Any = (
-        bpy.props.StringProperty(
-            default="*.cfg",
-            options={"HIDDEN"},
-        )
-        if bpy
-        else "*.cfg"
+    filter_glob: StringProperty(
+        default="*.cfg",
+        options={"HIDDEN"},
     )
 
     def invoke(self, context: Any, event: Any) -> set[str]:
@@ -146,8 +158,8 @@ class OMNIMESH_OT_import_msfs_lights(Operator):
             self.report({"ERROR"}, "Failed to access lights collection.")
             return {"CANCELLED"}
 
-        # Find MSFS_Datum empty in scene for airframe-relative lights
-        datum_empty = bpy.data.objects.get("MSFS_Datum")
+        # Find Datum empty in scene for airframe-relative lights
+        datum_empty = bpy.data.objects.get("Datum") or bpy.data.objects.get("MSFS_Datum")
 
         count = 0
         for light in config.lights:
@@ -214,12 +226,26 @@ class OMNIMESH_OT_import_msfs_lights(Operator):
             energy = 100.0
             color = (1.0, 0.05, 0.0)  # Red Beacon
 
-        light_name = f"MSFS_Light_{light.light_type}_{light.light_index}"
+        type_labels = {
+            1: "Beacon",
+            2: "Strobe",
+            3: "Nav",
+            5: "Landing",
+            6: "Taxi",
+            7: "Recognition",
+            8: "Wing",
+            9: "Logo",
+            10: "Cabin",
+        }
+        lbl = type_labels.get(light.light_type, f"Type{light.light_type}")
         if light.em_mesh:
-            light_name = f"MSFS_Light_{light.em_mesh}"
+            light_name = f"Light_{light.em_mesh}"
+        else:
+            light_name = f"Light_{lbl}_{light.light_index}"
 
         if existing and existing.type == "LIGHT":
             light_obj = existing
+            light_obj.name = light_name
             light_data = light_obj.data
             if light_data.type != light_data_type:
                 light_data.type = light_data_type
@@ -236,37 +262,40 @@ class OMNIMESH_OT_import_msfs_lights(Operator):
 
         # 2. Rotation & Orientation
         if light_data_type == "SPOT":
-            pbh = light.rotation_pbh_deg
-            euler_rot = msfs_pbh_to_blender_rotation(pbh[0], pbh[1], pbh[2])
-            light_obj.rotation_euler = euler_rot
+            p_deg, b_deg, h_deg = light.rotation_pbh_deg
+            rx, ry, rz = msfs_pbh_to_blender_rotation(p_deg, b_deg, h_deg)
+            light_obj.rotation_euler = (rx, ry, rz)
+        else:
+            light_obj.rotation_euler = (0.0, 0.0, 0.0)
 
-        # 3. Parenting & Location
-        # Check for EmMesh node-relative attachment
-        parent_node: Optional[Object] = None
+        # 3. Parenting & Placement
+        coords_ft = light.coords_msfs_rel_ft
+        local_pos_m = (
+            coords_ft[1] * FEET_TO_METERS,  # Lateral -> X
+            coords_ft[0] * FEET_TO_METERS,  # Longitudinal -> Y
+            coords_ft[2] * FEET_TO_METERS,  # Vertical -> Z
+        )
+
+        parent_node = None
         if light.em_mesh:
             parent_node = bpy.data.objects.get(light.em_mesh)
 
-        target_parent = parent_node or datum_empty
-        if target_parent and light_obj.parent != target_parent:
-            light_obj.parent = target_parent
+        if not parent_node:
+            parent_node = datum_empty
 
-        # Position in parent local space
-        rel = light.coords_msfs_rel_ft
-        local_m = (
-            rel[1] * FEET_TO_METERS,
-            rel[0] * FEET_TO_METERS,
-            rel[2] * FEET_TO_METERS,
-        )
-        light_obj.location = local_m
+        if parent_node and light_obj != parent_node and light_obj.parent != parent_node:
+            light_obj.parent = parent_node
 
-        # Custom Properties
+        light_obj.location = local_pos_m
+
+        # 4. Custom Properties for round-trip sync
         light_obj["msfs_id"] = light.point_id
-        light_obj["msfs_section"] = light.section
         light_obj["msfs_key"] = light.key
         light_obj["msfs_type"] = "LIGHT"
         light_obj["msfs_light_type"] = light.light_type
         light_obj["msfs_light_index"] = light.light_index
         light_obj["msfs_em_mesh"] = light.em_mesh
+        light_obj["msfs_effect_file"] = light.effect_file
 
         return light_obj
 
@@ -304,9 +333,14 @@ class OMNIMESH_OT_export_msfs_lights(Operator):
             self.report({"ERROR"}, f"Failed reading source config: {exc}")
             return {"CANCELLED"}
 
-        lights_col = bpy.data.collections.get(LIGHTS_COLLECTION_NAME)
-        if not lights_col:
-            self.report({"ERROR"}, f"Collection '{LIGHTS_COLLECTION_NAME}' not found.")
+        lights_col = find_lights_collection(context)
+        search_objs = (
+            list(lights_col.objects)
+            if lights_col
+            else [o for o in context.scene.objects if str(o.get("msfs_id", "")).startswith("LIGHTS:")]
+        )
+        if not search_objs:
+            self.report({"WARNING"}, "No lights found in scene to synchronize.")
             return {"CANCELLED"}
 
         depsgraph = context.evaluated_depsgraph_get()
@@ -314,7 +348,7 @@ class OMNIMESH_OT_export_msfs_lights(Operator):
         updated_rotations: dict[str, tuple[float, float, float]] = {}
 
         # Scan for existing and new mirrored lights
-        for obj in lights_col.objects:
+        for obj in search_objs:
             point_id = str(obj.get("msfs_id", ""))
             if not point_id or not point_id.startswith("LIGHTS:"):
                 continue

@@ -31,11 +31,14 @@ if __package__:
         chunking,
         collision,
         decimator,
+        engine_import_presets,
+        gltf_assembly,
         hierarchy,
         impostor,
         materials,
         metrics,
         modifiers,
+        msfs_project_scanner,
         normals,
         occlusion,
         pbr_importer,
@@ -52,6 +55,7 @@ if __package__:
         batch_panel,
         chunk_ops,
         cleanup_ops,
+        engine_import_ops,
         hud,
         hull_impostor_ops,
         lists,
@@ -76,11 +80,14 @@ else:
         chunking,
         collision,
         decimator,
+        engine_import_presets,
+        gltf_assembly,
         hierarchy,
         impostor,
         materials,
         metrics,
         modifiers,
+        msfs_project_scanner,
         normals,
         occlusion,
         pbr_importer,
@@ -97,6 +104,7 @@ else:
         batch_panel,
         chunk_ops,
         cleanup_ops,
+        engine_import_ops,
         hud,
         hull_impostor_ops,
         lists,
@@ -144,6 +152,9 @@ if _OMNIMESH_RELOAD:
         textures,
         animations,
         batch,
+        engine_import_presets,
+        gltf_assembly,
+        msfs_project_scanner,
         simulator,
     ):
         importlib.reload(mod)
@@ -177,6 +188,7 @@ if _OMNIMESH_RELOAD:
         batch_panel,
         split_preview,
         hud,
+        engine_import_ops,
         msfs_spatial_ops,
         msfs_ground_ops,
         msfs_lighting_ops,
@@ -189,6 +201,7 @@ def register():
     properties.register_properties()
     lists.register_lists()
     operators.register_operators()
+    engine_import_ops.register()
     msfs_spatial_ops.register()
     msfs_ground_ops.register()
     msfs_lighting_ops.register()
@@ -213,6 +226,7 @@ def unregister():
         msfs_lighting_ops.unregister,
         msfs_ground_ops.unregister,
         msfs_spatial_ops.unregister,
+        engine_import_ops.unregister,
         operators.unregister_operators,
         lists.unregister_lists,
         properties.unregister_properties,

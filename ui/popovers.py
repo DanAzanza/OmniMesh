@@ -592,7 +592,63 @@ class OMNIMESH_PT_popover_export_preset(Panel):
                     row_ch.prop(active_map, f"invert_{ch}", text="Invert")
 
 
+class OMNIMESH_PT_popover_engine_import_preset(Panel):
+    """Popover for configuring engine project package import options (toggles, model target, optimization)."""
+
+    bl_idname = "OMNIMESH_PT_popover_engine_import_preset"
+    bl_label = "Engine Import Settings"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "HEADER"
+    bl_ui_units_x = 20
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        try:
+            from ..core.engine_import_presets import (
+                DEFAULT_ENGINE_IMPORT_PRESET_ID,
+                EngineImportPresetManager,
+            )
+        except (ImportError, ValueError):
+            from core.engine_import_presets import (
+                DEFAULT_ENGINE_IMPORT_PRESET_ID,
+                EngineImportPresetManager,
+            )
+
+        preset_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
+        preset = EngineImportPresetManager.get_preset(preset_id)
+
+        layout.label(text=preset.get("name", preset_id), icon="PACKAGE")
+        desc = preset.get("description", "")
+        if desc:
+            layout.label(text=desc)
+
+        layout.separator()
+        layout.label(text="Package Components to Ingest", icon="CHECKBOX_HLT")
+        box_comp = layout.box()
+        box_comp.prop(props, "engine_import_geometry", text="Geometry & Multi-LODs")
+        box_comp.prop(props, "engine_import_spatial", text="Spatial Markers (Datum, CG, Wheels)")
+        box_comp.prop(props, "engine_import_lights", text="Aviation Lights (Nav, Strobe, Landing)")
+        box_comp.prop(props, "engine_import_cameras", text="Cameras (Pilot, Cockpit, External)")
+
+        layout.separator()
+        layout.label(text="Model Target Selection", icon="OUTLINER_OB_MESH")
+        layout.prop(props, "engine_import_model_target", text="Target")
+
+        layout.separator()
+        layout.label(text="Pipeline Optimizations", icon="MODIFIER")
+        box_opt = layout.box()
+        box_opt.prop(props, "engine_import_use_lod0_suffix", text="Use '_LOD0' Suffix")
+        box_opt.prop(props, "engine_import_auto_assign_screen_pct", text="Auto-Assign minSize to Screen %")
+        box_opt.prop(props, "engine_import_deduplicate_materials", text="Deduplicate Re-imported Materials")
+        box_opt.prop(props, "engine_import_reuse_master_rig", text="Reuse Master Armature Rig")
+
+
 POPOVER_CLASSES = (
+    OMNIMESH_PT_popover_engine_import_preset,
     OMNIMESH_PT_popover_import_preset,
     OMNIMESH_PT_popover_sanitize,
     OMNIMESH_PT_popover_materials,

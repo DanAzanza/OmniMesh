@@ -62,11 +62,11 @@ def test_panel_class_hierarchy_and_order():
     assert SUBPANEL_CLASSES[1].bl_idname == "OMNIMESH_PT_export_msfs_spatial"
 
     # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
-    assert len(POPOVER_CLASSES) == 10
+    assert len(POPOVER_CLASSES) == 11
     for popover_cls in POPOVER_CLASSES:
         assert getattr(popover_cls, "bl_space_type", None) == "VIEW_3D"
         assert getattr(popover_cls, "bl_region_type", None) == "HEADER"
-        assert getattr(popover_cls, "bl_ui_units_x", None) in {16, 18, 22}
+        assert getattr(popover_cls, "bl_ui_units_x", None) in {16, 18, 20, 22}
         # Popovers must NOT have bl_category or bl_parent_id
         assert not hasattr(popover_cls, "bl_category")
         assert not hasattr(popover_cls, "bl_parent_id")
@@ -74,7 +74,7 @@ def test_panel_class_hierarchy_and_order():
     # Registration tuple (parent-first topological order)
     assert len(PRIMARY_PANELS) == 4
     assert len(SUBPANEL_CLASSES) == 2
-    assert len(PANEL_CLASSES) == 16
+    assert len(PANEL_CLASSES) == 17
     assert PANEL_CLASSES[0] is OMNIMESH_PT_import
     assert PANEL_CLASSES[1] is OMNIMESH_PT_modify
     assert PANEL_CLASSES[2] is OMNIMESH_PT_lods

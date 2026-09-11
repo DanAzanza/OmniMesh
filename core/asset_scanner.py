@@ -1,6 +1,6 @@
 """
 Asset and scene collection scanner for OmniMesh.
-Identifies root asset collections, inspects scene Ist-Zustand, and computes LOD sync states.
+Identifies root asset collections, inspects current scene state, and computes LOD sync states.
 """
 
 from __future__ import annotations

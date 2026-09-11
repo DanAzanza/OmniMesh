@@ -1,0 +1,15 @@
+{
+  "$schema": "omnimesh_engine_import_preset",
+  "name": "MSFS 2024 Aircraft",
+  "description": "Microsoft Flight Simulator 2024 / 2020 Aircraft Project Package Importer (LOD glTFs, spatial markers, lighting, and cameras)",
+  "engine": "MSFS_2024",
+  "import_geometry": true,
+  "import_spatial": true,
+  "import_lights": true,
+  "import_cameras": true,
+  "model_target": "BOTH_SEPARATE",
+  "use_lod0_suffix": true,
+  "auto_assign_screen_pct": true,
+  "deduplicate_materials": true,
+  "reuse_master_rig": true
+}

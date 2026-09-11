@@ -12,6 +12,10 @@ from .lod_properties import sync_preset_tiers_from_preset
 from .pbr_properties import sync_export_maps_from_preset, sync_maps_from_preset
 
 try:
+    from ...core.engine_import_presets import (
+        DEFAULT_ENGINE_IMPORT_PRESET_ID,
+        EngineImportPresetManager,
+    )
     from ...core.lod_presets import (
         DEFAULT_LOD_PRESET_ID,
         LODPresetManager,
@@ -33,6 +37,10 @@ try:
         resolve_effective_asset_name,
     )
 except (ImportError, ValueError):
+    from core.engine_import_presets import (
+        DEFAULT_ENGINE_IMPORT_PRESET_ID,
+        EngineImportPresetManager,
+    )
     from core.lod_presets import (
         DEFAULT_LOD_PRESET_ID,
         LODPresetManager,
@@ -410,14 +418,54 @@ def get_lod_preset_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
         return [("unreal_engine_5", "Unreal Engine 5 (Standard)", "Default template")]
 
 
+_ASSET_LOD_STATE_CACHE: dict[str, list[dict[str, Any]]] = {}
+_LAST_ACTIVE_ASSET_NAME: str = ""
+
+
+def serialize_asset_lod_state(props: Any, asset_name: str) -> None:
+    """Caches customized LOD tier properties for the given asset before switching away."""
+    if not props or not hasattr(props, "lods") or not asset_name or asset_name in ("AUTO", "NONE"):
+        return
+    tier_list = []
+    for tier in props.lods:
+        tier_list.append(
+            {
+                "name": getattr(tier, "name", "LOD"),
+                "lod_index": getattr(tier, "lod_index", 0),
+                "level_index": getattr(tier, "level_index", 0),
+                "screen_size_pct": getattr(tier, "screen_size_pct", 50.0),
+                "target_tris_pct": getattr(tier, "target_tris_pct", 50.0),
+                "target_tris": getattr(tier, "target_tris", 1000),
+                "triangle_target": getattr(tier, "triangle_target", 1000),
+                "is_impostor": getattr(tier, "is_impostor", False),
+                "last_baked_target_pct": getattr(tier, "last_baked_target_pct", -1.0),
+                "last_baked_screen_pct": getattr(tier, "last_baked_screen_pct", -1.0),
+                "state": getattr(tier, "state", "PLANNED"),
+            }
+        )
+    _ASSET_LOD_STATE_CACHE[asset_name] = tier_list
+
+
+def on_active_asset_updated(props: Any, context: Any) -> None:
+    """Callback when user switches the active asset dropdown."""
+    global _LAST_ACTIVE_ASSET_NAME
+    curr = getattr(props, "export_base_name", "") or _LAST_ACTIVE_ASSET_NAME
+    if curr and curr not in ("AUTO", "NONE"):
+        serialize_asset_lod_state(props, curr)
+    new_asset = getattr(props, "active_asset", "")
+    _LAST_ACTIVE_ASSET_NAME = new_asset
+    project_preset_tiers(props, context, asset_name=new_asset)
+
+
 def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") -> None:
-    """
-    Projects preset LOD tiers onto props.lods based on the resolved asset and preset definition.
-    Inspects scene Ist-Zustand:
+    """Projects preset LOD tiers onto props.lods based on the resolved asset and preset definition.
+
+    Inspects current scene state:
     - Tier 0 is marked SOURCE (read-only baseline).
     - If sibling collections exist in the scene, compares targets with last baked values:
       sets BAKED if matching, or OUT_OF_SYNC if modified.
     - If collection does not exist in the scene, sets PLANNED.
+    Restores cached tier state if previously tuned by user.
     """
     if not props:
         return
@@ -437,8 +485,18 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") 
         base_tris += len(obj.data.polygons) if hasattr(obj, "data") and hasattr(obj.data, "polygons") else 0
         total_mat_slots += len(obj.material_slots) if hasattr(obj, "material_slots") else 0
         m_w = getattr(obj, "matrix_world", None)
-        if m_w and hasattr(obj, "data") and hasattr(obj.data, "vertices"):
-            all_coords.extend([m_w @ v.co for v in obj.data.vertices])
+        if m_w:
+            bbox = getattr(obj, "bound_box", None)
+            if bbox:
+                try:
+                    from mathutils import Vector
+
+                    all_coords.extend([m_w @ Vector(b) for b in bbox])
+                except Exception:
+                    if hasattr(obj, "data") and hasattr(obj.data, "vertices"):
+                        all_coords.extend([m_w @ v.co for v in obj.data.vertices])
+            elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
+                all_coords.extend([m_w @ v.co for v in obj.data.vertices])
 
     radius = 1.0
     center = (0.0, 0.0, 0.0)
@@ -472,7 +530,8 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") 
 
     preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
     preset_data = LODPresetManager.get_preset(preset_id)
-    preset_tiers = preset_data.get("tiers", [])
+    cached_tiers = _ASSET_LOD_STATE_CACHE.get(asset_name)
+    preset_tiers = cached_tiers if cached_tiers else preset_data.get("tiers", [])
 
     props.lods.clear()
     for i, t_def in enumerate(preset_tiers):
@@ -566,6 +625,55 @@ def get_pbr_export_preset_items(self: Any, context: Any) -> list[tuple[str, str,
 
 get_pbr_preset_items = get_pbr_export_preset_items
 
+
+def get_engine_import_preset_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
+    """Dynamic enum items for Engine / Project Importer Presets."""
+    try:
+        return EngineImportPresetManager.get_enum_items()
+    except Exception:
+        return [(DEFAULT_ENGINE_IMPORT_PRESET_ID, "MSFS 2024 Aircraft", "MSFS 2024 Aircraft Project Importer")]
+
+
+def on_engine_import_preset_updated(self: Any, context: Any) -> None:
+    """Synchronizes active engine import preset selection with settings properties."""
+    if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked():
+        return
+    preset_id = getattr(self, "engine_import_preset", "")
+    if not preset_id:
+        return
+    preset = EngineImportPresetManager.get_preset(preset_id)
+    with PresetSyncGuard():
+        if hasattr(self, "engine_import_geometry"):
+            self.engine_import_geometry = bool(preset.get("import_geometry", True))
+        if hasattr(self, "engine_import_spatial"):
+            self.engine_import_spatial = bool(preset.get("import_spatial", True))
+        if hasattr(self, "engine_import_lights"):
+            self.engine_import_lights = bool(preset.get("import_lights", True))
+        if hasattr(self, "engine_import_cameras"):
+            self.engine_import_cameras = bool(preset.get("import_cameras", True))
+        if hasattr(self, "engine_import_model_target"):
+            self.engine_import_model_target = str(preset.get("model_target", "EXTERIOR_ONLY"))
+        if hasattr(self, "engine_import_use_lod0_suffix"):
+            self.engine_import_use_lod0_suffix = bool(preset.get("use_lod0_suffix", True))
+        if hasattr(self, "engine_import_auto_assign_screen_pct"):
+            self.engine_import_auto_assign_screen_pct = bool(preset.get("auto_assign_screen_pct", True))
+        if hasattr(self, "engine_import_deduplicate_materials"):
+            self.engine_import_deduplicate_materials = bool(preset.get("deduplicate_materials", True))
+        if hasattr(self, "engine_import_reuse_master_rig"):
+            self.engine_import_reuse_master_rig = bool(preset.get("reuse_master_rig", True))
+
+
+def on_engine_import_directory_updated(self: Any, _context: Any) -> None:
+    """Persists engine import directory path across sessions."""
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, "engine_import_directory", "")
+    try:
+        set_pipeline_setting("engine_import_directory", val)
+    except Exception as exc:
+        logger.debug("Persist engine import directory: %s", exc)
+
+
 __all__ = [
     "ENGINE_TO_FACTORY_PRESET",
     "update_bridge_status_cached",
@@ -593,4 +701,7 @@ __all__ = [
     "get_pbr_import_preset_items",
     "get_pbr_export_preset_items",
     "get_pbr_preset_items",
+    "get_engine_import_preset_items",
+    "on_engine_import_preset_updated",
+    "on_engine_import_directory_updated",
 ]

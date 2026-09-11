@@ -285,7 +285,15 @@ def get_available_asset_names(context: Any) -> list[str]:
         # Ignore derivative / auxiliary collections
         if any(f"_LOD{n}" in c_name for n in range(1, 11)):
             continue
-        if "_Colliders" in c_name or "_Impostor" in c_name or "_Chunks" in c_name or "_HLOD" in c_name:
+        if (
+            "_Colliders" in c_name
+            or "_Impostor" in c_name
+            or "_Chunks" in c_name
+            or "_HLOD" in c_name
+            or "_Spatial" in c_name
+            or "_Lights" in c_name
+            or "_Cameras" in c_name
+        ):
             continue
         if getattr(context, "scene", None) and coll == context.scene.collection:
             continue
@@ -360,7 +368,15 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
             stem = c_name
             for n in range(0, 11):
                 stem = stem.split(f"_LOD{n}")[0]
-            stem = stem.split("_Colliders")[0].split("_Impostor")[0].split("_Chunks")[0].split("_HLOD")[0]
+            stem = (
+                stem.split("_Colliders")[0]
+                .split("_Impostor")[0]
+                .split("_Chunks")[0]
+                .split("_HLOD")[0]
+                .split("_Spatial")[0]
+                .split("_Lights")[0]
+                .split("_Cameras")[0]
+            )
             if stem in available:
                 return stem
 
@@ -370,6 +386,22 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
         stem = active_obj.name.split("_LOD")[0].split("_Collider")[0].split("_Impostor")[0]
         if stem in available:
             return stem
+        if hasattr(active_obj, "users_collection"):
+            for uc in active_obj.users_collection:
+                u_stem = uc.name
+                for n in range(0, 11):
+                    u_stem = u_stem.split(f"_LOD{n}")[0]
+                u_stem = (
+                    u_stem.split("_Colliders")[0]
+                    .split("_Impostor")[0]
+                    .split("_Chunks")[0]
+                    .split("_HLOD")[0]
+                    .split("_Spatial")[0]
+                    .split("_Lights")[0]
+                    .split("_Cameras")[0]
+                )
+                if u_stem in available:
+                    return u_stem
 
     # Fallback to first available asset
     if available:
@@ -489,9 +521,142 @@ def get_asset_enum_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
     global _CACHED_ASSET_ITEMS
     names = get_available_asset_names(context)
     items = [("AUTO", "AUTO (Follow Outliner)", "Dynamically follows active collection in the Outliner")]
+
+    base_names = {n for n in names if not n.endswith("_Interior")}
+
     for n in names:
-        items.append((n, n, f"Asset collection: {n}"))
+        if n.endswith("_Interior"):
+            parent_base = n[:-9]
+            label = f"{n} [Cockpit / Interior]"
+            desc = f"Cockpit / flight deck model for '{parent_base}'"
+        else:
+            has_submodels = any(other != n and other.startswith(f"{n}_") for other in names)
+            is_variant = any(n != b and n.startswith(f"{b}_") for b in base_names)
+            if is_variant:
+                matching_base = next(b for b in base_names if n != b and n.startswith(f"{b}_"))
+                variant_name = n[len(matching_base) + 1 :]
+                label = f"{n} [Variant: {variant_name}]"
+                desc = f"Geometry variant '{variant_name}' for '{matching_base}'"
+            elif has_submodels:
+                label = f"{n} [Base / Exterior]"
+                desc = f"Main exterior airframe model for '{n}'"
+            else:
+                label = n
+                desc = f"Asset model collection: {n}"
+
+        items.append((n, label, desc))
+
     if len(items) == 1:
         items.append(("NONE", "No Assets Found", "Create a root collection with meshes"))
     _CACHED_ASSET_ITEMS = items
     return _CACHED_ASSET_ITEMS
+
+
+def get_or_create_engine_import_collection(
+    context: Any,
+    asset_name: str,
+    role: str,
+    use_lod0_suffix: bool = True,
+) -> Any | None:
+    """Finds or creates a collection adhering to OmniMesh's neutral engine package hierarchy.
+
+    Structure:
+    {AssetName} (Root Package Collection)
+       ├── {AssetName}_LOD0 (or {AssetName})
+       │    ├── {AssetName}_Spatial
+       │    ├── {AssetName}_Lights
+       │    └── {AssetName}_Cameras
+       ├── {AssetName}_LOD1
+       └── {AssetName}_LODN
+    """
+    if not bpy or not context:
+        return None
+
+    clean_asset = asset_name.strip() or "Asset"
+    scene = context.scene
+
+    # 1. Root Model Collection
+    root_col = bpy.data.collections.get(clean_asset)
+    if not root_col:
+        root_col = bpy.data.collections.new(clean_asset)
+        scene.collection.children.link(root_col)
+    elif root_col.name not in scene.collection.children:
+        try:
+            scene.collection.children.link(root_col)
+        except RuntimeError:
+            pass
+
+    if clean_asset.endswith("_Interior"):
+        root_col["_omnimesh_role"] = "INTERIOR"
+        root_col["_omnimesh_parent"] = clean_asset[:-9]
+    elif role.upper() == "VARIANT" or (
+        "_" in clean_asset
+        and not any(clean_asset.endswith(f"_LOD{n}") for n in range(11))
+        and any(
+            getattr(c, "name", "") != clean_asset and clean_asset.startswith(f"{getattr(c, 'name', '')}_")
+            for c in getattr(scene.collection, "children", [])
+        )
+    ):
+        root_col["_omnimesh_role"] = "VARIANT"
+        matching_parent = next(
+            (
+                getattr(c, "name", "")
+                for c in getattr(scene.collection, "children", [])
+                if getattr(c, "name", "") != clean_asset and clean_asset.startswith(f"{getattr(c, 'name', '')}_")
+            ),
+            "",
+        )
+        if matching_parent:
+            root_col["_omnimesh_parent"] = matching_parent
+            root_col["_omnimesh_variant_id"] = clean_asset[len(matching_parent) + 1 :]
+    else:
+        root_col["_omnimesh_role"] = "MODEL_ROOT"
+
+    if role.upper() in ("ROOT", "PACKAGE_ROOT", "MODEL_ROOT"):
+        return root_col
+
+    # 2. Determine Sub-Collection Name
+    role_upper = role.upper()
+    if role_upper == "LOD0":
+        sub_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
+    elif role_upper.startswith("LOD"):
+        sub_name = f"{clean_asset}_{role_upper}"
+    elif role_upper == "SPATIAL":
+        sub_name = f"{clean_asset}_Spatial"
+    elif role_upper == "LIGHTS":
+        sub_name = f"{clean_asset}_Lights"
+    elif role_upper == "CAMERAS":
+        sub_name = f"{clean_asset}_Cameras"
+    else:
+        sub_name = f"{clean_asset}_{role}"
+
+    # Configuration collections (Spatial, Lights, Cameras) reside under LOD0
+    parent_col = root_col
+    if role_upper in ("SPATIAL", "LIGHTS", "CAMERAS"):
+        lod0_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
+        lod0_col = bpy.data.collections.get(lod0_name)
+        if not lod0_col:
+            lod0_col = bpy.data.collections.new(lod0_name)
+            root_col.children.link(lod0_col)
+            lod0_col["_omnimesh_role"] = "LOD0"
+        parent_col = lod0_col
+
+    sub_col = bpy.data.collections.get(sub_name)
+    if not sub_col:
+        sub_col = bpy.data.collections.new(sub_name)
+        parent_col.children.link(sub_col)
+    else:
+        if sub_col.name not in parent_col.children:
+            try:
+                parent_col.children.link(sub_col)
+            except RuntimeError:
+                pass
+        # If misplaced directly under root_col, unlink
+        if parent_col != root_col and sub_col.name in root_col.children:
+            try:
+                root_col.children.unlink(sub_col)
+            except RuntimeError:
+                pass
+
+    sub_col["_omnimesh_role"] = role_upper
+    return sub_col

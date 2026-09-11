@@ -105,27 +105,27 @@ def _mat_mul(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
 
 
 def _matrix_to_euler_xyz(m: list[list[float]]) -> tuple[float, float, float]:
-    """Extracts standard XYZ Euler angles (in radians) from a 3x3 rotation matrix."""
-    # Clamping for asin domain
-    m02 = max(-1.0, min(1.0, m[0][2]))
-    if abs(m02) < 0.9999999:
-        ry = math.asin(m02)
-        rx = math.atan2(-m[1][2], m[2][2])
-        rz = math.atan2(-m[0][1], m[0][0])
-    elif m02 <= -0.9999999:
-        ry = -math.pi / 2.0
-        rx = -math.atan2(m[1][0], m[1][1])
-        rz = 0.0
+    """Extracts standard Blender XYZ Euler angles (in radians) from a 3x3 rotation matrix M = Rz * Ry * Rx."""
+    m20 = max(-1.0, min(1.0, m[2][0]))
+    ry = math.asin(-m20)
+    cos_y = math.cos(ry)
+    if abs(cos_y) > 1e-6:
+        rx = math.atan2(m[2][1], m[2][2])
+        rz = math.atan2(m[1][0], m[0][0])
     else:
-        ry = math.pi / 2.0
-        rx = math.atan2(m[1][0], m[1][1])
+        # Gimbal lock at ry = +/- 90 deg
+        rx = math.atan2(-m[0][1], m[1][1])
         rz = 0.0
     return (rx, ry, rz)
 
 
 def _euler_xyz_to_matrix(rx: float, ry: float, rz: float) -> list[list[float]]:
-    """Constructs 3x3 rotation matrix from XYZ Euler angles (in radians)."""
-    return _mat_mul(_mat_mul(_rot_matrix_x(rx), _rot_matrix_y(ry)), _rot_matrix_z(rz))
+    """Constructs 3x3 rotation matrix from Blender XYZ Euler angles (in radians).
+
+    In Blender, an XYZ Euler applies local X first, then local Y, then local Z,
+    which corresponds to matrix product: M = Rz * Ry * Rx.
+    """
+    return _mat_mul(_rot_matrix_z(rz), _mat_mul(_rot_matrix_y(ry), _rot_matrix_x(rx)))
 
 
 def msfs_pbh_to_blender_rotation(

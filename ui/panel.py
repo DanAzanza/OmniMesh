@@ -22,6 +22,10 @@ except ImportError:
     Panel = object
 
 try:
+    from ..core.engine_import_presets import (
+        DEFAULT_ENGINE_IMPORT_PRESET_ID,
+        EngineImportPresetManager,
+    )
     from ..core.lod_presets import (
         DEFAULT_LOD_PRESET_ID,
         LODPresetManager,
@@ -35,6 +39,10 @@ try:
     from .popovers import POPOVER_CLASSES
     from .utils import get_asset_base_meshes, resolve_effective_asset_name
 except (ImportError, ValueError):
+    from core.engine_import_presets import (
+        DEFAULT_ENGINE_IMPORT_PRESET_ID,
+        EngineImportPresetManager,
+    )
     from core.lod_presets import (
         DEFAULT_LOD_PRESET_ID,
         LODPresetManager,
@@ -70,6 +78,35 @@ class OMNIMESH_PT_import(Panel):
         layout = self.layout
         props = context.scene.lod_tool
 
+        # 1. Engine / Project Importer (MSFS 2024 / 2020 Aircraft Packages)
+        box_engine = layout.box()
+        box_engine.label(text="Engine Project Importer", icon="PACKAGE")
+
+        raw_eng_preset = getattr(props, "engine_import_preset", "")
+        eng_preset_id = str(raw_eng_preset).strip() or DEFAULT_ENGINE_IMPORT_PRESET_ID
+        is_eng_builtin = EngineImportPresetManager.is_builtin(eng_preset_id)
+
+        # Row 1: [ Preset Dropdown ▾ ] [ 📋 Copy ] [ ❌ Delete ] [ ⚙️ Gear ]
+        row_eng_preset = box_engine.row(align=True)
+        row_eng_preset.use_property_split = False
+        row_eng_preset.prop(props, "engine_import_preset", text="Preset")
+        row_eng_preset.operator("omnimesh.duplicate_engine_import_preset", text="", icon="DUPLICATE")
+
+        sub_eng_del = row_eng_preset.row(align=True)
+        sub_eng_del.enabled = not is_eng_builtin
+        sub_eng_del.operator("omnimesh.delete_engine_import_preset", text="", icon="X")
+        row_eng_preset.popover(panel="OMNIMESH_PT_popover_engine_import_preset", icon="PREFERENCES", text="")
+
+        # Row 2: [ Import Engine Project ]
+        row_eng_act = box_engine.row(align=True)
+        row_eng_act.use_property_split = False
+        row_eng_act.scale_y = 1.2
+        row_eng_act.operator("omnimesh.import_engine_project", text="Import Engine Project", icon="IMPORT")
+
+        if props.last_engine_import_summary:
+            box_engine.label(text=props.last_engine_import_summary, icon="CHECKMARK")
+
+        # 2. PBR Texture Set Importer
         box_pbr = layout.box()
         box_pbr.label(text="PBR Texture Set Importer", icon="IMAGE_DATA")
 
@@ -202,17 +239,6 @@ class OMNIMESH_PT_lods(Panel):
                 row_nav = layout.row(align=True)
                 row_nav.label(text=f"Sub-LOD of '{root_name}'", icon="LINKED")
                 row_nav.operator("lod_tool.select_master_asset", text="Select Master", icon="RESTRICT_SELECT_OFF")
-
-        # Selection vs Configured Asset mismatch alert
-        if active_obj and props.export_base_name:
-            curr_base = active_obj.name.split("_LOD")[0]
-            if curr_base != props.export_base_name:
-                box_alert = layout.box()
-                box_alert.alert = True
-                box_alert.label(
-                    text=f"Selected: '{curr_base}' (Configured: '{props.export_base_name}')",
-                    icon="INFO",
-                )
 
         box_lod = layout.box()
         box_lod.label(text="LOD Generation & Progression", icon="GEOMETRY_NODES")

@@ -93,3 +93,34 @@
   4. *UV & Texture Stretching*: Check mapped textures (grids/bricks) across decimated regions for skewed UV seams.
   5. *Collider Snugness*: Overlay wireframe collision hulls (`display_type='WIRE'`) over visual mesh; verify zero geometry clipping or excessive exterior empty volume.
 
+---
+
+## 4. Multi-Model Packages, Geometry Variants & Ingestion Runtime Invariants
+
+### 4.1 Blender 4.2+ Extension Path vs. Legacy Add-on Mirroring
+* **Extension Directory Invariant**: In Blender 4.2+ and 5.2 LTS, user extensions reside strictly in `%APPDATA%\Blender Foundation\Blender\<ver>\extensions\user_default\<addon_id>` and load into `sys.modules` under the namespace `bl_ext.user_default.<addon_id>`.
+* **The Legacy Folder Trap**: Copying or syncing files to `%APPDATA%\...\scripts\addons\<addon_id>` will NOT update the live extension if Blender loaded it from `extensions\user_default`. Any live MCP reload will execute stale code from the extension path unless mirrored directly to `extensions\user_default\<addon_id>`.
+
+### 4.2 Copy-on-Write (CoW) Mesh Datablock Safety
+* **Linked Duplicate Mutation Bug**: In multi-variant packages, geometry is frequently shared between variants or models (e.g. wings, engine cowlings, landing gear doors, or linked object duplicates created via `Alt+D`). In Blender's Python API, applying modifiers or `bpy.ops.object.transform_apply()` on an object whose mesh datablock has multiple users (`obj.data.users > 1`) directly mutates the underlying source geometry across all instances simultaneously.
+* **Invariant**: Always isolate mesh datablocks before applying decimation or transforms:
+  ```python
+  if hasattr(obj, "data") and getattr(obj.data, "users", 1) > 1:
+      obj.data = obj.data.copy()
+  ```
+
+### 4.3 Outliner Hierarchy Standard (Variante A)
+* **Zero 3rd Wrapper Hierarchy**: Sibling top-level collections reside directly under `Scene Collection` (`{AssetName}`, `{AssetName}_Interior`, `{AssetName}_{Variant}`). A 3rd outer package wrapper is strictly forbidden as it unnecessarily deepens Outliner nesting.
+* **LOD0 Nesting Rule**: Technical sub-collections (`Spatial`, `Lights`, `Cameras`) must be nested strictly under `{AssetName}_LOD0` (or `{AssetName}_Interior_LOD0`). This keeps sibling LOD tiers (`_LOD1..N`) completely clean and allows users to collapse or hide the entire package hierarchy via Blender's native `Shift+Click` on the collection eye icon.
+
+### 4.4 Origin-Aware Aerospace Camera Hierarchies
+* **Reference Frames in `cameras.cfg`**:
+  * `Origin = "Virtual Cockpit"`: Coordinates in `InitialXyz` are defined relative to `[VIEWS] eyepoint` (which is in feet relative to Datum).
+  * External views (`Origin != "Virtual Cockpit"`, e.g. `FixedOnPlane` or `Center`): Coordinates are defined relative to `Datum` or the aircraft model center.
+* **Blender Parenting Protocol**: Routing `Virtual Cockpit` cameras to `{AssetName}_Interior_Cameras` (parented to the `Eyepoint` empty) and airframe cameras to `{AssetName}_Cameras` (parented to the `Datum` empty) ensures exact visual orientation in Blender and enables lossless bi-directional export back to `cameras.cfg`.
+
+### 4.5 Per-Asset Non-Destructive LOD State Caching
+* **Scene-Level Property Group Hazard**: In Blender Python, `scene.lod_tool.lods` is a single shared `CollectionProperty` across the scene. When switching between multiple models (e.g. Exterior vs Cockpit) in an EnumProperty dropdown, updating the list wipes out user-tuned screen sizes and triangle targets unless cached in an in-memory dictionary (`_ASSET_LOD_STATE_CACHE`).
+* **Safe Transition Sequence**: Always call `serialize_asset_lod_state(props, outgoing_asset)` before switching `active_asset`, and `deserialize_asset_lod_state(props, incoming_asset)` afterwards to guarantee non-destructive state retention.
+
+

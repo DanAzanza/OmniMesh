@@ -30,7 +30,12 @@ try:
         format_class_2_scrape_tokens,
     )
     from ..core.msfs_transforms import METERS_TO_FEET
-    from .msfs_spatial_ops import COLLECTION_NAME, DATUM_POINT_ID, get_or_create_spatial_collection
+    from .msfs_spatial_ops import (
+        COLLECTION_NAME,
+        DATUM_POINT_ID,
+        find_spatial_collection,
+        get_or_create_spatial_collection,
+    )
 except (ImportError, ValueError):
     from core.msfs_cst_parser import MSFSCSTParser
     from core.msfs_geometry import (
@@ -40,7 +45,12 @@ except (ImportError, ValueError):
         format_class_2_scrape_tokens,
     )
     from core.msfs_transforms import METERS_TO_FEET
-    from ui.msfs_spatial_ops import COLLECTION_NAME, DATUM_POINT_ID, get_or_create_spatial_collection
+    from ui.msfs_spatial_ops import (
+        COLLECTION_NAME,
+        DATUM_POINT_ID,
+        find_spatial_collection,
+        get_or_create_spatial_collection,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -205,9 +215,9 @@ class OMNIMESH_OT_align_gear_ground_level(Operator):
         gear_state = getattr(props, "msfs_gear_state", "STATIC_COMPRESSED") if props else "STATIC_COMPRESSED"
         compression_m = getattr(props, "msfs_gear_compression_m", 0.12) if props else 0.12
 
-        col = bpy.data.collections.get(COLLECTION_NAME)
+        col = find_spatial_collection(context) or bpy.data.collections.get(COLLECTION_NAME)
         if not col:
-            self.report({"ERROR"}, f"Collection '{COLLECTION_NAME}' not found.")
+            self.report({"ERROR"}, "Spatial collection not found.")
             return {"CANCELLED"}
 
         # 1. Identify Wheel (Class 1) contact points

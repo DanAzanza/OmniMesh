@@ -4,7 +4,7 @@
 [![Blender 4.2+ / 5.2 LTS](https://img.shields.io/badge/Blender-4.2%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-261%20passed%20%28100%25%29-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-303%20passed%20%28100%25%29-brightgreen.svg)]()
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5%20%7C%20Unity%206%20%7C%20Godot%204-purple.svg)]()
 
@@ -25,7 +25,7 @@ Optimizing 3D assets for modern real-time engines usually means choosing between
 | **Pricing & License** | Free (Built-in) | Commercial Subscription ($$$ per seat) | **100% Free & Open Source (GPL-3.0)** |
 | **Workflow Paradigm** | Destructive modifier stack | Standalone external app / FBX roundtrip | **100% Native & Non-Destructive inside Blender** |
 | **Selection Model** | Manual viewport selection (misses submeshes) | Manual per-mesh selection | **Collection-First: Zero selection required** |
-| **Multi-Part Assets** | Manual per-object decimation | Manual hierarchy setup | **Sub-collections under LOD0 = Separate exported objects** |
+| **Multi-Part & Multi-Model Packages** | Manual per-object decimation | Manual hierarchy setup | **Multi-Model Packages (Exterior + Interior + Variants)** |
 | **Hard-Surface & Normal Integrity** | ❌ Destroys custom normals (black gouges) | ✔️ Good | **✔️ High-Precision Split Normal Reprojection** |
 | **Skinned Rigs & Armatures** | ❌ Breaks vertex weights & tears meshes | ✔️ Good | **✔️ GPU Weight Clamping & Leaf-Bone Pruning** |
 | **Physics Collision Hulls** | ❌ None | ⚠️ Limited / Separate steps | **✔️ Auto Convex Decomposition (ACD / UCX)** |
@@ -37,32 +37,52 @@ Optimizing 3D assets for modern real-time engines usually means choosing between
 
 ---
 
-## 🗂️ Collection-First Architecture (Zero Viewport Selection Required)
+## 🗂️ Collection-First Architecture (Variante A Multi-Model Standard)
 
 Unlike traditional Blender add-ons that force artists to manually select objects or active meshes in the 3D viewport, OmniMesh operates entirely on an **Outliner Collection-First** paradigm.
 
 ### Outliner Structure & Hierarchy Rules
-1. **Master Collection (`{Asset}_LOD0` or `{Asset}`)**: The root collection represents your primary high-fidelity asset.
-2. **Sub-Collections = Separate Exported Objects**: Any sub-collection located under `{Asset}_LOD0` is treated as an independent, modular sub-object and will be decimated, processed, and exported as a distinct object.
+1. **Multi-Model Sibling Containers directly under `Scene Collection`**:
+   - `{AssetName}`: Primary exterior airframe or base model container (no suffix required).
+   - `{AssetName}_Interior`: Dedicated cockpit / flight deck model container.
+   - `{AssetName}_{Variant}`: Modular geometry variants (e.g. `{AssetName}_Floats`, `{AssetName}_Skis`, `{AssetName}_Cargo`).
+2. **Sub-Collections Nested Under `_LOD0`**:
+   - Technical configuration collections (`Spatial`, `Lights`, `Cameras`) reside strictly under each model's `_LOD0`, keeping LOD arrays (`_LOD1..N`) clean:
+     - **Exterior `_LOD0`**: `{AssetName}_Spatial` (Datum, CG, Wheels, Scrapes, Fuel), `{AssetName}_Lights` (Nav, Strobe, Beacon, Landing, Taxi), `{AssetName}_Cameras` (Airframe cameras: Tail, Wing, Belly).
+     - **Interior `_LOD0`**: `{AssetName}_Interior_Cameras` (Eyepoint & Cockpit views: Pilot, CoPilot, PFD, MFD), `{AssetName}_Interior_Lights` (Panel, Flood).
+     - **Variant `_LOD0`**: `{AssetName}_{Variant}_Spatial` (Water contact points, Ski scrapes).
 3. **Automated Non-Destructive Siblings**: OmniMesh generates all derivative tiers into dedicated sibling collections without ever modifying or overwriting your original LOD0 geometry:
-   - `{Asset}_LOD1`, `{Asset}_LOD2`, ... `{Asset}_LODk` (mirrored sub-object hierarchy)
-   - `{Asset}_Colliders` (convex physics hulls)
-   - `{Asset}_LOD_Impostor` (octahedral / billboard impostor)
+   - `{AssetName}_LOD1`, `{AssetName}_LOD2`, ... `{AssetName}_LODk`
+   - `{AssetName}_Colliders` (convex physics hulls)
+   - `{AssetName}_LOD_Impostor` (octahedral / billboard impostor)
+4. **Per-Asset LOD State Caching & Badged Dropdown**:
+   - Switching between models in the N-Panel Asset dropdown automatically saves and restores tuned screen sizes and triangle budgets without data loss.
+   - Dropdown options are badged clearly: `[Base / Exterior]`, `[Cockpit / Interior]`, `[Variant: Floats]`.
+5. **Instant Toggle via Shift+Click**:
+   - Holding Shift while clicking the eye icon on `{AssetName}` or `{AssetName}_Interior` toggles the entire model package on or off instantly.
 
 ```text
-Scene Collection
-└── Vehicle_LOD0/               <-- Root Asset Collection (LOD0 Source)
-    ├── Body/                   <-- Sub-Collection = Treated & exported as separate object
-    │   └── Body_Mesh
-    ├── Wheels/                 <-- Sub-Collection = Treated & exported as separate object
-    │   ├── Wheel_FL
-    │   ├── Wheel_FR
-    │   └── ...
-    └── Interior/               <-- Sub-Collection = Treated & exported as separate object
-        └── Dashboard_Mesh
+📁 Scene Collection
+   ├── 📁 {AssetName} (role: MODEL_ROOT)
+   │    ├── 📁 {AssetName}_LOD0 (role: LOD0)
+   │    │    ├── 📁 {AssetName}_Spatial (Datum, CG, Wheels, Fuel)
+   │    │    ├── 📁 {AssetName}_Lights (Nav, Strobe, Landing, Taxi)
+   │    │    └── 📁 {AssetName}_Cameras (Airframe views: Wing, Tail, Gear)
+   │    ├── 📁 {AssetName}_LOD1
+   │    ├── 📁 {AssetName}_LOD2
+   │    └── 📁 {AssetName}_LODN
+   ├── 📁 {AssetName}_Interior (role: INTERIOR)
+   │    ├── 📁 {AssetName}_Interior_LOD0 (role: LOD0)
+   │    │    └── 📁 {AssetName}_Interior_Cameras (Eyepoint, Pilot, Instrument views)
+   │    ├── 📁 {AssetName}_Interior_LOD1
+   │    └── 📁 {AssetName}_Interior_LODN
+   └── 📁 {AssetName}_{Variant} (role: VARIANT)
+        ├── 📁 {AssetName}_{Variant}_LOD0 (role: LOD0)
+        │    └── 📁 {AssetName}_{Variant}_Spatial (e.g. Float water contact points)
+        └── 📁 {AssetName}_{Variant}_LODN
 ```
 
-> **No Viewport Selection Needed**: You never have to select objects in the 3D viewport before clicking operators. OmniMesh automatically resolves the active asset collection from the Outliner or property dropdown, guaranteeing 100% consistent results across multi-part vehicles, architectural models, and complex character hierarchies.
+> **No Viewport Selection Needed**: You never have to select objects in the 3D viewport before clicking operators. OmniMesh automatically resolves the active asset collection from the Outliner or property dropdown, guaranteeing 100% consistent results across multi-part vehicles, multi-model aircraft, and complex hierarchies.
 
 ---
 

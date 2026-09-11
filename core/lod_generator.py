@@ -114,6 +114,8 @@ def generate_all_lods(
         for obj in mesh_objs:
             if not obj.parent:
                 try:
+                    if hasattr(obj, "data") and getattr(obj.data, "users", 1) > 1:
+                        obj.data = obj.data.copy()
                     bpy.context.view_layer.objects.active = obj
                     obj.select_set(True)
                     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
@@ -206,7 +208,15 @@ def generate_all_lods(
                     merged_name = f"{base_name}_LOD{i}"
                     existing = bpy.data.objects.get(merged_name)
                     if existing and existing not in mesh_objs:
+                        old_mesh = getattr(existing, "data", None)
                         bpy.data.objects.remove(existing, do_unlink=True)
+                        if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+                            try:
+                                bpy.data.meshes.remove(old_mesh)
+                            except Exception as exc:
+                                logger.debug(
+                                    "Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc
+                                )
 
                     tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
                         mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
@@ -290,7 +300,15 @@ def generate_all_lods(
                         sub_name = f"{source_obj.name}_LOD{i}" if len(mesh_objs) > 1 else f"{base_name}_LOD{i}"
                         existing = bpy.data.objects.get(sub_name)
                         if existing and existing not in mesh_objs and existing != source_obj:
+                            old_mesh = getattr(existing, "data", None)
                             bpy.data.objects.remove(existing, do_unlink=True)
+                            if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+                                try:
+                                    bpy.data.meshes.remove(old_mesh)
+                                except Exception as exc:
+                                    logger.debug(
+                                        "Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc
+                                    )
 
                         lod_obj = source_obj.copy()
                         lod_obj.data = source_obj.data.copy()

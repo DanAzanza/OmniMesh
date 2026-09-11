@@ -12,12 +12,17 @@ from typing import Any, Optional
 
 try:
     import bpy
+    from bpy.props import StringProperty
     from bpy.types import Collection, Object, Operator
 except ImportError:
     bpy = None
     Collection = object
     Object = object
     Operator = object
+
+    def StringProperty(**kwargs: Any) -> Any:
+        return ""
+
 
 try:
     from ..core.msfs_cst_parser import MSFSCSTParser
@@ -30,26 +35,50 @@ except (ImportError, ValueError):
 
 logger = logging.getLogger(__name__)
 
-COLLECTION_NAME = "MSFS_Spatial_Config"
+COLLECTION_NAME = "Spatial_Config"
 DATUM_POINT_ID = "WEIGHT_AND_BALANCE:reference_datum_position"
 
 
-def get_or_create_spatial_collection(context: Any) -> Optional[Collection]:
-    """Finds or creates the dedicated MSFS_Spatial_Config collection in the active scene."""
+def find_spatial_collection(context: Any) -> Optional[Collection]:
+    """Finds existing spatial collection by role tag, asset name, or legacy name."""
     if not bpy:
         return None
+    for col in bpy.data.collections:
+        if col.get("_omnimesh_role") == "SPATIAL":
+            return col
+    props = getattr(getattr(context, "scene", None), "lod_tool", None)
+    asset_name = getattr(props, "export_base_name", "") if props else ""
+    if asset_name and f"{asset_name}_Spatial" in bpy.data.collections:
+        return bpy.data.collections[f"{asset_name}_Spatial"]
+    for name in ("Spatial_Config", "MSFS_Spatial_Config"):
+        if name in bpy.data.collections:
+            return bpy.data.collections[name]
+    return None
 
-    scene = context.scene
-    col = bpy.data.collections.get(COLLECTION_NAME)
-    if not col:
-        col = bpy.data.collections.new(COLLECTION_NAME)
-        scene.collection.children.link(col)
-    elif col.name not in scene.collection.children:
-        try:
-            scene.collection.children.link(col)
-        except RuntimeError:
-            pass  # Already linked in scene hierarchy
-    return col
+
+def get_or_create_spatial_collection(context: Any) -> Optional[Collection]:
+    """Finds or creates the dedicated spatial collection in the active scene."""
+    if not bpy or not context:
+        return None
+
+    existing = find_spatial_collection(context)
+    if existing:
+        return existing
+
+    props = getattr(context.scene, "lod_tool", None)
+    asset_name = getattr(props, "export_base_name", "") if props else ""
+    if not asset_name:
+        asset_name = "Asset"
+
+    try:
+        from .utils import get_or_create_engine_import_collection
+
+        return get_or_create_engine_import_collection(context, asset_name, "SPATIAL")
+    except Exception:
+        col = bpy.data.collections.new(f"{asset_name}_Spatial")
+        context.scene.collection.children.link(col)
+        col["_omnimesh_role"] = "SPATIAL"
+        return col
 
 
 class OMNIMESH_OT_import_msfs_spatial(Operator):
@@ -60,24 +89,16 @@ class OMNIMESH_OT_import_msfs_spatial(Operator):
     bl_description = "Parse flight_model.cfg and spawn/update visual empties for contact points, fuel tanks, and datum"
     bl_options = {"REGISTER", "UNDO"}
 
-    filepath: Any = (
-        bpy.props.StringProperty(
-            name="File Path",
-            description="Path to flight_model.cfg",
-            subtype="FILE_PATH",
-            default="",
-        )
-        if bpy
-        else ""
+    filepath: StringProperty(
+        name="File Path",
+        description="Path to flight_model.cfg",
+        subtype="FILE_PATH",
+        default="",
     )
 
-    filter_glob: Any = (
-        bpy.props.StringProperty(
-            default="*.cfg",
-            options={"HIDDEN"},
-        )
-        if bpy
-        else "*.cfg"
+    filter_glob: StringProperty(
+        default="*.cfg",
+        options={"HIDDEN"},
     )
 
     def invoke(self, context: Any, event: Any) -> set[str]:
@@ -123,9 +144,9 @@ class OMNIMESH_OT_import_msfs_spatial(Operator):
         datum_empty = self._ensure_empty(
             col=col,
             point_id=DATUM_POINT_ID,
-            name="MSFS_Datum",
+            name="Datum",
             local_pos_m=datum_coords_m,
-            display_type="CROSS",
+            display_type="PLAIN_AXES",
             display_size=0.5,
             point=config.points[0] if config.points else None,
             parent=None,
@@ -147,17 +168,25 @@ class OMNIMESH_OT_import_msfs_spatial(Operator):
                 if point.point_class == 1:
                     display_type = "CIRCLE"  # Wheels
                     display_size = 0.35
-                else:
+                    clean_tag = point.name_tag or "Wheel"
+                    empty_name = f"Point_{point.key.split('.')[-1]}_{clean_tag}"
+                elif point.point_class == 2:
                     display_type = "PLAIN_AXES"  # Scrape points
                     display_size = 0.2
+                    empty_name = f"Scrape_{point.name_tag or point.key.split('.')[-1]}"
+                else:
+                    display_type = "PLAIN_AXES"
+                    empty_name = f"Point_{point.key.split('.')[-1]}_{point.name_tag or point.point_type}"
             elif point.point_type == "FUEL_TANK":
                 display_type = "CUBE"
                 display_size = 0.4
+                empty_name = f"Fuel_{point.name_tag or point.key}"
             elif point.point_type == "CG":
                 display_type = "SPHERE"
                 display_size = 0.25
-
-            empty_name = f"MSFS_{point.point_type[:4]}_{point.name_tag or point.key}"
+                empty_name = "CG"
+            else:
+                empty_name = f"{point.name_tag or point.key}"
 
             # Compute parent-local coordinates (relative to datum in meters)
             rel_ft = point.coords_msfs_rel_ft
@@ -204,12 +233,13 @@ class OMNIMESH_OT_import_msfs_spatial(Operator):
         """Idempotently finds an existing empty by msfs_id or spawns a new one."""
         existing = None
         for obj in col.objects:
-            if obj.get("msfs_id") == point_id:
+            if obj.get("msfs_id") == point_id or (point_id == DATUM_POINT_ID and obj.name in ("Datum", "MSFS_Datum")):
                 existing = obj
                 break
 
         if existing:
             empty = existing
+            empty.name = name
         else:
             empty = bpy.data.objects.new(name, None)
             col.objects.link(empty)
@@ -266,9 +296,10 @@ class OMNIMESH_OT_export_msfs_spatial(Operator):
             self.report({"ERROR"}, f"Failed reading source config: {exc}")
             return {"CANCELLED"}
 
-        col = bpy.data.collections.get(COLLECTION_NAME)
-        if not col:
-            self.report({"ERROR"}, f"Collection '{COLLECTION_NAME}' not found.")
+        col = find_spatial_collection(context)
+        candidate_objs = list(col.objects) if col else [o for o in context.scene.objects if o.get("msfs_id")]
+        if not candidate_objs:
+            self.report({"WARNING"}, "No spatial empties found in scene to synchronize.")
             return {"CANCELLED"}
 
         depsgraph = context.evaluated_depsgraph_get()
@@ -278,8 +309,8 @@ class OMNIMESH_OT_export_msfs_spatial(Operator):
         active_datum = config.reference_datum_ft
         datum_empty: Optional[Object] = None
 
-        for obj in col.objects:
-            if obj.get("msfs_id") == DATUM_POINT_ID:
+        for obj in candidate_objs:
+            if obj.get("msfs_id") == DATUM_POINT_ID or obj.name in ("Datum", "MSFS_Datum"):
                 datum_empty = obj
                 break
 
@@ -295,7 +326,7 @@ class OMNIMESH_OT_export_msfs_spatial(Operator):
             updated_coords[DATUM_POINT_ID] = active_datum
 
         # 2. Evaluate all child / relative empties against active_datum
-        for obj in col.objects:
+        for obj in candidate_objs:
             point_id = obj.get("msfs_id")
             if not point_id or not isinstance(point_id, str) or point_id == DATUM_POINT_ID:
                 continue

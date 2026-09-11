@@ -6,12 +6,15 @@ Attached to Scene (for project-wide pipeline globals) and Object (for per-asset 
 from typing import Any
 
 from .callbacks import (
+    get_engine_import_preset_items,
     get_lod_preset_items,
     get_pbr_export_preset_items,
     get_pbr_import_preset_items,
     on_batch_mode_updated,
     on_batch_source_updated,
     on_enable_live_sync_updated,
+    on_engine_import_directory_updated,
+    on_engine_import_preset_updated,
     on_engine_project_path_updated,
     on_export_bit_depth_updated,
     on_export_directory_updated,
@@ -23,11 +26,11 @@ from .callbacks import (
     on_import_path_mode_updated,
     on_import_preserve_updated,
     on_import_preset_updated,
+    on_active_asset_updated,
     on_legacy_preset_updated,
     on_lod_budget_mode_updated,
     on_lod_preset_updated,
     on_target_engine_updated,
-    project_preset_tiers,
 )
 from .enums import (
     ASSET_CATEGORY_ITEMS,
@@ -35,12 +38,14 @@ from .enums import (
     CHUNK_PARTITIONING_MODE_ITEMS,
     CLEANUP_NORMAL_POLICY_ITEMS,
     COLLISION_DECOMPOSITION_MODE_ITEMS,
+    ENGINE_IMPORT_MODEL_TARGET_ITEMS,
     HIERARCHY_MODE_ITEMS,
     IMPOSTOR_MODE_ITEMS,
     IMPOSTOR_RESOLUTION_ITEMS,
     LOD_GENERATION_SOURCE_ITEMS,
     LOD_PRESET_BUDGET_MODE_ITEMS,
     MAX_BONE_INFLUENCES_ITEMS,
+    MSFS_GEAR_STATE_ITEMS,
     PBR_EXPORT_BIT_DEPTH_ITEMS,
     PBR_EXPORT_TEXTURE_STRATEGY_ITEMS,
     PBR_IMPORT_AO_MODE_ITEMS,
@@ -81,29 +86,11 @@ except ImportError:
     bpy = None
     PropertyGroup = object
 
-    def BoolProperty(**kwargs: Any) -> Any:
+    def _mock_prop(**kwargs: Any) -> Any:
         return None
 
-    def CollectionProperty(**kwargs: Any) -> Any:
-        return None
-
-    def EnumProperty(**kwargs: Any) -> Any:
-        return None
-
-    def FloatProperty(**kwargs: Any) -> Any:
-        return None
-
-    def FloatVectorProperty(**kwargs: Any) -> Any:
-        return None
-
-    def IntProperty(**kwargs: Any) -> Any:
-        return None
-
-    def PointerProperty(**kwargs: Any) -> Any:
-        return None
-
-    def StringProperty(**kwargs: Any) -> Any:
-        return None
+    BoolProperty = CollectionProperty = EnumProperty = _mock_prop
+    FloatProperty = FloatVectorProperty = IntProperty = PointerProperty = StringProperty = _mock_prop
 
 
 class LODToolSettings(PropertyGroup):
@@ -128,7 +115,7 @@ class LODToolSettings(PropertyGroup):
         name="Asset Collection",
         items=get_asset_enum_items,
         description="Target root asset collection for LOD configuration and generation",
-        update=lambda self, context: project_preset_tiers(self, context),
+        update=lambda self, context: on_active_asset_updated(self, context),
     )
     preserve_pivot_empty: BoolProperty(
         name="Preserve Pivot Empty",
@@ -736,39 +723,83 @@ class LODToolSettings(PropertyGroup):
         default=0.0,
         min=-0.5,
         max=0.5,
-        description="Outward offset margin applied to auto-generated scrape points (in meters)",
+        description="Outward offset margin applied to scrape points (m)",
     )
     msfs_gear_state: EnumProperty(
         name="Gear State in Model",
-        items=[
-            ("STATIC_COMPRESSED", "Static (Compressed)", "Landing gear in model is compressed under aircraft weight"),
-            (
-                "UNCOMPRESSED_EXTENDED",
-                "Uncompressed (Extended)",
-                "Landing gear in model is fully extended without load",
-            ),
-        ],
+        items=MSFS_GEAR_STATE_ITEMS,
         default="STATIC_COMPRESSED",
-        description="Strut compression state of the 3D model gear",
+        description="Strut compression state",
     )
     msfs_gear_compression_m: FloatProperty(
         name="Strut Compression (m)",
         default=0.12,
         min=0.0,
         max=1.0,
-        description="Expected oleo strut compression distance in meters between extended and static ground equilibrium",
+        description="Expected oleo strut compression in meters",
     )
     msfs_calculated_cg_height_ft: FloatProperty(
         name="Calculated Static CG Height (ft)",
         default=0.0,
         precision=3,
-        description="Computed static_cg_height in feet relative to ground contact patch",
+        description="Computed static_cg_height in feet",
     )
     msfs_cameras_cfg_path: StringProperty(
-        name="MSFS Cameras File",
-        subtype="FILE_PATH",
+        name="MSFS Cameras File", subtype="FILE_PATH", default="", description="Path to target cameras.cfg"
+    )
+
+    # Engine / Project Importer Properties
+    engine_import_preset: EnumProperty(
+        name="Engine Import Preset",
+        items=get_engine_import_preset_items,
+        description="Active import template",
+        update=on_engine_import_preset_updated,
+    )
+    engine_import_directory: StringProperty(
+        name="Engine Project Path",
+        subtype="DIR_PATH",
         default="",
-        description="Path to target cameras.cfg for cockpit and external camera synchronization",
+        description="Root folder of project to ingest",
+        update=on_engine_import_directory_updated,
+    )
+    engine_import_geometry: BoolProperty(
+        name="Import Geometry & LODs", default=True, description="Import glTF LOD meshes into tier collections"
+    )
+    engine_import_spatial: BoolProperty(
+        name="Import Spatial Markers", default=True, description="Import datum, CG, wheels, scrape points, fuel tanks"
+    )
+    engine_import_lights: BoolProperty(
+        name="Import Lights", default=True, description="Import aviation lights from systems.cfg or light.cfg"
+    )
+    engine_import_cameras: BoolProperty(
+        name="Import Cameras", default=True, description="Import cockpit eyepoint and cameras from cameras.cfg"
+    )
+    engine_import_model_target: EnumProperty(
+        name="Model Target",
+        items=ENGINE_IMPORT_MODEL_TARGET_ITEMS,
+        default="EXTERIOR_ONLY",
+        description="Target model to ingest",
+    )
+    engine_import_use_lod0_suffix: BoolProperty(
+        name="Use LOD0 Suffix",
+        default=True,
+        description="Whether to name LOD0 collection '{Asset}_LOD0' or omit suffix",
+    )
+    engine_import_auto_assign_screen_pct: BoolProperty(
+        name="Auto-Assign Screen %",
+        default=True,
+        description="Map minSize screen coverage values directly to LOD tiers",
+    )
+    engine_import_deduplicate_materials: BoolProperty(
+        name="Deduplicate Materials",
+        default=True,
+        description="Remap duplicate materials across LODs to base materials",
+    )
+    engine_import_reuse_master_rig: BoolProperty(
+        name="Reuse Master Armature", default=True, description="Retarget LOD1..N armatures to LOD0 Master Rig"
+    )
+    last_engine_import_summary: StringProperty(
+        name="Last Import Summary", default="", description="Summary of the last completed engine project import"
     )
 
 
