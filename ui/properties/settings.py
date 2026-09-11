@@ -715,15 +715,60 @@ class LODToolSettings(PropertyGroup):
 
     # MSFS Spatial Configuration
     msfs_spatial_cfg_path: StringProperty(
-        name="MSFS Config File",
+        name="MSFS Flight Model File",
         subtype="FILE_PATH",
         default="",
         description="Path to target flight_model.cfg for spatial configuration synchronization",
+    )
+    msfs_systems_cfg_path: StringProperty(
+        name="MSFS Systems / Lights File",
+        subtype="FILE_PATH",
+        default="",
+        description="Path to target systems.cfg or light.cfg for lighting synchronization",
     )
     msfs_spatial_status: StringProperty(
         name="MSFS Spatial Status",
         default="Ready",
         description="Current status or last synchronized backup file",
+    )
+    msfs_scrape_margin_m: FloatProperty(
+        name="Scrape Margin (m)",
+        default=0.0,
+        min=-0.5,
+        max=0.5,
+        description="Outward offset margin applied to auto-generated scrape points (in meters)",
+    )
+    msfs_gear_state: EnumProperty(
+        name="Gear State in Model",
+        items=[
+            ("STATIC_COMPRESSED", "Static (Compressed)", "Landing gear in model is compressed under aircraft weight"),
+            (
+                "UNCOMPRESSED_EXTENDED",
+                "Uncompressed (Extended)",
+                "Landing gear in model is fully extended without load",
+            ),
+        ],
+        default="STATIC_COMPRESSED",
+        description="Strut compression state of the 3D model gear",
+    )
+    msfs_gear_compression_m: FloatProperty(
+        name="Strut Compression (m)",
+        default=0.12,
+        min=0.0,
+        max=1.0,
+        description="Expected oleo strut compression distance in meters between extended and static ground equilibrium",
+    )
+    msfs_calculated_cg_height_ft: FloatProperty(
+        name="Calculated Static CG Height (ft)",
+        default=0.0,
+        precision=3,
+        description="Computed static_cg_height in feet relative to ground contact patch",
+    )
+    msfs_cameras_cfg_path: StringProperty(
+        name="MSFS Cameras File",
+        subtype="FILE_PATH",
+        default="",
+        description="Path to target cameras.cfg for cockpit and external camera synchronization",
     )
 
 

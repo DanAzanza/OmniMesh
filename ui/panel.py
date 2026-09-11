@@ -485,9 +485,9 @@ class OMNIMESH_PT_export(Panel):
 
 
 class OMNIMESH_PT_export_msfs_spatial(Panel):
-    """Subpanel: MSFS 2020 & 2024 Aircraft Spatial Configuration (Contact Points, Fuel, Datum)."""
+    """Subpanel: MSFS 2020 & 2024 Aircraft Spatial Configuration (Contact Points, Fuel, Lights, Datum)."""
 
-    bl_label = "MSFS Spatial Config"
+    bl_label = "MSFS Spatial & Lighting"
     bl_idname = "OMNIMESH_PT_export_msfs_spatial"
     bl_parent_id = "OMNIMESH_PT_export"
     bl_space_type = "VIEW_3D"
@@ -501,26 +501,106 @@ class OMNIMESH_PT_export_msfs_spatial(Panel):
         layout = self.layout
         props = context.scene.lod_tool
 
-        box = layout.box()
-        box.use_property_split = True
-        box.use_property_decorate = False
-        box.prop(props, "msfs_spatial_cfg_path", text="Config File")
+        # 1. Flight Model (Points & Tanks)
+        box_fm = layout.box()
+        box_fm.label(text="Flight Model (Points & Tanks)", icon="SNAP_NORMAL")
+        box_fm.use_property_split = True
+        box_fm.use_property_decorate = False
+        box_fm.prop(props, "msfs_spatial_cfg_path", text="flight_model.cfg")
 
-        row = box.row(align=True)
-        row.use_property_split = False
-        row.scale_y = 1.2
-        row.operator("omnimesh.import_msfs_spatial", text="Import Empties", icon="IMPORT")
-
-        row_sync = row.row(align=True)
+        row_fm = box_fm.row(align=True)
+        row_fm.use_property_split = False
+        row_fm.scale_y = 1.15
+        row_fm.operator("omnimesh.import_msfs_spatial", text="Import Points", icon="IMPORT")
+        row_sync = row_fm.row(align=True)
         row_sync.enabled = bool(props.msfs_spatial_cfg_path)
         row_sync.operator("omnimesh.export_msfs_spatial", text="Sync to CFG", icon="FILE_REFRESH")
 
-        row_snap = box.row(align=True)
-        row_snap.use_property_split = False
-        row_snap.operator("omnimesh.snap_msfs_point_to_vertex", text="Snap Marker to Vertex", icon="SNAP_VERTEX")
+        # 2. Lighting (systems.cfg / light.cfg)
+        box_light = layout.box()
+        box_light.label(text="Aircraft Lighting", icon="LIGHT")
+        box_light.use_property_split = True
+        box_light.use_property_decorate = False
+        box_light.prop(props, "msfs_systems_cfg_path", text="systems.cfg")
+
+        row_lt = box_light.row(align=True)
+        row_lt.use_property_split = False
+        row_lt.scale_y = 1.15
+        row_lt.operator("omnimesh.import_msfs_lights", text="Import Lights", icon="LIGHT_SUN")
+        row_sync_lt = row_lt.row(align=True)
+        row_sync_lt.enabled = bool(getattr(props, "msfs_systems_cfg_path", ""))
+        row_sync_lt.operator("omnimesh.export_msfs_lights", text="Sync Lights", icon="FILE_REFRESH")
+
+        # 3. Spatial Alignment Tools (Mirror & Snap)
+        box_tools = layout.box()
+        box_tools.label(text="Spatial Alignment Tools", icon="ORIENTATION_GIMBAL")
+        row_tools = box_tools.row(align=True)
+        row_tools.use_property_split = False
+        row_tools.scale_y = 1.1
+        row_tools.operator("omnimesh.mirror_msfs_marker", text="Mirror (L ↔ R)", icon="MOD_MIRROR")
+        row_tools.operator("omnimesh.snap_msfs_point_to_vertex", text="Snap to Vertex", icon="SNAP_VERTEX")
+
+        # 4. Geometry & Ground Alignment (Auto Scrape & Static CG Height)
+        box_geo = layout.box()
+        box_geo.label(text="Geometry & Ground Alignment", icon="MOD_PHYSICS")
+        box_geo.use_property_split = True
+        box_geo.use_property_decorate = False
+
+        box_geo.prop(props, "msfs_scrape_margin_m", text="Scrape Margin")
+        row_scrape = box_geo.row(align=True)
+        row_scrape.use_property_split = False
+        row_scrape.scale_y = 1.15
+        row_scrape.operator(
+            "omnimesh.generate_msfs_scrape_points", text="Auto-Detect Scrape Points", icon="FORCE_CHARGE"
+        )
+
+        box_geo.prop(props, "msfs_gear_state", text="Gear State")
+        if props.msfs_gear_state == "UNCOMPRESSED_EXTENDED":
+            box_geo.prop(props, "msfs_gear_compression_m", text="Strut Deflection")
+
+        row_gear = box_geo.row(align=True)
+        row_gear.use_property_split = False
+        row_gear.scale_y = 1.15
+        row_gear.operator("omnimesh.align_gear_ground_level", text="Align Gear & Calc CG Height", icon="EMPTY_AXIS")
+
+        if getattr(props, "msfs_calculated_cg_height_ft", 0.0) > 0.0:
+            row_cg = box_geo.row(align=True)
+            row_cg.use_property_split = True
+            row_cg.enabled = False
+            row_cg.prop(props, "msfs_calculated_cg_height_ft", text="Static CG Height")
+
+        # 5. Aircraft Cameras (cameras.cfg)
+        box_cam = layout.box()
+        box_cam.label(text="Aircraft Cameras (Cockpit & External)", icon="CAMERA_DATA")
+        box_cam.use_property_split = True
+        box_cam.use_property_decorate = False
+        box_cam.prop(props, "msfs_cameras_cfg_path", text="cameras.cfg")
+
+        row_cam = box_cam.row(align=True)
+        row_cam.use_property_split = False
+        row_cam.scale_y = 1.15
+        row_cam.operator("omnimesh.import_msfs_cameras", text="Import Cameras", icon="IMPORT")
+        row_sync_cam = row_cam.row(align=True)
+        row_sync_cam.enabled = bool(getattr(props, "msfs_cameras_cfg_path", ""))
+        row_sync_cam.operator("omnimesh.export_msfs_cameras", text="Sync Cameras", icon="FILE_REFRESH")
+
+        # Camera viewport tools
+        row_cam_tools = box_cam.row(align=True)
+        row_cam_tools.use_property_split = False
+        row_cam_tools.scale_y = 1.1
+        row_cam_tools.operator("omnimesh.look_through_msfs_camera", text="Look Through", icon="VIEW_CAMERA")
+        row_cam_tools.operator("omnimesh.restore_scene_camera", text="Restore View", icon="LOOP_BACK")
+        row_cam_tools.operator("omnimesh.align_msfs_camera_to_view", text="Align to View", icon="CON_CAMERATARGET")
+
+        # Cockpit Bank indicator
+        active_obj = getattr(context, "active_object", None)
+        if active_obj and active_obj.get("msfs_camera_category") == "Cockpit":
+            box_note = box_cam.box()
+            box_note.label(text="Cockpit camera: Roll/Bank is ignored by MSFS engine", icon="INFO")
 
         if props.msfs_spatial_status:
-            box.label(text=props.msfs_spatial_status, icon="INFO")
+            box_status = layout.box()
+            box_status.label(text=props.msfs_spatial_status, icon="INFO")
 
 
 # Strict Parent-First Topological Registration Order

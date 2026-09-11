@@ -398,10 +398,130 @@ class OMNIMESH_OT_snap_msfs_point_to_vertex(Operator):
             eval_mesh_obj.to_mesh_clear()
 
 
+class OMNIMESH_OT_mirror_msfs_marker(Operator):
+    """Reflects the active MSFS marker across the longitudinal symmetry plane (X=0) to its counterpart."""
+
+    bl_idname = "omnimesh.mirror_msfs_marker"
+    bl_label = "Mirror Selected Marker (L ↔ R)"
+    bl_description = "Reflects active contact point, tank, or light across the sagittal plane (X=0) to counterpart"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        if not bpy or not context:
+            return False
+        active = getattr(context, "active_object", None)
+        return bool(active and active.get("msfs_id"))
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+
+        empty = context.active_object
+        if not empty or not empty.get("msfs_id"):
+            self.report({"ERROR"}, "Active object is not an MSFS spatial marker.")
+            return {"CANCELLED"}
+
+        # 1. Centerline Safety Guard
+        loc = empty.location
+        if abs(loc.x) < 0.05:
+            self.report({"WARNING"}, "Cannot mirror centerline marker (|X| < 0.05m).")
+            return {"CANCELLED"}
+
+        mir_x = -loc.x
+        mir_y = loc.y
+        mir_z = loc.z
+
+        # 2. Spatial-First Counterpart Resolution
+        counterpart: Optional[Object] = None
+        col = empty.users_collection[0] if empty.users_collection else None
+        search_objects = col.objects if col else context.scene.objects
+
+        for cand in search_objects:
+            if cand == empty or not cand.get("msfs_id"):
+                continue
+            # Must match same type (e.g. CONTACT_POINT or FUEL_TANK or LIGHT)
+            if cand.get("msfs_type") != empty.get("msfs_type"):
+                continue
+
+            c_loc = cand.location
+            if abs(c_loc.x - mir_x) < 0.05 and abs(c_loc.y - mir_y) < 0.05:
+                counterpart = cand
+                break
+
+        if counterpart:
+            # Update existing counterpart
+            counterpart.location = (mir_x, mir_y, mir_z)
+            # If object has rotation, reflect bank and heading
+            if empty.rotation_mode == "XYZ":
+                counterpart.rotation_euler = (
+                    empty.rotation_euler.x,
+                    -empty.rotation_euler.y,
+                    -empty.rotation_euler.z,
+                )
+            self.report({"INFO"}, f"Updated mirrored counterpart {counterpart.name}")
+            return {"FINISHED"}
+
+        # 3. Spawn Mirrored Counterpart
+        mir_name = self._compute_mirrored_name(empty.name)
+        new_obj = bpy.data.objects.new(mir_name, empty.data)
+        if col:
+            col.objects.link(new_obj)
+        else:
+            context.scene.collection.objects.link(new_obj)
+
+        if empty.parent:
+            new_obj.parent = empty.parent
+        new_obj.location = (mir_x, mir_y, mir_z)
+        new_obj.empty_display_type = empty.empty_display_type
+        new_obj.empty_display_size = empty.empty_display_size
+
+        if empty.rotation_mode == "XYZ":
+            new_obj.rotation_euler = (
+                empty.rotation_euler.x,
+                -empty.rotation_euler.y,
+                -empty.rotation_euler.z,
+            )
+
+        # Copy custom properties with mirrored IDs
+        orig_id = empty.get("msfs_id", "")
+        new_obj["msfs_id"] = f"{orig_id}_MIRRORED"
+        new_obj["msfs_section"] = empty.get("msfs_section", "")
+        new_obj["msfs_key"] = f"{empty.get('msfs_key', '')}_mir"
+        new_obj["msfs_type"] = empty.get("msfs_type", "")
+        new_obj["msfs_class"] = empty.get("msfs_class", 0)
+        new_obj["msfs_name_tag"] = self._compute_mirrored_name(str(empty.get("msfs_name_tag", "")))
+
+        self.report({"INFO"}, f"Created mirrored marker {new_obj.name}")
+        return {"FINISHED"}
+
+    @staticmethod
+    def _compute_mirrored_name(name: str) -> str:
+        """Heuristically mirrors lateral identifiers in names."""
+        if "_L" in name:
+            return name.replace("_L", "_R")
+        if "_R" in name:
+            return name.replace("_R", "_L")
+        if "Left" in name:
+            return name.replace("Left", "Right")
+        if "Right" in name:
+            return name.replace("Right", "Left")
+        if "left" in name:
+            return name.replace("left", "right")
+        if "right" in name:
+            return name.replace("right", "left")
+        if "Port" in name:
+            return name.replace("Port", "Stbd")
+        if "Stbd" in name:
+            return name.replace("Stbd", "Port")
+        return f"{name}_Mirrored"
+
+
 classes = (
     OMNIMESH_OT_import_msfs_spatial,
     OMNIMESH_OT_export_msfs_spatial,
     OMNIMESH_OT_snap_msfs_point_to_vertex,
+    OMNIMESH_OT_mirror_msfs_marker,
 )
 
 

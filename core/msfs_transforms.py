@@ -6,6 +6,8 @@ MSFS aircraft body frame and Blender coordinate space without bpy dependencies.
 
 from __future__ import annotations
 
+import math
+
 FEET_TO_METERS: float = 0.3048
 METERS_TO_FEET: float = 1.0 / 0.3048
 
@@ -76,3 +78,169 @@ def format_coordinate_float(val: float, precision: int = 4) -> str:
     if formatted == "-0":
         return "0"
     return formatted
+
+
+# =========================================================================
+# ROTATION KINEMATICS & SYMMETRY MIRRORING
+# =========================================================================
+
+
+def _rot_matrix_x(angle_rad: float) -> list[list[float]]:
+    c, s = math.cos(angle_rad), math.sin(angle_rad)
+    return [[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]]
+
+
+def _rot_matrix_y(angle_rad: float) -> list[list[float]]:
+    c, s = math.cos(angle_rad), math.sin(angle_rad)
+    return [[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]]
+
+
+def _rot_matrix_z(angle_rad: float) -> list[list[float]]:
+    c, s = math.cos(angle_rad), math.sin(angle_rad)
+    return [[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]
+
+
+def _mat_mul(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def _matrix_to_euler_xyz(m: list[list[float]]) -> tuple[float, float, float]:
+    """Extracts standard XYZ Euler angles (in radians) from a 3x3 rotation matrix."""
+    # Clamping for asin domain
+    m02 = max(-1.0, min(1.0, m[0][2]))
+    if abs(m02) < 0.9999999:
+        ry = math.asin(m02)
+        rx = math.atan2(-m[1][2], m[2][2])
+        rz = math.atan2(-m[0][1], m[0][0])
+    elif m02 <= -0.9999999:
+        ry = -math.pi / 2.0
+        rx = -math.atan2(m[1][0], m[1][1])
+        rz = 0.0
+    else:
+        ry = math.pi / 2.0
+        rx = math.atan2(m[1][0], m[1][1])
+        rz = 0.0
+    return (rx, ry, rz)
+
+
+def _euler_xyz_to_matrix(rx: float, ry: float, rz: float) -> list[list[float]]:
+    """Constructs 3x3 rotation matrix from XYZ Euler angles (in radians)."""
+    return _mat_mul(_mat_mul(_rot_matrix_x(rx), _rot_matrix_y(ry)), _rot_matrix_z(rz))
+
+
+def msfs_pbh_to_blender_rotation(
+    pitch_deg: float,
+    bank_deg: float,
+    heading_deg: float,
+) -> tuple[float, float, float]:
+    """
+    Transforms MSFS Light/Camera orientation (Pitch, Bank, Heading in degrees)
+    into Blender standard XYZ Euler angles (in radians) for a spotlight.
+
+    MSFS Light Orientation:
+        - At (0,0,0), light points along longitudinal flight vector (+Y).
+        - Pitch > 0 points downward (e.g. landing lights angled down).
+        - Heading > 0 turns to starboard (right).
+        - Bank > 0 rolls right wing down.
+
+    Blender Lamp Basis:
+        - Spotlights emit along local -Z axis.
+        - Applies basis transformation R_basis (X rot +90 deg) so zero-rotation
+          spotlight shines forward (+Y) instead of downward (-Z).
+    """
+    p_rad = math.radians(pitch_deg)
+    b_rad = math.radians(bank_deg)
+    h_rad = math.radians(heading_deg)
+
+    # Intrinsic aerospace rotation: Heading around Z, Pitch around X, Bank around Y
+    # Heading right is negative Z in Blender right-handed system
+    r_heading = _rot_matrix_z(-h_rad)
+    r_pitch = _rot_matrix_x(-p_rad)
+    r_bank = _rot_matrix_y(b_rad)
+
+    r_msfs = _mat_mul(_mat_mul(r_heading, r_pitch), r_bank)
+
+    # R_basis: maps local -Z to +Y (X rot +90 deg)
+    r_basis = _rot_matrix_x(math.pi / 2.0)
+    m_composite = _mat_mul(r_msfs, r_basis)
+
+    return _matrix_to_euler_xyz(m_composite)
+
+
+def blender_rotation_to_msfs_pbh(
+    rx_rad: float,
+    ry_rad: float,
+    rz_rad: float,
+) -> tuple[float, float, float]:
+    """
+    Inverts Blender spotlight/camera XYZ Euler angles (radians) back to MSFS
+    aerospace orientation (Pitch, Bank, Heading in degrees).
+
+    MSFS Aerospace Intrinsic Sequence:
+        R_msfs = R_z(-heading) * R_x(-pitch) * R_y(bank)
+
+    Blender Camera/Spot Basis:
+        R_blender = R_msfs * R_basis
+        R_msfs = R_blender * R_basis^-1
+    """
+    m_blender = _euler_xyz_to_matrix(rx_rad, ry_rad, rz_rad)
+    r_basis_inv = _rot_matrix_x(-math.pi / 2.0)
+    r_msfs = _mat_mul(m_blender, r_basis_inv)
+
+    # Closed-form decomposition of R_z(-h) * R_x(-p) * R_y(b)
+    # R[2][1] = -sin(p)
+    m21 = max(-1.0, min(1.0, r_msfs[2][1]))
+    pitch_rad = math.asin(-m21)
+    pitch_deg = math.degrees(pitch_rad)
+    cos_p = math.cos(pitch_rad)
+
+    if abs(cos_p) > 1e-5:
+        # Heading around Z (yaw right is positive): atan2(sin(h)*cos(p), cos(h)*cos(p))
+        heading_deg = math.degrees(math.atan2(r_msfs[0][1], r_msfs[1][1]))
+        # Bank around Y (roll right is positive): atan2(sin(b)*cos(p), cos(b)*cos(p))
+        bank_deg = math.degrees(math.atan2(-r_msfs[2][0], r_msfs[2][2]))
+    else:
+        # Gimbal lock at Pitch = +/- 90 deg
+        heading_deg = math.degrees(math.atan2(-r_msfs[1][0], r_msfs[0][0]))
+        bank_deg = 0.0
+
+    return (pitch_deg, bank_deg, heading_deg)
+
+
+def msfs_zoom_to_blender_focal_length(zoom: float, base_focal_mm: float = 35.0) -> float:
+    """Converts MSFS InitialZoom scalar to Blender camera focal length (mm).
+
+    Uses a standard 35mm base lens for a 1.0 zoom level.
+    Clamps zoom between 0.1 and 10.0.
+    """
+    clamped_zoom = max(0.1, min(10.0, zoom))
+    return float(base_focal_mm * clamped_zoom)
+
+
+def blender_focal_length_to_msfs_zoom(focal_mm: float, base_focal_mm: float = 35.0) -> float:
+    """Converts Blender camera focal length (mm) back to MSFS InitialZoom scalar."""
+    if base_focal_mm <= 0:
+        return 1.0
+    raw_zoom = focal_mm / base_focal_mm
+    return float(round(max(0.1, min(10.0, raw_zoom)), 3))
+
+
+def mirror_pbh_rotation(
+    pitch_deg: float,
+    bank_deg: float,
+    heading_deg: float,
+) -> tuple[float, float, float]:
+    """
+    Reflects an aerospace orientation across the aircraft sagittal symmetry plane (X = 0).
+    Pitch remains identical, while Heading and Bank are reflected.
+    """
+    return (pitch_deg, -bank_deg, -heading_deg)
+
+
+def mirror_spatial_coords(
+    long_ft: float,
+    lat_ft: float,
+    vert_ft: float,
+) -> tuple[float, float, float]:
+    """Reflects an MSFS relative coordinate triplet across the sagittal symmetry plane (X = 0)."""
+    return (long_ft, -lat_ft, vert_ft)
