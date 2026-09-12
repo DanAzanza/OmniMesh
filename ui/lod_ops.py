@@ -79,7 +79,7 @@ class LOD_OT_reset_to_preset(Operator):
         if not props:
             props = context.scene.lod_tool
 
-        project_preset_tiers(props, context)
+        project_preset_tiers(props, context, ignore_cache=True)
         props.lod_preset_is_dirty = False
         safe_report(self, {"INFO"}, "Reset tiers to preset defaults.")
         return {"FINISHED"}

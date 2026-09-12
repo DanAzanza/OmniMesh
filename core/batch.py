@@ -350,7 +350,11 @@ class BatchProcessorEngine:
                         bm.to_mesh(obj.data)
                     finally:
                         bm.free()
-                    initial_tris += len(obj.data.polygons)
+                    polys = getattr(obj.data, "polygons", [])
+                    if polys and hasattr(polys[0], "vertices"):
+                        initial_tris += sum(max(1, len(p.vertices) - 2) for p in polys)
+                    else:
+                        initial_tris += len(polys)
             result["initial_tris"] = initial_tris
 
             # 2. Compute Metric Extents & Tiers

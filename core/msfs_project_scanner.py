@@ -361,6 +361,10 @@ class MSFSProjectScanner:
         common_dir = resolve_path_ci(root, "common")
         if common_dir and common_dir.is_dir():
             search_roots.append(common_dir)
+        if model_cfg_path and model_cfg_path.is_file():
+            for p_dir in (model_cfg_path.parent, model_cfg_path.parent.parent):
+                if p_dir.is_dir() and p_dir not in search_roots:
+                    search_roots.append(p_dir)
 
         for sroot in search_roots:
             try:

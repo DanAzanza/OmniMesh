@@ -457,7 +457,7 @@ def on_active_asset_updated(props: Any, context: Any) -> None:
     project_preset_tiers(props, context, asset_name=new_asset)
 
 
-def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") -> None:
+def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "", ignore_cache: bool = False) -> None:
     """Projects preset LOD tiers onto props.lods based on the resolved asset and preset definition.
 
     Inspects current scene state:
@@ -471,7 +471,7 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") 
         return
 
     ctx = context or getattr(bpy, "context", None)
-    if not asset_name and ctx:
+    if (not asset_name or asset_name in ("AUTO", "NONE")) and ctx:
         asset_name = resolve_effective_asset_name(ctx, props)
 
     base_meshes = get_asset_base_meshes(ctx, asset_name) if (ctx and asset_name) else []
@@ -482,7 +482,14 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") 
     base_tris = 0
     total_mat_slots = 0
     for obj in base_meshes:
-        base_tris += len(obj.data.polygons) if hasattr(obj, "data") and hasattr(obj.data, "polygons") else 0
+        if hasattr(obj, "data") and hasattr(obj.data, "polygons"):
+            polys = obj.data.polygons
+            if polys:
+                first = polys[0]
+                if hasattr(first, "vertices"):
+                    base_tris += sum(max(1, len(p.vertices) - 2) for p in polys)
+                else:
+                    base_tris += len(polys)
         total_mat_slots += len(obj.material_slots) if hasattr(obj, "material_slots") else 0
         m_w = getattr(obj, "matrix_world", None)
         if m_w:
@@ -510,11 +517,11 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") 
     if ctx and hasattr(ctx, "scene"):
         cam = getattr(ctx.scene, "camera", None)
         if cam and getattr(cam, "type", "") == "CAMERA":
-            cam_angle = cam.data.angle
-            sensor_fit = cam.data.sensor_fit
+            cam_angle = getattr(getattr(cam, "data", None), "angle", cam_angle)
+            sensor_fit = getattr(getattr(cam, "data", None), "sensor_fit", sensor_fit)
         render = getattr(ctx.scene, "render", None)
         if render:
-            res_x = render.resolution_x
+            res_x = max(1, render.resolution_x)
             res_y = max(1, render.resolution_y)
 
     aspect_ratio = res_x / float(res_y)
@@ -530,7 +537,9 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "") 
 
     preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
     preset_data = LODPresetManager.get_preset(preset_id)
-    cached_tiers = _ASSET_LOD_STATE_CACHE.get(asset_name)
+    if ignore_cache and asset_name and asset_name in _ASSET_LOD_STATE_CACHE:
+        del _ASSET_LOD_STATE_CACHE[asset_name]
+    cached_tiers = None if ignore_cache else _ASSET_LOD_STATE_CACHE.get(asset_name)
     preset_tiers = cached_tiers if cached_tiers else preset_data.get("tiers", [])
 
     props.lods.clear()
@@ -595,7 +604,7 @@ def on_lod_preset_updated(self: Any, context: Any) -> None:
     preset = LODPresetManager.get_preset(preset_id)
     sync_preset_tiers_from_preset(self, preset)
     try:
-        project_preset_tiers(self, context)
+        project_preset_tiers(self, context, ignore_cache=True)
     except Exception as exc:
         logger.debug("Automatic tier projection skipped: %s", exc)
 

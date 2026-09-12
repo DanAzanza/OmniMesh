@@ -364,6 +364,40 @@ class CollisionManager:
         target_coll = bpy.data.collections.get(coll_name)
         if not target_coll:
             target_coll = bpy.data.collections.new(coll_name)
+
+        root_coll = bpy.data.collections.get(base_name)
+        if root_coll and hasattr(root_coll, "children"):
+            c_children = root_coll.children
+            already_in = False
+            try:
+                already_in = (
+                    target_coll.name in c_children if not isinstance(c_children, list) else target_coll in c_children
+                )
+            except Exception as e:
+                logger.debug("Failed checking target collection membership: %s", e)
+            if not already_in:
+                if hasattr(c_children, "link"):
+                    c_children.link(target_coll)
+                elif hasattr(c_children, "append"):
+                    c_children.append(target_coll)
+            # Unlink from scene root if nested under root_coll
+            if (
+                hasattr(bpy.context, "scene")
+                and hasattr(bpy.context.scene, "collection")
+                and hasattr(bpy.context.scene.collection, "children")
+                and hasattr(bpy.context.scene.collection.children, "unlink")
+            ):
+                try:
+                    if target_coll.name in bpy.context.scene.collection.children:
+                        bpy.context.scene.collection.children.unlink(target_coll)
+                except Exception as e:
+                    logger.debug("Failed unlinking target collection from scene root: %s", e)
+        elif (
+            hasattr(bpy.context, "scene")
+            and hasattr(bpy.context.scene, "collection")
+            and hasattr(bpy.context.scene.collection, "children")
+            and target_coll.name not in bpy.context.scene.collection.children
+        ):
             bpy.context.scene.collection.children.link(target_coll)
 
         created_collider_objs: List[Any] = []
@@ -492,8 +526,7 @@ class CollisionManager:
         # 1. Scope to target collection if it exists
         if target_coll and hasattr(target_coll, "objects"):
             for obj in list(target_coll.objects):
-                if obj.get("_is_collider", False) or "_Collider_" in getattr(obj, "name", ""):
-                    to_remove.append(obj)
+                to_remove.append(obj)
 
         # 2. Scope to scene objects matching this base_name or its mesh component names
         sub_bases = tuple(f"{obj.name.split('_LOD')[0]}_Collider_" for obj in mesh_objs if hasattr(obj, "name"))
@@ -521,10 +554,6 @@ class CollisionManager:
                     except TypeError:
                         bpy.data.meshes.remove(mesh_data)
             removed_count += 1
-
-        # Remove empty collection
-        if target_coll and hasattr(target_coll, "objects") and len(target_coll.objects) == 0:
-            bpy.data.collections.remove(target_coll)
 
         return removed_count
 

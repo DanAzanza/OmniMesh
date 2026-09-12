@@ -23,6 +23,7 @@ try:
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
         resolve_asset_base_name,
+        resolve_effective_asset_name,
         resolve_lod_context,
         safe_report,
     )
@@ -33,6 +34,7 @@ except (ImportError, ValueError):
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
         resolve_asset_base_name,
+        resolve_effective_asset_name,
         resolve_lod_context,
         safe_report,
     )
@@ -154,7 +156,9 @@ class LOD_OT_generate_collision_hulls(Operator):
             safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found for collision generation.")
             return {"CANCELLED"}
 
-        base_name = resolve_asset_base_name(context, mesh_objs)
+        base_name = resolve_effective_asset_name(context, props)
+        if not base_name or base_name in {"AUTO", "NONE"}:
+            base_name = resolve_asset_base_name(context, mesh_objs)
 
         created_hulls = CollisionManager.generate_colliders_for_objects(
             mesh_objs,
@@ -189,7 +193,9 @@ class LOD_OT_remove_collision_hulls(Operator):
         if not mesh_objs:
             mesh_objs = get_selected_mesh_objects(context)
 
-        base_name = resolve_asset_base_name(context, mesh_objs)
+        base_name = resolve_effective_asset_name(context, props)
+        if not base_name or base_name in {"AUTO", "NONE"}:
+            base_name = resolve_asset_base_name(context, mesh_objs)
 
         removed = CollisionManager.remove_colliders_for_objects(mesh_objs, base_name)
         props.last_generated_collider_count = 0

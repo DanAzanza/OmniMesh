@@ -229,7 +229,16 @@ class PreFlightValidator:
             errors.append("No LOD tiers configured.")
             return errors
 
-        raw_name = getattr(props, "export_base_name", "").strip() or "SM_Asset"
+        raw_name = ""
+        try:
+            from core.asset_scanner import resolve_effective_asset_name
+
+            raw_name = resolve_effective_asset_name(context, props)
+        except Exception as e:
+            logger.debug("Failed resolving effective asset name in PreFlightValidator: %s", e)
+
+        if not raw_name or raw_name in ("AUTO", "NONE", "Asset"):
+            raw_name = getattr(props, "export_base_name", "").strip() or "SM_Asset"
         if hasattr(props, "active_asset") and props.active_asset and props.active_asset not in ("AUTO", "NONE"):
             raw_name = props.active_asset
 

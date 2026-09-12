@@ -133,7 +133,6 @@ class OMNIMESH_OT_import_engine_project(Operator):
 
         all_imported_objects: list[Any] = []
         lod_mesh_map: dict[int, list[Any]] = {}
-        master_armature: Optional[Any] = None
 
         # 3. Import Geometry / LODs
         if do_geo and manifest.has_geometry:
@@ -157,14 +156,20 @@ class OMNIMESH_OT_import_engine_project(Operator):
                 first_model = next(iter(manifest.models.values()))
                 target_models.append(("exterior", first_model))
 
+            primary_model_name = target_models[0][0] if target_models else "exterior"
             for model_name, model_info in target_models:
                 tag_lower = model_name.lower()
-                if tag_lower in ("exterior", "normal", "base"):
+                is_exterior = tag_lower in ("exterior", "normal", "base")
+                if is_exterior:
                     sub_asset = asset_name
                 elif tag_lower in ("interior", "cockpit"):
                     sub_asset = f"{asset_name}_Interior"
                 else:
                     sub_asset = f"{asset_name}_{model_name.capitalize()}"
+
+                model_imported_objects: list[Any] = []
+                model_master_armature: Optional[Any] = None
+
                 for lod_info in model_info.lods:
                     if not lod_info.exists:
                         logger.warning("LOD glTF does not exist: %s", lod_info.gltf_path)
@@ -177,24 +182,28 @@ class OMNIMESH_OT_import_engine_project(Operator):
 
                     new_objs = GLTFAssemblyEngine.import_gltf_into_collection(context, lod_info.gltf_path, tier_col)
                     all_imported_objects.extend(new_objs)
+                    model_imported_objects.extend(new_objs)
 
                     # Identify meshes
                     meshes = [o for o in new_objs if o.type == "MESH"]
-                    lod_mesh_map[lod_info.index] = meshes
+                    if is_exterior or model_name == primary_model_name:
+                        lod_mesh_map[lod_info.index] = meshes
 
-                    # Capture LOD0 Armature as Master Rig
-                    if lod_info.index == 0 and not master_armature:
-                        master_armature = next((o for o in new_objs if o.type == "ARMATURE"), None)
+                    # Capture LOD0 Armature as Master Rig for this specific model
+                    if lod_info.index == 0 and not model_master_armature:
+                        model_master_armature = next((o for o in new_objs if o.type == "ARMATURE"), None)
+
+                # Master Rig Retargeting scoped strictly to this model's objects
+                if reuse_rig and model_master_armature and model_imported_objects:
+                    mods_retargeted = GLTFAssemblyEngine.retarget_armatures_to_master(
+                        model_master_armature, model_imported_objects
+                    )
+                    logger.info("Retargeted %d armature modifiers to master rig for '%s'", mods_retargeted, sub_asset)
 
             # Deduplicate materials across LODs
             if dedup_mats and all_imported_objects:
                 mats_remapped = GLTFAssemblyEngine.deduplicate_materials(all_imported_objects)
                 logger.info("Deduplicated %d material slots across LODs", mats_remapped)
-
-            # Master Rig Retargeting
-            if reuse_rig and master_armature and all_imported_objects:
-                mods_retargeted = GLTFAssemblyEngine.retarget_armatures_to_master(master_armature, all_imported_objects)
-                logger.info("Retargeted %d armature modifiers to master rig", mods_retargeted)
 
             # Bind to OmniMesh Scene LOD Tiers
             if auto_assign_screen:
@@ -297,6 +306,19 @@ class OMNIMESH_OT_import_engine_project(Operator):
         lights_count = 0
         if do_lights and manifest.systems_cfg_path and os.path.isfile(manifest.systems_cfg_path):
             lights_col = get_or_create_engine_import_collection(context, asset_name, "LIGHTS")
+            has_interior = manifest.interior_model is not None or (
+                bpy
+                and hasattr(bpy.data, "collections")
+                and (
+                    f"{asset_name}_Interior" in bpy.data.collections
+                    or bpy.data.collections.get(f"{asset_name}_Interior_LOD0") is not None
+                )
+            )
+            inte_lights_col = (
+                get_or_create_engine_import_collection(context, f"{asset_name}_Interior", "LIGHTS")
+                if has_interior
+                else None
+            )
             if lights_col:
                 try:
                     from .msfs_lighting_ops import OMNIMESH_OT_import_msfs_lights
@@ -307,8 +329,11 @@ class OMNIMESH_OT_import_engine_project(Operator):
                     # Instantiate helper
                     light_importer = OMNIMESH_OT_import_msfs_lights()
                     for light in cfg_lights.lights:
+                        target_col = (
+                            inte_lights_col if (inte_lights_col and light.light_type in (4, 10)) else lights_col
+                        )
                         light_importer._ensure_light_object(
-                            col=lights_col,
+                            col=target_col,
                             light=light,
                             datum_empty=datum,
                             context=context,

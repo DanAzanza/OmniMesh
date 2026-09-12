@@ -326,13 +326,21 @@ class CollectionCloneDAG:
 
         target_coll = bpy.data.collections.new(tier_name)
 
+        # Check if base_name collection exists as a container for LOD tiers
+        base_container = bpy.data.collections.get(base_name)
+        if base_container and base_container != target_coll and tier_idx > 0:
+            if target_coll.name not in base_container.children:
+                base_container.children.link(target_coll)
+            return target_coll
+
         # Link as sibling in parent collection or scene root
         linked = False
-        for parent_c in bpy.data.collections:
-            if root_coll.name in parent_c.children:
-                parent_c.children.link(target_coll)
-                linked = True
-                break
+        if root_coll and hasattr(root_coll, "name"):
+            for parent_c in bpy.data.collections:
+                if root_coll.name in parent_c.children:
+                    parent_c.children.link(target_coll)
+                    linked = True
+                    break
 
         if not linked and bpy.context and bpy.context.scene:
             bpy.context.scene.collection.children.link(target_coll)

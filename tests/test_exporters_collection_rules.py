@@ -338,7 +338,14 @@ def mock_hierarchy():
         (),
         {
             "scene": mock_scene,
-            "view_layer": type("VL", (), {"objects": type("OB", (), {"active": None})()})(),
+            "view_layer": type(
+                "VL",
+                (),
+                {
+                    "objects": type("OB", (), {"active": None})(),
+                    "active_layer_collection": type("ALC", (), {"collection": root})(),
+                },
+            )(),
         },
     )()
 
@@ -508,3 +515,42 @@ def test_unity_export_asset_gathering(mock_hierarchy, tmp_path, monkeypatch):
     assert ok is True
     assert "Unity FBX package" in msg
     assert "exported to" in msg
+
+
+def test_preflight_validator_auto_asset_resolution(mock_hierarchy, monkeypatch):
+    """Verifies that PreFlightValidator resolves active_asset == 'AUTO' without defaulting to dummy 'SM_Asset'."""
+    import exporters.engine_export as ee
+    from exporters.engine_export import PreFlightValidator
+
+    ctx, bpy_mock, _ = mock_hierarchy
+    monkeypatch.setattr(ee, "bpy", bpy_mock)
+
+    # Empty export_base_name and AUTO active_asset
+    ctx.scene.lod_tool.export_base_name = ""
+    ctx.scene.lod_tool.active_asset = "AUTO"
+
+    # Active layer collection points to Simple_Aircraft
+    coll_sa = next(c for c in bpy_mock.data.collections if c.name == "Simple_Aircraft")
+    ctx.view_layer.active_layer_collection.collection = coll_sa
+
+    errors = PreFlightValidator.run_checks(ctx)
+    assert errors == [], f"Expected 0 errors with AUTO asset resolution, got: {errors}"
+
+
+def test_unity_export_collider_normalization_and_rollback(mock_hierarchy, tmp_path, monkeypatch):
+    """Verifies that UnityExporter normalizes non-conforming collider names and rolls them back."""
+    import exporters.engine_export as ee
+    import exporters.unity_export as un
+
+    ctx, bpy_mock, _ = mock_hierarchy
+    monkeypatch.setattr(ee, "bpy", bpy_mock)
+    monkeypatch.setattr(un, "bpy", bpy_mock)
+
+    coll_obj = next(o for o in bpy_mock.data.objects if o.name == "Fuselage_Collider")
+    orig_name = coll_obj.name
+
+    export_path = str(tmp_path / "Unity_Export_Norm")
+    ok, _ = UnityExporter.export_asset(ctx, export_path, "Simple_Aircraft")
+
+    assert ok is True
+    assert coll_obj.name == orig_name

@@ -59,26 +59,33 @@ class UnityExporter:
             return False, f"No generated LOD objects found for '{asset_name}'"
 
         collider_objects = list(payload.collider_objects)
-
-        # Unhide all objects in view layer
-        for obj in export_objects + collider_objects:
-            try:
-                obj.hide_set(False, view_layer=context.view_layer)
-                obj.hide_viewport = False
-            except (RuntimeError, AttributeError) as exc:
-                logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
-
-        bpy.ops.object.select_all(action="DESELECT")
-        for obj in export_objects:
-            obj.select_set(True)
-        for c_obj in collider_objects:
-            c_obj.select_set(True)
-
-        context.view_layer.objects.active = export_objects[0]
-
+        orig_collider_names: dict[Any, str] = {}
         fbx_path = os.path.join(export_dir, f"{clean_name}.fbx")
 
         try:
+            # Normalize collider names for Unity C# postprocessor regex (_Collider\d*|UCX_)
+            for idx, c_obj in enumerate(collider_objects, start=1):
+                if hasattr(c_obj, "name"):
+                    orig_collider_names[c_obj] = c_obj.name
+                    if not (c_obj.name.startswith("UCX_") or "_Collider" in c_obj.name):
+                        c_obj.name = f"{clean_name}_Collider_{idx:02d}"
+
+            # Unhide all objects in view layer
+            for obj in export_objects + collider_objects:
+                try:
+                    obj.hide_set(False, view_layer=context.view_layer)
+                    obj.hide_viewport = False
+                except (RuntimeError, AttributeError) as exc:
+                    logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
+
+            bpy.ops.object.select_all(action="DESELECT")
+            for obj in export_objects:
+                obj.select_set(True)
+            for c_obj in collider_objects:
+                c_obj.select_set(True)
+
+            context.view_layer.objects.active = export_objects[0]
+
             bpy.ops.export_scene.fbx(
                 filepath=fbx_path,
                 use_selection=True,
@@ -94,3 +101,9 @@ class UnityExporter:
             return True, f"Unity FBX package exported to: {fbx_path}"
         except Exception as e:
             return False, f"Failed to export Unity FBX: {str(e)}"
+        finally:
+            for c_obj, orig_name in orig_collider_names.items():
+                try:
+                    c_obj.name = orig_name
+                except Exception as exc:
+                    logger.debug("Could not restore collider name for %s: %s", getattr(c_obj, "name", "obj"), exc)

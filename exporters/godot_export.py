@@ -64,67 +64,69 @@ class GodotExporter:
         bpy.ops.object.select_all(action="DESELECT")
 
         orig_prop_states: dict[Any, dict[str, Any]] = {}
+        orig_collider_names: dict[Any, str] = {}
+        gltf_path = os.path.join(export_dir, f"{clean_name}.gltf")
 
-        for tier_idx, tier_objs in sorted(payload.lod_tiers.items()):
-            is_impostor_obj = payload.has_impostor_tier and tier_idx == max(payload.lod_tiers.keys())
+        try:
+            for tier_idx, tier_objs in sorted(payload.lod_tiers.items()):
+                is_impostor_obj = payload.has_impostor_tier and tier_idx == max(payload.lod_tiers.keys())
 
-            dist_begin = 0.0
-            dist_end = 100.0
-            if props and len(props.lods) > 0:
-                cull_pct = max(0.01, float(getattr(props, "cull_screen_size_pct", 0.5)))
-                last_tier = props.lods[-1]
-                last_dist = float(getattr(last_tier, "distance_m", 50.0) or 50.0)
-                last_screen_pct = float(getattr(last_tier, "screen_size_pct", 50.0) or 50.0)
-                cull_dist = max(last_dist * 1.5, last_dist * (last_screen_pct / cull_pct))
+                dist_begin = 0.0
+                dist_end = 100.0
+                if props and len(props.lods) > 0:
+                    cull_pct = max(0.01, float(getattr(props, "cull_screen_size_pct", 0.5)))
+                    last_tier = props.lods[-1]
+                    last_dist = float(getattr(last_tier, "distance_m", 50.0) or 50.0)
+                    last_screen_pct = float(getattr(last_tier, "screen_size_pct", 50.0) or 50.0)
+                    cull_dist = max(last_dist * 1.5, last_dist * (last_screen_pct / cull_pct))
 
-                if is_impostor_obj:
-                    dist_begin = last_dist
-                    dist_end = cull_dist
-                else:
-                    if tier_idx == 0:
-                        dist_begin = 0.0
-                    else:
-                        prev_tier = props.lods[min(tier_idx - 1, len(props.lods) - 1)]
-                        dist_begin = float(getattr(prev_tier, "distance_m", 10.0) or 10.0)
-
-                    if tier_idx >= len(props.lods) - 1:
+                    if is_impostor_obj:
+                        dist_begin = last_dist
                         dist_end = cull_dist
                     else:
-                        cur_tier = props.lods[min(tier_idx, len(props.lods) - 1)]
-                        dist_end = float(getattr(cur_tier, "distance_m", 50.0) or 50.0)
+                        if tier_idx == 0:
+                            dist_begin = 0.0
+                        else:
+                            prev_tier = props.lods[min(tier_idx - 1, len(props.lods) - 1)]
+                            dist_begin = float(getattr(prev_tier, "distance_m", 10.0) or 10.0)
 
-            for obj in tier_objs:
+                        if tier_idx >= len(props.lods) - 1:
+                            dist_end = cull_dist
+                        else:
+                            cur_tier = props.lods[min(tier_idx, len(props.lods) - 1)]
+                            dist_end = float(getattr(cur_tier, "distance_m", 50.0) or 50.0)
+
+                for obj in tier_objs:
+                    try:
+                        obj.hide_set(False, view_layer=context.view_layer)
+                        obj.hide_viewport = False
+                    except (RuntimeError, AttributeError) as exc:
+                        logger.debug(
+                            "Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc
+                        )
+
+                    orig_prop_states[obj] = {
+                        "visibility_range_begin": obj.get("visibility_range_begin"),
+                        "visibility_range_end": obj.get("visibility_range_end"),
+                    }
+                    obj["visibility_range_begin"] = dist_begin
+                    obj["visibility_range_end"] = dist_end
+                    obj.select_set(True)
+
+            # Prepare and select collider objects with -convcol suffix
+            for idx, c_obj in enumerate(collider_objects, start=1):
                 try:
-                    obj.hide_set(False, view_layer=context.view_layer)
-                    obj.hide_viewport = False
+                    c_obj.hide_set(False, view_layer=context.view_layer)
+                    c_obj.hide_viewport = False
+                    orig_collider_names[c_obj] = c_obj.name
+                    if not c_obj.name.endswith("-convcol"):
+                        c_obj.name = f"{clean_name}_Collider_{idx:02d}-convcol"
+                    c_obj.select_set(True)
                 except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
+                    logger.debug("Could not prepare collider %s: %s", getattr(c_obj, "name", "unknown"), exc)
 
-                orig_prop_states[obj] = {
-                    "visibility_range_begin": obj.get("visibility_range_begin"),
-                    "visibility_range_end": obj.get("visibility_range_end"),
-                }
-                obj["visibility_range_begin"] = dist_begin
-                obj["visibility_range_end"] = dist_end
-                obj.select_set(True)
+            context.view_layer.objects.active = all_objs[0]
 
-        # Prepare and select collider objects with -convcol suffix
-        orig_collider_names: dict[Any, str] = {}
-        for idx, c_obj in enumerate(collider_objects, start=1):
-            try:
-                c_obj.hide_set(False, view_layer=context.view_layer)
-                c_obj.hide_viewport = False
-                orig_collider_names[c_obj] = c_obj.name
-                if not c_obj.name.endswith("-convcol"):
-                    c_obj.name = f"{clean_name}_Collider_{idx:02d}-convcol"
-                c_obj.select_set(True)
-            except (RuntimeError, AttributeError) as exc:
-                logger.debug("Could not prepare collider %s: %s", getattr(c_obj, "name", "unknown"), exc)
-
-        context.view_layer.objects.active = all_objs[0]
-
-        gltf_path = os.path.join(export_dir, f"{clean_name}.gltf")
-        try:
             bpy.ops.export_scene.gltf(
                 filepath=gltf_path,
                 use_selection=True,

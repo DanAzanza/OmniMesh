@@ -55,6 +55,22 @@ except (ImportError, ValueError):
     from .slender import SlenderFeatureCuller
 
 
+def _count_triangles(mesh_data: Any) -> int:
+    """Computes true triangle count across polygons, supporting quads, n-gons, and mocks."""
+    if not mesh_data or not hasattr(mesh_data, "polygons"):
+        return 0
+    try:
+        polys = mesh_data.polygons
+        if not polys:
+            return 0
+        first = polys[0]
+        if hasattr(first, "vertices"):
+            return sum(max(1, len(p.vertices) - 2) for p in polys)
+        return len(polys)
+    except Exception:
+        return len(getattr(mesh_data, "polygons", []))
+
+
 def generate_all_lods(
     context: Any,
     props: Any,
@@ -106,23 +122,11 @@ def generate_all_lods(
             src_coll = context.collection
         elif mesh_objs and getattr(mesh_objs[0], "users_collection", []):
             for c in mesh_objs[0].users_collection:
-                if c.name == base_name and c != context.scene.collection:
+                if c.name in (base_name, f"{base_name}_LOD0") and c != context.scene.collection:
                     src_coll = c
                     break
 
-        # Normalize rotation and scale on unparented meshes before creating root pivot
-        for obj in mesh_objs:
-            if not obj.parent:
-                try:
-                    if hasattr(obj, "data") and getattr(obj.data, "users", 1) > 1:
-                        obj.data = obj.data.copy()
-                    bpy.context.view_layer.objects.active = obj
-                    obj.select_set(True)
-                    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-                except Exception as exc:
-                    logger.debug("Transform apply skipped for %s: %s", getattr(obj, "name", "obj"), exc)
-
-        if not src_coll or src_coll.name != base_name:
+        if not src_coll or src_coll.name not in (base_name, f"{base_name}_LOD0"):
             wrap_objs = list(mesh_objs)
             if armature_obj and armature_obj not in wrap_objs:
                 wrap_objs.append(armature_obj)
@@ -175,13 +179,13 @@ def generate_all_lods(
                         if ModifierManager.has_unapplied_modifiers(obj):
                             eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
                             if eval_mesh:
-                                tier_tris += len(getattr(eval_mesh, "polygons", []))
+                                tier_tris += _count_triangles(eval_mesh)
                                 if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
                                     eval_obj.to_mesh_clear()
                             else:
-                                tier_tris += len(obj.data.polygons)
+                                tier_tris += _count_triangles(getattr(obj, "data", None))
                         else:
-                            tier_tris += len(obj.data.polygons)
+                            tier_tris += _count_triangles(getattr(obj, "data", None))
                     tier.actual_tris = tier_tris
                     tier.actual_triangles = tier_tris
                     tier.mat_slots_count = tier_mats
@@ -284,7 +288,7 @@ def generate_all_lods(
                             )
                         WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
 
-                    tier.actual_tris = len(tier_obj.data.polygons)
+                    tier.actual_tris = _count_triangles(getattr(tier_obj, "data", None))
                     tier.actual_triangles = tier.actual_tris
                     tier.mat_slots_count = len(tier_obj.material_slots)
                     if hasattr(tier_obj, "lod_tool"):
@@ -403,7 +407,7 @@ def generate_all_lods(
                             WeightSanitizer.normalize_and_clamp_weights(lod_obj, max_influences=max_influences)
 
                         lod_obj.data.update()
-                        tier_tris += len(lod_obj.data.polygons)
+                        tier_tris += _count_triangles(getattr(lod_obj, "data", None))
                         tier_mats += len(lod_obj.material_slots)
                         if hasattr(lod_obj, "lod_tool"):
                             lod_obj.lod_tool.lod_root_object = source_obj

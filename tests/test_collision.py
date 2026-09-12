@@ -264,3 +264,44 @@ def test_get_lod0_mesh_objects_from_derivative_collection(monkeypatch):
     assert len(meshes) == 2
     assert seat_lod0 in meshes
     assert back_lod0 in meshes
+
+
+def test_collision_collection_nested_under_root_asset(monkeypatch):
+    """Ensure generated collision collection is nested under the root model collection if present."""
+    from unittest.mock import MagicMock
+    import core.collision as collision_mod
+    from core.collision import CollisionManager
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(collision_mod, "bpy", mock_bpy)
+
+    root_coll = MagicMock()
+    root_coll.name = "SM_Plane"
+    root_coll.children = MagicMock()
+    root_coll.children.__contains__.return_value = False
+
+    target_coll = MagicMock()
+    target_coll.name = "SM_Plane_Colliders"
+
+    def mock_get(name):
+        if name == "SM_Plane":
+            return root_coll
+        return None
+
+    mock_bpy.data.collections.get.side_effect = mock_get
+    mock_bpy.data.collections.new.return_value = target_coll
+
+    mesh_obj = MagicMock()
+    mesh_obj.name = "SM_Plane"
+    mesh_obj.matrix_world = MagicMock()
+    mesh_obj.data = MagicMock()
+
+    CollisionManager.generate_colliders_for_objects(
+        [mesh_obj],
+        "SM_Plane",
+        mode="PER_OBJECT",
+        hull_count=1,
+    )
+
+    root_coll.children.link.assert_called_once_with(target_coll)
+    assert not mock_bpy.context.scene.collection.children.link.called

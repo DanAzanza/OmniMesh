@@ -158,6 +158,11 @@ class OMNIMESH_PT_modify(Panel):
         layout = self.layout
         props = context.scene.lod_tool
 
+        # 0. Target Asset Selection
+        row_asset = layout.row(align=True)
+        row_asset.use_property_split = False
+        row_asset.prop(props, "active_asset", text="Target Asset", icon="OUTLINER_COLLECTION")
+
         # 1. Action Row 1: Mesh Sanitization + Gear Popover
         row_san = layout.row(align=True)
         row_san.use_property_split = False

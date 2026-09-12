@@ -648,3 +648,76 @@ def test_panel2_modify_collection_first_and_lod0_only(monkeypatch):
     assert LOD_OT_clean_and_repair_materials.poll(mock_context) is True
     assert LOD_OT_apply_all_modifiers.poll(mock_context) is True
     assert LOD_OT_apply_transforms.poll(mock_context) is True
+
+
+def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
+    """Verify that Panel 2 renders the active_asset dropdown and strictly scopes LOD0 resolution."""
+    from unittest.mock import MagicMock
+    import ui.panel as panel_mod
+    import ui.utils as ui_utils
+    from ui.panel import OMNIMESH_PT_modify
+    from ui.utils import get_lod0_mesh_objects
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
+    monkeypatch.setattr(ui_utils, "bpy", mock_bpy)
+
+    plane_mesh = MagicMock()
+    plane_mesh.name = "Airframe"
+    plane_mesh.type = "MESH"
+    plane_mesh.get.return_value = False
+
+    pilot_mesh = MagicMock()
+    pilot_mesh.name = "Pilot"
+    pilot_mesh.type = "MESH"
+    pilot_mesh.get.return_value = False
+
+    coll_plane = MagicMock()
+    coll_plane.name = "Airframe_LOD0"
+    coll_plane.objects = [plane_mesh]
+
+    coll_pilot = MagicMock()
+    coll_pilot.name = "Pilot_LOD0"
+    coll_pilot.objects = [pilot_mesh]
+
+    def mock_get_coll(name):
+        if name in {"Airframe", "Airframe_LOD0"}:
+            return coll_plane
+        if name in {"Pilot", "Pilot_LOD0"}:
+            return coll_pilot
+        return None
+
+    mock_bpy.data.collections.get.side_effect = mock_get_coll
+
+    mock_context = MagicMock()
+    mock_context.scene.collection = MagicMock()
+    mock_context.active_object = None
+    mock_context.selected_objects = []
+
+    mock_props = MagicMock()
+    mock_props.active_asset = "Airframe"
+    mock_props.export_base_name = "Airframe"
+    mock_context.scene.lod_tool = mock_props
+
+    # 1. Panel 2 draw renders active_asset prop
+    panel = OMNIMESH_PT_modify()
+    mock_layout = MagicMock()
+    mock_row = MagicMock()
+    mock_layout.row.return_value = mock_row
+    panel.layout = mock_layout
+    panel.draw(mock_context)
+
+    # Verify active_asset is rendered in the first row
+    mock_row.prop.assert_any_call(mock_props, "active_asset", text="Target Asset", icon="OUTLINER_COLLECTION")
+
+    # 2. Verify scoping to active_asset
+    meshes = get_lod0_mesh_objects(mock_context)
+    assert len(meshes) == 1
+    assert meshes[0].name == "Airframe"
+
+    # Switch active_asset to Pilot
+    mock_props.active_asset = "Pilot"
+    mock_props.export_base_name = "Pilot"
+    meshes_pilot = get_lod0_mesh_objects(mock_context)
+    assert len(meshes_pilot) == 1
+    assert meshes_pilot[0].name == "Pilot"

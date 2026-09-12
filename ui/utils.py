@@ -65,9 +65,13 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
     active_obj = getattr(context, "active_object", None)
     selected_objs = getattr(context, "selected_objects", []) or ([active_obj] if active_obj else [])
 
+    props = getattr(getattr(context, "scene", None), "lod_tool", None)
+
     if not base_name:
-        props = getattr(getattr(context, "scene", None), "lod_tool", None)
-        base_name = getattr(props, "export_base_name", "") or ""
+        try:
+            base_name = resolve_effective_asset_name(context, props)
+        except Exception as exc:
+            logger.debug("Failed resolving effective asset name in get_lod0_mesh_objects: %s", exc)
 
     if not base_name and active_obj:
         raw_name = getattr(active_obj, "name", "")
@@ -76,12 +80,6 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
     if not base_name and selected_objs:
         raw_name = getattr(selected_objs[0], "name", "")
         base_name = raw_name.split("_LOD")[0].split("_Collider")[0].split("_Impostor")[0]
-
-    if not base_name:
-        try:
-            base_name = resolve_effective_asset_name(context)
-        except Exception as exc:
-            logger.debug("Failed resolving effective asset name in get_lod0_mesh_objects: %s", exc)
 
     # 1. Search for asset root collection
     candidate_coll = None
@@ -114,10 +112,8 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
 
     if candidate_coll and hasattr(candidate_coll, "objects"):
         coll_meshes = []
-        target_objs = candidate_coll.objects
-        if hasattr(candidate_coll, "all_objects") and not hasattr(candidate_coll.all_objects, "_mock_return_value"):
-            target_objs = candidate_coll.all_objects
-        for obj in target_objs:
+        # Strictly shallow inspection of candidate_coll.objects to prevent pulling in child collections (LOD1..N, Colliders, etc.)
+        for obj in candidate_coll.objects:
             if not is_object_valid(obj) or getattr(obj, "type", "") != "MESH":
                 continue
             name = getattr(obj, "name", "")
@@ -130,6 +126,16 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
             coll_meshes.append(obj)
         if coll_meshes:
             return coll_meshes
+
+    # Direct object lookup fallback for headless testing / single object assets
+    if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects") and base_name:
+        for o_name in (f"{base_name}_LOD0", base_name):
+            o = bpy.data.objects.get(o_name)
+            if o and getattr(o, "type", "") == "MESH" and is_object_valid(o):
+                is_col = bool(getattr(o, "get", lambda *_: False)("_is_collider", False) is True)
+                is_imp = bool(getattr(o, "get", lambda *_: False)("_is_impostor", False) is True)
+                if not is_col and not is_imp:
+                    return [o]
 
     # 2. Fallback: inspect selected meshes and resolve any _LOD1..10 back to LOD0
     selected_meshes = get_selected_mesh_objects(context)
@@ -423,8 +429,6 @@ def get_asset_base_meshes(context: Any, asset_name: str) -> list[Any]:
     if coll:
         meshes = []
         target_objs = getattr(coll, "objects", [])
-        if hasattr(coll, "all_objects") and not hasattr(coll.all_objects, "_mock_return_value"):
-            target_objs = coll.all_objects
         for obj in target_objs:
             if not is_object_valid(obj) or getattr(obj, "type", "") != "MESH":
                 continue
