@@ -18,12 +18,20 @@ except ImportError:
     bpy = None
 
 
+try:
+    from .engine_export import AssetMeshResolver
+except (ImportError, ValueError):
+    try:
+        from exporters.engine_export import AssetMeshResolver
+    except (ImportError, ValueError):
+        AssetMeshResolver = None  # type: ignore
+
+
 class UnityExporter:
     @classmethod
     def export_asset(cls, context: Any, export_dir: str, asset_name: str) -> tuple[bool, str]:
         if not bpy or not context:
             return False, "Blender bpy not available."
-        props = getattr(context.scene, "lod_tool", None)
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
 
         try:
@@ -31,63 +39,26 @@ class UnityExporter:
         except OSError as exc:
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
+        payload = AssetMeshResolver.resolve_payload(context, clean_name) if AssetMeshResolver else None
+        if not payload or not payload.lod_tiers:
+            return False, f"No generated LOD objects found for '{asset_name}'"
+
+        if hasattr(bpy.ops.object, "mode_set") and getattr(context, "mode", "") != "OBJECT":
+            try:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except Exception as exc:
+                logger.debug("Mode set to OBJECT skipped: %s", exc)
+
         export_objects: list[Any] = []
-        base_search = clean_name.split("_LOD")[0]
-
-        # 1. LOD0 Root Collection
-        root_c = bpy.data.collections.get(base_search) or (
-            bpy.data.collections.get(props.export_base_name) if props else None
-        )
-        if root_c:
-            export_objects.extend(
-                [obj for obj in root_c.objects if obj.type in {"MESH", "EMPTY"} and not obj.get("_is_collider", False)]
-            )
-
-        # 2. Sibling LOD Collections (LOD1..k)
-        if props and len(props.lods) > 0:
-            for i in range(1, len(props.lods)):
-                s_c = bpy.data.collections.get(f"{base_search}_LOD{i}")
-                if s_c:
-                    export_objects.extend(
-                        [
-                            obj
-                            for obj in s_c.objects
-                            if obj.type in {"MESH", "EMPTY"} and not obj.get("_is_collider", False)
-                        ]
-                    )
-
-        # 3. Impostor Collection
-        imp_c = bpy.data.collections.get(f"{base_search}_LOD_Impostor")
-        if imp_c:
-            export_objects.extend(list(imp_c.objects))
-
-        # 4. Spatial Chunk & HLOD Collections
-        for chunk_c_name in [f"{base_search}_Chunks_LOD0", f"{base_search}_Chunks_LOD1", f"{base_search}_HLOD_LOD2"]:
-            chunk_c = bpy.data.collections.get(chunk_c_name)
-            if chunk_c:
-                export_objects.extend([obj for obj in chunk_c.objects if obj.type in {"MESH", "EMPTY"}])
-
-        # 5. Fallback to direct tier references
-        if not export_objects and props and len(props.lods) > 0:
-            export_objects = [tier.generated_obj for tier in props.lods if tier.generated_obj]
+        for tier_idx in sorted(payload.lod_tiers.keys()):
+            for obj in payload.lod_tiers[tier_idx]:
+                if obj not in export_objects:
+                    export_objects.append(obj)
 
         if not export_objects:
             return False, f"No generated LOD objects found for '{asset_name}'"
 
-        # Collect optional collision hull objects
-        coll_coll = bpy.data.collections.get(f"{asset_name}_Colliders") or (
-            bpy.data.collections.get(f"{props.export_base_name}_Colliders") if props else None
-        )
-        collider_objects: list[Any] = []
-        if coll_coll and len(coll_coll.objects) > 0:
-            collider_objects = list(coll_coll.objects)
-        else:
-            base_search = asset_name.split("_LOD")[0]
-            collider_objects = [
-                obj
-                for obj in bpy.data.objects
-                if obj.get("_is_collider", False) or f"{base_search}_Collider_" in obj.name
-            ]
+        collider_objects = list(payload.collider_objects)
 
         # Unhide all objects in view layer
         for obj in export_objects + collider_objects:

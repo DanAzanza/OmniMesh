@@ -23,21 +23,23 @@ try:
     from ..core.animations import AnimationRigSanitizer
     from ..core.pbr_presets import PBRExportPresetManager
     from ..core.textures import TextureChannelPacker, TexturePoolManager
-    from ..exporters.engine_export import PreFlightValidator
+    from ..exporters.engine_export import AssetMeshResolver, PreFlightValidator
     from ..exporters.godot_export import GodotExporter
     from ..exporters.msfs_export import MSFSExporter
     from ..exporters.ue5_export import UE5Exporter
     from ..exporters.unity_export import UnityExporter
+    from .utils import resolve_effective_asset_name
 except (ImportError, ValueError):
     from bridges.manager import BridgeManager
     from core.animations import AnimationRigSanitizer
     from core.pbr_presets import PBRExportPresetManager
     from core.textures import TextureChannelPacker, TexturePoolManager
-    from exporters.engine_export import PreFlightValidator
+    from exporters.engine_export import AssetMeshResolver, PreFlightValidator
     from exporters.godot_export import GodotExporter
     from exporters.msfs_export import MSFSExporter
     from exporters.ue5_export import UE5Exporter
     from exporters.unity_export import UnityExporter
+    from ui.utils import resolve_effective_asset_name
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +118,8 @@ class LOD_OT_pack_pbr_textures(Operator):
         bit_depth = int(getattr(props, "pbr_export_bit_depth", "8"))
         naming_pattern = getattr(props, "pbr_export_naming_pattern", "{material}{suffix}") or "{material}{suffix}"
         raw_asset = getattr(props, "export_base_name", "").strip()
+        if not raw_asset:
+            raw_asset = resolve_effective_asset_name(context, props)
         asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_asset) if raw_asset else "SM_Asset"
 
         all_futures: list[Any] = []
@@ -291,8 +295,9 @@ class LOD_OT_export_engine_package(Operator):
 
         export_dir = bpy.path.abspath(props.export_directory)
 
-        raw_name = props.export_base_name.strip() if props.export_base_name else "SM_Asset"
-        asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name) or "SM_Asset"
+        effective_name = resolve_effective_asset_name(context, props)
+        raw_name = props.export_base_name.strip() if props.export_base_name else effective_name
+        asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name) or effective_name or "SM_Asset"
         target = props.target_engine
 
         # Auto-pack PBR textures if enabled
@@ -320,7 +325,16 @@ class LOD_OT_export_engine_package(Operator):
         message = ""
 
         if target == "MSFS_2024":
-            success, message = MSFSExporter.export_asset(context, export_dir, asset_name)
+            if getattr(props, "msfs_export_full_package", True):
+                # If active asset is interior or variant, resolve the base package name
+                payload = AssetMeshResolver.resolve_payload(context, asset_name) if AssetMeshResolver else None
+                if payload and payload.parent_asset_name:
+                    pkg_base = payload.parent_asset_name
+                else:
+                    pkg_base = asset_name.split("_Interior")[0]
+                success, message = MSFSExporter.export_project_package(context, export_dir, pkg_base)
+            else:
+                success, message = MSFSExporter.export_asset(context, export_dir, asset_name)
         elif target == "UE5":
             success, message = UE5Exporter.export_asset(context, export_dir, asset_name)
         elif target == "UNITY_6":

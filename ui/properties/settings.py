@@ -702,51 +702,18 @@ class LODToolSettings(PropertyGroup):
 
     # MSFS Spatial Configuration
     msfs_spatial_cfg_path: StringProperty(
-        name="MSFS Flight Model File",
-        subtype="FILE_PATH",
-        default="",
-        description="Path to target flight_model.cfg for spatial configuration synchronization",
+        name="MSFS Flight Model File", subtype="FILE_PATH", default="", description="Path to flight_model.cfg"
     )
     msfs_systems_cfg_path: StringProperty(
-        name="MSFS Systems / Lights File",
-        subtype="FILE_PATH",
-        default="",
-        description="Path to target systems.cfg or light.cfg for lighting synchronization",
+        name="MSFS Systems / Lights File", subtype="FILE_PATH", default="", description="Path to systems.cfg"
     )
-    msfs_spatial_status: StringProperty(
-        name="MSFS Spatial Status",
-        default="Ready",
-        description="Current status or last synchronized backup file",
-    )
-    msfs_scrape_margin_m: FloatProperty(
-        name="Scrape Margin (m)",
-        default=0.0,
-        min=-0.5,
-        max=0.5,
-        description="Outward offset margin applied to scrape points (m)",
-    )
-    msfs_gear_state: EnumProperty(
-        name="Gear State in Model",
-        items=MSFS_GEAR_STATE_ITEMS,
-        default="STATIC_COMPRESSED",
-        description="Strut compression state",
-    )
-    msfs_gear_compression_m: FloatProperty(
-        name="Strut Compression (m)",
-        default=0.12,
-        min=0.0,
-        max=1.0,
-        description="Expected oleo strut compression in meters",
-    )
-    msfs_calculated_cg_height_ft: FloatProperty(
-        name="Calculated Static CG Height (ft)",
-        default=0.0,
-        precision=3,
-        description="Computed static_cg_height in feet",
-    )
-    msfs_cameras_cfg_path: StringProperty(
-        name="MSFS Cameras File", subtype="FILE_PATH", default="", description="Path to target cameras.cfg"
-    )
+    msfs_spatial_status: StringProperty(name="MSFS Spatial Status", default="Ready")
+    msfs_scrape_margin_m: FloatProperty(name="Scrape Margin (m)", default=0.0, min=-0.5, max=0.5)
+    msfs_gear_state: EnumProperty(name="Gear State", items=MSFS_GEAR_STATE_ITEMS, default="STATIC_COMPRESSED")
+    msfs_gear_compression_m: FloatProperty(name="Strut Compression (m)", default=0.12, min=0.0, max=1.0)
+    msfs_calculated_cg_height_ft: FloatProperty(name="Calculated Static CG Height (ft)", default=0.0, precision=3)
+    msfs_cameras_cfg_path: StringProperty(name="MSFS Cameras File", subtype="FILE_PATH", default="")
+    msfs_export_full_package: BoolProperty(name="Export Full Package", default=True)
 
     # Engine / Project Importer Properties
     engine_import_preset: EnumProperty(
@@ -762,45 +729,18 @@ class LODToolSettings(PropertyGroup):
         description="Root folder of project to ingest",
         update=on_engine_import_directory_updated,
     )
-    engine_import_geometry: BoolProperty(
-        name="Import Geometry & LODs", default=True, description="Import glTF LOD meshes into tier collections"
-    )
-    engine_import_spatial: BoolProperty(
-        name="Import Spatial Markers", default=True, description="Import datum, CG, wheels, scrape points, fuel tanks"
-    )
-    engine_import_lights: BoolProperty(
-        name="Import Lights", default=True, description="Import aviation lights from systems.cfg or light.cfg"
-    )
-    engine_import_cameras: BoolProperty(
-        name="Import Cameras", default=True, description="Import cockpit eyepoint and cameras from cameras.cfg"
-    )
+    engine_import_geometry: BoolProperty(name="Import Geometry & LODs", default=True)
+    engine_import_spatial: BoolProperty(name="Import Spatial Markers", default=True)
+    engine_import_lights: BoolProperty(name="Import Lights", default=True)
+    engine_import_cameras: BoolProperty(name="Import Cameras", default=True)
     engine_import_model_target: EnumProperty(
-        name="Model Target",
-        items=ENGINE_IMPORT_MODEL_TARGET_ITEMS,
-        default="EXTERIOR_ONLY",
-        description="Target model to ingest",
+        name="Model Target", items=ENGINE_IMPORT_MODEL_TARGET_ITEMS, default="EXTERIOR_ONLY"
     )
-    engine_import_use_lod0_suffix: BoolProperty(
-        name="Use LOD0 Suffix",
-        default=True,
-        description="Whether to name LOD0 collection '{Asset}_LOD0' or omit suffix",
-    )
-    engine_import_auto_assign_screen_pct: BoolProperty(
-        name="Auto-Assign Screen %",
-        default=True,
-        description="Map minSize screen coverage values directly to LOD tiers",
-    )
-    engine_import_deduplicate_materials: BoolProperty(
-        name="Deduplicate Materials",
-        default=True,
-        description="Remap duplicate materials across LODs to base materials",
-    )
-    engine_import_reuse_master_rig: BoolProperty(
-        name="Reuse Master Armature", default=True, description="Retarget LOD1..N armatures to LOD0 Master Rig"
-    )
-    last_engine_import_summary: StringProperty(
-        name="Last Import Summary", default="", description="Summary of the last completed engine project import"
-    )
+    engine_import_use_lod0_suffix: BoolProperty(name="Use LOD0 Suffix", default=True)
+    engine_import_auto_assign_screen_pct: BoolProperty(name="Auto-Assign Screen %", default=True)
+    engine_import_deduplicate_materials: BoolProperty(name="Deduplicate Materials", default=True)
+    engine_import_reuse_master_rig: BoolProperty(name="Reuse Master Armature", default=True)
+    last_engine_import_summary: StringProperty(name="Last Import Summary", default="")
 
 
 __all__ = ["LODToolSettings"]

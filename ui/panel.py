@@ -489,6 +489,11 @@ class OMNIMESH_PT_export(Panel):
                 box_status = box_exp.box()
                 box_status.label(text=props.batch_status_text, icon="TIME")
         else:
+            if getattr(props, "target_engine", "") == "MSFS_2024":
+                row_pkg = box_exp.row(align=True)
+                row_pkg.use_property_split = False
+                row_pkg.prop(props, "msfs_export_full_package", text="Export Full Aircraft Package")
+
             row2_exp = box_exp.row(align=True)
             row2_exp.use_property_split = False
             row2_exp.scale_y = 1.15

@@ -18,6 +18,15 @@ except ImportError:
     bpy = None
 
 
+try:
+    from .engine_export import AssetMeshResolver
+except (ImportError, ValueError):
+    try:
+        from exporters.engine_export import AssetMeshResolver
+    except (ImportError, ValueError):
+        AssetMeshResolver = None  # type: ignore
+
+
 class GodotExporter:
     @classmethod
     def export_asset(cls, context: Any, export_dir: str, asset_name: str) -> tuple[bool, str]:
@@ -31,103 +40,73 @@ class GodotExporter:
         except OSError as exc:
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
+        payload = AssetMeshResolver.resolve_payload(context, clean_name) if AssetMeshResolver else None
+        if not payload or not payload.lod_tiers:
+            return False, "No generated LOD objects found to export."
+
+        if hasattr(bpy.ops.object, "mode_set") and getattr(context, "mode", "") != "OBJECT":
+            try:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except Exception as exc:
+                logger.debug("Mode set to OBJECT skipped: %s", exc)
+
         all_objs: list[Any] = []
-        base_search = clean_name.split("_LOD")[0]
-
-        # 1. LOD0 Root Collection
-        root_c = bpy.data.collections.get(base_search) or (
-            bpy.data.collections.get(props.export_base_name) if props else None
-        )
-        if root_c:
-            all_objs.extend(
-                [obj for obj in root_c.objects if obj.type in {"MESH", "EMPTY"} and not obj.get("_is_collider", False)]
-            )
-
-        # 2. Sibling LOD Collections (LOD1..k)
-        if props and len(props.lods) > 0:
-            for i in range(1, len(props.lods)):
-                s_c = bpy.data.collections.get(f"{base_search}_LOD{i}")
-                if s_c:
-                    all_objs.extend(
-                        [
-                            obj
-                            for obj in s_c.objects
-                            if obj.type in {"MESH", "EMPTY"} and not obj.get("_is_collider", False)
-                        ]
-                    )
-
-        # 3. Impostor Collection
-        imp_c = bpy.data.collections.get(f"{base_search}_LOD_Impostor")
-        if imp_c:
-            all_objs.extend(list(imp_c.objects))
-
-        # 4. Spatial Chunk & HLOD Collections
-        for chunk_c_name in [f"{base_search}_Chunks_LOD0", f"{base_search}_Chunks_LOD1", f"{base_search}_HLOD_LOD2"]:
-            chunk_c = bpy.data.collections.get(chunk_c_name)
-            if chunk_c:
-                all_objs.extend([obj for obj in chunk_c.objects if obj.type in {"MESH", "EMPTY"}])
-
-        # 5. Fallback to direct tier references
-        if not all_objs and props and len(props.lods) > 0:
-            all_objs = [tier.generated_obj for tier in props.lods if tier.generated_obj]
+        for tier_idx in sorted(payload.lod_tiers.keys()):
+            for obj in payload.lod_tiers[tier_idx]:
+                if obj not in all_objs:
+                    all_objs.append(obj)
 
         if not all_objs:
             return False, "No generated LOD objects found to export."
 
-        # Collect optional collision hull objects
-        coll_coll = bpy.data.collections.get(f"{asset_name}_Colliders") or (
-            bpy.data.collections.get(f"{props.export_base_name}_Colliders") if props else None
-        )
-        collider_objects: list[Any] = []
-        if coll_coll and len(coll_coll.objects) > 0:
-            collider_objects = list(coll_coll.objects)
-        else:
-            base_search = asset_name.split("_LOD")[0]
-            collider_objects = [
-                obj
-                for obj in bpy.data.objects
-                if obj.get("_is_collider", False) or f"{base_search}_Collider_" in obj.name
-            ]
+        collider_objects = list(payload.collider_objects)
 
         bpy.ops.object.select_all(action="DESELECT")
 
-        for obj in all_objs:
-            try:
-                obj.hide_set(False, view_layer=context.view_layer)
-                obj.hide_viewport = False
-            except (RuntimeError, AttributeError) as exc:
-                logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
+        orig_prop_states: dict[Any, dict[str, Any]] = {}
 
-            tier_idx = 0
-            is_impostor_obj = "_Impostor" in obj.name or bool(obj.get("_is_impostor", False))
-            if is_impostor_obj:
-                tier_idx = len(props.lods) if props and len(props.lods) > 0 else 3
-            else:
-                for i in range(10):
-                    if f"_LOD{i}" in obj.name:
-                        tier_idx = i
-                        break
+        for tier_idx, tier_objs in sorted(payload.lod_tiers.items()):
+            is_impostor_obj = payload.has_impostor_tier and tier_idx == max(payload.lod_tiers.keys())
 
             dist_begin = 0.0
             dist_end = 100.0
             if props and len(props.lods) > 0:
                 cull_pct = max(0.01, float(getattr(props, "cull_screen_size_pct", 0.5)))
-                last_dist = props.lods[-1].distance_m or 50.0
-                cull_dist = max(last_dist * 1.5, last_dist * (props.lods[-1].screen_size_pct / cull_pct))
+                last_tier = props.lods[-1]
+                last_dist = float(getattr(last_tier, "distance_m", 50.0) or 50.0)
+                last_screen_pct = float(getattr(last_tier, "screen_size_pct", 50.0) or 50.0)
+                cull_dist = max(last_dist * 1.5, last_dist * (last_screen_pct / cull_pct))
 
                 if is_impostor_obj:
-                    dist_begin = props.lods[-1].distance_m
+                    dist_begin = last_dist
                     dist_end = cull_dist
                 else:
-                    dist_begin = 0.0 if tier_idx == 0 else props.lods[min(tier_idx - 1, len(props.lods) - 1)].distance_m
+                    if tier_idx == 0:
+                        dist_begin = 0.0
+                    else:
+                        prev_tier = props.lods[min(tier_idx - 1, len(props.lods) - 1)]
+                        dist_begin = float(getattr(prev_tier, "distance_m", 10.0) or 10.0)
+
                     if tier_idx >= len(props.lods) - 1:
                         dist_end = cull_dist
                     else:
-                        dist_end = props.lods[min(tier_idx, len(props.lods) - 1)].distance_m
+                        cur_tier = props.lods[min(tier_idx, len(props.lods) - 1)]
+                        dist_end = float(getattr(cur_tier, "distance_m", 50.0) or 50.0)
 
-            obj["visibility_range_begin"] = dist_begin
-            obj["visibility_range_end"] = dist_end
-            obj.select_set(True)
+            for obj in tier_objs:
+                try:
+                    obj.hide_set(False, view_layer=context.view_layer)
+                    obj.hide_viewport = False
+                except (RuntimeError, AttributeError) as exc:
+                    logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
+
+                orig_prop_states[obj] = {
+                    "visibility_range_begin": obj.get("visibility_range_begin"),
+                    "visibility_range_end": obj.get("visibility_range_end"),
+                }
+                obj["visibility_range_begin"] = dist_begin
+                obj["visibility_range_end"] = dist_end
+                obj.select_set(True)
 
         # Prepare and select collider objects with -convcol suffix
         orig_collider_names: dict[Any, str] = {}
@@ -137,7 +116,7 @@ class GodotExporter:
                 c_obj.hide_viewport = False
                 orig_collider_names[c_obj] = c_obj.name
                 if not c_obj.name.endswith("-convcol"):
-                    c_obj.name = f"{asset_name}_Collider_{idx:02d}-convcol"
+                    c_obj.name = f"{clean_name}_Collider_{idx:02d}-convcol"
                 c_obj.select_set(True)
             except (RuntimeError, AttributeError) as exc:
                 logger.debug("Could not prepare collider %s: %s", getattr(c_obj, "name", "unknown"), exc)
@@ -163,3 +142,16 @@ class GodotExporter:
                     c_obj.name = orig_name
                 except Exception as exc:
                     logger.debug("Restoring collider name failed: %s", exc)
+            # Restore original property states
+            for obj, state in orig_prop_states.items():
+                for k, v in state.items():
+                    if v is None and k in obj:
+                        try:
+                            del obj[k]
+                        except Exception as exc:
+                            logger.debug("Could not remove property %s: %s", k, exc)
+                    elif v is not None:
+                        try:
+                            obj[k] = v
+                        except Exception as exc:
+                            logger.debug("Could not restore property %s: %s", k, exc)

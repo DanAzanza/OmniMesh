@@ -4,7 +4,7 @@
 [![Blender 4.2+ / 5.2 LTS](https://img.shields.io/badge/Blender-4.2%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-303%20passed%20%28100%25%29-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-309%20passed%20%28100%25%29-brightgreen.svg)]()
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5%20%7C%20Unity%206%20%7C%20Godot%204-purple.svg)]()
 
@@ -201,7 +201,7 @@ Clone or copy the repository into your Blender scripts folder:
 
 ## 🛠️ Automated Testing & Quality Gate
 
-OmniMesh maintains a deterministic, strict CI quality gate with **261 unit & integration tests**:
+OmniMesh maintains a deterministic, strict CI quality gate with **309 unit & integration tests**:
 
 ```bash
 # Run CI verification (dependencies, linter, formatter, type checker, tests)

@@ -123,4 +123,16 @@
 * **Scene-Level Property Group Hazard**: In Blender Python, `scene.lod_tool.lods` is a single shared `CollectionProperty` across the scene. When switching between multiple models (e.g. Exterior vs Cockpit) in an EnumProperty dropdown, updating the list wipes out user-tuned screen sizes and triangle targets unless cached in an in-memory dictionary (`_ASSET_LOD_STATE_CACHE`).
 * **Safe Transition Sequence**: Always call `serialize_asset_lod_state(props, outgoing_asset)` before switching `active_asset`, and `deserialize_asset_lod_state(props, incoming_asset)` afterwards to guarantee non-destructive state retention.
 
+### 4.6 Exporter Collection-First Rules & Transactional Rollback (Variante A)
+* **Technical Sub-Collection Isolation (`coll.objects` vs `coll.all_objects`)**: In Blender Python, calling `coll.all_objects` recursively pulls in all child objects. Because `{AssetName}_Spatial`, `{AssetName}_Lights`, and `{AssetName}_Cameras` reside inside `{AssetName}_LOD0`, calling `all_objects` or passing the LOD0 collection directly to exporters causes glTF and FBX geometry exporters to pack technical empties, spot lights, and cameras directly into the game mesh datablock. Exporters must inspect immediate `coll.objects` and verify `obj.users_collection` does not belong to any auxiliary technical collection.
+* **Transactional Scene-Graph Rollback (`try...finally`) in Single-Mesh Engine Exporters**:
+  * In Unreal Engine 5 FBX export, LOD meshes must be parented to an ephemeral `LODGroup` empty and colliders renamed to `UCX_{Asset}_{Index}`.
+  * In Godot 4 glTF export, custom properties (`visibility_range_begin`, `visibility_range_end`) are written to mesh datablocks, and colliders renamed to `-convcol`.
+  * Invariant: Never leave user scene objects mutated after export. Exporters must record original parents and object names in dictionary structures before mutating, perform the engine export inside a `try` block, and restore original names and parents inside a `finally` block (while removing the temporary `LODGroup` empty via `bpy.data.objects.remove(created_empty, do_unlink=True)`).
+* **MSFS Multi-Model Aircraft Package Export & Relative POSIX Paths**:
+  * When exporting full aircraft packages for MSFS, the base aircraft and interior are placed in `model/` with `model.cfg` declaring `normal={Base}.xml` and `interior={Base}_Interior.xml`.
+  * Variants reside in sibling folders `model.<variant>/` (e.g. `model.floats/`).
+  * Invariant: MSFS `model.cfg` files must strictly reference the shared interior using POSIX forward slashes (`interior=../model/{Interior}.xml`). Windows backslashes (`..\model\`) trigger escape sequence corruption in glTF parsers and crash MSFS build tools on Linux/Mac cross-compilation environments.
+
+
 
