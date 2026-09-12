@@ -10,6 +10,7 @@ from .callbacks import (
     get_lod_preset_items,
     get_pbr_export_preset_items,
     get_pbr_import_preset_items,
+    on_active_lod_index_updated,
     on_batch_mode_updated,
     on_batch_source_updated,
     on_enable_live_sync_updated,
@@ -620,7 +621,11 @@ class LODToolSettings(PropertyGroup):
     lod_preset_active_id: StringProperty(name="Active Preset ID", default="")
     lod_preset_is_dirty: BoolProperty(name="Preset Modified", default=False)
     lods: CollectionProperty(type=LODLevelItem)
-    active_lod_index: IntProperty(name="Active LOD Selection", default=0)
+    active_lod_index: IntProperty(
+        name="Active LOD Selection",
+        default=0,
+        update=on_active_lod_index_updated,
+    )
     export_directory: StringProperty(
         name="Export Directory",
         subtype="DIR_PATH",

@@ -563,3 +563,97 @@ def test_unity_export_collider_normalization_and_rollback(mock_hierarchy, tmp_pa
 
     assert ok is True
     assert coll_obj.name == orig_name
+
+
+def test_o1_triangle_counting():
+    """Verifies O(1) loop-poly invariant and degenerate 2-gon protection."""
+    from core.lod_generator import _count_triangles
+    from unittest.mock import MagicMock
+
+    # Quad: 4 loops, 1 polygon -> 4 - 2 = 2 triangles
+    mock_mesh = MagicMock()
+    mock_mesh.loops = [object(), object(), object(), object()]
+    mock_mesh.polygons = [object()]
+    assert _count_triangles(mock_mesh) == 2
+
+    # Triangle: 3 loops, 1 polygon -> 3 - 2 = 1 triangle
+    mock_mesh.loops = [object(), object(), object()]
+    mock_mesh.polygons = [object()]
+    assert _count_triangles(mock_mesh) == 1
+
+    # Empty
+    mock_mesh.loops = []
+    mock_mesh.polygons = []
+    assert _count_triangles(mock_mesh) == 0
+
+    # Fallback to polygon vertex count if loops missing
+    mock_fallback = MagicMock()
+    mock_fallback.loops = None
+    poly1 = MagicMock()
+    poly1.vertices = [0, 1]  # Degenerate 2-gon
+    poly2 = MagicMock()
+    poly2.vertices = [0, 1, 2, 3]  # Quad
+    mock_fallback.polygons = [poly1, poly2]
+    assert _count_triangles(mock_fallback) == 2
+
+
+def test_aabb_centered_bounding_sphere():
+    """Verifies that dense vertex clusters do not skew the sphere center or inflate radius."""
+    from core.metrics import compute_bounding_sphere
+
+    # Asymmetric model: 100 vertices at x=0 and 1 vertex at x=50
+    coords = [(0.0, 0.0, 0.0)] * 100 + [(50.0, 0.0, 0.0)]
+
+    center, radius = compute_bounding_sphere(coords)
+    assert abs(center[0] - 25.0) < 1e-4
+    assert abs(center[1] - 0.0) < 1e-4
+    assert abs(center[2] - 0.0) < 1e-4
+    assert abs(radius - 25.0) < 1e-4
+
+
+def test_msfs_xml_minsize_descending_monotonicity():
+    """Verifies that terminal cull size never violates descending monotonicity in XML."""
+    from exporters.msfs_export import MSFSExporter
+
+    tiers = [
+        {"screen_size_pct": 100.0},
+        {"screen_size_pct": 20.0},
+        {"screen_size_pct": 2.0},
+    ]
+    xml_str = MSFSExporter.generate_model_info_xml("Aircraft", tiers, cull_screen_size_pct=5.0)
+    assert "<LODS>" in xml_str
+    assert 'minSize="20"' in xml_str
+    assert 'minSize="2"' in xml_str
+    # Terminal cull size clamped strictly less than 2.0 -> 1.9
+    assert 'minSize="1.9"' in xml_str
+
+
+def test_parse_model_xml_bom_and_encoding(tmp_path):
+    """Verifies parse_model_xml handles UTF-8 with BOM gracefully."""
+    from core.msfs_project_scanner import parse_model_xml
+
+    xml_file = tmp_path / "ModelWithBOM.xml"
+    content = '<?xml version="1.0" encoding="utf-8"?>\n<ModelInfo>\n  <LODS>\n    <LOD minSize="25" ModelFile="Model_LOD0.gltf"/>\n  </LODS>\n</ModelInfo>'
+    xml_file.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+
+    lods = parse_model_xml(xml_file)
+    assert len(lods) == 1
+    assert lods[0].min_size == 25.0
+    assert lods[0].gltf_path.name == "Model_LOD0.gltf"
+
+
+def test_unified_export_asset_resolution():
+    """Verifies resolve_export_asset_name prioritizes active_asset when set."""
+    from exporters.engine_export import resolve_export_asset_name
+    from unittest.mock import MagicMock
+
+    mock_props = MagicMock()
+    mock_props.active_asset = "Wasm_Aircraft_Interior"
+    mock_props.export_base_name = "Wasm_Aircraft"
+
+    resolved = resolve_export_asset_name(None, mock_props)
+    assert resolved == "Wasm_Aircraft_Interior"
+
+    mock_props.active_asset = "AUTO"
+    resolved_auto = resolve_export_asset_name(None, mock_props)
+    assert resolved_auto == "Wasm_Aircraft"

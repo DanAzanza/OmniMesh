@@ -47,14 +47,19 @@ class SlenderFeatureCuller:
         return (4.0 * abs(volume)) / surface_area
 
     @staticmethod
-    def compute_slenderness_aspect_ratio(surface_area: float, volume: float) -> float:
+    def compute_slenderness_aspect_ratio(surface_area: float, volume: float, max_dim: float = 0.0) -> float:
         """
-        Computes the topological slenderness aspect ratio (Length / Diameter):
-        AR = A^2 / (4 * pi * V^2)
+        Computes the topological slenderness aspect ratio (Length / Diameter).
+        If max_dim is provided: AR = max_dim / t_hydro.
+        Dimensionless hydraulic cylinder formula: AR = A^3 / (16 * pi * V^2).
         """
-        if abs(volume) <= 1e-9:
+        abs_vol = abs(volume)
+        if abs_vol <= 1e-9 or surface_area <= 1e-9:
             return 0.0
-        return (surface_area**2) / (4.0 * math.pi * (volume**2))
+        if max_dim > 0.0:
+            t_hydro = (4.0 * abs_vol) / surface_area
+            return max_dim / max(1e-6, t_hydro)
+        return (surface_area**3) / (16.0 * math.pi * (abs_vol**2))
 
     @staticmethod
     def compute_screen_projected_thickness(
@@ -144,7 +149,7 @@ class SlenderFeatureCuller:
         # Closed volume (tube/cylinder): use hydraulic caliper
         if abs_vol > 1e-8 and total_area > 1e-8:
             t_hydro = cls.compute_hydraulic_thickness(abs_vol, total_area)
-            ar_hydro = cls.compute_slenderness_aspect_ratio(total_area, abs_vol)
+            ar_hydro = cls.compute_slenderness_aspect_ratio(total_area, abs_vol, max_dim=max_dim)
             if t_hydro > 0 and ar_hydro > 0:
                 return {
                     "thickness": t_hydro,
@@ -232,12 +237,36 @@ class SlenderFeatureCuller:
             # 2. Slender thin feature (cables, wires, railings): thickness <= delta_world AND aspect_ratio >= MIN_ASPECT_RATIO
             is_slender_wire = thickness <= delta_world and aspect_ratio >= cls.MIN_ASPECT_RATIO and thickness > 0
 
+            if is_slender_wire and protect_silhouettes:
+                has_silhouette_boundary = any(
+                    getattr(e, "is_boundary", False) for f in island for e in getattr(f, "edges", [])
+                )
+                if has_silhouette_boundary:
+                    is_slender_wire = False
+
             if is_small_part or is_slender_wire:
                 culled_faces.extend(island)
                 culled_islands_count += 1
 
-        # 3. Clean face deletion
+        # 3. Clean face deletion with total extinction protection
         if culled_faces and bmesh:
-            bmesh.ops.delete(bm, geom=culled_faces, context="FACES")
+            if len(culled_faces) == len(bm.faces) and islands:
+                # Protect against wiping out the entire mesh (which causes 0 polygons and fails export checks)
+                largest_island = max(
+                    islands,
+                    key=lambda isl: sum(getattr(f, "calc_area", lambda: 0.0)() for f in isl),
+                )
+                safe_to_cull = [f for f in culled_faces if f not in set(largest_island)]
+                culled_islands_count = max(0, culled_islands_count - 1)
+                culled_faces = safe_to_cull
+
+            if culled_faces:
+                bmesh.ops.delete(bm, geom=culled_faces, context="FACES")
+                try:
+                    from .sanitizer import MeshSanitizer
+
+                    MeshSanitizer.clean_loose_and_degenerates(bm)
+                except Exception as exc:
+                    logger.debug("Clean loose after slender culling skipped: %s", exc)
 
         return {"culled_islands": culled_islands_count, "culled_faces": len(culled_faces)}

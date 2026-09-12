@@ -14,22 +14,33 @@ import re
 
 try:
     import bpy
+    import mathutils
 except ImportError:
     bpy = None
+    mathutils = None
 
 
 try:
+    from .base import EngineExporterBase
     from .engine_export import AssetMeshResolver
 except (ImportError, ValueError):
     try:
+        from exporters.base import EngineExporterBase
         from exporters.engine_export import AssetMeshResolver
     except (ImportError, ValueError):
+        EngineExporterBase = object  # type: ignore
         AssetMeshResolver = None  # type: ignore
 
 
-class UE5Exporter:
+class UE5Exporter(EngineExporterBase):
     @classmethod
-    def export_asset(cls, context: Any, export_dir: str, asset_name: str) -> tuple[bool, str]:
+    def export_asset(
+        cls,
+        context: Any,
+        export_dir: str,
+        asset_name: str,
+        **kwargs: Any,
+    ) -> tuple[bool, str]:
         if not bpy or not context:
             return False, "Blender bpy not available."
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
@@ -63,22 +74,38 @@ class UE5Exporter:
         armature_obj = payload.armature_obj
 
         # Save transactional state for rollback
+        vl = getattr(context, "view_layer", None)
+        orig_active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
+        orig_selected = list(getattr(context, "selected_objects", []))
+        all_export_items = export_objects + collider_objects + ([armature_obj] if armature_obj else [])
+        orig_hide_states: dict[Any, tuple[bool, bool]] = {}
+        for o in all_export_items:
+            if not o:
+                continue
+            hv = getattr(o, "hide_viewport", False)
+            hg = o.hide_get(view_layer=vl) if (hasattr(o, "hide_get") and vl) else hv
+            orig_hide_states[o] = (hv, hg)
+
         orig_collider_names: dict[Any, str] = {}
         orig_imp_names: dict[Any, str] = {}
         orig_parents: dict[Any, Any] = {obj: obj.parent for obj in export_objects}
         orig_collider_parents: dict[Any, Any] = {c: c.parent for c in collider_objects}
+        orig_matrices: dict[Any, Any] = {}
         created_empty = None
 
         try:
-            # Unhide all LOD objects in view layer
-            for obj in export_objects:
+            # Unhide all export items in view layer
+            for obj in all_export_items:
                 try:
                     obj.hide_set(False, view_layer=context.view_layer)
                     obj.hide_viewport = False
                 except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
+                    logger.debug("Could not unhide object %s: %s", getattr(obj, "name", "unknown"), exc)
 
-                if "_Impostor" in obj.name or bool(obj.get("_is_impostor", False)):
+            # Handle impostor naming convention for UE5
+            if payload.has_impostor_tier:
+                imp_tier_idx = max(payload.lod_tiers.keys())
+                for obj in payload.lod_tiers[imp_tier_idx]:
                     orig_imp_names[obj] = obj.name
                     last_lod_idx = max(payload.lod_tiers.keys())
                     obj.name = f"{clean_name}_LOD{last_lod_idx}"
@@ -133,14 +160,25 @@ class UE5Exporter:
                     logger.debug("Could not unhide lod_group_empty: %s", exc)
 
                 lod_group_empty["fbx_type"] = "LodGroup"
+                if mathutils and hasattr(mathutils, "Matrix"):
+                    lod_group_empty.matrix_world = mathutils.Matrix.Identity(4)
 
+                orig_matrices = {
+                    obj: obj.matrix_world.copy() if hasattr(obj.matrix_world, "copy") else obj.matrix_world
+                    for obj in export_objects + collider_objects
+                    if hasattr(obj, "matrix_world")
+                }
                 for obj in export_objects:
                     if obj.parent != lod_group_empty:
                         obj.parent = lod_group_empty
+                        if obj in orig_matrices:
+                            obj.matrix_world = orig_matrices[obj]
 
                 for c_obj in collider_objects:
-                    if c_obj.parent == lod_group_empty:
+                    if c_obj.parent == lod_group_empty or c_obj.parent is not None:
                         c_obj.parent = None
+                        if c_obj in orig_matrices:
+                            c_obj.matrix_world = orig_matrices[c_obj]
 
                 lod_group_empty.select_set(True)
                 for obj in export_objects:
@@ -155,7 +193,7 @@ class UE5Exporter:
                 use_selection=True,
                 apply_unit_scale=True,
                 apply_scale_options="FBX_SCALE_ALL",
-                bake_space_transform=True,
+                bake_space_transform=False if armature_obj else True,
                 object_types={"ARMATURE", "MESH", "EMPTY"} if armature_obj else {"MESH", "EMPTY"},
                 mesh_smooth_type="FACE",
                 add_leaf_bones=False if armature_obj else True,
@@ -167,15 +205,19 @@ class UE5Exporter:
         except Exception as e:
             return False, f"Failed to export UE5 FBX: {str(e)}"
         finally:
-            # Transactional rollback: restore parents
+            # Transactional rollback: restore parents and world matrices
             for obj, orig_parent in orig_parents.items():
                 try:
                     obj.parent = orig_parent
+                    if obj in orig_matrices:
+                        obj.matrix_world = orig_matrices[obj]
                 except Exception as exc:
                     logger.debug("Restoring object parent failed: %s", exc)
             for c_obj, orig_parent in orig_collider_parents.items():
                 try:
                     c_obj.parent = orig_parent
+                    if c_obj in orig_matrices:
+                        c_obj.matrix_world = orig_matrices[c_obj]
                 except Exception as exc:
                     logger.debug("Restoring collider parent failed: %s", exc)
 
@@ -199,3 +241,24 @@ class UE5Exporter:
                     imp_obj.name = orig_name
                 except Exception as exc:
                     logger.debug("Restoring impostor name failed: %s", exc)
+
+            # Restore original hide states
+            for obj, (hv, hg) in orig_hide_states.items():
+                try:
+                    obj.hide_viewport = hv
+                    if hasattr(obj, "hide_set") and vl:
+                        obj.hide_set(hg, view_layer=vl)
+                except Exception as exc:
+                    logger.debug("Could not restore hide state: %s", exc)
+
+            # Restore original selection and active object
+            if bpy and hasattr(bpy.ops.object, "select_all"):
+                try:
+                    bpy.ops.object.select_all(action="DESELECT")
+                    for o in orig_selected:
+                        if hasattr(o, "select_set"):
+                            o.select_set(True)
+                    if vl and hasattr(vl, "objects") and orig_active:
+                        vl.objects.active = orig_active
+                except Exception as exc:
+                    logger.debug("Could not restore selection state: %s", exc)

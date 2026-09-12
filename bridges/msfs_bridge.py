@@ -11,8 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import threading
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from .base import EngineBridgeBase
 
@@ -120,52 +119,33 @@ class MSFS2024LiveBridge(EngineBridgeBase):
         if not os.path.exists(package_def_xml):
             return False, f"Package definition XML not found at: {package_def_xml}"
 
-        staging_dir = os.path.join(tempfile.gettempdir(), "OmniMesh_MSFS_Staging")
-        os.makedirs(staging_dir, exist_ok=True)
+        staging_dir = tempfile.mkdtemp(prefix="OmniMesh_MSFS_Staging_")
 
-        creation_flags = 0
+        popen_kwargs: dict[str, Any] = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "stdin": subprocess.DEVNULL,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+        }
         if sys.platform == "win32":
-            creation_flags = 0x08000000 | 0x00000008  # CREATE_NO_WINDOW | DETACHED_PROCESS
+            popen_kwargs["creationflags"] = 0x08000000 | 0x00000008  # CREATE_NO_WINDOW | DETACHED_PROCESS
 
         cmd = [fspackagetool_exe, f"-outputdir={staging_dir}", package_def_xml]
 
         try:
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                stdin=subprocess.DEVNULL,
-                creationflags=creation_flags,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-
-            stdout_lines: List[str] = []
-            stderr_lines: List[str] = []
-
-            def read_pipe(pipe: Any, storage: List[str]) -> None:
-                try:
-                    for line in iter(pipe.readline, ""):
-                        storage.append(line)
-                    pipe.close()
-                except (OSError, ValueError) as exc:
-                    logger.debug("Pipe closed or read error: %s", exc)
-
-            t_out = threading.Thread(target=read_pipe, args=(process.stdout, stdout_lines), daemon=True)
-            t_err = threading.Thread(target=read_pipe, args=(process.stderr, stderr_lines), daemon=True)
-            t_out.start()
-            t_err.start()
-
-            t_out.join(timeout=timeout_sec)
-            t_err.join(timeout=timeout_sec)
-
-            if process.poll() is None:
+            process = subprocess.Popen(cmd, **popen_kwargs)
+            try:
+                stdout_data, stderr_data = process.communicate(timeout=timeout_sec)
+            except subprocess.TimeoutExpired:
                 process.kill()
+                process.communicate()
                 return False, f"fspackagetool.exe timed out after {timeout_sec} seconds."
 
             if process.returncode != 0:
-                err_msg = "".join(stderr_lines[-5:] or stdout_lines[-5:]).strip()
+                err_lines = (stderr_data or stdout_data or "").splitlines()[-5:]
+                err_msg = "\n".join(err_lines).strip()
                 return False, f"fspackagetool.exe failed with code {process.returncode}: {err_msg}"
 
             # Atomic copy from staging to Community directory
@@ -176,6 +156,8 @@ class MSFS2024LiveBridge(EngineBridgeBase):
 
         except OSError as e:
             return False, f"Subprocess compilation error: {str(e)}"
+        finally:
+            shutil.rmtree(staging_dir, ignore_errors=True)
 
     @classmethod
     def _deploy_staging_to_community(cls, staging: str, community: str) -> None:

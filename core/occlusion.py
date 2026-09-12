@@ -190,6 +190,14 @@ class RobustTransparencyEvaluator:
         except Exception as exc:
             logger.debug("Fast alpha sample fallback: %s", exc)
             return False
+        finally:
+            buf = None
+            alpha_samples = None
+            if hasattr(img, "buffers_free"):
+                try:
+                    img.buffers_free()
+                except Exception as exc:
+                    logger.debug("Failed freeing image buffers: %s", exc)
 
 
 class HardenedOcclusionCuller:
@@ -326,13 +334,13 @@ class HardenedOcclusionCuller:
             bm.edges.ensure_lookup_table()
             bm.verts.ensure_lookup_table()
 
-            # Seal severed boundary holes under delta_world threshold
-            boundary_edges = [e for e in bm.edges if e.is_valid and e.is_boundary]
-            if boundary_edges:
-                try:
-                    bmesh.ops.holes_fill(bm, edges=boundary_edges, sides=0)
-                except Exception as exc:
-                    logger.debug("Hole fill bypassed: %s", exc)
+            # Seal severed boundary holes with small loop threshold to avoid capping natural openings
+            try:
+                from .topology_repair import TopologyRepairEngine
+
+                TopologyRepairEngine.fill_small_boundary_holes(bm, max_edges=6)
+            except Exception as exc:
+                logger.debug("Hole fill bypassed: %s", exc)
 
             MeshSanitizer.clean_loose_and_degenerates(bm)
 
@@ -350,7 +358,7 @@ class HardenedOcclusionCuller:
             queue = [face]
             visited.add(face.index)
             while queue:
-                f = queue.pop(0)
+                f = queue.pop()
                 island.append(f)
                 for edge in f.edges:
                     for neighbor in edge.link_faces:

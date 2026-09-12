@@ -152,15 +152,41 @@ class NormalManager:
                 kd.insert(world_co, i)
             kd.balance()
 
-            # Build custom loop normals directly in loop order in world space
+            src_rot = src_mat.to_3x3() if (src_mat is not None and hasattr(src_mat, "to_3x3")) else None
+            tgt_rot = tgt_mat.to_3x3() if (tgt_mat is not None and hasattr(tgt_mat, "to_3x3")) else None
+
+            src_norm_to_world = None
+            if src_rot and hasattr(src_rot, "determinant") and abs(src_rot.determinant()) > 1e-9:
+                try:
+                    src_norm_to_world = src_rot.inverted().transposed()
+                except Exception:
+                    src_norm_to_world = None
+
+            # Build custom loop normals directly in loop order transformed into target local space
             custom_normals = []
             for loop in tgt_loops:
                 v_idx = loop.vertex_index
                 v_co = tgt_verts[v_idx].co
                 world_tgt_co = tgt_mat @ v_co if tgt_mat is not None else v_co
                 _, src_idx, _ = kd.find(world_tgt_co)
-                src_norm = src_verts[src_idx].normal
-                custom_normals.append(src_norm)
+                if src_idx is not None:
+                    src_norm = src_verts[int(src_idx)].normal
+                    v_src = Vector(src_norm) if Vector else src_norm
+                    if src_norm_to_world:
+                        world_norm = src_norm_to_world @ v_src
+                    else:
+                        world_norm = v_src
+
+                    if tgt_rot:
+                        tgt_norm = tgt_rot.transposed() @ world_norm
+                    else:
+                        tgt_norm = world_norm
+
+                    if hasattr(tgt_norm, "normalized"):
+                        tgt_norm = tgt_norm.normalized()
+                else:
+                    tgt_norm = Vector((0.0, 0.0, 1.0)) if Vector else (0.0, 0.0, 1.0)
+                custom_normals.append(tgt_norm)
 
             if hasattr(tgt_mesh, "normals_split_custom_set"):
                 tgt_mesh.normals_split_custom_set(custom_normals)

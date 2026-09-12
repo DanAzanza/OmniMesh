@@ -41,6 +41,8 @@ def compute_vertical_fov(camera_angle_rad: float, aspect_ratio: float, sensor_fi
 def compute_bounding_sphere(coords: list[Any]) -> tuple[Any, float]:
     """
     Computes the bounding sphere center and radius for a collection of 3D points.
+    Uses symmetric AABB extents to prevent dense vertex clusters (e.g. cockpits/bevels)
+    from skewing the center and artificially inflating the radius.
     Works with mathutils.Vector or list/tuple of (x, y, z).
     """
     if not coords:
@@ -54,15 +56,22 @@ def compute_bounding_sphere(coords: list[Any]) -> tuple[Any, float]:
             return mathutils.Vector((0.0, 0.0, 0.0)), 1.0
         return (0.0, 0.0, 0.0), 1.0
 
-    n = len(valid_coords)
+    min_x = min(float(c[0]) for c in valid_coords)
+    max_x = max(float(c[0]) for c in valid_coords)
+    min_y = min(float(c[1]) for c in valid_coords)
+    max_y = max(float(c[1]) for c in valid_coords)
+    min_z = min(float(c[2]) for c in valid_coords)
+    max_z = max(float(c[2]) for c in valid_coords)
+
+    cx = (min_x + max_x) * 0.5
+    cy = (min_y + max_y) * 0.5
+    cz = (min_z + max_z) * 0.5
+
     if mathutils and hasattr(mathutils, "Vector") and isinstance(valid_coords[0], mathutils.Vector):
-        center = sum(valid_coords, mathutils.Vector((0.0, 0.0, 0.0))) / n
+        center = mathutils.Vector((cx, cy, cz))
         radius = max((v - center).length for v in valid_coords)
     else:
-        cx = sum(float(c[0]) for c in valid_coords) / n
-        cy = sum(float(c[1]) for c in valid_coords) / n
-        cz = sum(float(c[2]) for c in valid_coords) / n
-        center = (cx, cy, cz) if not (mathutils and hasattr(mathutils, "Vector")) else mathutils.Vector((cx, cy, cz))
+        center = mathutils.Vector((cx, cy, cz)) if (mathutils and hasattr(mathutils, "Vector")) else (cx, cy, cz)
         radius = max(
             math.sqrt((float(c[0]) - cx) ** 2 + (float(c[1]) - cy) ** 2 + (float(c[2]) - cz) ** 2) for c in valid_coords
         )

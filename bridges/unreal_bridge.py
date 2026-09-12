@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -152,6 +153,20 @@ class UnrealLiveBridge(EngineBridgeBase):
             "            tex_asset_name = pathlib.Path(tex_path).stem",
             '            tex_obj = unreal.EditorAssetLibrary.load_asset(f"{dest_path}/Textures/{tex_asset_name}")',
             "            if tex_obj:",
+            '                if "normal" in param_name.lower():',
+            "                    try:",
+            '                        tex_obj.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)',
+            '                        tex_obj.set_editor_property("s_rgb", False)',
+            "                        unreal.EditorAssetLibrary.save_loaded_asset(tex_obj)",
+            "                    except Exception:",
+            "                        pass",
+            '                elif "orm" in param_name.lower() or "mask" in param_name.lower():',
+            "                    try:",
+            '                        tex_obj.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)',
+            '                        tex_obj.set_editor_property("s_rgb", False)',
+            "                        unreal.EditorAssetLibrary.save_loaded_asset(tex_obj)",
+            "                    except Exception:",
+            "                        pass",
             "                unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(",
             "                    mat_inst, param_name, tex_obj",
             "                )",
@@ -185,7 +200,13 @@ class UnrealLiveBridge(EngineBridgeBase):
 
         try:
             with socket.create_connection((host, port), timeout=3.0) as s:
-                cmd_dict = {"type": "command", "command": payload, "unattended": True}
+                cmd_dict = {
+                    "version": 1,
+                    "magic": "ue_py",
+                    "type": "command",
+                    "command": payload,
+                    "unattended": True,
+                }
                 msg = json.dumps(cmd_dict).encode("utf-8")
                 s.sendall(len(msg).to_bytes(4, byteorder="big") + msg)
                 return True, "Successfully dispatched live sync command to active UE5 session."
@@ -200,21 +221,50 @@ class UnrealLiveBridge(EngineBridgeBase):
         asset_name: str,
         project_dir: str = "",
     ) -> Tuple[bool, str]:
-        fbx_path = os.path.join(export_dir, f"{asset_name}.fbx")
+        clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", os.path.basename(str(asset_name))).strip() or "SM_Asset"
+        if not export_dir or not os.path.isdir(export_dir):
+            return False, f"Export directory does not exist: '{export_dir}'"
+
+        fbx_path = os.path.join(export_dir, f"{clean_name}.fbx")
+        if not os.path.isfile(fbx_path):
+            raw_path = os.path.join(export_dir, f"{asset_name}.fbx")
+            if os.path.isfile(raw_path):
+                fbx_path = raw_path
+            else:
+                return False, f"Target FBX export file not found: '{fbx_path}'"
+
         tex_dir = os.path.join(export_dir, "Textures")
 
         texture_dict = {}
-        orm_file = os.path.join(tex_dir, f"T_{asset_name}_ORM.png")
-        norm_file = os.path.join(tex_dir, f"T_{asset_name}_Normal_DirectX.png")
-
-        if os.path.exists(orm_file):
-            texture_dict["ORMMap"] = orm_file
-        if os.path.exists(norm_file):
-            texture_dict["NormalMap"] = norm_file
+        if os.path.exists(tex_dir):
+            for suffix, prop in [
+                ("ORM", "ORMMap"),
+                ("Normal_DirectX", "NormalMap"),
+                ("Normal", "NormalMap"),
+                ("BaseColor", "BaseColorMap"),
+            ]:
+                candidates = [
+                    f"T_{clean_name}_{suffix}.png",
+                    f"{clean_name}_{suffix}.png",
+                    f"T_{asset_name}_{suffix}.png",
+                    f"{asset_name}_{suffix}.png",
+                ]
+                found = None
+                for c in candidates:
+                    p = os.path.join(tex_dir, c)
+                    if os.path.exists(p):
+                        found = p
+                        break
+                if not found:
+                    matches = [f for f in os.listdir(tex_dir) if f.endswith(f"_{suffix}.png")]
+                    if len(matches) == 1:
+                        found = os.path.join(tex_dir, matches[0])
+                if found and prop not in texture_dict:
+                    texture_dict[prop] = found
 
         dest_content_path = "/Game/OmniMesh_Assets"
         payload = cls.build_non_destructive_ingest_payload(
-            fbx_path, dest_content_path, asset_name, texture_dict=texture_dict
+            fbx_path, dest_content_path, clean_name, texture_dict=texture_dict
         )
 
         return cls.dispatch_to_ue5(payload)

@@ -60,7 +60,7 @@ def find_spatial_collection(context: Any, asset_name: str = "") -> Optional[Coll
 
     for col in bpy.data.collections:
         if col.get("_omnimesh_role") == "SPATIAL":
-            if not target_asset or col.name.startswith(target_asset):
+            if not target_asset or col.name == f"{target_asset}_Spatial" or col.get("_omnimesh_parent") == target_asset:
                 return col
 
     for name in ("Spatial_Config", "MSFS_Spatial_Config"):
@@ -576,9 +576,13 @@ def register():
         return
     for cls in classes:
         try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        try:
             bpy.utils.register_class(cls)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
 
 
 def unregister():
@@ -587,5 +591,5 @@ def unregister():
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)

@@ -145,7 +145,13 @@ class AssetMeshResolver:
                         break
             if not impostor_object and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
                 for obj in bpy.data.objects:
-                    if getattr(obj, "get", lambda *_: False)("_is_impostor", False) and clean_name in obj.name:
+                    o_name = getattr(obj, "name", "")
+                    matches_asset = (
+                        o_name == clean_name
+                        or o_name.startswith(f"{clean_name}_")
+                        or getattr(obj, "get", lambda *_: None)("_omnimesh_parent") == clean_name
+                    )
+                    if getattr(obj, "get", lambda *_: False)("_is_impostor", False) and matches_asset:
                         impostor_object = obj
                         break
             if impostor_object:
@@ -167,7 +173,13 @@ class AssetMeshResolver:
                 for obj in bpy.data.objects:
                     is_col = bool(getattr(obj, "get", lambda *_: False)("_is_collider", False))
                     o_name = getattr(obj, "name", "")
-                    if (is_col or o_name.startswith("UCX_")) and clean_name in o_name:
+                    matches_asset = (
+                        o_name == clean_name
+                        or o_name.startswith(f"{clean_name}_")
+                        or o_name.startswith(f"UCX_{clean_name}_")
+                        or getattr(obj, "get", lambda *_: None)("_omnimesh_parent") == clean_name
+                    )
+                    if (is_col or o_name.startswith("UCX_")) and matches_asset:
                         if obj not in collider_objects:
                             collider_objects.append(obj)
 
@@ -188,6 +200,8 @@ class AssetMeshResolver:
                 if getattr(mod, "type", "") == "ARMATURE" and getattr(mod, "object", None):
                     armature_obj = mod.object
                     break
+            if armature_obj:
+                break
 
         role = ""
         parent_asset = None
@@ -224,6 +238,24 @@ class AssetMeshResolver:
         )
 
 
+def resolve_export_asset_name(context: Any, props: Any = None) -> str:
+    """Resolves the unified asset name for preflight validation and engine export."""
+    if not props and context and hasattr(context, "scene"):
+        props = getattr(context.scene, "lod_tool", None)
+    if props and hasattr(props, "active_asset") and props.active_asset and props.active_asset not in ("AUTO", "NONE"):
+        return str(props.active_asset)
+    raw_name = ""
+    try:
+        from core.asset_scanner import resolve_effective_asset_name
+
+        raw_name = resolve_effective_asset_name(context, props)
+    except Exception as e:
+        logger.debug("Failed resolving effective asset name: %s", e)
+    if not raw_name or raw_name in ("AUTO", "NONE", "Asset"):
+        raw_name = getattr(props, "export_base_name", "").strip() if props else ""
+    return raw_name or "SM_Asset"
+
+
 class PreFlightValidator:
     @staticmethod
     def run_checks(context: Any) -> list[str]:
@@ -238,19 +270,7 @@ class PreFlightValidator:
             errors.append("No LOD tiers configured.")
             return errors
 
-        raw_name = ""
-        try:
-            from core.asset_scanner import resolve_effective_asset_name
-
-            raw_name = resolve_effective_asset_name(context, props)
-        except Exception as e:
-            logger.debug("Failed resolving effective asset name in PreFlightValidator: %s", e)
-
-        if not raw_name or raw_name in ("AUTO", "NONE", "Asset"):
-            raw_name = getattr(props, "export_base_name", "").strip() or "SM_Asset"
-        if hasattr(props, "active_asset") and props.active_asset and props.active_asset not in ("AUTO", "NONE"):
-            raw_name = props.active_asset
-
+        raw_name = resolve_export_asset_name(context, props)
         payload = AssetMeshResolver.resolve_payload(context, raw_name)
 
         # Verify all configured tiers are generated/present
@@ -329,40 +349,6 @@ class PreFlightValidator:
             errors.append("Export directory path contains invalid null bytes.")
 
         return errors
-
-
-try:
-    from ui.export_ops import (
-        EXPORT_OPS_CLASSES,
-        LOD_OT_bake_rig_animation,
-        LOD_OT_export_engine_package,
-        LOD_OT_pack_pbr_textures,
-        LOD_OT_sync_live_bridge,
-        LOD_OT_toggle_live_bridge,
-        register_export_ops,
-        unregister_export_ops,
-    )
-except (ImportError, ValueError):
-    try:
-        from ..ui.export_ops import (
-            EXPORT_OPS_CLASSES,
-            LOD_OT_bake_rig_animation,
-            LOD_OT_export_engine_package,
-            LOD_OT_pack_pbr_textures,
-            LOD_OT_sync_live_bridge,
-            LOD_OT_toggle_live_bridge,
-            register_export_ops,
-            unregister_export_ops,
-        )
-    except (ImportError, ValueError):
-        EXPORT_OPS_CLASSES = ()  # type: ignore
-        LOD_OT_bake_rig_animation = None  # type: ignore
-        LOD_OT_export_engine_package = None  # type: ignore
-        LOD_OT_pack_pbr_textures = None  # type: ignore
-        LOD_OT_sync_live_bridge = None  # type: ignore
-        LOD_OT_toggle_live_bridge = None  # type: ignore
-        register_export_ops = None  # type: ignore
-        unregister_export_ops = None  # type: ignore
 
 
 def register_exporters() -> None:

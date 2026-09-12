@@ -24,6 +24,7 @@ try:
         compute_distance_from_screen_size,
         compute_vertical_fov,
     )
+    from ui.hud import LODViewportHUD
     from ui.lod_preset_ops import (
         LOD_OT_add_preset_tier,
         LOD_OT_apply_preset_tiers,
@@ -46,6 +47,7 @@ except (ImportError, ValueError):
         compute_distance_from_screen_size,
         compute_vertical_fov,
     )
+    from .hud import LODViewportHUD
     from .lod_preset_ops import (
         LOD_OT_add_preset_tier,
         LOD_OT_apply_preset_tiers,
@@ -81,6 +83,8 @@ class LOD_OT_reset_to_preset(Operator):
 
         project_preset_tiers(props, context, ignore_cache=True)
         props.lod_preset_is_dirty = False
+        LODViewportHUD.update_cache(context)
+        LODViewportHUD.tag_redraw()
         safe_report(self, {"INFO"}, "Reset tiers to preset defaults.")
         return {"FINISHED"}
 
@@ -109,6 +113,8 @@ class LOD_OT_analyze_and_configure(Operator):
             props = context.scene.lod_tool
 
         project_preset_tiers(props, context)
+        LODViewportHUD.update_cache(context)
+        LODViewportHUD.tag_redraw()
         safe_report(
             self,
             {"INFO"},
@@ -179,6 +185,8 @@ class LOD_OT_generate_all(Operator):
         )
 
         if success:
+            LODViewportHUD.update_cache(context)
+            LODViewportHUD.tag_redraw()
             safe_report(self, {"INFO"}, msg)
             return {"FINISHED"}
         else:
@@ -218,10 +226,17 @@ class LOD_OT_solo_tier(Operator):
             # UN-SOLO: Restore standard visibility (LOD0 shown, LOD1..k hidden)
             for i, itm in enumerate(props.lods):
                 itm.is_soloed = False
-                c_name = f"{base_name}_LOD{i}" if i > 0 else base_name
+                c_name = f"{base_name}_LOD{i}"
                 coll = bpy.data.collections.get(c_name)
+                if not coll and i == 0:
+                    coll = bpy.data.collections.get(base_name)
                 if coll:
-                    for obj in coll.all_objects:
+                    target_objs = (
+                        list(coll.objects)
+                        if coll.objects
+                        else [o for o in coll.all_objects if coll in o.users_collection]
+                    )
+                    for obj in target_objs:
                         obj.hide_set(i != 0, view_layer=view_layer)
             safe_report(self, {"INFO"}, "Un-soloed: Default scene visibility restored (LOD0 visible).")
         else:
@@ -229,10 +244,17 @@ class LOD_OT_solo_tier(Operator):
             for i, itm in enumerate(props.lods):
                 is_target = i == target_idx
                 itm.is_soloed = is_target
-                c_name = f"{base_name}_LOD{i}" if i > 0 else base_name
+                c_name = f"{base_name}_LOD{i}"
                 coll = bpy.data.collections.get(c_name)
+                if not coll and i == 0:
+                    coll = bpy.data.collections.get(base_name)
                 if coll:
-                    for obj in coll.all_objects:
+                    target_objs = (
+                        list(coll.objects)
+                        if coll.objects
+                        else [o for o in coll.all_objects if coll in o.users_collection]
+                    )
+                    for obj in target_objs:
                         obj.hide_set(not is_target, view_layer=view_layer)
 
             props.active_lod_index = target_idx
@@ -243,6 +265,9 @@ class LOD_OT_solo_tier(Operator):
                     logger.debug("Failed setting active object during solo: %s", exc)
 
             safe_report(self, {"INFO"}, f"Soloing {target_tier.name}")
+
+        LODViewportHUD.update_cache(context)
+        LODViewportHUD.tag_redraw()
 
         if hasattr(context, "screen") and context.screen:
             for area in context.screen.areas:
@@ -302,6 +327,8 @@ class LOD_OT_add_lod_tier(Operator):
             item.distance_m = dist
 
         props.active_lod_index = new_idx
+        LODViewportHUD.update_cache(context)
+        LODViewportHUD.tag_redraw()
         safe_report(self, {"INFO"}, f"Added {item.name}.")
         return {"FINISHED"}
 
@@ -347,6 +374,8 @@ class LOD_OT_remove_lod_tier(Operator):
                 itm.name = f"LOD{idx}"
 
         props.active_lod_index = min(target_idx, len(props.lods) - 1)
+        LODViewportHUD.update_cache(context)
+        LODViewportHUD.tag_redraw()
         safe_report(self, {"INFO"}, f"Removed {removed_name}.")
         return {"FINISHED"}
 

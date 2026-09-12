@@ -35,6 +35,20 @@ except (ImportError, ValueError):
         PBRImportPresetManager,
     )
 
+try:
+    from .utils import resolve_lod_context
+except (ImportError, ValueError):
+    from ui.utils import resolve_lod_context
+
+
+def _get_popover_props(context: Any) -> Any | None:
+    if not context:
+        return None
+    props, _, _ = resolve_lod_context(context)
+    if not props and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
+        props = context.scene.lod_tool
+    return props
+
 
 # =========================================================================
 # =========================================================================
@@ -55,7 +69,9 @@ class OMNIMESH_PT_popover_sanitize(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         # 1. Transform & Modifiers
         layout.label(text="Transform & Modifiers", icon="OBJECT_ORIGIN")
@@ -98,7 +114,9 @@ class OMNIMESH_PT_popover_materials(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         layout.label(text="Safe Operations (Default ON)", icon="CHECKMARK")
         layout.prop(props, "mat_cleanup_purge_unused_slots", text="Purge Unused Slots")
@@ -128,7 +146,9 @@ class OMNIMESH_PT_popover_collision(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         layout.label(text="Physics Decomposition", icon="MOD_PHYSICS")
         layout.prop(props, "collision_decomposition_mode", text="Mode")
@@ -160,7 +180,9 @@ class OMNIMESH_PT_popover_configure(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         layout.label(text="Target Engine & Asset Role", icon="SCENE_DATA")
         layout.prop(props, "target_engine", text="Engine")
@@ -188,7 +210,9 @@ class OMNIMESH_PT_popover_generate(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         layout.label(text="Hierarchy & Draw-Calls", icon="OUTLINER_OB_GROUP_INSTANCE")
         layout.prop(props, "hierarchy_mode", text="Mode")
@@ -216,7 +240,9 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         try:
             from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
@@ -341,7 +367,9 @@ class OMNIMESH_PT_popover_impostor(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         layout.label(text="Billboard Impostor Settings", icon="IMAGE_PLANE")
         box = layout.box()
@@ -376,7 +404,9 @@ class OMNIMESH_PT_popover_export(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         layout.label(text="PBR Texture Export & Packing", icon="NODE_MATERIAL")
         layout.prop(props, "export_packed_textures", text="Pack PBR Textures")
@@ -407,7 +437,9 @@ class OMNIMESH_PT_popover_import_preset(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         preset_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
         preset = PBRImportPresetManager.get_preset(preset_id)
@@ -503,7 +535,9 @@ class OMNIMESH_PT_popover_export_preset(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         preset_id = getattr(props, "pbr_export_preset", "") or DEFAULT_PRESET_ID
         preset = PBRExportPresetManager.get_preset(preset_id)
@@ -605,7 +639,9 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props = _get_popover_props(context)
+        if not props:
+            return
 
         try:
             from ..core.engine_import_presets import (

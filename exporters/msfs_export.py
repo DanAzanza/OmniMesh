@@ -24,15 +24,18 @@ except ImportError:
 
 
 try:
+    from .base import EngineExporterBase
     from .engine_export import AssetMeshResolver
 except (ImportError, ValueError):
     try:
+        from exporters.base import EngineExporterBase
         from exporters.engine_export import AssetMeshResolver
     except (ImportError, ValueError):
+        EngineExporterBase = object  # type: ignore
         AssetMeshResolver = None  # type: ignore
 
 
-class MSFSExporter:
+class MSFSExporter(EngineExporterBase):
     @staticmethod
     def generate_model_info_xml(
         asset_name: str,
@@ -83,6 +86,8 @@ class MSFSExporter:
                     min_size_str = str(int(raw_val)) if raw_val == int(raw_val) else str(raw_val)
                 else:
                     cull_val = round(cull_screen_size_pct, 2) if cull_screen_size_pct > 0 else 0.0
+                    if cull_val >= last_min_size:
+                        cull_val = max(0.0, round(last_min_size - 0.1, 2))
                     min_size_str = str(int(cull_val)) if cull_val == int(cull_val) else str(cull_val)
 
                 model_file = f"{escaped_asset_name}_LOD{i}.gltf"
@@ -93,10 +98,15 @@ class MSFSExporter:
         return "\n".join(lines)
 
     @classmethod
-    def export_asset(cls, context: Any, export_dir: str, asset_name: str) -> tuple[bool, str]:
+    def export_asset(
+        cls,
+        context: Any,
+        export_dir: str,
+        asset_name: str,
+        **kwargs: Any,
+    ) -> tuple[bool, str]:
         if not bpy or not context:
-            return False, "Blender bpy module not available."
-
+            return False, "Blender bpy not available."
         props = getattr(context.scene, "lod_tool", None)
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
 
@@ -116,58 +126,100 @@ class MSFSExporter:
             except Exception as exc:
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
+        vl = getattr(context, "view_layer", None)
+        orig_active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
+        orig_selected = list(getattr(context, "selected_objects", []))
+        orig_hide_states: dict[Any, tuple[bool, bool]] = {}
+        for tier_objs in payload.lod_tiers.values():
+            for o in tier_objs:
+                if not o:
+                    continue
+                hv = getattr(o, "hide_viewport", False)
+                hg = o.hide_get(view_layer=vl) if (hasattr(o, "hide_get") and vl) else hv
+                orig_hide_states[o] = (hv, hg)
+
         tier_data: list[dict[str, Any]] = []
         exported_tiers = 0
 
-        for i, tier_objs in sorted(payload.lod_tiers.items()):
-            if not tier_objs:
-                continue
-
-            s_pct = 50.0
-            if props and i < len(props.lods):
-                s_pct = float(props.lods[i].screen_size_pct)
-            elif payload.has_impostor_tier and i == max(payload.lod_tiers.keys()):
-                s_pct = float(getattr(props, "cull_screen_size_pct", 0.5)) if props else 0.5
-
-            tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
-
-            # Ensure objects are visible in view layer and select strictly pure meshes
-            bpy.ops.object.select_all(action="DESELECT")
-            for obj in tier_objs:
-                try:
-                    obj.hide_set(False, view_layer=context.view_layer)
-                    obj.hide_viewport = False
-                except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
-                obj.select_set(True)
-
-            context.view_layer.objects.active = tier_objs[0]
-
-            gltf_path = os.path.join(export_dir, f"{clean_name}_LOD{i}.gltf")
-            try:
-                bpy.ops.export_scene.gltf(
-                    filepath=gltf_path, use_selection=True, export_format="GLTF_SEPARATE", export_apply=True
-                )
-                exported_tiers += 1
-            except Exception as e:
-                return False, f"Failed to export glTF for LOD{i}: {str(e)}"
-
-        if exported_tiers == 0:
-            return False, "No valid LOD objects found to export."
-
-        cull_pct = float(getattr(props, "cull_screen_size_pct", 0.5)) if props else 0.5
-        xml_content = cls.generate_model_info_xml(clean_name, tier_data, cull_screen_size_pct=cull_pct)
-        xml_path = os.path.join(export_dir, f"{clean_name}.xml")
         try:
-            with open(xml_path, "w", encoding="utf-8") as f:
-                f.write(xml_content)
-        except OSError as e:
-            return False, f"Failed to write ModelInfo XML: {str(e)}"
+            for i, tier_objs in sorted(payload.lod_tiers.items()):
+                if not tier_objs:
+                    continue
 
-        return True, f"MSFS package ({exported_tiers} LOD tiers) exported to: {export_dir}"
+                s_pct = 50.0
+                if props and i < len(props.lods):
+                    s_pct = float(props.lods[i].screen_size_pct)
+                elif payload.has_impostor_tier and i == max(payload.lod_tiers.keys()):
+                    s_pct = float(getattr(props, "cull_screen_size_pct", 0.5)) if props else 0.5
+
+                tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
+
+                # Ensure objects are visible in view layer and select strictly pure meshes
+                bpy.ops.object.select_all(action="DESELECT")
+                for obj in tier_objs:
+                    try:
+                        obj.hide_set(False, view_layer=context.view_layer)
+                        obj.hide_viewport = False
+                    except (RuntimeError, AttributeError) as exc:
+                        logger.debug(
+                            "Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc
+                        )
+                    obj.select_set(True)
+
+                context.view_layer.objects.active = tier_objs[0]
+
+                gltf_path = os.path.join(export_dir, f"{clean_name}_LOD{i}.gltf")
+                try:
+                    bpy.ops.export_scene.gltf(
+                        filepath=gltf_path, use_selection=True, export_format="GLTF_SEPARATE", export_apply=True
+                    )
+                    exported_tiers += 1
+                except Exception as e:
+                    return False, f"Failed to export glTF for LOD{i}: {str(e)}"
+
+            if exported_tiers == 0:
+                return False, "No valid LOD objects found to export."
+
+            cull_pct = float(getattr(props, "cull_screen_size_pct", 0.5)) if props else 0.5
+            xml_content = cls.generate_model_info_xml(clean_name, tier_data, cull_screen_size_pct=cull_pct)
+            xml_path = os.path.join(export_dir, f"{clean_name}.xml")
+            try:
+                with open(xml_path, "w", encoding="utf-8") as f:
+                    f.write(xml_content)
+            except OSError as e:
+                return False, f"Failed to write ModelInfo XML: {str(e)}"
+
+            return True, f"MSFS package ({exported_tiers} LOD tiers) exported to: {export_dir}"
+        finally:
+            # Restore original hide states
+            for obj, (hv, hg) in orig_hide_states.items():
+                try:
+                    obj.hide_viewport = hv
+                    if hasattr(obj, "hide_set") and vl:
+                        obj.hide_set(hg, view_layer=vl)
+                except Exception as exc:
+                    logger.debug("Could not restore hide state: %s", exc)
+
+            # Restore original selection and active object
+            if bpy and hasattr(bpy.ops.object, "select_all"):
+                try:
+                    bpy.ops.object.select_all(action="DESELECT")
+                    for o in orig_selected:
+                        if hasattr(o, "select_set"):
+                            o.select_set(True)
+                    if vl and hasattr(vl, "objects") and orig_active:
+                        vl.objects.active = orig_active
+                except Exception as exc:
+                    logger.debug("Could not restore selection state: %s", exc)
 
     @classmethod
-    def export_project_package(cls, context: Any, export_dir: str, base_asset_name: str) -> tuple[bool, str]:
+    def export_project_package(
+        cls,
+        context: Any,
+        export_dir: str,
+        base_asset_name: str,
+        **kwargs: Any,
+    ) -> tuple[bool, str]:
         """Exports a complete multi-model aircraft package adhering to MSFS SDK layout."""
         if not bpy or not context:
             return False, "Blender bpy module not available."
@@ -183,11 +235,10 @@ class MSFSExporter:
 
         exported_count = 0
         # 1. Export Exterior
-        ok, msg = cls.export_asset(context, model_dir, clean_base)
-        if ok:
-            exported_count += 1
-        else:
-            logger.warning("Exterior export notice: %s", msg)
+        ok, msg = cls.export_asset(context, model_dir, clean_base, **kwargs)
+        if not ok:
+            return False, f"Exterior export failed: {msg}"
+        exported_count += 1
 
         # 2. Export Interior if present
         interior_name = f"{clean_base}_Interior"
@@ -195,7 +246,7 @@ class MSFSExporter:
         if hasattr(bpy.data, "collections") and (
             bpy.data.collections.get(interior_name) or bpy.data.collections.get(f"{interior_name}_LOD0")
         ):
-            ok_int, msg_int = cls.export_asset(context, model_dir, interior_name)
+            ok_int, msg_int = cls.export_asset(context, model_dir, interior_name, **kwargs)
             if ok_int:
                 exported_count += 1
                 has_interior = True
@@ -242,13 +293,26 @@ class MSFSExporter:
                         "_Interior",
                         "_Config",
                         "_Helpers",
+                        "_Mesh",
+                        "_HighPoly",
+                        "_HP",
+                        "_LowPoly",
+                        "_LP",
+                        "_Bake",
+                        "_Rig",
+                        "_Armature",
+                        "_Collision",
+                        "_Physics",
                     )
                 ):
-                    var_id = c_name[len(clean_base) + 1 :].lower()
+                    raw_suffix = c_name[len(clean_base) + 1 :].strip()
+                    var_id = re.sub(r'[\s<>:"/\\|?*]+', "_", raw_suffix).lower().strip("_")
+                    if not var_id:
+                        continue
                     pkg_root = os.path.dirname(model_dir.rstrip("/\\"))
                     variant_dir = os.path.join(pkg_root, f"model.{var_id}")
                     os.makedirs(variant_dir, exist_ok=True)
-                    ok_var, msg_var = cls.export_asset(context, variant_dir, c_name)
+                    ok_var, msg_var = cls.export_asset(context, variant_dir, c_name, **kwargs)
                     if ok_var:
                         exported_count += 1
                         var_cfg_path = os.path.join(variant_dir, "model.cfg")

@@ -27,7 +27,7 @@ def is_object_valid(obj: Any) -> bool:
 
 
 def get_selected_mesh_objects(context: Any) -> list[Any]:
-    """Retrieve all valid, non-collider, non-impostor MESH objects from selection or active object."""
+    """Retrieve all valid, non-collider, non-impostor, non-helper/config MESH objects from selection or active object."""
     if not context:
         return []
     objs = context.selected_objects if hasattr(context, "selected_objects") else []
@@ -41,7 +41,21 @@ def get_selected_mesh_objects(context: Any) -> list[Any]:
         if getattr(obj, "type", "") == "MESH":
             name = getattr(obj, "name", "")
             is_col = bool(getattr(obj, "get", lambda *_: False)("_is_collider", False) is True)
-            if not is_col and not name.startswith("UCX_"):
+            is_imp = bool(getattr(obj, "get", lambda *_: False)("_is_impostor", False) is True)
+            if is_col or is_imp or name.startswith("UCX_") or "_Collider_" in name:
+                continue
+            # Exclude if belonging to technical/helper collections
+            in_excluded = False
+            if hasattr(obj, "users_collection"):
+                for uc in obj.users_collection:
+                    uc_name = getattr(uc, "name", "")
+                    if any(
+                        uc_name.endswith(sfx)
+                        for sfx in ("_Config", "_Helpers", "_Spatial", "_Lights", "_Cameras", "_Colliders", "_Impostor")
+                    ):
+                        in_excluded = True
+                        break
+            if not in_excluded:
                 raw_meshes.append(obj)
 
     base_meshes = [obj for obj in raw_meshes if not any(f"_LOD{n}" in getattr(obj, "name", "") for n in range(1, 11))]
@@ -95,7 +109,10 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
             if getattr(context, "scene", None) and c == getattr(context.scene, "collection", None):
                 continue
             c_name = getattr(c, "name", "")
-            if "_Colliders" in c_name or "_Impostor" in c_name:
+            if any(
+                c_name.endswith(sfx)
+                for sfx in ("_Config", "_Helpers", "_Spatial", "_Lights", "_Cameras", "_Colliders", "_Impostor")
+            ):
                 continue
             root_c_name = c_name
             for n in range(0, 11):
@@ -224,7 +241,7 @@ def resolve_lod_context(context: Any) -> tuple[Any, Any | None, bool]:
     scene_props = getattr(getattr(context, "scene", None), "lod_tool", None)
     active_obj = getattr(context, "active_object", None)
 
-    if not active_obj or getattr(active_obj, "type", "") != "MESH":
+    if not is_object_valid(active_obj) or getattr(active_obj, "type", "") != "MESH":
         return scene_props, None, False
 
     obj_props = getattr(active_obj, "lod_tool", None)
@@ -233,14 +250,14 @@ def resolve_lod_context(context: Any) -> tuple[Any, Any | None, bool]:
 
     if bool(getattr(obj_props, "is_generated_lod", False) is True):
         master_val = getattr(obj_props, "lod_root_object", None)
-        if master_val and hasattr(master_val, "name"):
+        if is_object_valid(master_val):
             master_obj = master_val
         elif isinstance(master_val, str) and bpy and master_val:
             master_obj = bpy.data.objects.get(master_val)
         else:
             master_obj = None
 
-        if master_obj and hasattr(master_obj, "lod_tool"):
+        if is_object_valid(master_obj) and hasattr(master_obj, "lod_tool"):
             m_props = master_obj.lod_tool
             if len(getattr(m_props, "lods", [])) == 0 and scene_props and len(getattr(scene_props, "lods", [])) > 0:
                 return scene_props, master_obj, True
@@ -574,142 +591,12 @@ def get_or_create_engine_import_collection(
     role: str,
     use_lod0_suffix: bool = True,
 ) -> Any | None:
-    """Finds or creates a collection adhering to OmniMesh's neutral engine package hierarchy.
+    """Delegates to core.hierarchy.get_or_create_engine_import_collection with active bpy."""
+    from core.hierarchy import get_or_create_engine_import_collection as _impl
 
-    Structure:
-    {AssetName} (Root Package Collection)
-       ├── {AssetName}_Config
-       │    ├── {AssetName}_Spatial
-       │    ├── {AssetName}_Lights
-       │    └── {AssetName}_Cameras
-       ├── {AssetName}_LOD0 (or {AssetName})
-       ├── {AssetName}_LOD1
-       └── {AssetName}_LODN
-    """
-    if not bpy or not context:
-        return None
+    return _impl(context, asset_name, role, use_lod0_suffix, bpy_module=bpy)
 
-    clean_asset = asset_name.strip() or "Asset"
-    scene = context.scene
 
-    # 1. Root Model Collection
-    root_col = bpy.data.collections.get(clean_asset)
-    if not root_col:
-        root_col = bpy.data.collections.new(clean_asset)
-        scene.collection.children.link(root_col)
-    elif root_col.name not in scene.collection.children:
-        try:
-            scene.collection.children.link(root_col)
-        except RuntimeError:
-            pass
-
-    if clean_asset.endswith("_Interior"):
-        root_col["_omnimesh_role"] = "INTERIOR"
-        root_col["_omnimesh_parent"] = clean_asset[:-9]
-    elif role.upper() == "VARIANT" or (
-        "_" in clean_asset
-        and not any(clean_asset.endswith(f"_LOD{n}") for n in range(11))
-        and any(
-            getattr(c, "name", "") != clean_asset and clean_asset.startswith(f"{getattr(c, 'name', '')}_")
-            for c in getattr(scene.collection, "children", [])
-        )
-    ):
-        root_col["_omnimesh_role"] = "VARIANT"
-        matching_parent = next(
-            (
-                getattr(c, "name", "")
-                for c in getattr(scene.collection, "children", [])
-                if getattr(c, "name", "") != clean_asset and clean_asset.startswith(f"{getattr(c, 'name', '')}_")
-            ),
-            "",
-        )
-        if matching_parent:
-            root_col["_omnimesh_parent"] = matching_parent
-            root_col["_omnimesh_variant_id"] = clean_asset[len(matching_parent) + 1 :]
-    else:
-        root_col["_omnimesh_role"] = "MODEL_ROOT"
-
-    if role.upper() in ("ROOT", "PACKAGE_ROOT", "MODEL_ROOT"):
-        return root_col
-
-    # 2. Determine Sub-Collection Name
-    role_upper = role.upper()
-    if role_upper == "LOD0":
-        sub_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
-    elif role_upper.startswith("LOD"):
-        sub_name = f"{clean_asset}_{role_upper}"
-    elif role_upper == "CONFIG":
-        sub_name = f"{clean_asset}_Config"
-    elif role_upper == "HELPERS":
-        sub_name = f"{clean_asset}_Helpers"
-    elif role_upper == "SPATIAL":
-        sub_name = f"{clean_asset}_Spatial"
-    elif role_upper == "LIGHTS":
-        sub_name = f"{clean_asset}_Lights"
-    elif role_upper == "CAMERAS":
-        sub_name = f"{clean_asset}_Cameras"
-    else:
-        sub_name = f"{clean_asset}_{role}"
-
-    # Configuration collections (Spatial, Lights, Cameras) reside under {clean_asset}_Config
-    parent_col = root_col
-    if role_upper in ("SPATIAL", "LIGHTS", "CAMERAS"):
-        config_name = f"{clean_asset}_Config"
-        config_col = bpy.data.collections.get(config_name)
-        if not config_col:
-            config_col = bpy.data.collections.new(config_name)
-            config_col["_omnimesh_role"] = "CONFIG"
-            root_col.children.link(config_col)
-        elif config_col.name not in root_col.children:
-            try:
-                root_col.children.link(config_col)
-            except RuntimeError:
-                pass
-        parent_col = config_col
-
-        # Legacy migration: check if sub_col was previously linked under _LOD0
-        lod0_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
-        lod0_col = bpy.data.collections.get(lod0_name)
-        if lod0_col and hasattr(lod0_col, "children"):
-            has_old = False
-            old_sub = None
-            try:
-                if sub_name in lod0_col.children:
-                    has_old = True
-                    old_sub = (
-                        lod0_col.children.get(sub_name)
-                        if hasattr(lod0_col.children, "get")
-                        else bpy.data.collections.get(sub_name)
-                    )
-            except Exception:
-                has_old = False
-            if has_old and old_sub:
-                if old_sub.name not in config_col.children:
-                    try:
-                        config_col.children.link(old_sub)
-                    except Exception as e:
-                        logger.debug("Could not link legacy subcollection to config: %s", e)
-                try:
-                    lod0_col.children.unlink(old_sub)
-                except Exception as e:
-                    logger.debug("Could not unlink legacy subcollection from LOD0: %s", e)
-
-    sub_col = bpy.data.collections.get(sub_name)
-    if not sub_col:
-        sub_col = bpy.data.collections.new(sub_name)
-        parent_col.children.link(sub_col)
-    else:
-        if sub_col.name not in parent_col.children:
-            try:
-                parent_col.children.link(sub_col)
-            except RuntimeError:
-                pass
-        # If misplaced directly under root_col (and not supposed to be), unlink
-        if parent_col != root_col and sub_col.name in root_col.children:
-            try:
-                root_col.children.unlink(sub_col)
-            except RuntimeError:
-                pass
-
-    sub_col["_omnimesh_role"] = role_upper
-    return sub_col
+__all__ = [
+    "get_or_create_engine_import_collection",
+]

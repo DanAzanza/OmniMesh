@@ -37,7 +37,7 @@ try:
     )
     from .operators import resolve_lod_context
     from .popovers import POPOVER_CLASSES
-    from .utils import get_asset_base_meshes, resolve_effective_asset_name
+    from .utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
     from core.engine_import_presets import (
         DEFAULT_ENGINE_IMPORT_PRESET_ID,
@@ -54,7 +54,7 @@ except (ImportError, ValueError):
     )
     from ui.operators import resolve_lod_context
     from ui.popovers import POPOVER_CLASSES
-    from ui.utils import get_asset_base_meshes, resolve_effective_asset_name
+    from ui.utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 
 
 # =========================================================================
@@ -156,7 +156,9 @@ class OMNIMESH_PT_modify(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = context.scene.lod_tool
 
         # 0. Target Asset Selection + Add Helpers Collection Button
         row_asset = layout.row(align=True)
@@ -228,7 +230,8 @@ class OMNIMESH_PT_lods(Panel):
             props = context.scene.lod_tool
 
         # Contextual Selection & Hierarchy Banners
-        sel_meshes = [o for o in context.selected_objects if o.type == "MESH"]
+        sel_objs = getattr(context, "selected_objects", []) or []
+        sel_meshes = [o for o in sel_objs if is_object_valid(o) and getattr(o, "type", "") == "MESH"]
         if len(sel_meshes) > 1:
             row_sync = layout.row(align=True)
             row_sync.operator(
@@ -237,11 +240,13 @@ class OMNIMESH_PT_lods(Panel):
                 icon="COMMUNITY",
             )
 
-        active_obj = context.active_object
-        if active_obj and hasattr(active_obj, "lod_tool"):
-            root_val = active_obj.lod_tool.lod_root_object
-            if root_val and (getattr(active_obj.lod_tool, "is_generated_lod", False) or "_LOD" in active_obj.name):
-                root_name = root_val.name if hasattr(root_val, "name") else str(root_val)
+        active_obj = getattr(context, "active_object", None)
+        if is_object_valid(active_obj) and hasattr(active_obj, "lod_tool"):
+            root_val = getattr(active_obj.lod_tool, "lod_root_object", None)
+            if root_val and (
+                getattr(active_obj.lod_tool, "is_generated_lod", False) or "_LOD" in getattr(active_obj, "name", "")
+            ):
+                root_name = root_val.name if is_object_valid(root_val) else str(root_val)
                 row_nav = layout.row(align=True)
                 row_nav.label(text=f"Sub-LOD of '{root_name}'", icon="LINKED")
                 row_nav.operator("lod_tool.select_master_asset", text="Select Master", icon="RESTRICT_SELECT_OFF")
@@ -451,7 +456,9 @@ class OMNIMESH_PT_export(Panel):
         if not bpy or not context:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = context.scene.lod_tool
 
         box_exp = layout.box()
         box_exp.label(text="Package Export", icon="EXPORT")

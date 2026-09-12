@@ -19,6 +19,7 @@ except ImportError:
     Operator = object
 
 try:
+    from ..core.hierarchy import LayerCollectionGuard
     from ..core.materials import MaterialOptimizer
     from ..core.modifiers import ModifierManager
     from ..core.sanitizer import MeshSanitizer
@@ -32,6 +33,7 @@ try:
         safe_report,
     )
 except (ImportError, ValueError):
+    from core.hierarchy import LayerCollectionGuard
     from core.materials import MaterialOptimizer
     from core.modifiers import ModifierManager
     from core.sanitizer import MeshSanitizer
@@ -48,107 +50,7 @@ except (ImportError, ValueError):
 
 def run_preflight_inspection(context: Any, mesh_objs: list[Any]) -> dict[str, Any]:
     """Inspect mesh objects for unapplied scale/rotation, loose topology, degenerates, and materials."""
-    if not bpy or not context:
-        return {}
-    props = getattr(getattr(context, "scene", None), "lod_tool", None)
-    if not props:
-        return {}
-
-    total_loose_verts = 0
-    total_loose_edges = 0
-    total_non_manifold_edges = 0
-    total_degenerate_tris = 0
-    has_unapplied_scale = False
-    missing_mats = 0
-
-    for obj in mesh_objs:
-        s = getattr(obj, "scale", None)
-        if s and hasattr(s, "x") and hasattr(s, "y") and hasattr(s, "z"):
-            try:
-                if abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4:
-                    has_unapplied_scale = True
-            except (TypeError, ValueError):
-                pass
-
-        if hasattr(obj, "material_slots") and type(obj.material_slots).__name__ != "MagicMock":
-            try:
-                if len(obj.material_slots) == 0 or any(slot.material is None for slot in obj.material_slots):
-                    missing_mats += 1
-            except (TypeError, ValueError):
-                pass
-
-        mesh_data = getattr(obj, "data", None)
-        if not mesh_data or not bmesh:
-            continue
-
-        try:
-            bm = bmesh.new()
-            try:
-                bm.from_mesh(mesh_data)
-                for v in getattr(bm, "verts", []):
-                    if len(getattr(v, "link_edges", [])) == 0:
-                        total_loose_verts += 1
-                for e in getattr(bm, "edges", []):
-                    face_count = len(getattr(e, "link_faces", []))
-                    if face_count == 0:
-                        total_loose_edges += 1
-                    elif face_count > 2:
-                        total_non_manifold_edges += 1
-                for f in getattr(bm, "faces", []):
-                    calc_area = getattr(f, "calc_area", None)
-                    if callable(calc_area) and float(calc_area()) <= 1e-10:
-                        total_degenerate_tris += 1
-            finally:
-                bm.free()
-        except Exception as exc:
-            logger.debug("Failed during mesh inspection: %s", exc)
-
-    props.preflight_inspected = True
-    props.preflight_loose_verts = total_loose_verts
-    props.preflight_loose_edges = total_loose_edges
-    props.preflight_non_manifold_edges = total_non_manifold_edges
-    props.preflight_degenerate_tris = total_degenerate_tris
-    props.preflight_unapplied_scale = has_unapplied_scale
-    props.preflight_missing_materials = missing_mats
-
-    is_clean = (
-        (total_loose_verts == 0)
-        and (total_loose_edges == 0)
-        and (total_non_manifold_edges == 0)
-        and (total_degenerate_tris == 0)
-        and (not has_unapplied_scale)
-        and (missing_mats == 0)
-    )
-    props.preflight_is_clean = is_clean
-
-    if is_clean:
-        props.preflight_summary_text = f"✔ LOD0 Healthy ({len(mesh_objs)} mesh(es), All Transforms Applied)"
-    else:
-        issues = []
-        if has_unapplied_scale:
-            issues.append("Unapplied Scale")
-        if total_loose_verts > 0:
-            issues.append(f"{total_loose_verts} Loose Verts")
-        if total_loose_edges > 0:
-            issues.append(f"{total_loose_edges} Loose Edges")
-        if total_non_manifold_edges > 0:
-            issues.append(f"{total_non_manifold_edges} Non-Manifold Edges")
-        if total_degenerate_tris > 0:
-            issues.append(f"{total_degenerate_tris} Degenerates")
-        if missing_mats > 0:
-            issues.append(f"{missing_mats} Missing Mats")
-        props.preflight_summary_text = f"⚠ Issues: {', '.join(issues)}"
-
-    return {
-        "is_clean": is_clean,
-        "loose_verts": total_loose_verts,
-        "loose_edges": total_loose_edges,
-        "non_manifold_edges": total_non_manifold_edges,
-        "degenerate_tris": total_degenerate_tris,
-        "unapplied_scale": has_unapplied_scale,
-        "missing_mats": missing_mats,
-        "summary": props.preflight_summary_text,
-    }
+    return MeshSanitizer.run_preflight_inspection(context, mesh_objs)
 
 
 class LOD_OT_inspect_lod0(Operator):
@@ -215,53 +117,7 @@ class LOD_OT_clean_and_repair_mesh(Operator):
         total_ngons = 0
         total_transforms_applied = 0
 
-        # Optional defensive auto-apply transforms
-        auto_transforms = bool(getattr(props, "cleanup_auto_apply_transforms", False) is True)
-        if auto_transforms and bpy:
-            for obj in mesh_objs:
-                mesh_data = getattr(obj, "data", None)
-                if not mesh_data:
-                    continue
-                users = getattr(mesh_data, "users", 1)
-                if isinstance(users, int) and users > 1:
-                    logger.warning("Skipping transform apply on %s: multi-user mesh", getattr(obj, "name", ""))
-                    continue
-                if getattr(mesh_data, "shape_keys", None):
-                    logger.warning("Skipping transform apply on %s: mesh has shape keys", getattr(obj, "name", ""))
-                    continue
-                anim_data = getattr(obj, "animation_data", None)
-                if anim_data and getattr(anim_data, "action", None):
-                    logger.warning("Skipping transform apply on %s: animated object", getattr(obj, "name", ""))
-                    continue
-
-                s = getattr(obj, "scale", None)
-                r = getattr(obj, "rotation_euler", None)
-                needs_scale = False
-                if s and hasattr(s, "x") and hasattr(s, "y") and hasattr(s, "z"):
-                    try:
-                        needs_scale = abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4
-                    except (TypeError, ValueError):
-                        pass
-                needs_rot = False
-                if r and hasattr(r, "x") and hasattr(r, "y") and hasattr(r, "z"):
-                    try:
-                        needs_rot = abs(r.x) > 1e-4 or abs(r.y) > 1e-4 or abs(r.z) > 1e-4
-                    except (TypeError, ValueError):
-                        pass
-
-                if needs_scale or needs_rot:
-                    try:
-                        if hasattr(context, "temp_override"):
-                            with context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
-                                bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-                        else:
-                            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-                        total_transforms_applied += 1
-                    except Exception as e:
-                        logger.warning("Could not apply transform on %s: %s", getattr(obj, "name", ""), e)
-
-        weld_dist = props.cleanup_weld_distance if props.cleanup_enable_weld else 0.0
-
+        weld_dist = props.cleanup_weld_distance if getattr(props, "cleanup_enable_weld", False) else 0.0
         total_mods_baked = 0
         apply_mods = getattr(props, "cleanup_apply_modifiers", False) or (
             hasattr(context, "scene")
@@ -276,13 +132,60 @@ class LOD_OT_clean_and_repair_mesh(Operator):
         ):
             sync_vp = getattr(context.scene.lod_tool, "cleanup_sync_viewport_settings", sync_vp)
 
-        if apply_mods:
-            for obj in mesh_objs:
-                if ModifierManager.has_unapplied_modifiers(obj):
-                    if sync_vp:
-                        ModifierManager.sync_viewport_to_render_settings(obj)
-                    if ModifierManager.apply_all_modifiers_in_place(obj, preserve_armature=True):
-                        total_mods_baked += 1
+        target_cols = [c for obj in mesh_objs for c in getattr(obj, "users_collection", [])]
+        with LayerCollectionGuard(getattr(context, "view_layer", None), target_cols):
+            # Optional defensive auto-apply transforms
+            auto_transforms = bool(getattr(props, "cleanup_auto_apply_transforms", False) is True)
+            if auto_transforms and bpy:
+                for obj in mesh_objs:
+                    mesh_data = getattr(obj, "data", None)
+                    if not mesh_data:
+                        continue
+                    users = getattr(mesh_data, "users", 1)
+                    if isinstance(users, int) and users > 1:
+                        logger.warning("Skipping transform apply on %s: multi-user mesh", getattr(obj, "name", ""))
+                        continue
+                    if getattr(mesh_data, "shape_keys", None):
+                        logger.warning("Skipping transform apply on %s: mesh has shape keys", getattr(obj, "name", ""))
+                        continue
+                    anim_data = getattr(obj, "animation_data", None)
+                    if anim_data and getattr(anim_data, "action", None):
+                        logger.warning("Skipping transform apply on %s: animated object", getattr(obj, "name", ""))
+                        continue
+
+                    s = getattr(obj, "scale", None)
+                    r = getattr(obj, "rotation_euler", None)
+                    needs_scale = False
+                    if s and hasattr(s, "x") and hasattr(s, "y") and hasattr(s, "z"):
+                        try:
+                            needs_scale = abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4
+                        except (TypeError, ValueError):
+                            pass
+                    needs_rot = False
+                    if r and hasattr(r, "x") and hasattr(r, "y") and hasattr(r, "z"):
+                        try:
+                            needs_rot = abs(r.x) > 1e-4 or abs(r.y) > 1e-4 or abs(r.z) > 1e-4
+                        except (TypeError, ValueError):
+                            pass
+
+                    if needs_scale or needs_rot:
+                        try:
+                            if hasattr(context, "temp_override"):
+                                with context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                                    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+                            else:
+                                bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+                            total_transforms_applied += 1
+                        except Exception as e:
+                            logger.warning("Could not apply transform on %s: %s", getattr(obj, "name", ""), e)
+
+            if apply_mods:
+                for obj in mesh_objs:
+                    if ModifierManager.has_unapplied_modifiers(obj):
+                        if sync_vp:
+                            ModifierManager.sync_viewport_to_render_settings(obj)
+                        if ModifierManager.apply_all_modifiers_in_place(obj, preserve_armature=True):
+                            total_mods_baked += 1
 
         for obj in mesh_objs:
             if not getattr(obj, "data", None) or not bmesh:
@@ -425,9 +328,11 @@ class LOD_OT_apply_all_modifiers(Operator):
             return {"CANCELLED"}
 
         applied_count = 0
-        for obj in mesh_objs:
-            if ModifierManager.apply_all_modifiers_in_place(obj, preserve_armature=True):
-                applied_count += 1
+        target_cols = [c for obj in mesh_objs for c in getattr(obj, "users_collection", [])]
+        with LayerCollectionGuard(getattr(context, "view_layer", None), target_cols):
+            for obj in mesh_objs:
+                if ModifierManager.apply_all_modifiers_in_place(obj, preserve_armature=True):
+                    applied_count += 1
 
         msg = f"Applied modifiers on {applied_count} LOD0 object(s)."
         safe_report(self, {"INFO"}, msg)
@@ -457,19 +362,39 @@ class LOD_OT_apply_transforms(Operator):
             return {"CANCELLED"}
 
         applied_count = 0
-        for obj in mesh_objs:
-            try:
-                if hasattr(context, "temp_override"):
-                    with context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+        skipped_reasons: list[str] = []
+        target_cols = [c for obj in mesh_objs for c in getattr(obj, "users_collection", [])]
+        with LayerCollectionGuard(getattr(context, "view_layer", None), target_cols):
+            for obj in mesh_objs:
+                mesh_data = getattr(obj, "data", None)
+                if not mesh_data:
+                    continue
+                users = getattr(mesh_data, "users", 1)
+                if isinstance(users, int) and users > 1:
+                    skipped_reasons.append(f"{getattr(obj, 'name', 'obj')} (multi-user)")
+                    continue
+                if getattr(mesh_data, "shape_keys", None):
+                    skipped_reasons.append(f"{getattr(obj, 'name', 'obj')} (shape keys)")
+                    continue
+                anim_data = getattr(obj, "animation_data", None)
+                if anim_data and getattr(anim_data, "action", None):
+                    skipped_reasons.append(f"{getattr(obj, 'name', 'obj')} (animated)")
+                    continue
+
+                try:
+                    if hasattr(context, "temp_override"):
+                        with context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+                    elif hasattr(context, "view_layer") and hasattr(context.view_layer, "objects"):
+                        context.view_layer.objects.active = obj
                         bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-                elif hasattr(context, "view_layer") and hasattr(context.view_layer, "objects"):
-                    context.view_layer.objects.active = obj
-                    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-                applied_count += 1
-            except Exception as exc:
-                logger.warning("Failed applying transforms on %s: %s", getattr(obj, "name", "obj"), exc)
+                    applied_count += 1
+                except Exception as exc:
+                    logger.warning("Failed applying transforms on %s: %s", getattr(obj, "name", "obj"), exc)
 
         msg = f"Applied rotation & scale on {applied_count} LOD0 object(s)."
+        if skipped_reasons:
+            msg += f" Skipped: {', '.join(skipped_reasons)}."
         safe_report(self, {"INFO"}, msg)
         return {"FINISHED"}
 

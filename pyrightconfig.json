@@ -1,15 +1,15 @@
 {
-  "include": ["core", "ui", "exporters", "tests"],
+  "include": ["core", "ui", "exporters", "bridges", "tests"],
   "exclude": ["**/__pycache__", ".pytest_cache"],
   "pythonVersion": "3.10",
   "reportMissingImports": "none",
   "reportMissingModuleSource": "none",
-  "reportGeneralTypeIssues": "none",
-  "reportInvalidTypeForm": "none",
+  "reportCallIssue": "error",
   "reportAssignmentType": "none",
-  "reportAttributeAccessIssue": "none",
+  "reportArgumentType": "none",
+  "reportInvalidTypeForm": "none",
   "reportOptionalMemberAccess": "none",
   "reportOptionalCall": "none",
-  "reportArgumentType": "none",
-  "reportCallIssue": "none"
+  "reportAttributeAccessIssue": "none",
+  "reportGeneralTypeIssues": "none"
 }

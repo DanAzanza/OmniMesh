@@ -286,6 +286,12 @@ class ShaderTracer:
         except Exception as exc:
             logger.warning("Failed reading pixels from '%s': %s", getattr(img, "name", "unknown"), exc)
             return fallback
+        finally:
+            if hasattr(img, "buffers_free"):
+                try:
+                    img.buffers_free()
+                except Exception as exc:
+                    logger.debug("Failed freeing image buffers: %s", exc)
 
         np.nan_to_num(raw_floats, copy=False, nan=default_nan, posinf=1.0, neginf=0.0)
 
@@ -411,7 +417,10 @@ class ShaderTracer:
             temp_img.pixels.foreach_get(raw_floats)
             max_val = 65535.0 if bit_depth == 16 else 255.0
             dtype = np.uint16 if bit_depth == 16 else np.uint8
-            return (np.clip(raw_floats[0::4], 0.0, 1.0) * max_val + 0.5).astype(dtype).reshape((target_h, target_w))
+            res = (np.clip(raw_floats[0::4], 0.0, 1.0) * max_val + 0.5).astype(dtype).reshape((target_h, target_w))
+            if hasattr(temp_img, "buffers_free"):
+                temp_img.buffers_free()
+            return res
         except Exception as exc:
             logger.debug("Bake execution fallback: %s", exc)
             return None

@@ -24,6 +24,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+try:
+    from .utils import resolve_lod_context
+except (ImportError, ValueError):
+    from ui.utils import resolve_lod_context
+
 
 class SplitPreviewEngine:
     """Manages viewport split-screen state and read-only GPU drawing."""
@@ -37,6 +42,17 @@ class SplitPreviewEngine:
         "left_tris": 0,
         "right_tris": 0,
     }
+
+    _cached_shader: Any = None
+    _cached_split_batch: Any = None
+    _cached_notch_batch: Any = None
+    _cached_dims: tuple[float, float, float] = (-1.0, -1.0, -1.0)
+
+    @classmethod
+    def _get_shader(cls) -> Any:
+        if cls._cached_shader is None and gpu and hasattr(gpu, "shader"):
+            cls._cached_shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+        return cls._cached_shader
 
     @classmethod
     def update_overlay_cache(
@@ -66,16 +82,21 @@ class SplitPreviewEngine:
             split_x = width * cls._cached_overlay["split_ratio"]
 
             # 1. Draw vertical divider line with strict blend state management
-            shader = gpu.shader.from_builtin("UNIFORM_COLOR")
-            gpu.state.blend_set("ALPHA")
-            try:
-                gpu.state.line_width_set(2.0)
+            shader = cls._get_shader()
+            if not shader or not batch_for_shader:
+                return
 
-                line_coords = [(split_x, 0.0), (split_x, float(height))]
-                batch = batch_for_shader(shader, "LINES", {"pos": line_coords})
-                shader.bind()
-                shader.uniform_float("color", (0.2, 0.8, 1.0, 0.9))  # Cyan divider line
-                batch.draw(shader)
+            dims_key = (round(split_x, 1), round(width, 1), round(height, 1))
+            if cls._cached_dims != dims_key or cls._cached_split_batch is None:
+                # 2D Quad strip for 2px divider line (eliminates deprecated line_width_set)
+                line_coords = [
+                    (split_x - 1.0, 0.0),
+                    (split_x + 1.0, 0.0),
+                    (split_x + 1.0, float(height)),
+                    (split_x - 1.0, float(height)),
+                ]
+                quad_indices = ((0, 1, 2), (2, 3, 0))
+                cls._cached_split_batch = batch_for_shader(shader, "TRIS", {"pos": line_coords}, indices=quad_indices)
 
                 # Draw center handle notch
                 notch_y = height * 0.5
@@ -85,13 +106,20 @@ class SplitPreviewEngine:
                     (split_x + 12.0, notch_y + 20.0),
                     (split_x - 12.0, notch_y + 20.0),
                 ]
-                notch_indices = [(0, 1, 2), (2, 3, 0)]
-                notch_batch = batch_for_shader(shader, "TRIS", {"pos": notch_coords}, indices=notch_indices)
+                notch_indices = ((0, 1, 2), (2, 3, 0))
+                cls._cached_notch_batch = batch_for_shader(shader, "TRIS", {"pos": notch_coords}, indices=notch_indices)
+                cls._cached_dims = dims_key
+
+            gpu.state.blend_set("ALPHA")
+            try:
+                shader.bind()
+                shader.uniform_float("color", (0.2, 0.8, 1.0, 0.9))  # Cyan divider line
+                cls._cached_split_batch.draw(shader)
+
                 shader.uniform_float("color", (0.1, 0.5, 0.9, 0.7))
-                notch_batch.draw(shader)
+                cls._cached_notch_batch.draw(shader)
             finally:
                 gpu.state.blend_set("NONE")
-                gpu.state.line_width_set(1.0)
 
             # 2. Draw split labels via BLF
             if blf:
@@ -130,6 +158,10 @@ class SplitPreviewEngine:
 
     @classmethod
     def unregister_draw_handler(cls) -> None:
+        cls._cached_split_batch = None
+        cls._cached_notch_batch = None
+        cls._cached_dims = (-1.0, -1.0, -1.0)
+        cls._cached_shader = None
         if not bpy or cls._handler is None:
             return
         try:
@@ -151,27 +183,33 @@ class OMNIMESH_OT_toggle_split_preview(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(bpy and hasattr(context.scene, "lod_tool") and len(context.scene.lod_tool.lods) > 1)
+        if not bpy or not context:
+            return False
+        props, _, _ = resolve_lod_context(context)
+        return bool(props and hasattr(props, "lods") and len(props.lods) > 1)
 
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context:
             return {"CANCELLED"}
-        props = context.scene.lod_tool
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            return {"CANCELLED"}
         props.is_split_active = not props.is_split_active
 
         if props.is_split_active:
             SplitPreviewEngine.register_draw_handler()
             self.update_split_state(context)
-            wm = context.window_manager
-            wm.modal_handler_add(self)
+            wm = getattr(context, "window_manager", None)
+            if wm and hasattr(wm, "modal_handler_add"):
+                wm.modal_handler_add(self)
             self.report({"INFO"}, "A/B Split-Screen Preview active. Drag mouse or adjust slider. ESC to exit.")
             return {"RUNNING_MODAL"}
         else:
             return self.cancel_split(context)
 
     def modal(self, context: Any, event: Any) -> set[str]:
-        props = context.scene.lod_tool
-        if not props.is_split_active or event.type in ("ESC", "RIGHTMOUSE"):
+        props, _, _ = resolve_lod_context(context)
+        if not props or not props.is_split_active or event.type in ("ESC", "RIGHTMOUSE"):
             return self.cancel_split(context)
 
         # Mouse dragging to adjust split position
@@ -197,10 +235,10 @@ class OMNIMESH_OT_toggle_split_preview(Operator):
         return {"PASS_THROUGH"}
 
     def update_split_state(self, context: Any) -> None:
-        if not context or not hasattr(context, "scene") or not hasattr(context.scene, "lod_tool"):
+        if not context:
             return
-        props = context.scene.lod_tool
-        if not props.lods or len(props.lods) < 2:
+        props, _, _ = resolve_lod_context(context)
+        if not props or not getattr(props, "lods", None) or len(props.lods) < 2:
             return
 
         try:
@@ -240,9 +278,10 @@ class OMNIMESH_OT_toggle_split_preview(Operator):
         )
 
     def cancel_split(self, context: Any) -> set[str]:
-        if context and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
-            props = context.scene.lod_tool
-            props.is_split_active = False
+        if context:
+            props, _, _ = resolve_lod_context(context)
+            if props:
+                props.is_split_active = False
         self._is_dragging = False
         SplitPreviewEngine.update_overlay_cache(False, 0.5, "", "", 0, 0)
         SplitPreviewEngine.unregister_draw_handler()

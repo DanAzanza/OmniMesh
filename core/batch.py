@@ -7,6 +7,7 @@ and multi-engine packaging with deterministic memory deallocation.
 
 from __future__ import annotations
 
+import concurrent.futures
 import gc
 import logging
 import math
@@ -509,25 +510,25 @@ class BatchProcessorEngine:
                         f_fallback = TextureChannelPacker.pack_orm_ue5(
                             mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048)
                         )
-                        if f_fallback:
+                        if isinstance(f_fallback, concurrent.futures.Future):
                             all_tex_futures.append(f_fallback)
                     elif target_engine == "UNITY_6":
                         f_fallback = TextureChannelPacker.pack_maskmap_unity(
                             mat, os.path.join(tex_dir, f"T_{m_name}_MaskMap.png"), (2048, 2048)
                         )
-                        if f_fallback:
+                        if isinstance(f_fallback, concurrent.futures.Future):
                             all_tex_futures.append(f_fallback)
                     elif target_engine == "MSFS_2024":
                         f_fallback = TextureChannelPacker.pack_comp_msfs(
                             mat, os.path.join(tex_dir, f"T_{m_name}_COMP.png"), (2048, 2048)
                         )
-                        if f_fallback:
+                        if isinstance(f_fallback, concurrent.futures.Future):
                             all_tex_futures.append(f_fallback)
                     elif target_engine == "GODOT_4":
                         f_fallback = TextureChannelPacker.pack_orm_godot(
                             mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048)
                         )
-                        if f_fallback:
+                        if isinstance(f_fallback, concurrent.futures.Future):
                             all_tex_futures.append(f_fallback)
 
             # Join barrier: ensure all background texture compression writes finish before packaging

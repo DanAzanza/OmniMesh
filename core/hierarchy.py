@@ -45,27 +45,36 @@ class LayerCollectionGuard:
         self.targets = {c.name for c in target_collections if c and hasattr(c, "name")}
         self.saved_states: dict[str, tuple[bool, bool]] = {}
 
-    def _traverse(self, layer_coll: Any):
+    def _traverse(self, layer_coll: Any) -> bool:
         if not layer_coll or not hasattr(layer_coll, "collection") or not layer_coll.collection:
-            return
-        name = layer_coll.collection.name
-        if name in self.targets:
-            self.saved_states[name] = (
-                getattr(layer_coll, "exclude", False),
-                getattr(layer_coll, "hide_viewport", False),
-            )
-            if hasattr(layer_coll, "exclude"):
-                layer_coll.exclude = False
-            if hasattr(layer_coll, "hide_viewport"):
-                layer_coll.hide_viewport = False
+            return False
+        name = getattr(layer_coll.collection, "name", "")
+        is_target = name in self.targets
+
+        has_target_child = False
         if hasattr(layer_coll, "children"):
             for child in layer_coll.children:
-                self._traverse(child)
+                if self._traverse(child):
+                    has_target_child = True
+
+        if is_target or has_target_child:
+            if name not in self.saved_states:
+                self.saved_states[name] = (
+                    getattr(layer_coll, "exclude", False),
+                    getattr(layer_coll, "hide_viewport", False),
+                )
+            if hasattr(layer_coll, "exclude"):
+                layer_coll.exclude = False
+            if is_target and hasattr(layer_coll, "hide_viewport"):
+                layer_coll.hide_viewport = False
+            return True
+
+        return False
 
     def _restore(self, layer_coll: Any):
         if not layer_coll or not hasattr(layer_coll, "collection") or not layer_coll.collection:
             return
-        name = layer_coll.collection.name
+        name = getattr(layer_coll.collection, "name", "")
         if name in self.saved_states:
             exc, hide = self.saved_states[name]
             if hasattr(layer_coll, "exclude"):
@@ -214,9 +223,11 @@ class MeshMergeEngine:
                         mat_remap[idx] = mat_to_global_idx.get(mat, 0)
 
                     # Vertex Group Deform Layer Remap
-                    src_dvert_lay = (
-                        temp_bm.verts.layers.deform.active if hasattr(temp_bm.verts.layers, "deform") else None
-                    )
+                    src_dvert_lay = None
+                    if hasattr(temp_bm.verts.layers, "deform"):
+                        src_dvert_lay = temp_bm.verts.layers.deform.active
+                        if src_dvert_lay is None and len(temp_bm.verts.layers.deform) > 0:
+                            src_dvert_lay = temp_bm.verts.layers.deform[0]
                     vg_map: dict[int, int] = {}
                     if hasattr(obj, "vertex_groups"):
                         for vg in obj.vertex_groups:
@@ -464,3 +475,154 @@ class CollectionCloneDAG:
                 obj.matrix_parent_inverse = pivot_obj.matrix_world.inverted()
 
         return coll, pivot_obj
+
+
+def get_or_create_engine_import_collection(
+    context: Any,
+    asset_name: str,
+    role: str,
+    use_lod0_suffix: bool = True,
+    bpy_module: Any = None,
+) -> Any | None:
+    """Finds or creates a collection adhering to OmniMesh's neutral engine package hierarchy.
+
+    Structure:
+    {AssetName} (Root Package Collection)
+       ├── {AssetName}_Config
+       │    ├── {AssetName}_Spatial
+       │    ├── {AssetName}_Lights
+       │    └── {AssetName}_Cameras
+       ├── {AssetName}_LOD0 (or {AssetName})
+       ├── {AssetName}_LOD1
+       └── {AssetName}_LODN
+    """
+    _bpy = bpy_module if bpy_module is not None else bpy
+    if not _bpy or not context:
+        return None
+
+    clean_asset = asset_name.strip() or "Asset"
+    scene = context.scene
+
+    # 1. Root Model Collection
+    root_col = _bpy.data.collections.get(clean_asset)
+    if not root_col:
+        root_col = _bpy.data.collections.new(clean_asset)
+        scene.collection.children.link(root_col)
+    elif root_col.name not in scene.collection.children:
+        try:
+            scene.collection.children.link(root_col)
+        except RuntimeError:
+            pass
+
+    if clean_asset.endswith("_Interior"):
+        root_col["_omnimesh_role"] = "INTERIOR"
+        root_col["_omnimesh_parent"] = clean_asset[:-9]
+    elif role.upper() == "VARIANT" or (
+        "_" in clean_asset
+        and not any(clean_asset.endswith(f"_LOD{n}") for n in range(11))
+        and any(
+            getattr(c, "name", "") != clean_asset and clean_asset.startswith(f"{getattr(c, 'name', '')}_")
+            for c in getattr(scene.collection, "children", [])
+        )
+    ):
+        root_col["_omnimesh_role"] = "VARIANT"
+        matching_parent = next(
+            (
+                getattr(c, "name", "")
+                for c in getattr(scene.collection, "children", [])
+                if getattr(c, "name", "") != clean_asset and clean_asset.startswith(f"{getattr(c, 'name', '')}_")
+            ),
+            "",
+        )
+        if matching_parent:
+            root_col["_omnimesh_parent"] = matching_parent
+            root_col["_omnimesh_variant_id"] = clean_asset[len(matching_parent) + 1 :]
+    else:
+        root_col["_omnimesh_role"] = "MODEL_ROOT"
+
+    if role.upper() in ("ROOT", "PACKAGE_ROOT", "MODEL_ROOT"):
+        return root_col
+
+    # 2. Determine Sub-Collection Name
+    role_upper = role.upper()
+    if role_upper == "LOD0":
+        sub_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
+    elif role_upper.startswith("LOD"):
+        sub_name = f"{clean_asset}_{role_upper}"
+    elif role_upper == "CONFIG":
+        sub_name = f"{clean_asset}_Config"
+    elif role_upper == "HELPERS":
+        sub_name = f"{clean_asset}_Helpers"
+    elif role_upper == "COLLIDERS":
+        sub_name = f"{clean_asset}_Colliders"
+    elif role_upper == "SPATIAL":
+        sub_name = f"{clean_asset}_Spatial"
+    elif role_upper == "LIGHTS":
+        sub_name = f"{clean_asset}_Lights"
+    elif role_upper == "CAMERAS":
+        sub_name = f"{clean_asset}_Cameras"
+    else:
+        sub_name = f"{clean_asset}_{role}"
+
+    # Configuration collections (Spatial, Lights, Cameras) reside under {clean_asset}_Config
+    parent_col = root_col
+    if role_upper in ("SPATIAL", "LIGHTS", "CAMERAS"):
+        config_name = f"{clean_asset}_Config"
+        config_col = _bpy.data.collections.get(config_name)
+        if not config_col:
+            config_col = _bpy.data.collections.new(config_name)
+            config_col["_omnimesh_role"] = "CONFIG"
+            root_col.children.link(config_col)
+        elif config_col.name not in root_col.children:
+            try:
+                root_col.children.link(config_col)
+            except RuntimeError:
+                pass
+        parent_col = config_col
+
+        # Legacy migration: check if sub_col was previously linked under _LOD0
+        lod0_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
+        lod0_col = _bpy.data.collections.get(lod0_name)
+        if lod0_col and hasattr(lod0_col, "children"):
+            has_old = False
+            old_sub = None
+            try:
+                if sub_name in lod0_col.children:
+                    has_old = True
+                    old_sub = (
+                        lod0_col.children.get(sub_name)
+                        if hasattr(lod0_col.children, "get")
+                        else _bpy.data.collections.get(sub_name)
+                    )
+            except Exception:
+                has_old = False
+            if has_old and old_sub:
+                if old_sub.name not in config_col.children:
+                    try:
+                        config_col.children.link(old_sub)
+                    except Exception as e:
+                        logger.debug("Could not link legacy subcollection to config: %s", e)
+                try:
+                    lod0_col.children.unlink(old_sub)
+                except Exception as e:
+                    logger.debug("Could not unlink legacy subcollection from LOD0: %s", e)
+
+    sub_col = _bpy.data.collections.get(sub_name)
+    if not sub_col:
+        sub_col = _bpy.data.collections.new(sub_name)
+        parent_col.children.link(sub_col)
+    else:
+        if sub_col.name not in parent_col.children:
+            try:
+                parent_col.children.link(sub_col)
+            except RuntimeError:
+                pass
+        # If misplaced directly under root_col (and not supposed to be), unlink
+        if parent_col != root_col and sub_col.name in root_col.children:
+            try:
+                root_col.children.unlink(sub_col)
+            except RuntimeError:
+                pass
+
+    sub_col["_omnimesh_role"] = role_upper
+    return sub_col

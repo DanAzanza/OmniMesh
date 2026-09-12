@@ -74,7 +74,7 @@ def find_cameras_collection(context: Any, asset_name: str = "") -> Optional[Coll
 
     for col in bpy.data.collections:
         if col.get("_omnimesh_role") == "CAMERAS":
-            if not target_asset or col.name.startswith(target_asset):
+            if not target_asset or col.name == f"{target_asset}_Cameras" or col.get("_omnimesh_parent") == target_asset:
                 return col
 
     for name in ("Cameras", "MSFS_Spatial_Cameras"):
@@ -336,8 +336,15 @@ class OMNIMESH_OT_export_msfs_cameras(Operator):
 
         depsgraph = context.evaluated_depsgraph_get()
 
-        # Check for modified eyepoint
+        # Check for modified eyepoint and datum
         eye_empty: Optional[Object] = None
+        datum_empty: Optional[Object] = None
+        target_asset = getattr(props, "export_base_name", "") or getattr(props, "active_asset", "")
+        if target_asset and target_asset not in ("AUTO", "NONE"):
+            datum_empty = bpy.data.objects.get(f"{target_asset}_Datum")
+        if not datum_empty:
+            datum_empty = bpy.data.objects.get("Datum") or bpy.data.objects.get("MSFS_Datum")
+
         for obj in candidate_objs:
             if obj.get("msfs_id") == "VIEWS:eyepoint" or obj.name in ("Eyepoint", "MSFS_Eyepoint"):
                 eye_empty = obj
@@ -377,6 +384,10 @@ class OMNIMESH_OT_export_msfs_cameras(Operator):
             if origin == "Virtual Cockpit" and eye_empty:
                 # Relative to eyepoint
                 mat_rel = eye_empty.matrix_world.inverted() @ eval_obj.matrix_world
+                pos_m = mat_rel.translation
+            elif datum_empty:
+                # Relative to datum
+                mat_rel = datum_empty.matrix_world.inverted() @ eval_obj.matrix_world
                 pos_m = mat_rel.translation
             else:
                 pos_m = eval_obj.matrix_world.translation
@@ -566,9 +577,13 @@ def register():
         return
     for cls in classes:
         try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        try:
             bpy.utils.register_class(cls)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
 
 
 def unregister():
@@ -577,5 +592,5 @@ def unregister():
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)

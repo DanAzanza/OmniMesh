@@ -173,18 +173,24 @@ class GLTFAssemblyEngine:
                 redundant_armatures.add(obj)
                 continue
 
-            if obj.type == "MESH" and hasattr(obj, "modifiers"):
-                for mod in obj.modifiers:
-                    if mod.type == "ARMATURE" and mod.object and mod.object != master_armature:
-                        redundant_armatures.add(mod.object)
-                        mod.object = master_armature
-                        retargeted_count += 1
+            if obj.type == "MESH":
+                if obj.parent in redundant_armatures:
+                    obj.parent = master_armature
+                if hasattr(obj, "modifiers"):
+                    for mod in obj.modifiers:
+                        if mod.type == "ARMATURE" and mod.object and mod.object != master_armature:
+                            redundant_armatures.add(mod.object)
+                            mod.object = master_armature
+                            retargeted_count += 1
 
-        # Safely remove redundant armatures
+        # Safely remove redundant armatures and clean orphan datablocks
         for arm_obj in redundant_armatures:
-            if arm_obj != master_armature and arm_obj.users <= 1:
+            if arm_obj != master_armature:
+                arm_data = getattr(arm_obj, "data", None)
                 try:
                     bpy.data.objects.remove(arm_obj, do_unlink=True)
+                    if arm_data and hasattr(bpy.data, "armatures") and getattr(arm_data, "users", 0) == 0:
+                        bpy.data.armatures.remove(arm_data)
                 except Exception as exc:
                     logger.debug("Failed removing redundant armature %s: %s", arm_obj.name, exc)
 
@@ -236,10 +242,15 @@ def bind_manifest_to_omnimesh(
         item.lod_index = i
         item.level_index = i
 
-        # Screen coverage % from MSFS minSize
-        screen_pct = 100.0 if i == 0 else 50.0
-        if i < len(lod_infos):
-            screen_pct = max(0.01, min(100.0, lod_infos[i].min_size))
+        # Screen coverage % from MSFS minSize:
+        # In MSFS XML, LOD(i) minSize defines the lower bound threshold where LOD(i) switches to LOD(i+1).
+        # In OmniMesh, tier.screen_size_pct is the entry threshold: LOD0 is 100%, LOD1 enters at LOD0's minSize, etc.
+        if i == 0:
+            screen_pct = 100.0
+        elif i - 1 < len(lod_infos):
+            screen_pct = max(0.01, min(100.0, lod_infos[i - 1].min_size))
+        else:
+            screen_pct = 50.0 / (2 ** (i - 1))
         item.screen_size_pct = screen_pct
 
         # Meshes
@@ -254,5 +265,9 @@ def bind_manifest_to_omnimesh(
             item.state = "SOURCE" if i == 0 else "BAKED"
         else:
             item.state = "PLANNED"
+
+    if lod_infos and hasattr(props, "cull_screen_size_pct"):
+        lowest_min = lod_infos[-1].min_size
+        props.cull_screen_size_pct = max(0.0, min(10.0, lowest_min))
 
     props.active_lod_index = 0

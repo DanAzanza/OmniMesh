@@ -337,9 +337,13 @@ def register():
         return
     for cls in classes:
         try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        try:
             bpy.utils.register_class(cls)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
 
 
 def unregister():
@@ -348,5 +352,5 @@ def unregister():
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)

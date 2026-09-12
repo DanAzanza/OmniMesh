@@ -141,10 +141,16 @@ class CollisionDecomposer:
             return 0.0
 
     @classmethod
-    def harden_convex_hull(cls, bm: Any, max_verts: int = 32, min_thickness: float = 0.02) -> bool:
+    def harden_convex_hull(
+        cls,
+        bm: Any,
+        max_verts: int = 32,
+        min_thickness: float = 0.02,
+        scale_factor: float = 1.0,
+    ) -> bool:
         """
         Hardens BMesh into a valid 3D convex hull:
-        1. SVD Planarity Check: If thin 2D sheet, extrudes along normal by min_thickness.
+        1. SVD Planarity Check: If thin 2D sheet, extrudes along normal by min_thickness (normalized by scale_factor).
         2. Computes convex hull and purges internal/unused vertex and face garbage.
         3. Clamps vertex budget to max_verts while strictly preserving convexity.
         """
@@ -166,13 +172,14 @@ class CollisionDecomposer:
                 _, s, vh = np.linalg.svd(centered)
                 if s[2] < 1e-4:  # Planar 2D sheet detected
                     normal = Vector(vh[2]).normalized()
+                    effective_thickness = max(1e-4, float(min_thickness) / max(1e-4, scale_factor))
                     if bm.faces:
                         res_ext = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
                         verts_to_move = [v for v in res_ext["geom"] if isinstance(v, bmesh.types.BMVert)]
-                        bmesh.ops.translate(bm, vec=normal * float(min_thickness), verts=verts_to_move)
+                        bmesh.ops.translate(bm, vec=normal * effective_thickness, verts=verts_to_move)
                     else:
                         bmesh.ops.extrude_vert_indiv(bm, verts=bm.verts[:])
-                        bmesh.ops.translate(bm, vec=normal * float(min_thickness), verts=bm.verts[:])
+                        bmesh.ops.translate(bm, vec=normal * effective_thickness, verts=bm.verts[:])
             except Exception as exc:
                 logger.debug("Planar extrusion fallback: %s", exc)
 
@@ -258,11 +265,35 @@ class CollisionDecomposer:
         if not bmesh:
             return []
 
+        scale_factor = 1.0
+        if source_obj and hasattr(source_obj, "scale"):
+            s = source_obj.scale
+            scale_factor = max(1e-4, (abs(s[0]) + abs(s[1]) + abs(s[2])) / 3.0)
+
+        eval_obj = None
         if bm_source is not None:
             bm_master = bm_source.copy()
         elif source_obj and hasattr(source_obj, "data") and source_obj.data:
+            eval_mesh = None
+            try:
+                from .modifiers import ModifierManager
+
+                eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(source_obj, preserve_armature=True)
+            except Exception as exc:
+                logger.debug("Failed evaluating modifier mesh for collision: %s", exc)
             bm_master = bmesh.new()
-            bm_master.from_mesh(source_obj.data)
+            try:
+                try:
+                    if eval_mesh:
+                        bm_master.from_mesh(eval_mesh)
+                    else:
+                        bm_master.from_mesh(source_obj.data)
+                except Exception:
+                    bm_master.free()
+                    raise
+            finally:
+                if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+                    eval_obj.to_mesh_clear()
         else:
             return []
 
@@ -271,70 +302,103 @@ class CollisionDecomposer:
             return []
 
         clusters: List[Any] = [bm_master]
+        completed_clusters: List[Any] = []
+        target_cluster = None
+        child_a = None
 
-        while len(clusters) < k_target:
-            worst_idx = -1
-            worst_concavity = -1.0
+        try:
+            while (len(clusters) + len(completed_clusters)) < k_target:
+                worst_idx = -1
+                worst_concavity = -1.0
 
-            for idx, cluster in enumerate(clusters):
-                if len(cluster.verts) < 8:
+                for idx, cluster in enumerate(clusters):
+                    if len(cluster.verts) < 8:
+                        continue
+                    bm_test = cluster.copy()
+                    try:
+                        bmesh.ops.convex_hull(bm_test, input=bm_test.verts[:], use_existing_faces=False)
+                        c_err = cls.measure_hull_concavity(cluster, bm_test)
+                        if c_err > worst_concavity:
+                            worst_concavity = c_err
+                            worst_idx = idx
+                    finally:
+                        bm_test.free()
+
+                if worst_idx == -1 or worst_concavity <= concavity_threshold:
+                    break  # Sufficiently convex or no more splittable clusters
+
+                target_cluster = clusters.pop(worst_idx)
+                coords = np.array([v.co for v in target_cluster.verts], dtype=np.float64)
+                split_origin, split_normal = cls.compute_pca_splitting_plane(coords)
+
+                child_a = target_cluster.copy()
+                child_b = target_cluster
+
+                # Slice child A
+                bmesh.ops.bisect_plane(
+                    child_a,
+                    geom=child_a.verts[:] + child_a.edges[:] + child_a.faces[:],
+                    plane_co=split_origin,
+                    plane_no=split_normal,
+                    clear_outer=True,
+                )
+                # Slice child B (inverted plane normal)
+                bmesh.ops.bisect_plane(
+                    child_b,
+                    geom=child_b.verts[:] + child_b.edges[:] + child_b.faces[:],
+                    plane_co=split_origin,
+                    plane_no=-split_normal,
+                    clear_outer=True,
+                )
+
+                # Validate child clusters
+                if len(child_a.verts) >= 4 and len(child_b.verts) >= 4:
+                    clusters.extend([child_a, child_b])
+                    child_a = None
+                    target_cluster = None
+                else:
+                    # Slice resulted in degenerate empty side; mark this cluster as non-splittable
+                    # and continue bisecting other candidate clusters in the queue
+                    child_a.free()
+                    child_a = None
+                    completed_clusters.append(child_b)
+                    target_cluster = None
                     continue
-                bm_test = cluster.copy()
+
+            # Merge all clusters for final hull conversion
+            clusters.extend(completed_clusters)
+            completed_clusters = []
+
+            # Convert all clusters into hardened 3D convex hulls
+            final_hulls: List[Any] = []
+            for c in clusters:
+                success = cls.harden_convex_hull(c, max_verts=max_verts_per_hull, scale_factor=scale_factor)
+                if success:
+                    final_hulls.append(c)
+                else:
+                    c.free()
+
+            # Transfer ownership of successfully created final_hulls
+            clusters = []
+            return final_hulls
+
+        except Exception:
+            if child_a is not None:
                 try:
-                    bmesh.ops.convex_hull(bm_test, input=bm_test.verts[:], use_existing_faces=False)
-                    c_err = cls.measure_hull_concavity(cluster, bm_test)
-                    if c_err > worst_concavity:
-                        worst_concavity = c_err
-                        worst_idx = idx
-                finally:
-                    bm_test.free()
-
-            if worst_idx == -1 or worst_concavity <= concavity_threshold:
-                break  # Sufficiently convex
-
-            target_cluster = clusters.pop(worst_idx)
-            coords = np.array([v.co for v in target_cluster.verts], dtype=np.float64)
-            split_origin, split_normal = cls.compute_pca_splitting_plane(coords)
-
-            child_a = target_cluster.copy()
-            child_b = target_cluster
-
-            # Slice child A
-            bmesh.ops.bisect_plane(
-                child_a,
-                geom=child_a.verts[:] + child_a.edges[:] + child_a.faces[:],
-                plane_co=split_origin,
-                plane_no=split_normal,
-                clear_outer=True,
-            )
-            # Slice child B (inverted plane normal)
-            bmesh.ops.bisect_plane(
-                child_b,
-                geom=child_b.verts[:] + child_b.edges[:] + child_b.faces[:],
-                plane_co=split_origin,
-                plane_no=-split_normal,
-                clear_outer=True,
-            )
-
-            # Validate child clusters
-            if len(child_a.verts) >= 4 and len(child_b.verts) >= 4:
-                clusters.extend([child_a, child_b])
-            else:
-                # Merge back if slice resulted in degenerate empty side
-                child_a.free()
-                clusters.append(child_b)
-                break
-
-        # Convert all clusters into hardened 3D convex hulls
-        final_hulls: List[Any] = []
-        for c in clusters:
-            success = cls.harden_convex_hull(c, max_verts=max_verts_per_hull)
-            if success:
-                final_hulls.append(c)
-            else:
-                c.free()
-
-        return final_hulls
+                    child_a.free()
+                except Exception as exc:
+                    logger.debug("Failed freeing child_a BMesh: %s", exc)
+            if target_cluster is not None:
+                try:
+                    target_cluster.free()
+                except Exception as exc:
+                    logger.debug("Failed freeing target_cluster BMesh: %s", exc)
+            for c in clusters + completed_clusters:
+                try:
+                    c.free()
+                except Exception as exc:
+                    logger.debug("Failed freeing cluster BMesh: %s", exc)
+            raise
 
 
 class CollisionManager:
@@ -460,10 +524,20 @@ class CollisionManager:
                         logger.debug("bm_hull.free() skipped: %s", exc)
         else:
             # PER_OBJECT Area-Weighted Decomposition
-            total_area = sum(sum(p.area for p in obj.data.polygons) for obj in mesh_objs) or 1.0
+            total_area = (
+                sum(
+                    sum(getattr(p, "area", 0.0) for p in getattr(obj.data, "polygons", []))
+                    for obj in mesh_objs
+                    if getattr(obj, "data", None)
+                )
+                or 1.0
+            )
 
             for obj in mesh_objs:
-                obj_area = sum(p.area for p in obj.data.polygons)
+                obj_data = getattr(obj, "data", None)
+                if not obj_data:
+                    continue
+                obj_area = sum(getattr(p, "area", 0.0) for p in getattr(obj_data, "polygons", []))
                 # Area-weighted hull budget
                 obj_hull_budget = max(1, int(round(hull_count * (obj_area / total_area))))
                 sub_base = obj.name.split("_LOD")[0]
@@ -562,14 +636,14 @@ class CollisionManager:
         """
         Translates generic Blender collider name into the exact format required by target engine.
         - UE5: UCX_{base_name}_{index:02d}
-        - Godot 4: {base_name}_Collider_{index:02d}-convcol
+        - Godot 4: {base_name}_Collider_{index:02d}-convcolonly
         - Unity 6: {base_name}_Collider_{index:02d}
         - MSFS 2024: {base_name}_Collider_{index:02d}
         """
         if target_engine == "UE5":
             return f"UCX_{base_name}_{index:02d}"
         elif target_engine == "GODOT_4":
-            return f"{base_name}_Collider_{index:02d}-convcol"
+            return f"{base_name}_Collider_{index:02d}-convcolonly"
         elif target_engine in {"UNITY_6", "MSFS_2024"}:
             return f"{base_name}_Collider_{index:02d}"
         return f"{base_name}_Collider_{index:02d}"

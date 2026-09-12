@@ -177,25 +177,27 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
                 hlod_coll = bpy.data.collections.new(name=hlod_coll_name)
                 context.scene.collection.children.link(hlod_coll)
 
-            try:
-                hlod_obj = HLODClusterMerger.merge_chunks_for_hlod(
-                    chunk_objs=chunk_objs_lod1,
-                    hlod_name=f"{base_name}_HLOD_LOD2",
-                    target_collection=hlod_coll,
-                    weld_dist=0.002,
-                )
-                if hlod_obj:
-                    # Global aggressive decimation without seam boundary lock
-                    MeshDecimator.execute_decimate_qem(
-                        obj=hlod_obj,
-                        target_ratio=hlod_ratio,
-                        use_curvature_weight=False,
-                        cleanup_group=True,
+            vl = getattr(context, "view_layer", None)
+            with LayerCollectionGuard(vl, [hlod_coll]):
+                try:
+                    hlod_obj = HLODClusterMerger.merge_chunks_for_hlod(
+                        chunk_objs=chunk_objs_lod1,
+                        hlod_name=f"{base_name}_HLOD_LOD2",
+                        target_collection=hlod_coll,
+                        weld_dist=0.002,
                     )
-                    logger.info("Generated HLOD mesh: %s (ratio %.3f)", hlod_obj.name, hlod_ratio)
-            except Exception as exc:
-                logger.error("HLOD cluster merging failed: %s", exc, exc_info=True)
-                safe_report(self, {"WARNING"}, f"HLOD merging failed: {exc}")
+                    if hlod_obj:
+                        # Global aggressive decimation without seam boundary lock
+                        MeshDecimator.execute_decimate_qem(
+                            obj=hlod_obj,
+                            target_ratio=hlod_ratio,
+                            use_curvature_weight=False,
+                            cleanup_group=True,
+                        )
+                        logger.info("Generated HLOD mesh: %s (ratio %.3f)", hlod_obj.name, hlod_ratio)
+                except Exception as exc:
+                    logger.error("HLOD cluster merging failed: %s", exc, exc_info=True)
+                    safe_report(self, {"WARNING"}, f"HLOD merging failed: {exc}")
 
         safe_report(
             self,

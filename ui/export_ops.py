@@ -23,23 +23,17 @@ try:
     from ..core.animations import AnimationRigSanitizer
     from ..core.pbr_presets import PBRExportPresetManager
     from ..core.textures import TextureChannelPacker, TexturePoolManager
-    from ..exporters.engine_export import AssetMeshResolver, PreFlightValidator
-    from ..exporters.godot_export import GodotExporter
-    from ..exporters.msfs_export import MSFSExporter
-    from ..exporters.ue5_export import UE5Exporter
-    from ..exporters.unity_export import UnityExporter
-    from .utils import resolve_effective_asset_name
+    from ..exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
+    from ..exporters.manager import ExporterManager
+    from .utils import resolve_effective_asset_name, resolve_lod_context
 except (ImportError, ValueError):
     from bridges.manager import BridgeManager
     from core.animations import AnimationRigSanitizer
     from core.pbr_presets import PBRExportPresetManager
     from core.textures import TextureChannelPacker, TexturePoolManager
-    from exporters.engine_export import AssetMeshResolver, PreFlightValidator
-    from exporters.godot_export import GodotExporter
-    from exporters.msfs_export import MSFSExporter
-    from exporters.ue5_export import UE5Exporter
-    from exporters.unity_export import UnityExporter
-    from ui.utils import resolve_effective_asset_name
+    from exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
+    from exporters.manager import ExporterManager
+    from ui.utils import resolve_effective_asset_name, resolve_lod_context
 
 logger = logging.getLogger(__name__)
 
@@ -52,16 +46,17 @@ class LOD_OT_pack_pbr_textures(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(
-            bpy and context and (getattr(context, "active_object", None) or getattr(context.scene, "lod_tool", None))
-        )
+        if not bpy or not context:
+            return False
+        props, _, _ = resolve_lod_context(context)
+        return bool(props)
 
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context:
             return {"CANCELLED"}
-        props = getattr(context.scene, "lod_tool", None)
+        props, _, _ = resolve_lod_context(context)
         if not props:
-            self.report({"ERROR"}, "LOD tool scene properties not found.")
+            self.report({"ERROR"}, "LOD tool properties not found.")
             return {"CANCELLED"}
 
         export_dir = (
@@ -196,12 +191,17 @@ class LOD_OT_sync_live_bridge(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(bpy and hasattr(context.scene, "lod_tool"))
+        if not bpy or not context:
+            return False
+        props, _, _ = resolve_lod_context(context)
+        return bool(props)
 
     def execute(self, context: Any) -> set[str]:
-        if not bpy:
+        if not bpy or not context:
             return {"CANCELLED"}
-        props = context.scene.lod_tool
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            return {"CANCELLED"}
         export_dir = bpy.path.abspath(props.export_directory)
         asset_name = props.export_base_name or "SM_Asset"
         target = props.target_engine
@@ -226,12 +226,17 @@ class LOD_OT_toggle_live_bridge(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(bpy and hasattr(context.scene, "lod_tool"))
+        if not bpy or not context:
+            return False
+        props, _, _ = resolve_lod_context(context)
+        return bool(props)
 
     def execute(self, context: Any) -> set[str]:
-        if not bpy:
+        if not bpy or not context:
             return {"CANCELLED"}
-        props = context.scene.lod_tool
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            return {"CANCELLED"}
         engine = props.target_engine
 
         # If already enabled, clicking disconnects / turns it OFF
@@ -280,12 +285,18 @@ class LOD_OT_export_engine_package(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(bpy and hasattr(context.scene, "lod_tool") and len(context.scene.lod_tool.lods) > 0)
+        if not bpy or not context:
+            return False
+        props, _, _ = resolve_lod_context(context)
+        return bool(props and len(getattr(props, "lods", [])) > 0)
 
     def execute(self, context: Any) -> set[str]:
-        if not bpy:
+        if not bpy or not context:
             return {"CANCELLED"}
-        props = context.scene.lod_tool
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            self.report({"ERROR"}, "LOD configuration context could not be resolved.")
+            return {"CANCELLED"}
 
         errors = PreFlightValidator.run_checks(context)
         if errors:
@@ -295,9 +306,8 @@ class LOD_OT_export_engine_package(Operator):
 
         export_dir = bpy.path.abspath(props.export_directory)
 
-        effective_name = resolve_effective_asset_name(context, props)
-        raw_name = props.export_base_name.strip() if props.export_base_name else effective_name
-        asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name) or effective_name or "SM_Asset"
+        raw_name = resolve_export_asset_name(context, props)
+        asset_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name) or "SM_Asset"
         target = props.target_engine
 
         # Auto-pack PBR textures if enabled
@@ -321,26 +331,23 @@ class LOD_OT_export_engine_package(Operator):
                 except (RuntimeError, AttributeError, ValueError) as exc:
                     logger.warning("Auto animation baking failed during export: %s", exc)
 
-        success = False
-        message = ""
-
-        if target == "MSFS_2024":
-            if getattr(props, "msfs_export_full_package", True):
-                # If active asset is interior or variant, resolve the base package name
-                payload = AssetMeshResolver.resolve_payload(context, asset_name) if AssetMeshResolver else None
-                if payload and payload.parent_asset_name:
-                    pkg_base = payload.parent_asset_name
-                else:
-                    pkg_base = asset_name.split("_Interior")[0]
-                success, message = MSFSExporter.export_project_package(context, export_dir, pkg_base)
+        pkg_base = asset_name
+        if target == "MSFS_2024" and getattr(props, "msfs_export_full_package", True):
+            # If active asset is interior or variant, resolve the base package name
+            payload = AssetMeshResolver.resolve_payload(context, asset_name) if AssetMeshResolver else None
+            if payload and payload.parent_asset_name:
+                pkg_base = payload.parent_asset_name
             else:
-                success, message = MSFSExporter.export_asset(context, export_dir, asset_name)
-        elif target == "UE5":
-            success, message = UE5Exporter.export_asset(context, export_dir, asset_name)
-        elif target == "UNITY_6":
-            success, message = UnityExporter.export_asset(context, export_dir, asset_name)
-        elif target == "GODOT_4":
-            success, message = GodotExporter.export_asset(context, export_dir, asset_name)
+                pkg_base = asset_name.split("_Interior")[0]
+
+        success, message = ExporterManager.export_asset(
+            context,
+            target,
+            export_dir,
+            asset_name,
+            full_package=getattr(props, "msfs_export_full_package", True),
+            package_name=pkg_base,
+        )
 
         if success:
             self.report({"INFO"}, f"[LOD Export] {message}")

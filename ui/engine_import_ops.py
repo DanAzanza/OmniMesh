@@ -128,8 +128,9 @@ class OMNIMESH_OT_import_engine_project(Operator):
         dedup_mats = getattr(props, "engine_import_deduplicate_materials", preset.get("deduplicate_materials", True))
         reuse_rig = getattr(props, "engine_import_reuse_master_rig", preset.get("reuse_master_rig", True))
 
-        # 2. Ensure Root Package Collection
+        # 2. Ensure Root Package and Helpers Collections
         get_or_create_engine_import_collection(context, asset_name, "ROOT", use_lod0_suffix)
+        get_or_create_engine_import_collection(context, asset_name, "HELPERS")
 
         all_imported_objects: list[Any] = []
         lod_mesh_map: dict[int, list[Any]] = {}
@@ -219,15 +220,19 @@ class OMNIMESH_OT_import_engine_project(Operator):
                     cfg = MSFSCSTParser.parse_file(manifest.flight_model_cfg_path)
                     datum_coords = cfg.points[0].coords_blender_m if cfg.points else (0.0, 0.0, 0.0)
 
-                    # Datum Empty
-                    datum_empty = bpy.data.objects.get("Datum") or bpy.data.objects.get("MSFS_Datum")
+                    # Datum Empty (scoped strictly to spatial_col)
+                    datum_empty = next(
+                        (
+                            o
+                            for o in spatial_col.objects
+                            if o.get("msfs_id") == "WEIGHT_AND_BALANCE:reference_datum_position"
+                        ),
+                        None,
+                    )
                     if not datum_empty:
-                        datum_empty = bpy.data.objects.new("Datum", None)
+                        d_name = "Datum" if "Datum" not in bpy.data.objects else f"{asset_name}_Datum"
+                        datum_empty = bpy.data.objects.new(d_name, None)
                         spatial_col.objects.link(datum_empty)
-                    else:
-                        datum_empty.name = "Datum"
-                        if datum_empty.name not in spatial_col.objects:
-                            spatial_col.objects.link(datum_empty)
 
                     datum_empty.location = datum_coords
                     datum_empty.empty_display_type = "PLAIN_AXES"
@@ -367,15 +372,21 @@ class OMNIMESH_OT_import_engine_project(Operator):
                 )
                 target_eye_col = inte_cam_col or ext_cam_col
 
-                # Eyepoint
-                eye_empty = bpy.data.objects.get("Eyepoint") or bpy.data.objects.get("MSFS_Eyepoint")
+                # Eyepoint (scoped strictly to target_eye_col)
+                eye_empty = None
+                if target_eye_col:
+                    eye_empty = next(
+                        (
+                            o
+                            for o in target_eye_col.objects
+                            if o.get("msfs_id") == "VIEWS:eyepoint" or o.get("msfs_type") == "EYEPOINT"
+                        ),
+                        None,
+                    )
                 if not eye_empty:
-                    eye_empty = bpy.data.objects.new("Eyepoint", None)
+                    e_name = "Eyepoint" if "Eyepoint" not in bpy.data.objects else f"{asset_name}_Eyepoint"
+                    eye_empty = bpy.data.objects.new(e_name, None)
                     if target_eye_col:
-                        target_eye_col.objects.link(eye_empty)
-                else:
-                    eye_empty.name = "Eyepoint"
-                    if target_eye_col and eye_empty.name not in target_eye_col.objects:
                         target_eye_col.objects.link(eye_empty)
 
                 if datum and eye_empty != datum:
@@ -553,9 +564,13 @@ def register():
         return
     for cls in classes:
         try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        try:
             bpy.utils.register_class(cls)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
 
 
 def unregister():
@@ -564,5 +579,5 @@ def unregister():
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)

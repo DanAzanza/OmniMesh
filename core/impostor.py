@@ -485,12 +485,13 @@ class ImpostorManager:
             return None
 
         impostor_name = f"{base_name}_LOD_Impostor"
-        existing = bpy.data.objects.get(impostor_name)
-        if existing:
-            bpy.data.objects.remove(existing, do_unlink=True)
-
-        impostor_mesh = bpy.data.meshes.new(f"{impostor_name}_Mesh")
         try:
+            existing = bpy.data.objects.get(impostor_name)
+            if existing:
+                bpy.data.objects.remove(existing, do_unlink=True)
+
+            impostor_mesh = bpy.data.meshes.new(f"{impostor_name}_Mesh")
+
             # Align object location/pivot with master asset so engine exporters don't fail origin validation
             ref_obj = mesh_objs[0] if mesh_objs else None
             if ref_obj and hasattr(ref_obj, "matrix_world"):
@@ -510,18 +511,24 @@ class ImpostorManager:
         finally:
             bm.free()
 
-        impostor_obj = bpy.data.objects.new(impostor_name, impostor_mesh)
-        impostor_obj.location = impostor_loc
-        impostor_obj["_is_impostor"] = True
-        impostor_obj["_impostor_mode"] = mode
+        try:
+            impostor_obj = bpy.data.objects.new(impostor_name, impostor_mesh)
+            impostor_obj.location = impostor_loc
+            impostor_obj["_is_impostor"] = True
+            impostor_obj["_impostor_mode"] = mode
 
-        # Assign Impostor PBR Material
-        mat = cls.create_impostor_material(base_name, target_engine=target_engine, is_two_sided=True)
-        if mat:
-            impostor_obj.data.materials.append(mat)
+            # Assign Impostor PBR Material
+            mat = cls.create_impostor_material(base_name, target_engine=target_engine, is_two_sided=True)
+            if mat:
+                impostor_obj.data.materials.append(mat)
 
-        target_coll.objects.link(impostor_obj)
-        logger.info(
-            "Generated Impostor '%s' (Mode: %s, Width: %.2fm, Height: %.2fm)", impostor_name, mode, width, height
-        )
-        return impostor_obj
+            target_coll.objects.link(impostor_obj)
+            logger.info(
+                "Generated Impostor '%s' (Mode: %s, Width: %.2fm, Height: %.2fm)", impostor_name, mode, width, height
+            )
+            return impostor_obj
+        except Exception as exc:
+            logger.error("Failed creating impostor object: %s", exc)
+            if impostor_mesh and bpy and hasattr(bpy, "data") and bpy.data.meshes.get(impostor_mesh.name):
+                bpy.data.meshes.remove(impostor_mesh)
+            raise

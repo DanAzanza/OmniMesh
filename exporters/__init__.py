@@ -8,12 +8,16 @@ except ImportError:
     register_exporters = None
     unregister_exporters = None
 
+from .base import EngineExporterBase
 from .godot_export import GodotExporter
+from .manager import ExporterManager
 from .msfs_export import MSFSExporter
 from .ue5_export import UE5Exporter
 from .unity_export import UnityExporter
 
 __all__ = [
+    "EngineExporterBase",
+    "ExporterManager",
     "GodotExporter",
     "MSFSExporter",
     "UE5Exporter",

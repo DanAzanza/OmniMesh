@@ -73,8 +73,8 @@ def test_map_collider_name_for_engine():
     assert CollisionManager.map_collider_name_for_engine(base, 12, "UE5") == "UCX_FighterJet_12"
 
     # Godot 4
-    assert CollisionManager.map_collider_name_for_engine(base, 1, "GODOT_4") == "FighterJet_Collider_01-convcol"
-    assert CollisionManager.map_collider_name_for_engine(base, 5, "GODOT_4") == "FighterJet_Collider_05-convcol"
+    assert CollisionManager.map_collider_name_for_engine(base, 1, "GODOT_4") == "FighterJet_Collider_01-convcolonly"
+    assert CollisionManager.map_collider_name_for_engine(base, 5, "GODOT_4") == "FighterJet_Collider_05-convcolonly"
 
     # Unity 6
     assert CollisionManager.map_collider_name_for_engine(base, 1, "UNITY_6") == "FighterJet_Collider_01"

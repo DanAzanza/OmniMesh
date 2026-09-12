@@ -56,11 +56,12 @@ exclude = ["**/__pycache__", ".pytest_cache"]
 pythonVersion = "3.10"
 reportMissingImports = false
 reportMissingModuleSource = false
-reportGeneralTypeIssues = false
-reportInvalidTypeForm = false
+reportCallIssue = true
 reportAssignmentType = false
-reportAttributeAccessIssue = false
+reportArgumentType = false
+# Suppress Blender-specific RNA annotations and headless Optional[bpy] member lookups
+reportInvalidTypeForm = false
 reportOptionalMemberAccess = false
 reportOptionalCall = false
-reportArgumentType = false
-reportCallIssue = false
+reportAttributeAccessIssue = false
+reportGeneralTypeIssues = false

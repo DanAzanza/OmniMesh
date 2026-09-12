@@ -27,6 +27,17 @@ class LODViewportHUD:
     _toast_message: str = ""
     _toast_time: float = 0.0
     _toast_duration: float = 3.5
+    _cached_shader = None
+    _cached_monitor_batch: Any = None
+    _cached_monitor_scale: float = -1.0
+    _cached_toast_batch: Any = None
+    _cached_toast_key: tuple[str, float, int] = ("", -1.0, -1)
+
+    @classmethod
+    def _get_shader(cls) -> Any:
+        if cls._cached_shader is None and gpu and hasattr(gpu, "shader"):
+            cls._cached_shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+        return cls._cached_shader
 
     @classmethod
     def show_toast(cls, message: str, duration: float = 3.5) -> None:
@@ -76,8 +87,10 @@ class LODViewportHUD:
     def update_cache(cls, context: Any) -> None:
         if not bpy or not context:
             return
-        props = getattr(context.scene, "lod_tool", None)
-        if not props or len(props.lods) == 0:
+        from .utils import resolve_lod_context
+
+        props, _, _ = resolve_lod_context(context)
+        if not props or len(getattr(props, "lods", [])) == 0:
             cls._cached_data = {}
             return
 
@@ -154,10 +167,23 @@ class LODViewportHUD:
                 (x_pos, y_pos + box_h),
                 (x_pos + box_w, y_pos + box_h),
             )
-            indices = ((0, 1, 2), (2, 1, 3))
-            shader = gpu.shader.from_builtin("UNIFORM_COLOR")
-            batch = batch_for_shader(shader, "TRIS", {"pos": vertices}, indices=indices)
+            shader = cls._get_shader()
+            if not shader or not batch_for_shader:
+                return
 
+            toast_key = (text, scale, reg_w)
+            if cls._cached_toast_batch is None or cls._cached_toast_key != toast_key:
+                vertices = (
+                    (x_pos, y_pos),
+                    (x_pos + box_w, y_pos),
+                    (x_pos, y_pos + box_h),
+                    (x_pos + box_w, y_pos + box_h),
+                )
+                indices = ((0, 1, 2), (2, 1, 3))
+                cls._cached_toast_batch = batch_for_shader(shader, "TRIS", {"pos": vertices}, indices=indices)
+                cls._cached_toast_key = toast_key
+
+            batch = cls._cached_toast_batch
             gpu.state.blend_set("ALPHA")
             try:
                 shader.bind()
@@ -195,8 +221,10 @@ class LODViewportHUD:
         if not cls._cached_data or not cls._cached_data.get("is_active"):
             return
 
-        # Check if HUD is toggled off in scene properties
-        props = getattr(bpy.context.scene, "lod_tool", None) if (bpy.context and bpy.context.scene) else None
+        # Check if HUD is toggled off in resolved properties
+        from .utils import resolve_lod_context
+
+        props, _, _ = resolve_lod_context(bpy.context) if (bpy and hasattr(bpy, "context")) else (None, None, None)
         if props and not getattr(props, "show_viewport_hud", True):
             return
 
@@ -207,16 +235,22 @@ class LODViewportHUD:
             box_w = int(340 * scale)
             box_h = int(100 * scale)
 
-            vertices = (
-                (x_offset - 10, y_offset + 10),
-                (x_offset + box_w, y_offset + 10),
-                (x_offset - 10, y_offset - box_h),
-                (x_offset + box_w, y_offset - box_h),
-            )
-            indices = ((0, 1, 2), (2, 1, 3))
+            shader = cls._get_shader()
+            if not shader or not batch_for_shader:
+                return
 
-            shader = gpu.shader.from_builtin("UNIFORM_COLOR")
-            batch = batch_for_shader(shader, "TRIS", {"pos": vertices}, indices=indices)
+            if cls._cached_monitor_batch is None or cls._cached_monitor_scale != scale:
+                vertices = (
+                    (x_offset - 10, y_offset + 10),
+                    (x_offset + box_w, y_offset + 10),
+                    (x_offset - 10, y_offset - box_h),
+                    (x_offset + box_w, y_offset - box_h),
+                )
+                indices = ((0, 1, 2), (2, 1, 3))
+                cls._cached_monitor_batch = batch_for_shader(shader, "TRIS", {"pos": vertices}, indices=indices)
+                cls._cached_monitor_scale = scale
+
+            batch = cls._cached_monitor_batch
 
             # GPU blend state management with strict try...finally guard
             gpu.state.blend_set("ALPHA")
@@ -292,33 +326,29 @@ class LODViewportHUD:
             except (RuntimeError, AttributeError, ValueError) as exc:
                 logger.debug("HUD register failed: %s", exc)
                 cls._handler = None
-        if hasattr(bpy.app, "handlers") and hasattr(bpy.app.handlers, "depsgraph_update_post"):
-            if on_depsgraph_clear_toast not in bpy.app.handlers.depsgraph_update_post:
-                bpy.app.handlers.depsgraph_update_post.append(on_depsgraph_clear_toast)
 
     @classmethod
     def unregister(cls) -> None:
         if not bpy:
             return
+        cls._cached_monitor_batch = None
+        cls._cached_monitor_scale = -1.0
+        cls._cached_toast_batch = None
+        cls._cached_toast_key = ("", -1.0, -1)
+        cls._cached_shader = None
         if cls._handler is not None:
             try:
                 bpy.types.SpaceView3D.draw_handler_remove(cls._handler, "WINDOW")
             except (RuntimeError, ValueError) as exc:
                 logger.debug("HUD draw handler removal exception: %s", exc)
             cls._handler = None
-        if hasattr(bpy.app, "handlers") and hasattr(bpy.app.handlers, "depsgraph_update_post"):
-            if on_depsgraph_clear_toast in bpy.app.handlers.depsgraph_update_post:
-                bpy.app.handlers.depsgraph_update_post.remove(on_depsgraph_clear_toast)
 
 
 def on_depsgraph_clear_toast(scene: Any = None, depsgraph: Any = None) -> None:
-    """Safely check if toast duration has expired upon depsgraph updates."""
+    """Clear transient HUD toast notification if its duration has elapsed."""
+    import time
+
     if LODViewportHUD._toast_message:
-        import time
-
-        if time.time() - LODViewportHUD._toast_time >= LODViewportHUD._toast_duration:
-            LODViewportHUD.clear_toast()
-
-
-if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "handlers"):
-    on_depsgraph_clear_toast = bpy.app.handlers.persistent(on_depsgraph_clear_toast)
+        now = time.time()
+        if now - LODViewportHUD._toast_time >= LODViewportHUD._toast_duration:
+            LODViewportHUD._toast_message = ""

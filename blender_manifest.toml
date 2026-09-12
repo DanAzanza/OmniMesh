@@ -17,4 +17,4 @@ license = [
 
 [permissions]
 files = "Read and write geometry files, XML metadata, FBX, and glTF packages"
-network = "No network access required"
+network = "Localhost TCP socket communication (127.0.0.1:6776) for Unreal Engine Live Link bridge"

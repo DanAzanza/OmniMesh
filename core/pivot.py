@@ -53,12 +53,12 @@ class PivotPreservationEngine:
             name_upper = getattr(obj, "name", "").upper()
 
             if obj_type == "EMPTY":
-                if any(tag in name_upper for tag in cls.PIVOT_TAGS) or getattr(obj, "get", lambda _: False)(
+                if any(tag in name_upper for tag in cls.PIVOT_TAGS) or getattr(obj, "get", lambda k, d=False: d)(
                     "is_pivot", False
                 ):
                     if not pivot_obj:
                         pivot_obj = obj
-                elif name_upper.startswith(cls.SOCKET_PREFIXES) or getattr(obj, "get", lambda _: False)(
+                elif name_upper.startswith(cls.SOCKET_PREFIXES) or getattr(obj, "get", lambda k, d=False: d)(
                     "is_socket", False
                 ):
                     sockets.append(obj)
@@ -66,7 +66,7 @@ class PivotPreservationEngine:
                     pivot_obj = obj
             elif obj_type == "MESH":
                 # Check if it's a collision mesh
-                if not getattr(obj, "get", lambda _: False)("_is_collider", False) and not name_upper.startswith(
+                if not getattr(obj, "get", lambda k, d=False: d)("_is_collider", False) and not name_upper.startswith(
                     "UCX_"
                 ):
                     meshes.append(obj)

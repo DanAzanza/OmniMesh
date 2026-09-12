@@ -579,9 +579,18 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "", 
             if exist_info and exist_info.get("meshes"):
                 item.actual_tris = exist_info.get("actual_tris", 0)
                 item.actual_triangles = item.actual_tris
-                item.last_baked_target_pct = t_pct
-                item.last_baked_screen_pct = s_pct
-                item.state = "BAKED"
+                cached_last = float(t_def.get("last_baked_target_pct", -1.0)) if cached_tiers else -1.0
+                if cached_last > 0.0:
+                    item.last_baked_target_pct = cached_last
+                    item.last_baked_screen_pct = float(t_def.get("last_baked_screen_pct", s_pct))
+                    if abs(t_pct - cached_last) > 0.01:
+                        item.state = "OUT_OF_SYNC"
+                    else:
+                        item.state = "BAKED"
+                else:
+                    item.last_baked_target_pct = t_pct
+                    item.last_baked_screen_pct = s_pct
+                    item.state = "BAKED"
                 item.generated_obj = exist_info["meshes"][0]
             else:
                 item.state = "PLANNED"
@@ -683,6 +692,19 @@ def on_engine_import_directory_updated(self: Any, _context: Any) -> None:
         logger.debug("Persist engine import directory: %s", exc)
 
 
+def on_active_lod_index_updated(self: Any, context: Any) -> None:
+    """Updates HUD monitor and tags redraw when active LOD tier changes."""
+    if StateRestorationGuard.is_active():
+        return
+    try:
+        from ..hud import LODViewportHUD
+
+        LODViewportHUD.update_cache(context)
+        LODViewportHUD.tag_redraw()
+    except Exception as exc:
+        logger.debug("Active LOD index HUD update exception: %s", exc)
+
+
 __all__ = [
     "ENGINE_TO_FACTORY_PRESET",
     "update_bridge_status_cached",
@@ -713,4 +735,5 @@ __all__ = [
     "get_engine_import_preset_items",
     "on_engine_import_preset_updated",
     "on_engine_import_directory_updated",
+    "on_active_lod_index_updated",
 ]

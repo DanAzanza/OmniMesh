@@ -16,13 +16,14 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Relative imports from submodules
-from . import callbacks, guards, lod_properties, pbr_properties, settings
+from . import callbacks, enums, guards, lod_properties, pbr_properties, settings
 from .callbacks import (
     ENGINE_TO_FACTORY_PRESET,
     get_lod_preset_items,
     get_pbr_export_preset_items,
     get_pbr_import_preset_items,
     get_pbr_preset_items,
+    on_active_lod_index_updated,
     on_batch_mode_updated,
     on_batch_source_updated,
     on_enable_live_sync_updated,
@@ -79,7 +80,7 @@ from .settings import LODToolSettings
 if "_OMNIMESH_PROPERTIES_LOADED" in locals():
     import importlib
 
-    for mod in (guards, lod_properties, pbr_properties, callbacks, settings):
+    for mod in (enums, guards, lod_properties, pbr_properties, callbacks, settings):
         importlib.reload(mod)
 _OMNIMESH_PROPERTIES_LOADED = True
 
@@ -190,4 +191,5 @@ __all__ = [
     "get_pbr_import_preset_items",
     "get_pbr_export_preset_items",
     "get_pbr_preset_items",
+    "on_active_lod_index_updated",
 ]

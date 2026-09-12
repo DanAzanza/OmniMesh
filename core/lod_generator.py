@@ -56,19 +56,34 @@ except (ImportError, ValueError):
 
 
 def _count_triangles(mesh_data: Any) -> int:
-    """Computes true triangle count across polygons, supporting quads, n-gons, and mocks."""
-    if not mesh_data or not hasattr(mesh_data, "polygons"):
+    """Computes true triangle count in O(1) via loop-poly invariant with safe fallbacks."""
+    if not mesh_data:
         return 0
     try:
-        polys = mesh_data.polygons
-        if not polys:
-            return 0
+        loops = getattr(mesh_data, "loops", None)
+        polys = getattr(mesh_data, "polygons", None)
+        if loops is not None and polys is not None:
+            n_loops = len(loops)
+            n_polys = len(polys)
+            if n_polys == 0:
+                return 0
+            return max(0, n_loops - 2 * n_polys)
+    except (AttributeError, TypeError) as exc:
+        logger.debug("Loop-poly triangle count invariant fallback triggered: %s", exc)
+
+    # Safe fallback for bmesh or mock structures
+    polys = getattr(mesh_data, "polygons", getattr(mesh_data, "faces", []))
+    if not polys:
+        return 0
+    try:
         first = polys[0]
         if hasattr(first, "vertices"):
-            return sum(max(1, len(p.vertices) - 2) for p in polys)
+            return sum(max(0, len(p.vertices) - 2) for p in polys)
+        elif hasattr(first, "verts"):
+            return sum(max(0, len(f.verts) - 2) for f in polys)
         return len(polys)
     except Exception:
-        return len(getattr(mesh_data, "polygons", []))
+        return len(polys)
 
 
 def generate_all_lods(
@@ -254,12 +269,12 @@ def generate_all_lods(
                                 delta_world=tolerances["delta_world"],
                             )
 
+                        MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
                         pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(
                             bm,
                             pin_uv_seams=getattr(props, "pin_uv_seams", True),
                             pin_material_borders=getattr(props, "pin_material_borders", True),
                         )
-                        MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
                         MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
                         bm.to_mesh(tier_obj.data)
                     finally:
@@ -320,6 +335,10 @@ def generate_all_lods(
                         lod_obj.data.name = f"{sub_name}_Mesh"
                         tier_coll.objects.link(lod_obj)
 
+                        # Clean shape keys BEFORE baking modifiers to avoid Blender RuntimeError on modifier apply
+                        if props.purge_shape_keys and i >= 2:
+                            MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
+
                         # Bake procedural modifiers so LOD operations run on evaluated geometry
                         ModifierManager.apply_all_modifiers_in_place(lod_obj, preserve_armature=True)
 
@@ -333,9 +352,6 @@ def generate_all_lods(
                             if is_parent_pivot:
                                 lod_obj.parent = tier_pivot
                                 lod_obj.matrix_parent_inverse = source_obj.matrix_parent_inverse.copy()
-
-                        if props.purge_shape_keys and i >= 2:
-                            MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
 
                         bm = bmesh.new()
                         try:
@@ -363,13 +379,13 @@ def generate_all_lods(
                                     delta_world=tolerances["delta_world"],
                                 )
 
+                            MeshDecimator.apply_planar_limited_dissolve(
+                                bm, math.radians(tolerances["planar_angle_deg"])
+                            )
                             pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(
                                 bm,
                                 pin_uv_seams=getattr(props, "pin_uv_seams", True),
                                 pin_material_borders=getattr(props, "pin_material_borders", True),
-                            )
-                            MeshDecimator.apply_planar_limited_dissolve(
-                                bm, math.radians(tolerances["planar_angle_deg"])
                             )
                             MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
                             bm.to_mesh(lod_obj.data)
