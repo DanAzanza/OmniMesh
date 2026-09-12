@@ -240,6 +240,8 @@ class MSFSExporter:
                         "_Chunks",
                         "_HLOD",
                         "_Interior",
+                        "_Config",
+                        "_Helpers",
                     )
                 ):
                     var_id = c_name[len(clean_base) + 1 :].lower()

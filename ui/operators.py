@@ -31,6 +31,7 @@ try:
         LOD_OT_apply_transforms,
         LOD_OT_clean_and_repair_materials,
         LOD_OT_clean_and_repair_mesh,
+        LOD_OT_create_helpers_collection,
         LOD_OT_inspect_lod0,
     )
     from ui.hull_impostor_ops import (
@@ -87,6 +88,7 @@ except (ImportError, ValueError):
         LOD_OT_apply_transforms,
         LOD_OT_clean_and_repair_materials,
         LOD_OT_clean_and_repair_mesh,
+        LOD_OT_create_helpers_collection,
         LOD_OT_inspect_lod0,
     )
     from .hull_impostor_ops import (
@@ -216,6 +218,7 @@ __all__ = [
     "LOD_OT_clean_and_repair_materials",
     "LOD_OT_apply_all_modifiers",
     "LOD_OT_apply_transforms",
+    "LOD_OT_create_helpers_collection",
     "LOD_OT_import_pbr_set",
     "LOD_OT_auto_match_pbr_folder",
     "LOD_OT_reload_pbr_presets",

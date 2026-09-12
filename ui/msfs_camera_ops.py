@@ -53,17 +53,30 @@ logger = logging.getLogger(__name__)
 DATUM_POINT_ID = "WEIGHT_AND_BALANCE:reference_datum_position"
 
 
-def find_cameras_collection(context: Any) -> Optional[Collection]:
-    """Finds existing cameras collection by role tag, asset name, or legacy name."""
+def find_cameras_collection(context: Any, asset_name: str = "") -> Optional[Collection]:
+    """Finds existing cameras collection scoped by asset name, role tag, or legacy name."""
     if not bpy:
         return None
+    props = getattr(getattr(context, "scene", None), "lod_tool", None)
+    target_asset = asset_name or (getattr(props, "export_base_name", "") if props else "")
+    if not target_asset and props and hasattr(props, "active_asset") and props.active_asset not in ("AUTO", "NONE"):
+        target_asset = props.active_asset
+
+    if target_asset:
+        # Check inside {target_asset}_Config
+        cfg_col = bpy.data.collections.get(f"{target_asset}_Config")
+        if cfg_col and hasattr(cfg_col, "children"):
+            cam = cfg_col.children.get(f"{target_asset}_Cameras")
+            if cam:
+                return cam
+        if f"{target_asset}_Cameras" in bpy.data.collections:
+            return bpy.data.collections[f"{target_asset}_Cameras"]
+
     for col in bpy.data.collections:
         if col.get("_omnimesh_role") == "CAMERAS":
-            return col
-    props = getattr(getattr(context, "scene", None), "lod_tool", None)
-    asset_name = getattr(props, "export_base_name", "") if props else ""
-    if asset_name and f"{asset_name}_Cameras" in bpy.data.collections:
-        return bpy.data.collections[f"{asset_name}_Cameras"]
+            if not target_asset or col.name.startswith(target_asset):
+                return col
+
     for name in ("Cameras", "MSFS_Spatial_Cameras"):
         if name in bpy.data.collections:
             return bpy.data.collections[name]

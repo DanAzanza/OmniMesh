@@ -77,9 +77,18 @@ class AssetMeshResolver:
             users = getattr(obj, "users_collection", [])
             for c in users:
                 c_name = getattr(c, "name", "")
-                if getattr(c, "get", lambda *_: False)("_omnimesh_role", "") in ("SPATIAL", "LIGHTS", "CAMERAS"):
+                if getattr(c, "get", lambda *_: False)("_omnimesh_role", "") in (
+                    "SPATIAL",
+                    "LIGHTS",
+                    "CAMERAS",
+                    "CONFIG",
+                    "HELPERS",
+                ):
                     return False
-                if any(c_name.endswith(sfx) for sfx in ("_Spatial", "_Lights", "_Cameras", "_Colliders")):
+                if any(
+                    c_name.endswith(sfx)
+                    for sfx in ("_Spatial", "_Lights", "_Cameras", "_Colliders", "_Config", "_Helpers")
+                ):
                     return False
             return True
 

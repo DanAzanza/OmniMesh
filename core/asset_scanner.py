@@ -16,16 +16,37 @@ except ImportError:
     bpy = None
 
 
+def _strip_collection_suffixes(name: str) -> str:
+    """Safely strips known OmniMesh technical and LOD suffixes from a collection or object stem."""
+    stem = name
+    for n in range(0, 11):
+        if stem.endswith(f"_LOD{n}"):
+            stem = stem[: -len(f"_LOD{n}")]
+            break
+    for sfx in (
+        "_Colliders",
+        "_Impostor",
+        "_Chunks",
+        "_HLOD",
+        "_Spatial",
+        "_Lights",
+        "_Cameras",
+        "_Config",
+        "_Helpers",
+    ):
+        if stem.endswith(sfx):
+            stem = stem[: -len(sfx)]
+            break
+    return stem
+
+
 def get_available_asset_names(context: Any) -> list[str]:
-    """
-    Scans scene collections for candidate root asset collections.
-    Returns list of collection names (excluding derivative collections like _LOD1..10, _Colliders, _Impostor, etc.).
-    """
-    if not bpy or not hasattr(bpy, "data") or not hasattr(bpy.data, "collections"):
+    """Discovers available asset base names by scanning scene collections."""
+    if not bpy or not context:
         return []
 
     scene = getattr(context, "scene", None)
-    if not scene:
+    if not scene or not hasattr(scene, "collection"):
         return []
 
     asset_names = []
@@ -36,10 +57,21 @@ def get_available_asset_names(context: Any) -> list[str]:
         name = coll.name
         if (
             any(f"_LOD{n}" in name for n in range(1, 11))
-            or "_Colliders" in name
-            or "_Impostor" in name
-            or "_Chunks" in name
-            or "_HLOD" in name
+            or any(
+                name.endswith(sfx)
+                for sfx in (
+                    "_Colliders",
+                    "_Impostor",
+                    "_Chunks",
+                    "_HLOD",
+                    "_Spatial",
+                    "_Lights",
+                    "_Cameras",
+                    "_Config",
+                    "_Helpers",
+                )
+            )
+            or getattr(coll, "get", lambda *_: False)("_omnimesh_role", "") in ("CONFIG", "HELPERS")
         ):
             continue
 
@@ -50,7 +82,7 @@ def get_available_asset_names(context: Any) -> list[str]:
                 break
 
         if has_mesh:
-            base_name = name.split("_LOD0")[0]
+            base_name = name[:-5] if name.endswith("_LOD0") else name
             if base_name not in asset_names:
                 asset_names.append(base_name)
 
@@ -71,31 +103,31 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
         if selected_asset and selected_asset not in ("AUTO", "NONE"):
             return str(selected_asset)
 
+    available = get_available_asset_names(context)
+
     if context and hasattr(context, "view_layer") and hasattr(context.view_layer, "active_layer_collection"):
         active_lc = context.view_layer.active_layer_collection
         if active_lc and hasattr(active_lc, "collection"):
             coll_name = active_lc.collection.name
             if coll_name and coll_name != getattr(getattr(context, "scene", None), "collection", None):
-                stem = coll_name
-                for n in range(0, 11):
-                    stem = stem.split(f"_LOD{n}")[0]
-                stem = stem.split("_Colliders")[0].split("_Impostor")[0].split("_Chunks")[0].split("_HLOD")[0]
-                if stem and stem != "Collection":
+                stem = _strip_collection_suffixes(coll_name)
+                if stem and stem != "Collection" and (not available or stem in available):
                     return stem
 
     active_obj = getattr(context, "active_object", None)
     if active_obj:
         raw_name = getattr(active_obj, "name", "")
-        stem = raw_name
-        for n in range(0, 11):
-            stem = stem.split(f"_LOD{n}")[0]
-        stem = stem.split("_Collider")[0].split("_Impostor")[0].split("_Pivot")[0]
-        if stem:
+        stem = _strip_collection_suffixes(raw_name)
+        if stem and (not available or stem in available):
             return stem
+        if hasattr(active_obj, "users_collection"):
+            for uc in active_obj.users_collection:
+                u_stem = _strip_collection_suffixes(getattr(uc, "name", ""))
+                if u_stem and (not available or u_stem in available):
+                    return u_stem
 
-    candidates = get_available_asset_names(context)
-    if candidates:
-        return candidates[0]
+    if available:
+        return available[0]
 
     return "Asset"
 

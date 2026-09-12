@@ -223,6 +223,7 @@ def mock_hierarchy():
         return col
 
     root = create_col("Simple_Aircraft")
+    config = create_col("Simple_Aircraft_Config")
     lod0 = create_col("Simple_Aircraft_LOD0")
     spatial = create_col("Simple_Aircraft_Spatial")
     lights = create_col("Simple_Aircraft_Lights")
@@ -231,14 +232,15 @@ def mock_hierarchy():
     colliders = create_col("Simple_Aircraft_Colliders")
     impostors = create_col("Simple_Aircraft_LOD_Impostor")
 
+    root.add_child(config)
     root.add_child(lod0)
     root.add_child(lod1)
     root.add_child(colliders)
     root.add_child(impostors)
 
-    lod0.add_child(spatial)
-    lod0.add_child(lights)
-    lod0.add_child(cameras)
+    config.add_child(spatial)
+    config.add_child(lights)
+    config.add_child(cameras)
 
     # Add objects
     f_lod0 = MockObject("Fuselage_LOD0", "MESH")
@@ -266,6 +268,12 @@ def mock_hierarchy():
     imp = MockObject("Fuselage_Impostor", "MESH")
     imp["_is_impostor"] = True
     impostors.add_object(imp)
+
+    # Helpers collection with non-export reference mesh
+    helpers = create_col("Simple_Aircraft_Helpers")
+    root.add_child(helpers)
+    ref_mesh = MockObject("Reference_Blueprint_Cylinder", "MESH")
+    helpers.add_object(ref_mesh)
 
     # Interior hierarchy
     interior_root = create_col("Simple_Aircraft_Interior")
@@ -384,6 +392,7 @@ def test_asset_mesh_resolver_filters_technical_collections(mock_hierarchy, monke
     assert "MSFS_Datum" not in all_tier_names
     assert "Light_Nav_Left" not in all_tier_names
     assert "Eyepoint" not in all_tier_names
+    assert "Reference_Blueprint_Cylinder" not in all_tier_names
 
     # Collider and Impostor routing
     assert len(payload.collider_objects) == 1

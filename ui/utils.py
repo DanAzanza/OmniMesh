@@ -291,15 +291,20 @@ def get_available_asset_names(context: Any) -> list[str]:
         # Ignore derivative / auxiliary collections
         if any(f"_LOD{n}" in c_name for n in range(1, 11)):
             continue
-        if (
-            "_Colliders" in c_name
-            or "_Impostor" in c_name
-            or "_Chunks" in c_name
-            or "_HLOD" in c_name
-            or "_Spatial" in c_name
-            or "_Lights" in c_name
-            or "_Cameras" in c_name
-        ):
+        if any(
+            c_name.endswith(sfx)
+            for sfx in (
+                "_Colliders",
+                "_Impostor",
+                "_Chunks",
+                "_HLOD",
+                "_Spatial",
+                "_Lights",
+                "_Cameras",
+                "_Config",
+                "_Helpers",
+            )
+        ) or getattr(coll, "get", lambda *_: False)("_omnimesh_role", "") in ("CONFIG", "HELPERS"):
             continue
         if getattr(context, "scene", None) and coll == context.scene.collection:
             continue
@@ -315,13 +320,17 @@ def get_available_asset_names(context: Any) -> list[str]:
             and not getattr(obj, "get", lambda *_: False)("_is_impostor", False)
         )
         if has_mesh:
-            base_name = c_name.split("_LOD0")[0]
+            base_name = c_name[:-5] if c_name.endswith("_LOD0") else c_name
             if base_name and base_name not in {"Collection"}:
                 asset_names.add(base_name)
 
     # Fallback if only default 'Collection' exists and has meshes
     if not asset_names and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections"):
-        default_c = bpy.data.collections.get("Collection")
+        default_c = (
+            bpy.data.collections.get("Collection")
+            if hasattr(bpy.data.collections, "get")
+            else next((c for c in bpy.data.collections if getattr(c, "name", "") == "Collection"), None)
+        )
         if default_c:
             has_mesh = any(
                 getattr(obj, "type", "") == "MESH" for obj in getattr(default_c, "objects", []) if is_object_valid(obj)
@@ -340,12 +349,36 @@ def get_available_asset_names(context: Any) -> list[str]:
     return sorted(list(asset_names))
 
 
+def _strip_collection_suffixes(name: str) -> str:
+    """Safely strips known OmniMesh technical and LOD suffixes from a collection or object stem."""
+    stem = name
+    for n in range(0, 11):
+        if stem.endswith(f"_LOD{n}"):
+            stem = stem[: -len(f"_LOD{n}")]
+            break
+    for sfx in (
+        "_Colliders",
+        "_Impostor",
+        "_Chunks",
+        "_HLOD",
+        "_Spatial",
+        "_Lights",
+        "_Cameras",
+        "_Config",
+        "_Helpers",
+    ):
+        if stem.endswith(sfx):
+            stem = stem[: -len(sfx)]
+            break
+    return stem
+
+
 def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
     """
     Resolves the active asset name deterministically:
     1. If props.active_asset is set and != "AUTO" and != "NONE", returns it.
     2. If "AUTO" (or not set), checks active Outliner collection (active_layer_collection).
-    3. Fallback: checks active mesh object's collection or name.
+    3. Fallback: checks active object's collection or name (supporting meshes, lights, empties, cameras).
     4. Fallback: first discovered asset from get_available_asset_names(context).
     5. Final fallback: 'Asset'.
     """
@@ -371,41 +404,20 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
             and alc.collection != context.scene.collection
             and c_name != "Scene Collection"
         ):
-            stem = c_name
-            for n in range(0, 11):
-                stem = stem.split(f"_LOD{n}")[0]
-            stem = (
-                stem.split("_Colliders")[0]
-                .split("_Impostor")[0]
-                .split("_Chunks")[0]
-                .split("_HLOD")[0]
-                .split("_Spatial")[0]
-                .split("_Lights")[0]
-                .split("_Cameras")[0]
-            )
+            stem = _strip_collection_suffixes(c_name)
             if stem in available:
                 return stem
 
-    # Fallback to active mesh object collection or name
+    # Fallback to active object (MESH, EMPTY, LIGHT, CAMERA)
     active_obj = getattr(context, "active_object", None)
-    if active_obj and getattr(active_obj, "type", "") == "MESH":
-        stem = active_obj.name.split("_LOD")[0].split("_Collider")[0].split("_Impostor")[0]
+    if active_obj and is_object_valid(active_obj):
+        obj_name = getattr(active_obj, "name", "")
+        stem = _strip_collection_suffixes(obj_name)
         if stem in available:
             return stem
         if hasattr(active_obj, "users_collection"):
             for uc in active_obj.users_collection:
-                u_stem = uc.name
-                for n in range(0, 11):
-                    u_stem = u_stem.split(f"_LOD{n}")[0]
-                u_stem = (
-                    u_stem.split("_Colliders")[0]
-                    .split("_Impostor")[0]
-                    .split("_Chunks")[0]
-                    .split("_HLOD")[0]
-                    .split("_Spatial")[0]
-                    .split("_Lights")[0]
-                    .split("_Cameras")[0]
-                )
+                u_stem = _strip_collection_suffixes(getattr(uc, "name", ""))
                 if u_stem in available:
                     return u_stem
 
@@ -463,55 +475,55 @@ def get_asset_existing_lods(context: Any, asset_name: str) -> dict[int, dict[str
     existing: dict[int, dict[str, Any]] = {}
 
     # Check LOD0
-    l0_coll = get_asset_collection(context, asset_name)
-    if l0_coll:
-        l0_meshes = get_asset_base_meshes(context, asset_name)
-        l0_tris = sum(
-            sum(len(p.vertices) - 2 for p in m.data.polygons)
-            for m in l0_meshes
-            if hasattr(m, "data") and hasattr(m.data, "polygons")
-        )
+    lod0_col = bpy.data.collections.get(f"{asset_name}_LOD0") or bpy.data.collections.get(asset_name)
+    if lod0_col:
+        meshes = [
+            obj
+            for obj in getattr(lod0_col, "objects", [])
+            if is_object_valid(obj)
+            and getattr(obj, "type", "") == "MESH"
+            and not getattr(obj, "get", lambda *_: False)("_is_collider", False)
+            and not getattr(obj, "get", lambda *_: False)("_is_impostor", False)
+        ]
+        t_count = sum(len(getattr(m.data, "polygons", [])) for m in meshes if hasattr(m, "data"))
         existing[0] = {
-            "collection_name": l0_coll.name,
-            "meshes": l0_meshes,
-            "actual_tris": l0_tris,
+            "collection_name": lod0_col.name,
+            "meshes": meshes,
+            "actual_tris": t_count,
             "is_impostor": False,
         }
 
     # Check LOD1..10
-    for i in range(1, 11):
-        c_name = f"{asset_name}_LOD{i}"
-        c = bpy.data.collections.get(c_name)
-        if c:
-            meshes = [o for o in getattr(c, "objects", []) if is_object_valid(o) and getattr(o, "type", "") == "MESH"]
-            t_count = sum(
-                sum(len(p.vertices) - 2 for p in m.data.polygons)
-                for m in meshes
-                if hasattr(m, "data") and hasattr(m.data, "polygons")
-            )
-            existing[i] = {
-                "collection_name": c_name,
+    for n in range(1, 11):
+        tier_col = bpy.data.collections.get(f"{asset_name}_LOD{n}")
+        if tier_col:
+            meshes = [
+                obj
+                for obj in getattr(tier_col, "objects", [])
+                if is_object_valid(obj)
+                and getattr(obj, "type", "") == "MESH"
+                and not getattr(obj, "get", lambda *_: False)("_is_collider", False)
+                and not getattr(obj, "get", lambda *_: False)("_is_impostor", False)
+            ]
+            t_count = sum(len(getattr(m.data, "polygons", [])) for m in meshes if hasattr(m, "data"))
+            existing[n] = {
+                "collection_name": tier_col.name,
                 "meshes": meshes,
                 "actual_tris": t_count,
                 "is_impostor": False,
             }
 
-    # Check Impostor
-    imp_name = f"{asset_name}_LOD_Impostor"
-    c_imp = bpy.data.collections.get(imp_name)
-    if c_imp:
-        meshes = [o for o in getattr(c_imp, "objects", []) if is_object_valid(o) and getattr(o, "type", "") == "MESH"]
-        t_count = (
-            sum(
-                sum(len(p.vertices) - 2 for p in m.data.polygons)
-                for m in meshes
-                if hasattr(m, "data") and hasattr(m.data, "polygons")
-            )
-            if meshes
-            else 0
-        )
-        existing[-1] = {
-            "collection_name": imp_name,
+    # Impostor check
+    imp_col = bpy.data.collections.get(f"{asset_name}_LOD_Impostor")
+    if imp_col:
+        meshes = [
+            obj
+            for obj in getattr(imp_col, "objects", [])
+            if is_object_valid(obj) and getattr(obj, "get", lambda *_: False)("_is_impostor", False)
+        ]
+        t_count = sum(len(getattr(m.data, "polygons", [])) for m in meshes if hasattr(m, "data"))
+        existing[99] = {
+            "collection_name": imp_col.name,
             "meshes": meshes,
             "actual_tris": t_count,
             "is_impostor": True,
@@ -566,10 +578,11 @@ def get_or_create_engine_import_collection(
 
     Structure:
     {AssetName} (Root Package Collection)
-       ├── {AssetName}_LOD0 (or {AssetName})
+       ├── {AssetName}_Config
        │    ├── {AssetName}_Spatial
        │    ├── {AssetName}_Lights
        │    └── {AssetName}_Cameras
+       ├── {AssetName}_LOD0 (or {AssetName})
        ├── {AssetName}_LOD1
        └── {AssetName}_LODN
     """
@@ -625,6 +638,10 @@ def get_or_create_engine_import_collection(
         sub_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
     elif role_upper.startswith("LOD"):
         sub_name = f"{clean_asset}_{role_upper}"
+    elif role_upper == "CONFIG":
+        sub_name = f"{clean_asset}_Config"
+    elif role_upper == "HELPERS":
+        sub_name = f"{clean_asset}_Helpers"
     elif role_upper == "SPATIAL":
         sub_name = f"{clean_asset}_Spatial"
     elif role_upper == "LIGHTS":
@@ -634,16 +651,48 @@ def get_or_create_engine_import_collection(
     else:
         sub_name = f"{clean_asset}_{role}"
 
-    # Configuration collections (Spatial, Lights, Cameras) reside under LOD0
+    # Configuration collections (Spatial, Lights, Cameras) reside under {clean_asset}_Config
     parent_col = root_col
     if role_upper in ("SPATIAL", "LIGHTS", "CAMERAS"):
+        config_name = f"{clean_asset}_Config"
+        config_col = bpy.data.collections.get(config_name)
+        if not config_col:
+            config_col = bpy.data.collections.new(config_name)
+            config_col["_omnimesh_role"] = "CONFIG"
+            root_col.children.link(config_col)
+        elif config_col.name not in root_col.children:
+            try:
+                root_col.children.link(config_col)
+            except RuntimeError:
+                pass
+        parent_col = config_col
+
+        # Legacy migration: check if sub_col was previously linked under _LOD0
         lod0_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
         lod0_col = bpy.data.collections.get(lod0_name)
-        if not lod0_col:
-            lod0_col = bpy.data.collections.new(lod0_name)
-            root_col.children.link(lod0_col)
-            lod0_col["_omnimesh_role"] = "LOD0"
-        parent_col = lod0_col
+        if lod0_col and hasattr(lod0_col, "children"):
+            has_old = False
+            old_sub = None
+            try:
+                if sub_name in lod0_col.children:
+                    has_old = True
+                    old_sub = (
+                        lod0_col.children.get(sub_name)
+                        if hasattr(lod0_col.children, "get")
+                        else bpy.data.collections.get(sub_name)
+                    )
+            except Exception:
+                has_old = False
+            if has_old and old_sub:
+                if old_sub.name not in config_col.children:
+                    try:
+                        config_col.children.link(old_sub)
+                    except Exception as e:
+                        logger.debug("Could not link legacy subcollection to config: %s", e)
+                try:
+                    lod0_col.children.unlink(old_sub)
+                except Exception as e:
+                    logger.debug("Could not unlink legacy subcollection from LOD0: %s", e)
 
     sub_col = bpy.data.collections.get(sub_name)
     if not sub_col:
@@ -655,7 +704,7 @@ def get_or_create_engine_import_collection(
                 parent_col.children.link(sub_col)
             except RuntimeError:
                 pass
-        # If misplaced directly under root_col, unlink
+        # If misplaced directly under root_col (and not supposed to be), unlink
         if parent_col != root_col and sub_col.name in root_col.children:
             try:
                 root_col.children.unlink(sub_col)

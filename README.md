@@ -4,7 +4,7 @@
 [![Blender 4.2+ / 5.2 LTS](https://img.shields.io/badge/Blender-4.2%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-313%20passed%20%28100%25%29-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-314%20passed%20%28100%25%29-brightgreen.svg)]()
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5%20%7C%20Unity%206%20%7C%20Godot%204-purple.svg)]()
 
@@ -46,11 +46,11 @@ Unlike traditional Blender add-ons that force artists to manually select objects
    - `{AssetName}`: Primary exterior airframe or base model container (no suffix required).
    - `{AssetName}_Interior`: Dedicated cockpit / flight deck model container.
    - `{AssetName}_{Variant}`: Modular geometry variants (e.g. `{AssetName}_Floats`, `{AssetName}_Skis`, `{AssetName}_Cargo`).
-2. **Sub-Collections Nested Under `_LOD0`**:
-   - Technical configuration collections (`Spatial`, `Lights`, `Cameras`) reside strictly under each model's `_LOD0`, keeping LOD arrays (`_LOD1..N`) clean:
-     - **Exterior `_LOD0`**: `{AssetName}_Spatial` (Datum, CG, Wheels, Scrapes, Fuel), `{AssetName}_Lights` (Nav, Strobe, Beacon, Landing, Taxi), `{AssetName}_Cameras` (Airframe cameras: Tail, Wing, Belly).
-     - **Interior `_LOD0`**: `{AssetName}_Interior_Cameras` (Eyepoint & Cockpit views: Pilot, CoPilot, PFD, MFD), `{AssetName}_Interior_Lights` (Panel, Flood).
-     - **Variant `_LOD0`**: `{AssetName}_{Variant}_Spatial` (Water contact points, Ski scrapes).
+2. **Dedicated Technical Configuration Sibling (`_Config`)**:
+   - Technical configuration collections (`Spatial`, `Lights`, `Cameras`) reside strictly under each model's dedicated `{AssetName}_Config` sibling container, keeping `_LOD0` as 100% pure render geometry:
+     - **Exterior `_Config`**: `{AssetName}_Spatial` (Datum, CG, Wheels, Scrapes, Fuel), `{AssetName}_Lights` (Nav, Strobe, Beacon, Landing, Taxi), `{AssetName}_Cameras` (Airframe cameras: Tail, Wing, Belly).
+     - **Interior `_Config`**: `{AssetName}_Interior_Cameras` (Eyepoint & Cockpit views: Pilot, CoPilot, PFD, MFD), `{AssetName}_Interior_Lights` (Panel, Flood).
+     - **Variant `_Config`**: `{AssetName}_{Variant}_Spatial` (Water contact points, Ski scrapes).
 3. **Automated Non-Destructive Siblings**: OmniMesh generates all derivative tiers into dedicated sibling collections without ever modifying or overwriting your original LOD0 geometry:
    - `{AssetName}_LOD1`, `{AssetName}_LOD2`, ... `{AssetName}_LODk`
    - `{AssetName}_Colliders` (convex physics hulls)
@@ -64,22 +64,28 @@ Unlike traditional Blender add-ons that force artists to manually select objects
 ```text
 📁 Scene Collection
    ├── 📁 {AssetName} (role: MODEL_ROOT)
-   │    ├── 📁 {AssetName}_LOD0 (role: LOD0)
+   │    ├── 📁 {AssetName}_Config (role: CONFIG)
    │    │    ├── 📁 {AssetName}_Spatial (Datum, CG, Wheels, Fuel)
    │    │    ├── 📁 {AssetName}_Lights (Nav, Strobe, Landing, Taxi)
    │    │    └── 📁 {AssetName}_Cameras (Airframe views: Wing, Tail, Gear)
+   │    ├── 📁 {AssetName}_Helpers (role: HELPERS - Strictly Excluded from Engine Exports)
+   │    ├── 📁 {AssetName}_LOD0 (role: LOD0 - Pure Render Meshes)
    │    ├── 📁 {AssetName}_LOD1
    │    ├── 📁 {AssetName}_LOD2
-   │    └── 📁 {AssetName}_LODN
+   │    └── 📁 {AssetName}_Colliders
    ├── 📁 {AssetName}_Interior (role: INTERIOR)
-   │    ├── 📁 {AssetName}_Interior_LOD0 (role: LOD0)
+   │    ├── 📁 {AssetName}_Interior_Config (role: CONFIG)
+   │    │    ├── 📁 {AssetName}_Interior_Lights (Panel, Flood)
    │    │    └── 📁 {AssetName}_Interior_Cameras (Eyepoint, Pilot, Instrument views)
-   │    ├── 📁 {AssetName}_Interior_LOD1
-   │    └── 📁 {AssetName}_Interior_LODN
+   │    ├── 📁 {AssetName}_Interior_Helpers (role: HELPERS)
+   │    ├── 📁 {AssetName}_Interior_LOD0 (role: LOD0 - Pure Render Meshes)
+   │    └── 📁 {AssetName}_Interior_LOD1
    └── 📁 {AssetName}_{Variant} (role: VARIANT)
-        ├── 📁 {AssetName}_{Variant}_LOD0 (role: LOD0)
+        ├── 📁 {AssetName}_{Variant}_Config (role: CONFIG)
         │    └── 📁 {AssetName}_{Variant}_Spatial (e.g. Float water contact points)
-        └── 📁 {AssetName}_{Variant}_LODN
+        ├── 📁 {AssetName}_{Variant}_Helpers (role: HELPERS)
+        ├── 📁 {AssetName}_{Variant}_LOD0 (role: LOD0 - Pure Render Meshes)
+        └── 📁 {AssetName}_{Variant}_LOD1
 ```
 
 > **No Viewport Selection Needed**: You never have to select objects in the 3D viewport before clicking operators. OmniMesh automatically resolves the active asset collection from the Outliner or property dropdown, guaranteeing 100% consistent results across multi-part vehicles, multi-model aircraft, and complex hierarchies.

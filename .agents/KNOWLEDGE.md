@@ -124,7 +124,10 @@
 * **Safe Transition Sequence**: Always call `serialize_asset_lod_state(props, outgoing_asset)` before switching `active_asset`, and `deserialize_asset_lod_state(props, incoming_asset)` afterwards to guarantee non-destructive state retention.
 
 ### 4.6 Exporter Collection-First Rules & Transactional Rollback (Variante A)
-* **Technical Sub-Collection Isolation (`coll.objects` vs `coll.all_objects`)**: In Blender Python, calling `coll.all_objects` recursively pulls in all child objects. Because `{AssetName}_Spatial`, `{AssetName}_Lights`, and `{AssetName}_Cameras` reside inside `{AssetName}_LOD0`, calling `all_objects` or passing the LOD0 collection directly to exporters causes glTF and FBX geometry exporters to pack technical empties, spot lights, and cameras directly into the game mesh datablock. Exporters must inspect immediate `coll.objects` and verify `obj.users_collection` does not belong to any auxiliary technical collection.
+* **Dedicated Configuration Sibling Container (`{AssetName}_Config`)**: Technical configuration collections (`{AssetName}_Spatial`, `{AssetName}_Lights`, `{AssetName}_Cameras`) reside strictly inside a dedicated sibling container `{AssetName}_Config` directly under `{AssetName}`, completely separating auxiliary engine metadata from pure render geometry (`{AssetName}_LOD0..N`).
+* **Non-Export Helpers Container (`{AssetName}_Helpers`)**: Reference blueprints, booleans, high-poly cages, and construction guides reside in `{AssetName}_Helpers` (`_omnimesh_role = "HELPERS"`). Exporters, modify operators, and LOD decimation pipelines must 100% ignore objects inside `{AssetName}_Helpers`, guaranteeing zero leakage of development scratch meshes into game packages.
+* **Variant Discovery Poisoning Guard**: Exporters discovering child variants via prefix matching (`c_name.startswith(f"{clean_base}_")`) must strictly blacklist `"_Config"` and `"_Helpers"` along with `"_LOD0".."_LOD10"`, `"_Colliders"`, and `"_Interior"`. Omitting `"_Config"` or `"_Helpers"` causes MSFS package exporters to interpret them as model variants and generate corrupted `model.config` / `model.helpers` directories that fail `fspackagetool.exe` compilation.
+* **Technical Sub-Collection Isolation (`coll.objects` vs `coll.all_objects`)**: Even with `{AssetName}_Config` and `{AssetName}_Helpers` placed beside `{AssetName}_LOD0`, exporters and modify operators must inspect immediate `coll.objects` rather than recursive `coll.all_objects`, and verify `obj.users_collection` does not belong to any auxiliary technical collection (`_omnimesh_role in ("SPATIAL", "LIGHTS", "CAMERAS", "CONFIG", "HELPERS")`).
 * **Transactional Scene-Graph Rollback (`try...finally`) in Single-Mesh Engine Exporters**:
   * In Unreal Engine 5 FBX export, LOD meshes must be parented to an ephemeral `LODGroup` empty and colliders renamed to `UCX_{Asset}_{Index}`.
   * In Godot 4 glTF export, custom properties (`visibility_range_begin`, `visibility_range_end`) are written to mesh datablocks, and colliders renamed to `-convcol`.
@@ -133,6 +136,7 @@
   * When exporting full aircraft packages for MSFS, the base aircraft and interior are placed in `model/` with `model.cfg` declaring `normal={Base}.xml` and `interior={Base}_Interior.xml`.
   * Variants reside in sibling folders `model.<variant>/` (e.g. `model.floats/`).
   * Invariant: MSFS `model.cfg` files must strictly reference the shared interior using POSIX forward slashes (`interior=../model/{Interior}.xml`). Windows backslashes (`..\model\`) trigger escape sequence corruption in glTF parsers and crash MSFS build tools on Linux/Mac cross-compilation environments.
+
 
 
 

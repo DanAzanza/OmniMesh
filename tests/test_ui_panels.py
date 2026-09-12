@@ -721,3 +721,74 @@ def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
     meshes_pilot = get_lod0_mesh_objects(mock_context)
     assert len(meshes_pilot) == 1
     assert meshes_pilot[0].name == "Pilot"
+
+
+def test_config_sibling_collection_and_active_asset_resolution(monkeypatch):
+    """Verify that selecting technical objects in _Config resolves the root asset cleanly."""
+    import ui.utils as ui_utils
+    import core.asset_scanner as asset_scanner
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(ui_utils, "bpy", mock_bpy)
+    monkeypatch.setattr(asset_scanner, "bpy", mock_bpy)
+
+    f_mesh = MagicMock(type="MESH", name="Fuselage")
+    f_mesh.get.side_effect = lambda k, d=False: False
+
+    col_plane = MagicMock()
+    col_plane.name = "Simple_Aircraft"
+    col_plane.objects = [f_mesh]
+    col_plane.all_objects = col_plane.objects
+    col_plane.get = lambda k, d=None: "MODEL_ROOT" if k == "_omnimesh_role" else d
+
+    col_config = MagicMock()
+    col_config.name = "Simple_Aircraft_Config"
+    col_config.objects = []
+    col_config.all_objects = []
+    col_config.get = lambda k, d=None: "CONFIG" if k == "_omnimesh_role" else d
+
+    col_spatial = MagicMock()
+    col_spatial.name = "Simple_Aircraft_Spatial"
+    datum_empty = MagicMock(type="EMPTY", name="MSFS_Datum")
+    col_spatial.objects = [datum_empty]
+    col_spatial.all_objects = col_spatial.objects
+    col_spatial.get = lambda k, d=None: "SPATIAL" if k == "_omnimesh_role" else d
+
+    datum_empty.users_collection = [col_spatial]
+
+    col_helpers = MagicMock()
+    col_helpers.name = "Simple_Aircraft_Helpers"
+    ref_mesh = MagicMock(type="MESH", name="Blueprint_Guide")
+    ref_mesh.get.side_effect = lambda k, d=False: False
+    col_helpers.objects = [ref_mesh]
+    col_helpers.all_objects = col_helpers.objects
+    col_helpers.get = lambda k, d=None: "HELPERS" if k == "_omnimesh_role" else d
+    ref_mesh.users_collection = [col_helpers]
+
+    mock_scene = MagicMock()
+    mock_scene.collection = MagicMock(name="Scene Collection")
+    mock_bpy.data.collections = [col_plane, col_config, col_spatial, col_helpers]
+
+    mock_context = MagicMock()
+    mock_context.scene = mock_scene
+    mock_context.view_layer.active_layer_collection = None
+    mock_context.active_object = datum_empty
+
+    # Available assets must exclude _Config, _Spatial, and _Helpers
+    avail = ui_utils.get_available_asset_names(mock_context)
+    assert "Simple_Aircraft" in avail
+    assert "Simple_Aircraft_Config" not in avail
+    assert "Simple_Aircraft_Spatial" not in avail
+    assert "Simple_Aircraft_Helpers" not in avail
+
+    # Selecting datum empty should resolve to Simple_Aircraft
+    eff_asset = ui_utils.resolve_effective_asset_name(mock_context)
+    assert eff_asset == "Simple_Aircraft"
+
+    eff_scanner = asset_scanner.resolve_effective_asset_name(mock_context)
+    assert eff_scanner == "Simple_Aircraft"
+
+    # Selecting helper mesh should also resolve to Simple_Aircraft
+    mock_context.active_object = ref_mesh
+    eff_helper_asset = ui_utils.resolve_effective_asset_name(mock_context)
+    assert eff_helper_asset == "Simple_Aircraft"

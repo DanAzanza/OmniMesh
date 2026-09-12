@@ -25,7 +25,9 @@ try:
     from .hud import LODViewportHUD
     from .utils import (
         get_lod0_mesh_objects,
+        get_or_create_engine_import_collection,
         get_selected_mesh_objects,
+        resolve_effective_asset_name,
         resolve_lod_context,
         safe_report,
     )
@@ -36,7 +38,9 @@ except (ImportError, ValueError):
     from ui.hud import LODViewportHUD
     from ui.utils import (
         get_lod0_mesh_objects,
+        get_or_create_engine_import_collection,
         get_selected_mesh_objects,
+        resolve_effective_asset_name,
         resolve_lod_context,
         safe_report,
     )
@@ -470,10 +474,57 @@ class LOD_OT_apply_transforms(Operator):
         return {"FINISHED"}
 
 
+class LOD_OT_create_helpers_collection(Operator):
+    """Creates a dedicated {AssetName}_Helpers collection for reference blueprints, booleans, and guides."""
+
+    bl_idname = "lod_tool.create_helpers_collection"
+    bl_label = "Create Helpers Collection"
+    bl_description = "Creates a dedicated {AssetName}_Helpers collection for reference meshes and auxiliary objects that are strictly excluded from engine export"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        return bool(bpy and context)
+
+    def execute(self, context: Any) -> set[str]:
+        if not bpy or not context:
+            return {"FINISHED"}
+
+        props = getattr(getattr(context, "scene", None), "lod_tool", None)
+        asset_name = resolve_effective_asset_name(context, props)
+        if not asset_name or asset_name == "AUTO":
+            asset_name = "Asset"
+
+        helper_col = get_or_create_engine_import_collection(context, asset_name, "HELPERS")
+        if helper_col:
+            safe_report(self, {"INFO"}, f"Created/Located helper collection '{helper_col.name}'.")
+            # Set active layer collection if possible
+            vl = getattr(context, "view_layer", None)
+            if vl and hasattr(vl, "layer_collection"):
+
+                def _find_lc(lc: Any, target: Any) -> Any:
+                    if getattr(lc, "collection", None) == target:
+                        return lc
+                    for child in getattr(lc, "children", []):
+                        res = _find_lc(child, target)
+                        if res:
+                            return res
+                    return None
+
+                matched_lc = _find_lc(vl.layer_collection, helper_col)
+                if matched_lc:
+                    vl.active_layer_collection = matched_lc
+            return {"FINISHED"}
+
+        safe_report(self, {"WARNING"}, "Failed creating helper collection.")
+        return {"CANCELLED"}
+
+
 CLEANUP_OPERATOR_CLASSES = (
     LOD_OT_inspect_lod0,
     LOD_OT_clean_and_repair_mesh,
     LOD_OT_clean_and_repair_materials,
     LOD_OT_apply_all_modifiers,
     LOD_OT_apply_transforms,
+    LOD_OT_create_helpers_collection,
 )

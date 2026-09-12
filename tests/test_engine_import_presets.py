@@ -148,19 +148,23 @@ def test_engine_import_collection_hierarchy(monkeypatch: pytest.MonkeyPatch):
     assert lod0.name == "Aircraft_LOD0"
     assert "Aircraft_LOD0" in root._child_list
 
-    # 2. Config collections must be child of LOD0
+    # 2. Config collections must be child of Aircraft_Config (sibling of LOD0)
     spatial = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "SPATIAL")
     assert spatial.name == "Aircraft_Spatial"
-    assert "Aircraft_Spatial" in lod0._child_list
+    assert "Aircraft_Config" in root._child_list
+    assert "Aircraft_Spatial" in created_collections["Aircraft_Config"]._child_list
+    assert "Aircraft_Spatial" not in lod0._child_list
     assert "Aircraft_Spatial" not in root._child_list
 
     lights = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "LIGHTS")
     assert lights.name == "Aircraft_Lights"
-    assert "Aircraft_Lights" in lod0._child_list
+    assert "Aircraft_Lights" in created_collections["Aircraft_Config"]._child_list
+    assert "Aircraft_Lights" not in lod0._child_list
 
     cams = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "CAMERAS")
     assert cams.name == "Aircraft_Cameras"
-    assert "Aircraft_Cameras" in lod0._child_list
+    assert "Aircraft_Cameras" in created_collections["Aircraft_Config"]._child_list
+    assert "Aircraft_Cameras" not in lod0._child_list
 
     # 3. LOD1 must be child of root
     lod1 = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "LOD1")
@@ -172,7 +176,7 @@ def test_engine_import_collection_hierarchy(monkeypatch: pytest.MonkeyPatch):
 def test_variante_a_multi_model_and_variant_collections(monkeypatch: pytest.MonkeyPatch):
     """Verify that Variante A creates sibling top-level collections directly under Scene Collection
 
-    for Exterior, Interior, and Variants, with config collections properly nested under _LOD0.
+    for Exterior, Interior, and Variants, with config collections properly nested under _Config.
     """
     from unittest.mock import MagicMock
     import ui.utils as ui_utils
@@ -240,7 +244,8 @@ def test_variante_a_multi_model_and_variant_collections(monkeypatch: pytest.Monk
 
     inte_cams = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft_Interior", "CAMERAS")
     assert inte_cams.name == "Wasm_Aircraft_Interior_Cameras"
-    assert "Wasm_Aircraft_Interior_Cameras" in inte_lod0.children
+    assert "Wasm_Aircraft_Interior_Config" in inte_root.children
+    assert "Wasm_Aircraft_Interior_Cameras" in created_collections["Wasm_Aircraft_Interior_Config"].children
 
     # 3. Geometry Variant (e.g. Floats)
     var_root = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft_Floats", "ROOT")

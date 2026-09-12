@@ -50,43 +50,58 @@ except (ImportError, ValueError):
 logger = logging.getLogger(__name__)
 
 
-def find_lights_collection(context: Any) -> Optional[Collection]:
-    """Finds existing lights collection by role tag, asset name, or legacy name."""
+def find_lights_collection(context: Any, asset_name: str = "") -> Optional[Collection]:
+    """Finds existing lights collection scoped by asset name, role tag, or legacy name."""
     if not bpy:
         return None
+    props = getattr(getattr(context, "scene", None), "lod_tool", None)
+    target_asset = asset_name or (getattr(props, "export_base_name", "") if props else "")
+    if not target_asset and props and hasattr(props, "active_asset") and props.active_asset not in ("AUTO", "NONE"):
+        target_asset = props.active_asset
+
+    if target_asset:
+        # Check inside {target_asset}_Config
+        cfg_col = bpy.data.collections.get(f"{target_asset}_Config")
+        if cfg_col and hasattr(cfg_col, "children"):
+            li = cfg_col.children.get(f"{target_asset}_Lights")
+            if li:
+                return li
+        if f"{target_asset}_Lights" in bpy.data.collections:
+            return bpy.data.collections[f"{target_asset}_Lights"]
+
     for col in bpy.data.collections:
         if col.get("_omnimesh_role") == "LIGHTS":
-            return col
-    props = getattr(getattr(context, "scene", None), "lod_tool", None)
-    asset_name = getattr(props, "export_base_name", "") if props else ""
-    if asset_name and f"{asset_name}_Lights" in bpy.data.collections:
-        return bpy.data.collections[f"{asset_name}_Lights"]
+            if not target_asset or col.name.startswith(target_asset):
+                return col
+
     for name in ("Lights", "MSFS_Spatial_Lights"):
         if name in bpy.data.collections:
             return bpy.data.collections[name]
     return None
 
 
-def get_or_create_lights_collection(context: Any) -> Optional[Collection]:
+def get_or_create_lights_collection(context: Any, asset_name: str = "") -> Optional[Collection]:
     """Finds or creates the dedicated lights collection in the active scene."""
     if not bpy or not context:
         return None
 
-    existing = find_lights_collection(context)
+    existing = find_lights_collection(context, asset_name=asset_name)
     if existing:
         return existing
 
     props = getattr(context.scene, "lod_tool", None)
-    asset_name = getattr(props, "export_base_name", "") if props else ""
-    if not asset_name:
-        asset_name = "Asset"
+    target_asset = asset_name or (getattr(props, "export_base_name", "") if props else "")
+    if not target_asset and props and hasattr(props, "active_asset") and props.active_asset not in ("AUTO", "NONE"):
+        target_asset = props.active_asset
+    if not target_asset:
+        target_asset = "Asset"
 
     try:
         from .utils import get_or_create_engine_import_collection
 
-        return get_or_create_engine_import_collection(context, asset_name, "LIGHTS")
+        return get_or_create_engine_import_collection(context, target_asset, "LIGHTS")
     except Exception:
-        col = bpy.data.collections.new(f"{asset_name}_Lights")
+        col = bpy.data.collections.new(f"{target_asset}_Lights")
         context.scene.collection.children.link(col)
         col["_omnimesh_role"] = "LIGHTS"
         return col

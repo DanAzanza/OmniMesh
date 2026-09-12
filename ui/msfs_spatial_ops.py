@@ -39,43 +39,58 @@ COLLECTION_NAME = "Spatial_Config"
 DATUM_POINT_ID = "WEIGHT_AND_BALANCE:reference_datum_position"
 
 
-def find_spatial_collection(context: Any) -> Optional[Collection]:
-    """Finds existing spatial collection by role tag, asset name, or legacy name."""
+def find_spatial_collection(context: Any, asset_name: str = "") -> Optional[Collection]:
+    """Finds existing spatial collection scoped by asset name, role tag, or legacy name."""
     if not bpy:
         return None
+    props = getattr(getattr(context, "scene", None), "lod_tool", None)
+    target_asset = asset_name or (getattr(props, "export_base_name", "") if props else "")
+    if not target_asset and props and hasattr(props, "active_asset") and props.active_asset not in ("AUTO", "NONE"):
+        target_asset = props.active_asset
+
+    if target_asset:
+        # Check inside {target_asset}_Config
+        cfg_col = bpy.data.collections.get(f"{target_asset}_Config")
+        if cfg_col and hasattr(cfg_col, "children"):
+            sp = cfg_col.children.get(f"{target_asset}_Spatial")
+            if sp:
+                return sp
+        if f"{target_asset}_Spatial" in bpy.data.collections:
+            return bpy.data.collections[f"{target_asset}_Spatial"]
+
     for col in bpy.data.collections:
         if col.get("_omnimesh_role") == "SPATIAL":
-            return col
-    props = getattr(getattr(context, "scene", None), "lod_tool", None)
-    asset_name = getattr(props, "export_base_name", "") if props else ""
-    if asset_name and f"{asset_name}_Spatial" in bpy.data.collections:
-        return bpy.data.collections[f"{asset_name}_Spatial"]
+            if not target_asset or col.name.startswith(target_asset):
+                return col
+
     for name in ("Spatial_Config", "MSFS_Spatial_Config"):
         if name in bpy.data.collections:
             return bpy.data.collections[name]
     return None
 
 
-def get_or_create_spatial_collection(context: Any) -> Optional[Collection]:
+def get_or_create_spatial_collection(context: Any, asset_name: str = "") -> Optional[Collection]:
     """Finds or creates the dedicated spatial collection in the active scene."""
     if not bpy or not context:
         return None
 
-    existing = find_spatial_collection(context)
+    existing = find_spatial_collection(context, asset_name=asset_name)
     if existing:
         return existing
 
     props = getattr(context.scene, "lod_tool", None)
-    asset_name = getattr(props, "export_base_name", "") if props else ""
-    if not asset_name:
-        asset_name = "Asset"
+    target_asset = asset_name or (getattr(props, "export_base_name", "") if props else "")
+    if not target_asset and props and hasattr(props, "active_asset") and props.active_asset not in ("AUTO", "NONE"):
+        target_asset = props.active_asset
+    if not target_asset:
+        target_asset = "Asset"
 
     try:
         from .utils import get_or_create_engine_import_collection
 
-        return get_or_create_engine_import_collection(context, asset_name, "SPATIAL")
+        return get_or_create_engine_import_collection(context, target_asset, "SPATIAL")
     except Exception:
-        col = bpy.data.collections.new(f"{asset_name}_Spatial")
+        col = bpy.data.collections.new(f"{target_asset}_Spatial")
         context.scene.collection.children.link(col)
         col["_omnimesh_role"] = "SPATIAL"
         return col
