@@ -230,6 +230,8 @@ class BatchProcessorEngine:
             else os.path.join(os.path.dirname(__file__), "batch_worker.py")
         )
 
+        clean_export_dir = os.path.normpath(export_dir).replace("\\", "/")
+
         cmd = [
             blender_exe,
             "-b",
@@ -240,7 +242,7 @@ class BatchProcessorEngine:
             worker_script,
             "--",
             "--export-dir",
-            export_dir,
+            clean_export_dir,
             "--engine",
             target_engine,
         ]
@@ -249,15 +251,29 @@ class BatchProcessorEngine:
         if asset_name:
             cmd.extend(["--asset-name", asset_name])
 
-        popen_kwargs: dict[str, Any] = {
-            "stdout": subprocess.PIPE,
-            "stderr": subprocess.PIPE,
-            "text": True,
-        }
+        popen_kwargs: dict[str, Any] = {}
+        log_file = None
+        log_path = None
+        try:
+            os.makedirs(clean_export_dir, exist_ok=True)
+            log_name = f"{asset_name or os.path.splitext(os.path.basename(blend_path))[0]}_export.log"
+            log_path = os.path.join(clean_export_dir, log_name)
+            log_file = open(log_path, "w", encoding="utf-8")
+            popen_kwargs["stdout"] = log_file
+            popen_kwargs["stderr"] = subprocess.STDOUT
+        except Exception as exc:
+            logger.debug("Failed opening worker log file, falling back to DEVNULL: %s", exc)
+            popen_kwargs["stdout"] = subprocess.DEVNULL
+            popen_kwargs["stderr"] = subprocess.DEVNULL
+
         if sys.platform == "win32":
             popen_kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
 
-        return subprocess.Popen(cmd, **popen_kwargs)
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+        if log_file is not None:
+            proc._om_log_file = log_file  # type: ignore[attr-defined]
+            proc._om_log_path = log_path  # type: ignore[attr-defined]
+        return proc
 
     @classmethod
     def import_asset_file(cls, filepath: str) -> list[Any]:
@@ -571,7 +587,8 @@ class BatchProcessorEngine:
             # Purge orphan datablocks
             if bpy:
                 try:
-                    bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=False)
+                    is_bg = bool(getattr(getattr(bpy, "app", None), "background", False))
+                    bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=is_bg)
                 except (RuntimeError, ValueError, AttributeError, Exception) as exc:
                     logger.debug("Orphan purge bypassed: %s", exc)
 

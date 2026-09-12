@@ -212,9 +212,16 @@ class TextureChannelPacker:
                             dtype=dtype,
                         )
                         if img:
-                            r = cls._extract_from_image(img, (map_w, map_h), 0, def_arr, bit_depth)
-                            g = cls._extract_from_image(img, (map_w, map_h), 1, def_arr, bit_depth)
-                            b = cls._extract_from_image(img, (map_w, map_h), 2, def_arr, bit_depth)
+                            is_srgb = rgb_target.lower() in ("base color", "basecolor", "albedo", "emission")
+                            r = cls._extract_from_image(
+                                img, (map_w, map_h), 0, def_arr, bit_depth, apply_srgb_oetf=is_srgb
+                            )
+                            g = cls._extract_from_image(
+                                img, (map_w, map_h), 1, def_arr, bit_depth, apply_srgb_oetf=is_srgb
+                            )
+                            b = cls._extract_from_image(
+                                img, (map_w, map_h), 2, def_arr, bit_depth, apply_srgb_oetf=is_srgb
+                            )
                         else:
                             r = g = b = def_arr
 

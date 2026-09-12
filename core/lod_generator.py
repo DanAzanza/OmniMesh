@@ -279,6 +279,9 @@ def generate_all_lods(
                         bm.to_mesh(tier_obj.data)
                     finally:
                         bm.free()
+                    if props.purge_shape_keys and i >= 2:
+                        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
+
                     qem_ratio = (
                         tier.target_tris_pct / 100.0
                         if getattr(tier, "target_tris_pct", 0.0) > 0.0
@@ -288,8 +291,12 @@ def generate_all_lods(
                         tier_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True
                     )
 
-                    if props.purge_shape_keys and i >= 2:
-                        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
+                    tier_obj.data.update()
+                    MaterialOptimizer.consolidate_micro_materials(
+                        tier_obj,
+                        area_crit=tolerances["area_crit"],
+                        preserve_slot_indexing=getattr(props, "preserve_slot_indexing", True),
+                    )
 
                     if armature_obj and len(tier_obj.vertex_groups) > 0:
                         if props.enable_bone_pruning and i >= 2:

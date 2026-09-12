@@ -178,17 +178,26 @@ class ImpostorMath:
         alpha = result[:, :, 3]
         valid_mask = alpha > 0.01
 
+        h, w = alpha.shape[:2]
         for _ in range(iterations):
             invalid_mask = ~valid_mask
             if not np.any(invalid_mask):
                 break
 
             shifted_sum = np.zeros_like(rgb, dtype=np.float32)
-            shifted_count = np.zeros(alpha.shape, dtype=np.float32)
+            shifted_count = np.zeros((h, w), dtype=np.float32)
 
             for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                s_rgb = np.roll(np.roll(rgb, dy, axis=0), dx, axis=1)
-                s_valid = np.roll(np.roll(valid_mask, dy, axis=0), dx, axis=1)
+                s_rgb = np.zeros_like(rgb)
+                s_valid = np.zeros((h, w), dtype=bool)
+
+                src_y = slice(max(0, -dy), min(h, h - dy))
+                dst_y = slice(max(0, dy), min(h, h + dy))
+                src_x = slice(max(0, -dx), min(w, w - dx))
+                dst_x = slice(max(0, dx), min(w, w + dx))
+
+                s_rgb[dst_y, dst_x] = rgb[src_y, src_x]
+                s_valid[dst_y, dst_x] = valid_mask[src_y, src_x]
 
                 shifted_sum += s_rgb * s_valid[:, :, None]
                 shifted_count += s_valid

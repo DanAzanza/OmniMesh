@@ -144,7 +144,7 @@ class MeshDecimator:
                 bm,
                 angle_limit=min(math.radians(89.0), max(1e-4, angle_limit_rad)),
                 use_dissolve_boundaries=False,
-                delimit={"SEAM", "SHARP", "MATERIAL"},
+                delimit={"SEAM", "SHARP", "MATERIAL", "UV"},
                 edges=bm.edges[:],
                 verts=bm.verts[:],
             )
@@ -153,6 +153,9 @@ class MeshDecimator:
             bm.edges.ensure_lookup_table()
             bm.faces.ensure_lookup_table()
             bm.verts.index_update()
+            bm.edges.index_update()
+            bm.faces.index_update()
+            bm.normal_update()
         except Exception as exc:
             logger.debug("Planar limited dissolve exception: %s", exc)
 
@@ -201,6 +204,12 @@ class MeshDecimator:
 
                 num_faces = len(bm.faces)
                 face_normals = np.array([f.normal for f in bm.faces], dtype=np.float32)
+                lengths = np.linalg.norm(face_normals, axis=1, keepdims=True)
+                unit_normals = np.zeros_like(face_normals)
+                valid_face_mask_global = lengths[:, 0] > 1e-6
+                unit_normals[valid_face_mask_global] = (
+                    face_normals[valid_face_mask_global] / lengths[valid_face_mask_global]
+                )
 
                 # Collect manifold edge face and vertex indices
                 manifold_edges = [e for e in bm.edges if len(getattr(e, "link_faces", [])) == 2]
@@ -218,9 +227,11 @@ class MeshDecimator:
                         (e.verts[1].index for e in manifold_edges), dtype=np.int32, count=len(manifold_edges)
                     )
 
-                    # Vectorized dihedral angle computation
-                    dots = np.clip(np.sum(face_normals[f1_idx] * face_normals[f2_idx], axis=1), -1.0, 1.0)
-                    dihedral_angles = np.arccos(dots)
+                    # Vectorized dihedral angle computation with degenerate face masking
+                    valid_face_mask = valid_face_mask_global[f1_idx] & valid_face_mask_global[f2_idx]
+                    dots = np.clip(np.sum(unit_normals[f1_idx] * unit_normals[f2_idx], axis=1), -1.0, 1.0)
+                    dihedral_angles = np.zeros(len(manifold_edges), dtype=np.float32)
+                    dihedral_angles[valid_face_mask] = np.arccos(dots[valid_face_mask])
 
                     vert_max_angles = np.zeros(num_verts, dtype=np.float32)
                     np.maximum.at(vert_max_angles, v0_idx, dihedral_angles)
@@ -345,17 +356,31 @@ class MeshDecimator:
             return
 
         dec_mod = obj.modifiers.new(name="OmniMesh_Decimate", type="DECIMATE")
-        dec_mod.decimate_type = "COLLAPSE"
-        dec_mod.ratio = clamped_ratio
-        dec_mod.use_symmetry = False
-        dec_mod.use_collapse_triangulate = True
-
-        if use_curvature_weight and hasattr(obj, "vertex_groups") and group_name in obj.vertex_groups:
-            dec_mod.vertex_group = group_name
-            dec_mod.invert_vertex_group = True
-            dec_mod.vertex_group_factor = max(0.0, min(1.0, float(vertex_group_factor)))
-
+        orig_armature_states: dict[Any, bool] = {}
         try:
+            dec_mod.decimate_type = "COLLAPSE"
+            dec_mod.ratio = clamped_ratio
+            dec_mod.use_symmetry = False
+            dec_mod.use_collapse_triangulate = True
+
+            if use_curvature_weight and hasattr(obj, "vertex_groups") and group_name in obj.vertex_groups:
+                dec_mod.vertex_group = group_name
+                dec_mod.invert_vertex_group = True
+                dec_mod.vertex_group_factor = max(0.0, min(1.0, float(vertex_group_factor)))
+
+            if hasattr(obj, "modifiers"):
+                for m in obj.modifiers:
+                    if getattr(m, "type", "") == "ARMATURE":
+                        orig_armature_states[m] = getattr(m, "show_viewport", True)
+                        m.show_viewport = False
+
+                if hasattr(bpy.ops.object, "modifier_move_to_index"):
+                    try:
+                        with bpy.context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                            bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
+                    except Exception as exc:
+                        logger.debug("Modifier move to index 0 skipped: %s", exc)
+
             if hasattr(bpy.context, "temp_override"):
                 with bpy.context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
                     bpy.ops.object.modifier_apply(modifier=dec_mod.name)
@@ -367,6 +392,13 @@ class MeshDecimator:
             if hasattr(obj, "modifiers") and dec_mod.name in obj.modifiers:
                 obj.modifiers.remove(dec_mod)
         finally:
+            # Restore Armature modifier show_viewport states
+            for m, orig_state in orig_armature_states.items():
+                try:
+                    m.show_viewport = orig_state
+                except Exception as exc:
+                    logger.debug("Restoring armature show_viewport failed: %s", exc)
+
             # Cleanup protection vertex group if requested
             if cleanup_group and hasattr(obj, "vertex_groups"):
                 vg = obj.vertex_groups.get(group_name)

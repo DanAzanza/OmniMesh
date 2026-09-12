@@ -171,3 +171,82 @@ def test_resolve_lod_context_reference_error_safeguard():
     assert props == ctx.scene.lod_tool
     assert master is None
     assert is_deriv is False
+
+
+def test_morphological_dilate_no_toroidal_wrap():
+    """Verify that morphological dilation does not wrap colors across opposite image edges."""
+    import numpy as np
+    from core.impostor import ImpostorMath
+
+    # 4x4 RGBA image, only bottom row (y=3) has red color
+    img = np.zeros((4, 4, 4), dtype=np.float32)
+    img[3, :, 0] = 1.0  # Red channel
+    img[3, :, 3] = 1.0  # Alpha channel
+
+    dilated = ImpostorMath.morphological_dilate_rgb(img, iterations=1)
+    # y=2 should receive red bleed from y=3
+    assert dilated[2, 1, 0] == 1.0
+    # y=0 (top row) must NOT receive bleed from y=3 (proves no toroidal wrap)
+    assert dilated[0, 1, 0] == 0.0
+
+
+def test_srgb_oetf_conversion_flag():
+    """Verify that _extract_from_image respects apply_srgb_oetf flag."""
+    import numpy as np
+    from unittest.mock import MagicMock
+    from core.shader_tracer import ShaderTracer
+
+    img_mock = MagicMock()
+    img_mock.size = (2, 2)
+    # 4 pixels RGBA with linear mid-gray (0.18 linear ~ 0.458 sRGB)
+    raw = np.full(16, 0.18, dtype=np.float32)
+    img_mock.pixels.foreach_get = lambda buf: np.copyto(buf, raw)
+
+    fallback = np.zeros((2, 2), dtype=np.uint8)
+
+    # Linear extraction (default)
+    linear_out = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=False)
+    # 0.18 * 255 = ~46
+    assert abs(int(linear_out[0, 0]) - int(round(0.18 * 255))) <= 1
+
+    # sRGB OETF extraction
+    srgb_out = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=True)
+    # sRGB transfer function elevates 0.18 to ~117 (0.458 * 255)
+    assert int(srgb_out[0, 0]) > int(linear_out[0, 0]) + 50
+
+
+def test_reroute_cycle_protection_termination():
+    """Verify trace_upstream_channel terminates safely when encountering circular reroutes."""
+    from unittest.mock import MagicMock
+    from core.shader_tracer import ShaderTracer
+
+    mat = MagicMock()
+    mat.use_nodes = True
+    bsdf = MagicMock()
+    bsdf.type = "BSDF_PRINCIPLED"
+
+    # Circular reroutes: r1 -> r2 -> r1
+    r1 = MagicMock()
+    r1.type = "REROUTE"
+    r2 = MagicMock()
+    r2.type = "REROUTE"
+
+    r1.inputs = [MagicMock()]
+    r1.inputs[0].is_linked = True
+    r1.inputs[0].links = [MagicMock(from_node=r2)]
+
+    r2.inputs = [MagicMock()]
+    r2.inputs[0].is_linked = True
+    r2.inputs[0].links = [MagicMock(from_node=r1)]
+
+    # Connect to Normal Map node
+    norm_node = MagicMock()
+    norm_node.type = "NORMAL_MAP"
+    norm_node.inputs = {"Color": MagicMock(is_linked=True, links=[MagicMock(from_node=r1)])}
+
+    bsdf.inputs = {"Normal": MagicMock(is_linked=True, links=[MagicMock(from_node=norm_node)])}
+    mat.node_tree.nodes = [bsdf, norm_node, r1, r2]
+
+    # Must terminate without infinite recursion/loop
+    img = ShaderTracer.get_material_normal_image(mat)
+    assert img is None

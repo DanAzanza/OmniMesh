@@ -50,8 +50,12 @@ class ShaderTracer:
             sock = from_node.inputs.get("Color") or from_node.inputs.get("Height")
             if sock and sock.is_linked:
                 source = sock.links[0].from_node
+                visited_reroute = {id(source)}
                 while getattr(source, "type", None) == "REROUTE" and source.inputs and source.inputs[0].is_linked:
                     source = source.inputs[0].links[0].from_node
+                    if id(source) in visited_reroute:
+                        break
+                    visited_reroute.add(id(source))
                 if getattr(source, "type", None) == "COMBINE_COLOR":
                     red_sock = source.inputs.get("Red")
                     if red_sock and red_sock.is_linked:
@@ -98,8 +102,12 @@ class ShaderTracer:
                     h_sock = d_curr.inputs.get("Height")
                     if h_sock and h_sock.is_linked:
                         d_curr = h_sock.links[0].from_node
+                visited_d = {id(d_curr)}
                 while getattr(d_curr, "type", None) == "REROUTE" and d_curr.inputs and d_curr.inputs[0].is_linked:
                     d_curr = d_curr.inputs[0].links[0].from_node
+                    if id(d_curr) in visited_d:
+                        break
+                    visited_d.add(id(d_curr))
                 if getattr(d_curr, "type", None) == "TEX_IMAGE" and getattr(d_curr, "image", None):
                     return d_curr.image, 0, False, 0.0
             return None, 0, False, 0.0
@@ -109,12 +117,16 @@ class ShaderTracer:
             base_sock = bsdf.inputs.get("Base Color") or bsdf.inputs.get("BaseColor")
             if base_sock and base_sock.is_linked:
                 mix_candidate = base_sock.links[0].from_node
+                visited_mix = {id(mix_candidate)}
                 while (
                     getattr(mix_candidate, "type", "") == "REROUTE"
                     and mix_candidate.inputs
                     and mix_candidate.inputs[0].is_linked
                 ):
                     mix_candidate = mix_candidate.inputs[0].links[0].from_node
+                    if id(mix_candidate) in visited_mix:
+                        break
+                    visited_mix.add(id(mix_candidate))
                 if (
                     getattr(mix_candidate, "type", "") == "MIX"
                     and getattr(mix_candidate, "blend_type", "") == "MULTIPLY"
@@ -125,8 +137,12 @@ class ShaderTracer:
                     )
                     if b_sock and b_sock.is_linked:
                         ao_src = b_sock.links[0].from_node
+                        visited_ao = {id(ao_src)}
                         while getattr(ao_src, "type", "") == "REROUTE" and ao_src.inputs and ao_src.inputs[0].is_linked:
                             ao_src = ao_src.inputs[0].links[0].from_node
+                            if id(ao_src) in visited_ao:
+                                break
+                            visited_ao.add(id(ao_src))
                         ch_idx = 0
                         if getattr(ao_src, "type", "") == "SEPARATE_COLOR":
                             ch_idx = 0  # Red is AO in ORM
@@ -239,6 +255,7 @@ class ShaderTracer:
         default_val: float = 0.0,
         channel_index: int = 0,
         bit_depth: int = 8,
+        apply_srgb_oetf: bool = False,
     ) -> np.ndarray:
         """Extracts single-channel data from a Principled BSDF socket into a 2D uint8 or uint16 numpy array."""
         target_w = max(1, int(target_size[0]))
@@ -256,7 +273,14 @@ class ShaderTracer:
             return fallback_arr
 
         effective_ch = ch_idx if ch_idx != 0 else channel_index
-        extracted = cls._extract_from_image(img, (target_w, target_h), effective_ch, fallback_arr, bit_depth=bit_depth)
+        extracted = cls._extract_from_image(
+            img,
+            (target_w, target_h),
+            effective_ch,
+            fallback_arr,
+            bit_depth=bit_depth,
+            apply_srgb_oetf=apply_srgb_oetf,
+        )
         if is_inv:
             extracted = (max_val - extracted).astype(dtype)
         return extracted
@@ -270,6 +294,7 @@ class ShaderTracer:
         fallback: np.ndarray,
         bit_depth: int = 8,
         default_nan: float = 0.0,
+        apply_srgb_oetf: bool = False,
     ) -> np.ndarray:
         """Helper to extract a single channel from an image with SIMD/Pillow resizing."""
         target_w, target_h = target_size
@@ -295,16 +320,26 @@ class ShaderTracer:
 
         np.nan_to_num(raw_floats, copy=False, nan=default_nan, posinf=1.0, neginf=0.0)
 
-        extracted = (
-            (np.clip(raw_floats[channel_index::4], 0.0, 1.0) * max_val + 0.5).astype(dtype).reshape((src_h, src_w))
-        )
+        ch_data = raw_floats[channel_index::4]
+        if apply_srgb_oetf:
+            # Linear to sRGB transfer function (IEC 61966-2-1) for Base Color / Albedo targets
+            ch_data = np.where(
+                ch_data <= 0.0031308,
+                ch_data * 12.92,
+                1.055 * np.power(np.maximum(ch_data, 1e-8), 1.0 / 2.4) - 0.055,
+            )
+
+        extracted = (np.clip(ch_data, 0.0, 1.0) * max_val + 0.5).astype(dtype).reshape((src_h, src_w))
         del raw_floats
 
         if (src_w, src_h) != (target_w, target_h):
-            if bit_depth == 16:
-                x_idx = (np.linspace(0, src_w - 1, target_w)).astype(np.int32)
-                y_idx = (np.linspace(0, src_h - 1, target_h)).astype(np.int32)
-                extracted = extracted[np.ix_(y_idx, x_idx)]
+            if bit_depth == 16 and Image:
+                pil_img = Image.fromarray(extracted, mode="I;16")
+                try:
+                    resized = pil_img.resize((target_w, target_h), resample=Image.Resampling.BILINEAR)
+                    extracted = np.asarray(resized).clip(0, 65535).astype(np.uint16)
+                finally:
+                    pil_img.close()
             elif Image:
                 pil_img = Image.fromarray(extracted, mode="L")
                 try:
@@ -400,8 +435,13 @@ class ShaderTracer:
             links.new(emit_node.outputs["Emission"], surf_sock)
 
             temp_img = bpy.data.images.new(
-                "_OM_Bake_Temp", width=target_w, height=target_h, alpha=False, float_buffer=False
+                "_OM_Bake_Temp", width=target_w, height=target_h, alpha=False, float_buffer=(bit_depth == 16)
             )
+            if hasattr(temp_img, "colorspace_settings"):
+                try:
+                    temp_img.colorspace_settings.name = "Non-Color"
+                except Exception as exc:
+                    logger.debug("Setting colorspace Non-Color skipped: %s", exc)
             tex_node = nodes.new(type="ShaderNodeTexImage")
             temp_nodes.append(tex_node)
             tex_node.image = temp_img

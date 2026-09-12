@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import time
 from typing import Any, Optional
 
 try:
@@ -99,6 +100,7 @@ class OMNIMESH_OT_batch_process(Operator):
         self._total_count = len(files)
         self._processed_count = 0
         self._current_proc = None
+        self._current_proc_start_time = 0.0
         self._current_file = ""
         type(self)._abort_requested = False
         self._source_root = src_dir
@@ -132,23 +134,56 @@ class OMNIMESH_OT_batch_process(Operator):
         if event.type == "TIMER":
             # 1. Check active background worker process
             if self._current_proc is not None:
-                retcode = self._current_proc.poll()
+                # Timeout watchdog (300s default)
+                if self._current_proc_start_time > 0 and (time.time() - self._current_proc_start_time) > 300.0:
+                    logger.warning("Batch worker timed out for '%s' (>300s), killing process.", self._current_file)
+                    try:
+                        self._current_proc.kill()
+                    except Exception as exc:
+                        logger.debug("Failed killing timed-out batch worker: %s", exc)
+                    retcode = -999
+                else:
+                    retcode = self._current_proc.poll()
+
                 if retcode is None:
                     # Still working
                     return {"PASS_THROUGH"}
+
+                # Cleanly close log file handle if attached
+                log_file = getattr(self._current_proc, "_om_log_file", None)
+                log_path = getattr(self._current_proc, "_om_log_path", None)
+                if log_file and hasattr(log_file, "close"):
+                    try:
+                        log_file.close()
+                    except Exception as exc:
+                        logger.debug("Failed closing worker log file: %s", exc)
 
                 # Finished
                 if retcode == 0:
                     logger.info("Batch worker finished: %s", self._current_file)
                 else:
-                    stderr = ""
-                    if self._current_proc.stderr:
-                        stderr = self._current_proc.stderr.read()
+                    error_tail = ""
+                    if log_path and os.path.exists(log_path):
+                        try:
+                            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                                lines = f.readlines()
+                                error_tail = "".join(lines[-20:])
+                        except Exception as exc:
+                            logger.debug("Reading worker log tail failed: %s", exc)
+                    elif getattr(self._current_proc, "stderr", None):
+                        try:
+                            error_tail = self._current_proc.stderr.read()
+                        except Exception as exc:
+                            logger.debug("Reading worker stderr failed: %s", exc)
                     logger.warning(
-                        "Batch worker failed (exit code %d) for '%s': %s", retcode, self._current_file, stderr
+                        "Batch worker failed (exit code %d) for '%s':\n%s",
+                        retcode,
+                        self._current_file,
+                        error_tail,
                     )
 
                 self._current_proc = None
+                self._current_proc_start_time = 0.0
                 wm = context.window_manager
                 if hasattr(wm, "progress_update"):
                     wm.progress_update(self._processed_count)
@@ -175,6 +210,7 @@ class OMNIMESH_OT_batch_process(Operator):
             engine = getattr(props, "target_engine", "UE5")
 
             try:
+                self._current_proc_start_time = time.time()
                 self._current_proc = BatchProcessorEngine.spawn_batch_worker(
                     blend_path=filepath,
                     export_dir=target_export_dir,
@@ -185,6 +221,7 @@ class OMNIMESH_OT_batch_process(Operator):
             except Exception as exc:
                 logger.error("Failed spawning batch worker for '%s': %s", filepath, exc)
                 self._current_proc = None
+                self._current_proc_start_time = 0.0
 
             # Redraw active area only
             if context.area:
