@@ -168,6 +168,7 @@ class GodotExporter(EngineExporterBase):
                 export_format="GLTF_SEPARATE",
                 export_extras=True,
                 export_apply=True,
+                export_tangents=True,
             )
             return True, f"Godot 4 glTF exported to: {gltf_path}"
         except Exception as e:

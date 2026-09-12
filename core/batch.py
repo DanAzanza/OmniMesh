@@ -8,15 +8,15 @@ and multi-engine packaging with deterministic memory deallocation.
 from __future__ import annotations
 
 import concurrent.futures
+import ctypes
+import ctypes.util
 import gc
 import logging
 import math
 import os
-import re
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import Any, Callable, ClassVar, Optional
 
 try:
@@ -27,6 +27,10 @@ except ImportError:
 try:
     from .decimator import MeshDecimator
     from .materials import MaterialOptimizer
+    from .batch_worker_process import (
+        BatchWorkerProcessManager,
+        build_hierarchical_export_path,
+    )
     from .metrics import (
         compute_bounding_sphere,
         compute_coupled_tolerances,
@@ -38,6 +42,10 @@ try:
     from .sanitizer import MeshSanitizer
     from .textures import TextureChannelPacker, TexturePoolManager
 except (ImportError, ValueError):
+    from core.batch_worker_process import (
+        BatchWorkerProcessManager,
+        build_hierarchical_export_path,
+    )
     from core.decimator import MeshDecimator
     from core.materials import MaterialOptimizer
     from core.metrics import (
@@ -192,24 +200,7 @@ class BatchProcessorEngine:
         """Calculates destination directory mirroring source folder hierarchy with sanitized names.
         Returns (target_export_dir, asset_name).
         """
-        norm_source = os.path.normpath(os.path.abspath(source_root))
-        norm_blend = os.path.normpath(os.path.abspath(blend_path))
-        norm_export = os.path.normpath(os.path.abspath(export_root))
-
-        try:
-            rel_path = os.path.relpath(norm_blend, norm_source)
-        except ValueError:
-            rel_path = os.path.basename(norm_blend)
-
-        rel_dir = os.path.dirname(rel_path)
-
-        clean_parts = [re.sub(r"[^\w\-]", "_", part) for part in Path(rel_dir).parts if part and part != "."]
-
-        target_dir = os.path.join(norm_export, *clean_parts) if clean_parts else norm_export
-        stem = Path(norm_blend).stem
-        asset_name = re.sub(r"[^\w\-]", "_", stem)
-
-        return os.path.normpath(target_dir), asset_name
+        return build_hierarchical_export_path(blend_path, source_root, export_root)
 
     @classmethod
     def spawn_batch_worker(
@@ -221,59 +212,13 @@ class BatchProcessorEngine:
         asset_name: str = "",
     ) -> subprocess.Popen:
         """Launches an isolated headless background Blender process to export a single .blend asset."""
-        blender_exe = bpy.app.binary_path if bpy else "blender"
-        addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        scripts_worker = os.path.join(addon_dir, "scripts", "batch_worker.py")
-        worker_script = (
-            scripts_worker
-            if os.path.exists(scripts_worker)
-            else os.path.join(os.path.dirname(__file__), "batch_worker.py")
+        return BatchWorkerProcessManager.spawn_batch_worker(
+            blend_path=blend_path,
+            export_dir=export_dir,
+            preset_id=preset_id,
+            target_engine=target_engine,
+            asset_name=asset_name,
         )
-
-        clean_export_dir = os.path.normpath(export_dir).replace("\\", "/")
-
-        cmd = [
-            blender_exe,
-            "-b",
-            blend_path,
-            "--factory-startup",
-            "--disable-autoexec",
-            "--python",
-            worker_script,
-            "--",
-            "--export-dir",
-            clean_export_dir,
-            "--engine",
-            target_engine,
-        ]
-        if preset_id:
-            cmd.extend(["--preset", preset_id])
-        if asset_name:
-            cmd.extend(["--asset-name", asset_name])
-
-        popen_kwargs: dict[str, Any] = {}
-        log_file = None
-        log_path = None
-        try:
-            os.makedirs(clean_export_dir, exist_ok=True)
-            log_name = f"{asset_name or os.path.splitext(os.path.basename(blend_path))[0]}_export.log"
-            log_path = os.path.join(clean_export_dir, log_name)
-            log_file = open(log_path, "w", encoding="utf-8")
-            popen_kwargs["stdout"] = log_file
-            popen_kwargs["stderr"] = subprocess.STDOUT
-        except Exception as exc:
-            logger.debug("Failed opening worker log file, falling back to DEVNULL: %s", exc)
-            popen_kwargs["stdout"] = subprocess.DEVNULL
-            popen_kwargs["stderr"] = subprocess.DEVNULL
-
-        if sys.platform == "win32":
-            popen_kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-
-        proc = subprocess.Popen(cmd, **popen_kwargs)
-        if log_file is not None:
-            proc._om_log_file = log_file  # type: ignore[attr-defined]
-            proc._om_log_path = log_path  # type: ignore[attr-defined]
-        return proc
 
     @classmethod
     def import_asset_file(cls, filepath: str) -> list[Any]:
@@ -622,3 +567,26 @@ class BatchProcessorEngine:
                 bpy.data.meshes.remove(mesh, do_unlink=True)
             except (RuntimeError, ReferenceError, Exception) as exc:
                 logger.debug("Mesh remove error: %s", exc)
+
+    @classmethod
+    def force_garbage_collection(cls) -> None:
+        """Triggers cyclic garbage collection and releases uncommitted memory back to the OS."""
+        gc.collect()
+        if sys.platform == "win32":
+            try:
+                ctypes.windll.kernel32.SetProcessWorkingSetSize(-1, -1, -1)
+            except Exception as exc:
+                logger.debug("Win32 SetProcessWorkingSetSize error: %s", exc)
+            try:
+                ctypes.cdll.msvcrt._heapmin()
+            except Exception as exc:
+                logger.debug("Win32 _heapmin error: %s", exc)
+        elif sys.platform.startswith("linux"):
+            try:
+                libc_name = ctypes.util.find_library("c")
+                if libc_name:
+                    libc = ctypes.CDLL(libc_name)
+                    if hasattr(libc, "malloc_trim"):
+                        libc.malloc_trim(0)
+            except Exception as exc:
+                logger.debug("Linux malloc_trim error: %s", exc)

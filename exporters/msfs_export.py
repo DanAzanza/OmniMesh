@@ -81,13 +81,17 @@ class MSFSExporter(EngineExporterBase):
                 if i < num_tiers - 1:
                     raw_val = round(float(sorted_tiers[i + 1].get("screen_size_pct", 0.0)), 2)
                     if raw_val >= last_min_size:
-                        raw_val = max(0.0, round(last_min_size - 0.1, 2))
+                        step = 0.1 if last_min_size > 0.1 else 0.01
+                        min_floor = round((num_tiers - 1 - i) * 0.01, 2)
+                        raw_val = max(min_floor, round(last_min_size - step, 2))
                     last_min_size = raw_val
                     min_size_str = str(int(raw_val)) if raw_val == int(raw_val) else str(raw_val)
                 else:
                     cull_val = round(cull_screen_size_pct, 2) if cull_screen_size_pct > 0 else 0.0
                     if cull_val >= last_min_size:
-                        cull_val = max(0.0, round(last_min_size - 0.1, 2))
+                        step = 0.1 if last_min_size > 0.1 else 0.01
+                        cull_val = max(0.0, round(last_min_size - step, 2))
+                    last_min_size = cull_val
                     min_size_str = str(int(cull_val)) if cull_val == int(cull_val) else str(cull_val)
 
                 model_file = f"{escaped_asset_name}_LOD{i}.gltf"
@@ -171,7 +175,11 @@ class MSFSExporter(EngineExporterBase):
                 gltf_path = os.path.join(export_dir, f"{clean_name}_LOD{i}.gltf")
                 try:
                     bpy.ops.export_scene.gltf(
-                        filepath=gltf_path, use_selection=True, export_format="GLTF_SEPARATE", export_apply=True
+                        filepath=gltf_path,
+                        use_selection=True,
+                        export_format="GLTF_SEPARATE",
+                        export_apply=True,
+                        export_tangents=True,
                     )
                     exported_tiers += 1
                 except Exception as e:

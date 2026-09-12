@@ -402,17 +402,37 @@ class MeshSanitizer:
             return {"recalculated_normals": False}
 
         if normal_recalc_policy == "MANIFOLD_ONLY":
-            # Identify closed manifold shells (faces where every edge has exactly 2 link faces)
-            closed_faces = [
-                f
-                for f in bm.faces
-                if getattr(f, "is_valid", False)
-                and all(len(getattr(e, "link_faces", [])) == 2 for e in getattr(f, "edges", []))
-            ]
-            if closed_faces:
+            # Identify truly closed manifold shells: group connected faces and check if the ENTIRE shell has zero boundary edges
+            visited_faces: set[Any] = set()
+            closed_shells: list[list[Any]] = []
+            for face in bm.faces:
+                if face in visited_faces or not getattr(face, "is_valid", False):
+                    continue
+                shell: list[Any] = []
+                queue = [face]
+                visited_faces.add(face)
+                is_closed_shell = True
+
+                while queue:
+                    curr = queue.pop()
+                    shell.append(curr)
+                    for edge in getattr(curr, "edges", []):
+                        link_faces = getattr(edge, "link_faces", [])
+                        if len(link_faces) != 2:
+                            is_closed_shell = False
+                        for nbr in link_faces:
+                            if nbr not in visited_faces and getattr(nbr, "is_valid", False):
+                                visited_faces.add(nbr)
+                                queue.append(nbr)
+
+                if is_closed_shell and shell:
+                    closed_shells.append(shell)
+
+            all_closed_faces = [f for s in closed_shells for f in s]
+            if all_closed_faces:
                 try:
-                    bmesh.ops.recalc_face_normals(bm, faces=closed_faces)
-                    return {"recalculated_normals": True, "manifold_faces_aligned": len(closed_faces)}
+                    bmesh.ops.recalc_face_normals(bm, faces=all_closed_faces)
+                    return {"recalculated_normals": True, "manifold_faces_aligned": len(all_closed_faces)}
                 except Exception as exc:
                     logger.debug("Manifold normal recalc fallback: %s", exc)
         elif normal_recalc_policy == "FORCE_ALL":

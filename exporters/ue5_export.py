@@ -92,6 +92,7 @@ class UE5Exporter(EngineExporterBase):
         orig_collider_parents: dict[Any, Any] = {c: c.parent for c in collider_objects}
         orig_matrices: dict[Any, Any] = {}
         created_empty = None
+        lod_group_empty = None
 
         try:
             # Unhide all export items in view layer
@@ -193,7 +194,7 @@ class UE5Exporter(EngineExporterBase):
                 use_selection=True,
                 apply_unit_scale=True,
                 apply_scale_options="FBX_SCALE_ALL",
-                bake_space_transform=False if armature_obj else True,
+                bake_space_transform=False if (armature_obj or lod_group_empty) else True,
                 object_types={"ARMATURE", "MESH", "EMPTY"} if armature_obj else {"MESH", "EMPTY"},
                 mesh_smooth_type="FACE",
                 add_leaf_bones=False if armature_obj else True,

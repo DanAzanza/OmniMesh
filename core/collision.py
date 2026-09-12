@@ -1,404 +1,28 @@
 """
-Multi-Convex Collision Hull Generator & Physics Decomposition Engine for OmniMesh.
-Blender 4.2+ and 5.2 LTS Compatible.
+Multi-Convex Collision Hull Generator & Physics Hierarchy Manager for OmniMesh.
 
-Provides hierarchical concavity-driven convex decomposition (ACD) with SVD splitting planes,
-zero-volume planar extrusion guards, PhysX/Jolt vertex budget clamping, and engine export mapping.
+Provides Blender scene integration, collection linking, transform hierarchy synchronization,
+and engine-specific collider naming (UE5, Unity, Godot, MSFS).
 """
 
 from __future__ import annotations
 
 import logging
-import math
-from typing import Any, List, Tuple
+from typing import Any, List
 
-import numpy as np
-
-logger = logging.getLogger(__name__)
+from .collision_decomposer import CollisionDecomposer
 
 try:
     import bmesh
     import bpy
-    import mathutils
-    from mathutils import Vector
-    from mathutils.bvhtree import BVHTree
 except ImportError:
-    bmesh = None
-    bpy = None
-    mathutils = None
-    BVHTree = None
+    bpy = None  # type: ignore
+    bmesh = None  # type: ignore
 
-    class Vector(tuple):  # type: ignore
-        """Pure Python 3D vector fallback for standalone headless test environments."""
+logger = logging.getLogger(__name__)
 
-        def __new__(cls, coords: Any) -> Vector:
-            return super().__new__(cls, tuple(float(x) for x in coords))
-
-        @property
-        def x(self) -> float:
-            return self[0]
-
-        @property
-        def y(self) -> float:
-            return self[1]
-
-        @property
-        def z(self) -> float:
-            return self[2]
-
-        @property
-        def length(self) -> float:
-            return math.sqrt(self[0] * self[0] + self[1] * self[1] + self[2] * self[2])
-
-        def normalized(self) -> Vector:
-            l_val = self.length
-            if l_val < 1e-9:
-                return Vector((0.0, 0.0, 0.0))
-            return Vector((self[0] / l_val, self[1] / l_val, self[2] / l_val))
-
-        def dot(self, other: Any) -> float:
-            return self[0] * other[0] + self[1] * other[1] + self[2] * other[2]
-
-        def cross(self, other: Any) -> Vector:
-            return Vector(
-                (
-                    self[1] * other[2] - self[2] * other[1],
-                    self[2] * other[0] - self[0] * other[2],
-                    self[0] * other[1] - self[1] * other[0],
-                )
-            )
-
-        def __add__(self, other: Any) -> Vector:
-            return Vector((self[0] + other[0], self[1] + other[1], self[2] + other[2]))
-
-        def __sub__(self, other: Any) -> Vector:
-            return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
-
-        def __mul__(self, scalar: Any) -> Vector:
-            return Vector((self[0] * float(scalar), self[1] * float(scalar), self[2] * float(scalar)))
-
-        def __rmul__(self, scalar: Any) -> Vector:
-            return self.__mul__(scalar)
-
-        def __truediv__(self, scalar: Any) -> Vector:
-            return Vector((self[0] / float(scalar), self[1] / float(scalar), self[2] / float(scalar)))
-
-
-class CollisionDecomposer:
-    """
-    Core mathematical and geometric decomposition solver for multi-convex collision generation.
-    """
-
-    @staticmethod
-    def compute_pca_splitting_plane(coords: np.ndarray) -> Tuple[Any, Any]:
-        """
-        Calculates geometric centroid and primary principal axis (normal) via SVD.
-        """
-        if len(coords) == 0:
-            return Vector((0.0, 0.0, 0.0)), Vector((0.0, 0.0, 1.0))
-
-        centroid_np = np.mean(coords, axis=0)
-        centered = coords - centroid_np
-        centroid_vec = Vector(centroid_np)
-
-        if len(coords) < 3:
-            return centroid_vec, Vector((0.0, 0.0, 1.0))
-
-        try:
-            _, _, vh = np.linalg.svd(centered)
-            normal_vec = Vector(vh[0]).normalized()
-            return centroid_vec, normal_vec
-        except Exception as exc:
-            logger.debug("SVD decomposition fallback: %s", exc)
-            return centroid_vec, Vector((0.0, 0.0, 1.0))
-
-    @staticmethod
-    def measure_hull_concavity(bm_source: Any, bm_hull: Any) -> float:
-        """
-        Measures maximum surface deviation between source mesh geometry and its candidate convex hull.
-        """
-        if not bm_source or not bm_hull or not hasattr(bm_source, "faces") or not hasattr(bm_hull, "faces"):
-            return 0.0
-        if len(bm_source.faces) == 0 or len(bm_hull.faces) == 0:
-            return 0.0
-        if not BVHTree:
-            return 0.0
-
-        try:
-            hull_bvh = BVHTree.FromBMesh(bm_hull, epsilon=1e-5)
-            if not hull_bvh:
-                return 0.0
-
-            max_dist = 0.0
-            for f in bm_source.faces:
-                center = f.calc_center_median()
-                _, _, _, dist = hull_bvh.find_nearest(center)
-                if dist and dist > max_dist:
-                    max_dist = dist
-            return float(max_dist)
-        except Exception as exc:
-            logger.debug("BVH concavity measurement error: %s", exc)
-            return 0.0
-
-    @classmethod
-    def harden_convex_hull(
-        cls,
-        bm: Any,
-        max_verts: int = 32,
-        min_thickness: float = 0.02,
-        scale_factor: float = 1.0,
-    ) -> bool:
-        """
-        Hardens BMesh into a valid 3D convex hull:
-        1. SVD Planarity Check: If thin 2D sheet, extrudes along normal by min_thickness (normalized by scale_factor).
-        2. Computes convex hull and purges internal/unused vertex and face garbage.
-        3. Clamps vertex budget to max_verts while strictly preserving convexity.
-        """
-        if not bmesh or not bm or len(bm.verts) < 3:
-            return False
-
-        bm.verts.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-
-        coords = np.array([v.co for v in bm.verts], dtype=np.float64)
-        if len(coords) < 3:
-            return False
-
-        # 1. Check for 2D Planar / Collinear Degeneracy via SVD
-        if len(coords) >= 4:
-            try:
-                centered = coords - np.mean(coords, axis=0)
-                _, s, vh = np.linalg.svd(centered)
-                if s[2] < 1e-4:  # Planar 2D sheet detected
-                    normal = Vector(vh[2]).normalized()
-                    effective_thickness = max(1e-4, float(min_thickness) / max(1e-4, scale_factor))
-                    if bm.faces:
-                        res_ext = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
-                        verts_to_move = [v for v in res_ext["geom"] if isinstance(v, bmesh.types.BMVert)]
-                        bmesh.ops.translate(bm, vec=normal * effective_thickness, verts=verts_to_move)
-                    else:
-                        bmesh.ops.extrude_vert_indiv(bm, verts=bm.verts[:])
-                        bmesh.ops.translate(bm, vec=normal * effective_thickness, verts=bm.verts[:])
-            except Exception as exc:
-                logger.debug("Planar extrusion fallback: %s", exc)
-
-        # 2. Compute 3D Convex Hull
-        try:
-            res_hull = bmesh.ops.convex_hull(bm, input=bm.verts[:], use_existing_faces=False)
-            to_delete = res_hull.get("geom_unused", []) + res_hull.get("geom_interior", [])
-            if to_delete:
-                bmesh.ops.delete(bm, geom=to_delete, context="VERTS")
-        except Exception as exc:
-            logger.debug("BMesh convex hull operation failed: %s", exc)
-            return False
-
-        bm.verts.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-
-        # 3. Vertex Budget Clamping
-        cls._clamp_hull_vertex_budget(bm, max_verts=max_verts)
-        return len(bm.verts) >= 4
-
-    @classmethod
-    def _clamp_hull_vertex_budget(cls, bm: Any, max_verts: int = 32) -> None:
-        """
-        Iteratively simplifies convex hull geometry to satisfy physics engine vertex limits.
-        """
-        if not bmesh or not bm or len(bm.verts) <= max_verts:
-            return
-
-        # Stage 1: Planar limited dissolve for flat facet groups
-        try:
-            bmesh.ops.dissolve_limit(
-                bm,
-                angle_limit=math.radians(10.0),
-                edges=bm.edges[:],
-                verts=bm.verts[:],
-            )
-            bm.verts.ensure_lookup_table()
-            bm.faces.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-        except Exception as exc:
-            logger.debug("Dissolve limit bypassed in budget clamp: %s", exc)
-
-        if len(bm.verts) <= max_verts:
-            return
-
-        # Stage 2: Convex-preserving edge collapse
-        max_iterations = len(bm.verts) - max_verts
-        for _ in range(max_iterations):
-            if len(bm.verts) <= max_verts or len(bm.edges) == 0:
-                break
-
-            # Pick shortest edge to minimize bounding volume alteration
-            shortest_edge = min(bm.edges, key=lambda e: e.calc_length())
-            try:
-                bmesh.ops.collapse(bm, edges=[shortest_edge])
-                # Re-compute convex hull to preserve strict outward curvature
-                res = bmesh.ops.convex_hull(bm, input=bm.verts[:], use_existing_faces=False)
-                to_delete = res.get("geom_unused", []) + res.get("geom_interior", [])
-                if to_delete:
-                    bmesh.ops.delete(bm, geom=to_delete, context="VERTS")
-                bm.verts.ensure_lookup_table()
-                bm.faces.ensure_lookup_table()
-                bm.edges.ensure_lookup_table()
-            except Exception as exc:
-                logger.debug("Convex collapse step terminated: %s", exc)
-                break
-
-    @classmethod
-    def decompose_mesh_to_hulls(
-        cls,
-        source_obj: Any = None,
-        k_target: int = 4,
-        max_verts_per_hull: int = 32,
-        concavity_threshold: float = 0.05,
-        bm_source: Any = None,
-    ) -> List[Any]:
-        """
-        Hierarchical Concavity-Driven Convex Decomposition (ACD).
-        Returns list of hardened BMesh objects representing convex collision hulls.
-        Accepts either source_obj (with .data) or a pre-assembled bm_source BMesh.
-        """
-        if not bmesh:
-            return []
-
-        scale_factor = 1.0
-        if source_obj and hasattr(source_obj, "scale"):
-            s = source_obj.scale
-            scale_factor = max(1e-4, (abs(s[0]) + abs(s[1]) + abs(s[2])) / 3.0)
-
-        eval_obj = None
-        if bm_source is not None:
-            bm_master = bm_source.copy()
-        elif source_obj and hasattr(source_obj, "data") and source_obj.data:
-            eval_mesh = None
-            try:
-                from .modifiers import ModifierManager
-
-                eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(source_obj, preserve_armature=True)
-            except Exception as exc:
-                logger.debug("Failed evaluating modifier mesh for collision: %s", exc)
-            bm_master = bmesh.new()
-            try:
-                try:
-                    if eval_mesh:
-                        bm_master.from_mesh(eval_mesh)
-                    else:
-                        bm_master.from_mesh(source_obj.data)
-                except Exception:
-                    bm_master.free()
-                    raise
-            finally:
-                if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
-                    eval_obj.to_mesh_clear()
-        else:
-            return []
-
-        if len(bm_master.verts) < 4:
-            bm_master.free()
-            return []
-
-        clusters: List[Any] = [bm_master]
-        completed_clusters: List[Any] = []
-        target_cluster = None
-        child_a = None
-
-        try:
-            while (len(clusters) + len(completed_clusters)) < k_target:
-                worst_idx = -1
-                worst_concavity = -1.0
-
-                for idx, cluster in enumerate(clusters):
-                    if len(cluster.verts) < 8:
-                        continue
-                    bm_test = cluster.copy()
-                    try:
-                        bmesh.ops.convex_hull(bm_test, input=bm_test.verts[:], use_existing_faces=False)
-                        c_err = cls.measure_hull_concavity(cluster, bm_test)
-                        if c_err > worst_concavity:
-                            worst_concavity = c_err
-                            worst_idx = idx
-                    finally:
-                        bm_test.free()
-
-                if worst_idx == -1 or worst_concavity <= concavity_threshold:
-                    break  # Sufficiently convex or no more splittable clusters
-
-                target_cluster = clusters.pop(worst_idx)
-                coords = np.array([v.co for v in target_cluster.verts], dtype=np.float64)
-                split_origin, split_normal = cls.compute_pca_splitting_plane(coords)
-
-                child_a = target_cluster.copy()
-                child_b = target_cluster
-
-                # Slice child A
-                bmesh.ops.bisect_plane(
-                    child_a,
-                    geom=child_a.verts[:] + child_a.edges[:] + child_a.faces[:],
-                    plane_co=split_origin,
-                    plane_no=split_normal,
-                    clear_outer=True,
-                )
-                # Slice child B (inverted plane normal)
-                bmesh.ops.bisect_plane(
-                    child_b,
-                    geom=child_b.verts[:] + child_b.edges[:] + child_b.faces[:],
-                    plane_co=split_origin,
-                    plane_no=-split_normal,
-                    clear_outer=True,
-                )
-
-                # Validate child clusters
-                if len(child_a.verts) >= 4 and len(child_b.verts) >= 4:
-                    clusters.extend([child_a, child_b])
-                    child_a = None
-                    target_cluster = None
-                else:
-                    # Slice resulted in degenerate empty side; mark this cluster as non-splittable
-                    # and continue bisecting other candidate clusters in the queue
-                    child_a.free()
-                    child_a = None
-                    completed_clusters.append(child_b)
-                    target_cluster = None
-                    continue
-
-            # Merge all clusters for final hull conversion
-            clusters.extend(completed_clusters)
-            completed_clusters = []
-
-            # Convert all clusters into hardened 3D convex hulls
-            final_hulls: List[Any] = []
-            for c in clusters:
-                success = cls.harden_convex_hull(c, max_verts=max_verts_per_hull, scale_factor=scale_factor)
-                if success:
-                    final_hulls.append(c)
-                else:
-                    c.free()
-
-            # Transfer ownership of successfully created final_hulls
-            clusters = []
-            return final_hulls
-
-        except Exception:
-            if child_a is not None:
-                try:
-                    child_a.free()
-                except Exception as exc:
-                    logger.debug("Failed freeing child_a BMesh: %s", exc)
-            if target_cluster is not None:
-                try:
-                    target_cluster.free()
-                except Exception as exc:
-                    logger.debug("Failed freeing target_cluster BMesh: %s", exc)
-            for c in clusters + completed_clusters:
-                try:
-                    c.free()
-                except Exception as exc:
-                    logger.debug("Failed freeing cluster BMesh: %s", exc)
-            raise
+# Re-export for backward compatibility
+__all__ = ["CollisionDecomposer", "CollisionManager"]
 
 
 class CollisionManager:
@@ -417,6 +41,7 @@ class CollisionManager:
         concavity_threshold: float = 0.05,
         mode: str = "PER_OBJECT",
         target_collection_name: str = "",
+        target_engine: str = "",
     ) -> List[Any]:
         if not bpy or not mesh_objs:
             return []
@@ -464,6 +89,13 @@ class CollisionManager:
         ):
             bpy.context.scene.collection.children.link(target_coll)
 
+        # Resolve target engine for naming if not explicitly passed
+        resolved_engine = target_engine
+        if not resolved_engine and hasattr(bpy.context, "scene"):
+            props = getattr(bpy.context.scene, "lod_tool", None)
+            if props:
+                resolved_engine = getattr(props, "target_engine", "")
+
         created_collider_objs: List[Any] = []
         hull_index = 1
 
@@ -504,13 +136,14 @@ class CollisionManager:
 
             try:
                 for bm_hull in hulls:
-                    c_name = f"{base_name}_Collider_{hull_index:02d}"
+                    c_name = cls.map_collider_name_for_engine(base_name, hull_index, resolved_engine)
                     c_mesh = bpy.data.meshes.new(f"{c_name}_Mesh")
                     bm_hull.to_mesh(c_mesh)
 
                     c_obj = bpy.data.objects.new(c_name, c_mesh)
                     c_obj.display_type = "WIRE"
                     c_obj.show_wire = True
+                    c_obj.hide_render = True
                     c_obj["_is_collider"] = True
                     c_obj["_om_asset_base"] = base_name
                     target_coll.objects.link(c_obj)
@@ -551,22 +184,23 @@ class CollisionManager:
 
                 try:
                     for bm_hull in hulls:
-                        c_name = f"{sub_base}_Collider_{hull_index:02d}"
+                        c_name = cls.map_collider_name_for_engine(sub_base, hull_index, resolved_engine)
                         c_mesh = bpy.data.meshes.new(f"{c_name}_Mesh")
                         bm_hull.to_mesh(c_mesh)
 
                         c_obj = bpy.data.objects.new(c_name, c_mesh)
-                        # Inherit transform & parent relationship
-                        c_obj.matrix_world = obj.matrix_world.copy()
+                        # Inherit parent and transform hierarchy cleanly
                         if obj.parent:
                             c_obj.parent = obj.parent
                             c_obj.parent_type = obj.parent_type
                             if hasattr(obj, "parent_bone") and obj.parent_bone:
                                 c_obj.parent_bone = obj.parent_bone
                             c_obj.matrix_parent_inverse = obj.matrix_parent_inverse.copy()
+                        c_obj.matrix_world = obj.matrix_world.copy()
 
                         c_obj.display_type = "WIRE"
                         c_obj.show_wire = True
+                        c_obj.hide_render = True
                         c_obj["_is_collider"] = True
                         c_obj["_om_asset_base"] = sub_base
                         target_coll.objects.link(c_obj)
@@ -586,6 +220,7 @@ class CollisionManager:
     def remove_colliders_for_objects(cls, mesh_objs: List[Any], base_name: str) -> int:
         """
         Purges existing collider objects and meshes scoped strictly to `{base_name}`.
+        Supports standard, UCX (UE5), and Godot engine naming prefixes.
         Does not affect colliders of other assets in the scene.
         """
         if not bpy:
@@ -603,14 +238,25 @@ class CollisionManager:
                 to_remove.append(obj)
 
         # 2. Scope to scene objects matching this base_name or its mesh component names
-        sub_bases = tuple(f"{obj.name.split('_LOD')[0]}_Collider_" for obj in mesh_objs if hasattr(obj, "name"))
+        name_prefixes = [
+            f"{base_name}_Collider_",
+            f"UCX_{base_name}_",
+        ]
+        for obj in mesh_objs:
+            if hasattr(obj, "name"):
+                stem = obj.name.split("_LOD")[0]
+                name_prefixes.append(f"{stem}_Collider_")
+                name_prefixes.append(f"UCX_{stem}_")
+
+        prefixes_tuple = tuple(name_prefixes)
+
         if hasattr(bpy.data, "objects"):
             for obj in bpy.data.objects:
                 if obj in to_remove:
                     continue
                 is_tagged = obj.get("_om_asset_base") == base_name and obj.get("_is_collider", False)
                 name = getattr(obj, "name", "")
-                is_named = name.startswith(f"{base_name}_Collider_") or (bool(sub_bases) and name.startswith(sub_bases))
+                is_named = name.startswith(prefixes_tuple)
                 if is_tagged or is_named:
                     to_remove.append(obj)
 
@@ -632,13 +278,12 @@ class CollisionManager:
         return removed_count
 
     @staticmethod
-    def map_collider_name_for_engine(base_name: str, index: int, target_engine: str) -> str:
+    def map_collider_name_for_engine(base_name: str, index: int, target_engine: str = "") -> str:
         """
         Translates generic Blender collider name into the exact format required by target engine.
         - UE5: UCX_{base_name}_{index:02d}
         - Godot 4: {base_name}_Collider_{index:02d}-convcolonly
-        - Unity 6: {base_name}_Collider_{index:02d}
-        - MSFS 2024: {base_name}_Collider_{index:02d}
+        - Unity 6 / MSFS 2024 / Generic: {base_name}_Collider_{index:02d}
         """
         if target_engine == "UE5":
             return f"UCX_{base_name}_{index:02d}"

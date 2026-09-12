@@ -130,7 +130,9 @@ class MSFS2024LiveBridge(EngineBridgeBase):
             "errors": "replace",
         }
         if sys.platform == "win32":
-            popen_kwargs["creationflags"] = 0x08000000 | 0x00000008  # CREATE_NO_WINDOW | DETACHED_PROCESS
+            popen_kwargs["creationflags"] = (
+                0x08000000  # CREATE_NO_WINDOW (DETACHED_PROCESS omitted to allow pipe redirection)
+            )
 
         cmd = [fspackagetool_exe, f"-outputdir={staging_dir}", package_def_xml]
 
@@ -189,7 +191,20 @@ class MSFS2024LiveBridge(EngineBridgeBase):
 
         pkg_xml = os.path.join(export_dir, f"PackageDefinitions_{asset_name}.xml")
         if not os.path.exists(pkg_xml):
-            # If standalone XML definition not present, assets are already in export_dir
-            return True, f"MSFS glTF and ModelInfo XML files generated at {export_dir}"
+            candidates = [os.path.join(export_dir, "PackageDefinitions.xml")]
+            if project_dir:
+                candidates.extend(
+                    [
+                        os.path.join(project_dir, "PackageDefinitions", f"{asset_name}.xml"),
+                        os.path.join(project_dir, "PackageDefinitions", f"PackageDefinitions_{asset_name}.xml"),
+                        os.path.join(project_dir, "PackageDefinitions.xml"),
+                    ]
+                )
+            for cand in candidates:
+                if os.path.exists(cand):
+                    pkg_xml = cand
+                    break
+            else:
+                return True, f"MSFS glTF and ModelInfo XML files generated at {export_dir}"
 
         return cls.compile_package_safe(exe, pkg_xml, project_dir)

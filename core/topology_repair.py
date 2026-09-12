@@ -134,6 +134,11 @@ class TopologyRepairEngine:
                                 restored_f.smooth = smooth
                             except Exception as rb_exc:
                                 logger.debug("Restoring original face failed: %s", rb_exc)
+                            if getattr(new_vert, "is_valid", False) and len(getattr(new_vert, "link_faces", [])) == 0:
+                                try:
+                                    bm.verts.remove(new_vert)
+                                except Exception as rm_exc:
+                                    logger.debug("Orphan vert removal failed: %s", rm_exc)
 
         if split_count > 0:
             try:
@@ -237,6 +242,9 @@ class TopologyRepairEngine:
                         restored_f.smooth = smooth
                     except Exception as rb_exc:
                         logger.debug("Restoring original face failed: %s", rb_exc)
+                    for nv in (nv1, nv2):
+                        if getattr(nv, "is_valid", False) and len(getattr(nv, "link_faces", [])) == 0:
+                            bm.verts.remove(nv)
 
         if split_count > 0:
             try:
@@ -275,6 +283,9 @@ class TopologyRepairEngine:
                 bm.faces.ensure_lookup_table()
                 bm.edges.ensure_lookup_table()
                 bm.verts.ensure_lookup_table()
+                bm.verts.index_update()
+                bm.edges.index_update()
+                bm.faces.index_update()
                 return len(new_faces)
         except Exception as exc:
             logger.debug("Hole filling error: %s", exc)

@@ -115,8 +115,26 @@ class GodotLiveBridge(EngineBridgeBase):
         clean_asset = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", clean_name).strip() or "SM_Asset"
         resolved_proj = os.path.abspath(project_dir)
         target_dir = os.path.abspath(os.path.join(resolved_proj, "OmniMesh_Exports", clean_asset))
-        if not target_dir.startswith(resolved_proj):
+        try:
+            if os.path.commonpath([resolved_proj, target_dir]) != resolved_proj:
+                return False, "Directory traversal detected in asset name."
+        except ValueError:
             return False, "Directory traversal detected in asset name."
+
+        import stat
+
+        def _safe_copy(src: str, dst: str) -> None:
+            try:
+                shutil.copy2(src, dst)
+            except PermissionError:
+                if os.path.exists(dst):
+                    try:
+                        os.chmod(dst, stat.S_IWRITE)
+                        shutil.copy2(src, dst)
+                    except Exception:
+                        raise
+                else:
+                    raise
 
         try:
             os.makedirs(target_dir, exist_ok=True)
@@ -125,12 +143,10 @@ class GodotLiveBridge(EngineBridgeBase):
                 s = os.path.join(export_dir, item)
                 d = os.path.join(target_dir, item)
                 if os.path.isdir(s):
-                    if os.path.exists(d):
-                        shutil.rmtree(d)
-                    shutil.copytree(s, d)
+                    shutil.copytree(s, d, dirs_exist_ok=True, copy_function=_safe_copy)
                     copied += 1
                 else:
-                    shutil.copy2(s, d)
+                    _safe_copy(s, d)
                     copied += 1
         except (OSError, shutil.Error) as exc:
             return False, f"Failed copying asset files to Godot project: {exc}"

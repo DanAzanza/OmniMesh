@@ -251,14 +251,14 @@ class MeshChunkSlicer:
 
             mat_world = source_obj.matrix_world
             mat_inv = mat_world.inverted()
-            mat_inv_trans = mat_inv.transposed().to_3x3()
+            mat_world_trans_3x3 = mat_world.to_3x3().transposed()
 
             # 2. Sequential X-axis planar bisects
             for x_world in grid_spec.x_cut_planes:
                 p_world = Vector((x_world, 0.0, 0.0))
                 n_world = Vector((1.0, 0.0, 0.0))
                 p_local = mat_inv @ p_world
-                n_local = (mat_inv_trans @ n_world).normalized()
+                n_local = (mat_world_trans_3x3 @ n_world).normalized()
 
                 geom = bm.faces[:] + bm.edges[:] + bm.verts[:]
                 bmesh.ops.bisect_plane(
@@ -276,7 +276,7 @@ class MeshChunkSlicer:
                 p_world = Vector((0.0, y_world, 0.0))
                 n_world = Vector((0.0, 1.0, 0.0))
                 p_local = mat_inv @ p_world
-                n_local = (mat_inv_trans @ n_world).normalized()
+                n_local = (mat_world_trans_3x3 @ n_world).normalized()
 
                 geom = bm.faces[:] + bm.edges[:] + bm.verts[:]
                 bmesh.ops.bisect_plane(
@@ -295,7 +295,7 @@ class MeshChunkSlicer:
                     p_world = Vector((0.0, 0.0, z_world))
                     n_world = Vector((0.0, 0.0, 1.0))
                     p_local = mat_inv @ p_world
-                    n_local = (mat_inv_trans @ n_world).normalized()
+                    n_local = (mat_world_trans_3x3 @ n_world).normalized()
 
                     geom = bm.faces[:] + bm.edges[:] + bm.verts[:]
                     bmesh.ops.bisect_plane(
@@ -522,120 +522,15 @@ class MeshChunkSlicer:
             trans_mat = Matrix.Translation(Vector(center_coords) if Vector else center_coords)
             obj.matrix_world = obj.matrix_world @ trans_mat
 
+        if hasattr(mesh, "update"):
+            mesh.update()
 
-class HLODClusterMerger:
-    """Merges chunk meshes into unified HLOD parent meshes with seam welding."""
 
-    @staticmethod
-    def merge_chunks_for_hlod(
-        chunk_objs: list[Any],
-        hlod_name: str,
-        target_collection: Any,
-        weld_dist: float = 0.002,
-    ) -> Any:
-        """
-        Combines child chunk objects into a single unified mesh,
-        welds seam vertices, and clears seam protection vertex groups for global decimation.
-        """
-        if not bpy or not bmesh or not chunk_objs:
-            return None
+from .chunk_merger import HLODClusterMerger
 
-        valid_chunks = [
-            c for c in chunk_objs if c and getattr(c, "type", "") == "MESH" and hasattr(c, "data") and c.data
-        ]
-        if not valid_chunks:
-            return None
-
-        # Build master material palette from all chunks to prevent slot aliasing
-        master_materials: list[Any] = []
-        for c in valid_chunks:
-            for mat in getattr(c.data, "materials", []):
-                if mat and mat not in master_materials:
-                    master_materials.append(mat)
-
-        merged_bm = bmesh.new()
-        try:
-            ref_mat_world = valid_chunks[0].matrix_world.copy()
-            ref_mat_inv = ref_mat_world.inverted()
-
-            for chunk_obj in valid_chunks:
-                chunk_mesh = chunk_obj.data
-                temp_bm = bmesh.new()
-                try:
-                    temp_bm.from_mesh(chunk_mesh)
-                    # Transform chunk vertices to reference object local space
-                    transform_to_ref = ref_mat_inv @ chunk_obj.matrix_world
-                    temp_bm.transform(transform_to_ref)
-
-                    # Re-map material slot indices to global master palette
-                    chunk_mats = list(chunk_mesh.materials)
-                    slot_map: dict[int, int] = {}
-                    for old_idx, mat in enumerate(chunk_mats):
-                        if mat in master_materials:
-                            slot_map[old_idx] = master_materials.index(mat)
-                        else:
-                            slot_map[old_idx] = 0
-
-                    for f in temp_bm.faces:
-                        f.material_index = slot_map.get(f.material_index, 0)
-
-                    # Append to merged BMesh
-                    vert_map = {v: merged_bm.verts.new(v.co) for v in temp_bm.verts}
-                    merged_bm.verts.ensure_lookup_table()
-
-                    # Copy UVs
-                    temp_uv_layers = (
-                        list(temp_bm.loops.layers.uv.values()) if hasattr(temp_bm.loops.layers, "uv") else []
-                    )
-                    for f in temp_bm.faces:
-                        new_verts = [vert_map[v] for v in f.verts]
-                        try:
-                            new_f = merged_bm.faces.new(new_verts)
-                            new_f.material_index = f.material_index
-                            new_f.smooth = f.smooth
-
-                            for temp_uv in temp_uv_layers:
-                                merged_uv = merged_bm.loops.layers.uv.get(temp_uv.name)
-                                if not merged_uv:
-                                    merged_uv = merged_bm.loops.layers.uv.new(temp_uv.name)
-                                for lp, new_lp in zip(f.loops, new_f.loops, strict=False):
-                                    new_lp[merged_uv].uv = lp[temp_uv].uv
-                        except (ValueError, IndexError):
-                            continue
-
-                finally:
-                    temp_bm.free()
-
-            merged_bm.verts.ensure_lookup_table()
-            merged_bm.edges.ensure_lookup_table()
-            merged_bm.faces.ensure_lookup_table()
-
-            # Weld internal seam boundaries across joined chunks
-            bmesh.ops.remove_doubles(merged_bm, verts=merged_bm.verts[:], dist=max(1e-5, weld_dist))
-
-            # Create merged Blender mesh and object
-            hlod_mesh = bpy.data.meshes.new(name=f"{hlod_name}_Mesh")
-            merged_bm.to_mesh(hlod_mesh)
-            hlod_mesh.update()
-
-            hlod_obj = bpy.data.objects.new(name=hlod_name, object_data=hlod_mesh)
-            hlod_obj.matrix_world = ref_mat_world
-
-            # Populate master materials
-            for mat in master_materials:
-                hlod_mesh.materials.append(mat)
-
-            # Link to target collection
-            if target_collection and hasattr(target_collection, "objects"):
-                target_collection.objects.link(hlod_obj)
-            elif bpy.context.collection:
-                bpy.context.collection.objects.link(hlod_obj)
-
-            # Ensure auto-smooth / sharp attribute exists
-            NormalManager.ensure_sharp_edge_attribute(hlod_mesh)
-            hlod_mesh.update()
-
-            return hlod_obj
-
-        finally:
-            merged_bm.free()
+__all__ = [
+    "SpatialGridSpec",
+    "MeshChunkSlicer",
+    "HLODClusterMerger",
+    "SEAM_GROUP_NAME",
+]

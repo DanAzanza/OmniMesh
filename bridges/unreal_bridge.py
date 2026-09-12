@@ -90,7 +90,6 @@ class UnrealLiveBridge(EngineBridgeBase):
         import re
 
         clean_asset = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
-        sanitized_asset_name = clean_asset.replace('"', '\\"')
 
         textures_literal = json.dumps({k: _to_posix(v) for k, v in (texture_dict or {}).items()})
 
@@ -98,11 +97,11 @@ class UnrealLiveBridge(EngineBridgeBase):
             "import unreal",
             "import pathlib",
             "",
-            f'fbx_path = "{fbx_posix}"',
-            f'dest_path = "{dest_posix}"',
-            f'asset_name = "{sanitized_asset_name}"',
+            f"fbx_path = {json.dumps(fbx_posix)}",
+            f"dest_path = {json.dumps(dest_posix)}",
+            f"asset_name = {json.dumps(clean_asset)}",
             f"textures = {textures_literal}",
-            f'master_mat_path = "{master_mat_posix}"',
+            f"master_mat_path = {json.dumps(master_mat_posix)}",
             "",
             "# 1. Non-Destructive FBX Import Task",
             "task = unreal.AssetImportTask()",
@@ -129,7 +128,7 @@ class UnrealLiveBridge(EngineBridgeBase):
             'imported_asset = unreal.EditorAssetLibrary.load_asset(f"{dest_path}/{asset_name}")',
             "",
             "if imported_asset:",
-            f'    mat_inst_name = "MI_{sanitized_asset_name}"',
+            f"    mat_inst_name = {json.dumps(f'MI_{clean_asset}')}",
             '    mat_inst_path = f"{dest_path}/{mat_inst_name}"',
             "    if not unreal.EditorAssetLibrary.does_asset_exist(mat_inst_path):",
             "        master_mat = unreal.EditorAssetLibrary.load_asset(master_mat_path)",
@@ -199,7 +198,8 @@ class UnrealLiveBridge(EngineBridgeBase):
             )
 
         try:
-            with socket.create_connection((host, port), timeout=3.0) as s:
+            with socket.create_connection((host, port), timeout=5.0) as s:
+                s.settimeout(5.0)
                 cmd_dict = {
                     "version": 1,
                     "magic": "ue_py",
@@ -208,8 +208,44 @@ class UnrealLiveBridge(EngineBridgeBase):
                     "unattended": True,
                 }
                 msg = json.dumps(cmd_dict).encode("utf-8")
-                s.sendall(len(msg).to_bytes(4, byteorder="big") + msg)
-                return True, "Successfully dispatched live sync command to active UE5 session."
+                frame = len(msg).to_bytes(4, byteorder="big") + msg
+                s.sendall(frame)
+
+                # Graceful half-close write channel to prevent WinSock WSAECONNRESET (10054)
+                try:
+                    s.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+
+                # Drain response frame (with 16 MB safety limit)
+                length_bytes = b""
+                while len(length_bytes) < 4:
+                    chunk = s.recv(4 - len(length_bytes))
+                    if not chunk:
+                        break
+                    length_bytes += chunk
+
+                if len(length_bytes) < 4:
+                    return True, "Successfully dispatched live sync command to active UE5 session."
+
+                resp_len = int.from_bytes(length_bytes, byteorder="big")
+                if resp_len > 16 * 1024 * 1024:
+                    return False, f"UE5 response frame exceeded safety limit: {resp_len} bytes."
+
+                resp_data = bytearray()
+                while len(resp_data) < resp_len:
+                    chunk = s.recv(min(4096, resp_len - len(resp_data)))
+                    if not chunk:
+                        break
+                    resp_data.extend(chunk)
+
+                try:
+                    resp_json = json.loads(resp_data.decode("utf-8"))
+                    if resp_json.get("success", True):
+                        return True, "Successfully executed in UE5 editor session."
+                    return False, f"UE5 script error: {resp_json.get('result', 'Unknown error')}"
+                except Exception:
+                    return True, "Successfully dispatched live sync command to active UE5 session."
         except (socket.timeout, ConnectionRefusedError, OSError) as e:
             return False, f"Socket transmission failed: {str(e)}"
 

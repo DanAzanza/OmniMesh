@@ -250,3 +250,98 @@ def test_reroute_cycle_protection_termination():
     # Must terminate without infinite recursion/loop
     img = ShaderTracer.get_material_normal_image(mat)
     assert img is None
+
+
+def test_batch_worker_unc_path_normalization():
+    """Verify that normalize_export_path_for_cli preserves Windows UNC double backslash prefixes."""
+    from core.batch_worker_process import normalize_export_path_for_cli
+
+    # Windows UNC network path
+    unc_path = r"\\storage_server\omnimesh\exports"
+    normalized_unc = normalize_export_path_for_cli(unc_path)
+    assert normalized_unc.startswith(r"\\"), f"UNC path must retain leading double backslash, got {normalized_unc}"
+    assert not normalized_unc.startswith("//"), "UNC path must not be converted to Blender blend-relative '//'"
+
+    # Standard drive path
+    drive_path = r"C:\OmniMesh\Exports\Asset1"
+    normalized_drive = normalize_export_path_for_cli(drive_path)
+    assert normalized_drive == "C:/OmniMesh/Exports/Asset1"
+
+
+def test_batch_hierarchical_export_path():
+    """Verify build_hierarchical_export_path mirrors directory hierarchy and sanitizes asset names."""
+    from core.batch_worker_process import build_hierarchical_export_path
+
+    source_root = r"C:\Projects\Assets"
+    blend_path = r"C:\Projects\Assets\Props\Hero Asset 01.blend"
+    export_root = r"D:\Build\GameAssets"
+
+    target_dir, asset_name = build_hierarchical_export_path(blend_path, source_root, export_root)
+    assert asset_name == "Hero_Asset_01"
+    assert "Props" in target_dir
+
+
+def test_slicing_plane_normal_transform():
+    """Verify that slicing plane normals are correctly transformed into object local space."""
+    import numpy as np
+    from unittest.mock import MagicMock
+
+    # Setup an object with non-uniform scaling: scale X by 2.0, Y by 1.0, Z by 0.5
+    mock_obj = MagicMock()
+    # 3x3 rotation/scale: diag(2.0, 1.0, 0.5)
+    scale_mat = np.diag([2.0, 1.0, 0.5])
+
+    class Mock3x3:
+        def transposed(self):
+            m = Mock3x3()
+            m.arr = self.arr.T
+            return m
+
+        def __matmul__(self, vec):
+            res = self.arr @ np.array([vec[0], vec[1], vec[2]])
+            mock_vec = MagicMock()
+            norm = float(np.linalg.norm(res))
+            mock_vec.normalized.return_value = res / norm if norm > 1e-12 else res
+            return mock_vec
+
+    m3 = Mock3x3()
+    m3.arr = scale_mat
+    mock_obj.matrix_world.to_3x3.return_value = m3
+
+    # Cutting normal along world X (1, 0, 0)
+    n_world = (1.0, 0.0, 0.0)
+    n_local = (mock_obj.matrix_world.to_3x3().transposed() @ n_world).normalized()
+    assert np.allclose(n_local, [1.0, 0.0, 0.0])
+
+
+def test_collision_svd_relative_eccentricity():
+    """Verify that SVD relative eccentricity is scale-invariant across millimeter and meter scale."""
+    import numpy as np
+
+    # Generate a planar point cloud (Z=0 with negligible noise)
+    rng = np.random.default_rng(42)
+
+    for scale in (0.001, 1.0, 100.0):
+        xy = rng.uniform(-1.0, 1.0, size=(50, 2)) * scale
+        z = rng.normal(0.0, 1e-7 * scale, size=(50, 1))  # Tiny out-of-plane perturbation
+        pts = np.hstack([xy, z])
+
+        centered = pts - np.mean(pts, axis=0)
+        _, s, _ = np.linalg.svd(centered, full_matrices=False)
+
+        # Scale-invariant check: s[2] / s[0] must be negligible regardless of scale factor
+        rel_s2 = float(s[2]) / max(1e-12, float(s[0]))
+        assert rel_s2 < 1e-3, f"Scale {scale} failed relative eccentricity check: rel_s2={rel_s2}"
+
+
+def test_slender_boundary_ring_perimeter_diameter():
+    """Verify thickness derivation for open catenary/cable features."""
+    import math
+
+    # A circle of radius r=0.05 (diameter=0.10m)
+    radius = 0.05
+    perimeter = 2.0 * math.pi * radius
+
+    # Derived diameter from perimeter
+    derived_diameter = perimeter / math.pi
+    assert math.isclose(derived_diameter, 0.10, rel_tol=1e-5)

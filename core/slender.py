@@ -86,7 +86,7 @@ class SlenderFeatureCuller:
         delta_world = (tau_sse * 2 * R_root) / (S_frac * resolution_y)
         """
         s_frac = max(0.0001, screen_size_pct / 100.0)
-        if s_frac <= 0 or root_radius_m <= 0:
+        if not math.isfinite(root_radius_m) or root_radius_m <= 1e-6 or not math.isfinite(s_frac) or s_frac <= 0:
             return 0.0
 
         if tau_sse >= 0.4 and resolution_y > 0:
@@ -100,41 +100,52 @@ class SlenderFeatureCuller:
     def analyze_island_geometry(cls, face_group: list[Any]) -> dict[str, float]:
         """
         Analyzes a connected face island's volume, area, bounding extents, and slenderness.
+        Handles both watertight closed shells and open/uncapped cables, tubes, and ribbons.
         """
         if not face_group:
             return {"thickness": 0.0, "aspect_ratio": 0.0, "volume": 0.0, "area": 0.0, "max_dim": 0.0}
 
         total_area = 0.0
-        signed_volume = 0.0
-
         min_co = [float("inf"), float("inf"), float("inf")]
         max_co = [float("-inf"), float("-inf"), float("-inf")]
 
+        # First pass: collect unique vertices, bounding box, and centroid to eliminate translation offsets
+        unique_verts: set[Any] = set()
         for f in face_group:
-            area = getattr(f, "calc_area", lambda: 0.0)()
-            total_area += area
-
-            # Signed volume contribution from face tetrahedra
-            verts = getattr(f, "verts", [])
-            if len(verts) >= 3:
-                v0 = verts[0].co
-                for i in range(1, len(verts) - 1):
-                    v1 = verts[i].co
-                    v2 = verts[i + 1].co
-                    # 1/6 * v0 . (v1 x v2)
-                    c_x = v1[1] * v2[2] - v1[2] * v2[1]
-                    c_y = v1[2] * v2[0] - v1[0] * v2[2]
-                    c_z = v1[0] * v2[1] - v1[1] * v2[0]
-                    vol = (1.0 / 6.0) * (v0[0] * c_x + v0[1] * c_y + v0[2] * c_z)
-                    signed_volume += vol
-
-            for v in verts:
+            for v in getattr(f, "verts", []):
+                unique_verts.add(v)
                 co = v.co
                 for axis in range(3):
                     if co[axis] < min_co[axis]:
                         min_co[axis] = co[axis]
                     if co[axis] > max_co[axis]:
                         max_co[axis] = co[axis]
+
+        if not unique_verts:
+            return {"thickness": 0.0, "aspect_ratio": 0.0, "volume": 0.0, "area": 0.0, "max_dim": 0.0}
+
+        c_x = sum(v.co[0] for v in unique_verts) / len(unique_verts)
+        c_y = sum(v.co[1] for v in unique_verts) / len(unique_verts)
+        c_z = sum(v.co[2] for v in unique_verts) / len(unique_verts)
+
+        signed_volume = 0.0
+        for f in face_group:
+            area = getattr(f, "calc_area", lambda: 0.0)()
+            total_area += area
+
+            # Signed volume contribution relative to island centroid (eliminates spurious origin offset)
+            verts = getattr(f, "verts", [])
+            if len(verts) >= 3:
+                v0 = [verts[0].co[0] - c_x, verts[0].co[1] - c_y, verts[0].co[2] - c_z]
+                for i in range(1, len(verts) - 1):
+                    v1 = [verts[i].co[0] - c_x, verts[i].co[1] - c_y, verts[i].co[2] - c_z]
+                    v2 = [verts[i + 1].co[0] - c_x, verts[i + 1].co[1] - c_y, verts[i + 1].co[2] - c_z]
+                    # 1/6 * v0 . (v1 x v2)
+                    cr_x = v1[1] * v2[2] - v1[2] * v2[1]
+                    cr_y = v1[2] * v2[0] - v1[0] * v2[2]
+                    cr_z = v1[0] * v2[1] - v1[1] * v2[0]
+                    vol = (1.0 / 6.0) * (v0[0] * cr_x + v0[1] * cr_y + v0[2] * cr_z)
+                    signed_volume += vol
 
         dx = max(0.0, max_co[0] - min_co[0])
         dy = max(0.0, max_co[1] - min_co[1])
@@ -146,8 +157,20 @@ class SlenderFeatureCuller:
 
         abs_vol = abs(signed_volume)
 
-        # Closed volume (tube/cylinder): use hydraulic caliper
-        if abs_vol > 1e-8 and total_area > 1e-8:
+        # Check topology: verify if the face group is a closed watertight shell
+        face_group_set = set(face_group)
+        boundary_edges = []
+        for f in face_group:
+            for e in getattr(f, "edges", []):
+                # Count neighbors within this island
+                nbrs = [lf for lf in getattr(e, "link_faces", []) if lf in face_group_set]
+                if len(nbrs) == 1:
+                    boundary_edges.append(e)
+
+        is_closed = len(boundary_edges) == 0
+
+        # 1. Watertight closed volume (e.g. capped cylinder): use exact hydraulic caliper
+        if is_closed and abs_vol > 1e-8 and total_area > 1e-8:
             t_hydro = cls.compute_hydraulic_thickness(abs_vol, total_area)
             ar_hydro = cls.compute_slenderness_aspect_ratio(total_area, abs_vol, max_dim=max_dim)
             if t_hydro > 0 and ar_hydro > 0:
@@ -159,7 +182,25 @@ class SlenderFeatureCuller:
                     "max_dim": max_dim,
                 }
 
-        # Open ribbon / flat sheet fallback: use bounding extents
+        # 2. Open cylindrical tube / cable (boundary edges form end rings): derive diameter from ring perimeter
+        if boundary_edges and total_area > 1e-8:
+            total_b_len = sum(getattr(e, "calc_length", lambda: 0.0)() for e in boundary_edges)
+            # Typically 2 end rings for an open tube
+            num_rings = 2 if len(boundary_edges) >= 6 else 1
+            avg_ring_circ = total_b_len / num_rings
+            d_ring = avg_ring_circ / math.pi
+            if 1e-5 < d_ring < max_dim:
+                ar_tube = max_dim / max(1e-6, d_ring)
+                if ar_tube >= cls.MIN_ASPECT_RATIO:
+                    return {
+                        "thickness": d_ring,
+                        "aspect_ratio": ar_tube,
+                        "volume": abs_vol,
+                        "area": total_area,
+                        "max_dim": max_dim,
+                    }
+
+        # 3. Open ribbon / flat sheet fallback: use bounding extents
         t_obb = min(mid_dim, max(1e-6, min_dim))
         ar_obb = max_dim / max(1e-6, t_obb)
         return {

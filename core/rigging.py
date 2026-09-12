@@ -9,6 +9,8 @@ import logging
 import math
 from typing import Any
 
+import numpy as np
+
 try:
     import bmesh
     import bpy
@@ -31,11 +33,19 @@ def _safe_invert_matrix(mat: Any) -> Any:
             if hasattr(mat, "determinant"):
                 det = mat.determinant()
                 if not math.isfinite(det) or abs(det) < 1e-8:
-                    logger.warning("Singular matrix detected in inversion (det=%s). Returning fallback copy.", det)
+                    logger.warning("Singular matrix detected in inversion (det=%s). Returning fallback identity.", det)
+                    if Matrix is not None:
+                        return Matrix.Identity(4)
+                    if hasattr(mat, "arr") and isinstance(getattr(mat, "arr", None), np.ndarray):
+                        return type(mat)(np.eye(mat.arr.shape[0]))
                     return mat.copy() if hasattr(mat, "copy") else mat
             return mat.inverted()
         except Exception as exc:
-            logger.warning("Matrix inversion failed (%s). Returning fallback copy.", exc)
+            logger.warning("Matrix inversion failed (%s). Returning fallback identity.", exc)
+            if Matrix is not None:
+                return Matrix.Identity(4)
+            if hasattr(mat, "arr") and isinstance(getattr(mat, "arr", None), np.ndarray):
+                return type(mat)(np.eye(mat.arr.shape[0]))
             return mat.copy() if hasattr(mat, "copy") else mat
     return mat
 
@@ -133,6 +143,13 @@ def armature_rest_pose_context(armature_obj: Any):
     orig_pose_pos = getattr(data, "pose_position", "POSE")
     try:
         data.pose_position = "REST"
+        if (
+            bpy
+            and hasattr(bpy, "context")
+            and hasattr(bpy.context, "view_layer")
+            and hasattr(bpy.context.view_layer, "update")
+        ):
+            bpy.context.view_layer.update()
     except Exception as exc:
         logger.warning("Failed to set armature to REST pose: %s", exc)
 
@@ -142,6 +159,13 @@ def armature_rest_pose_context(armature_obj: Any):
         try:
             if armature_obj and getattr(armature_obj, "data", None):
                 armature_obj.data.pose_position = orig_pose_pos
+                if (
+                    bpy
+                    and hasattr(bpy, "context")
+                    and hasattr(bpy.context, "view_layer")
+                    and hasattr(bpy.context.view_layer, "update")
+                ):
+                    bpy.context.view_layer.update()
         except Exception as exc:
             logger.debug("Failed to restore armature pose position: %s", exc)
 
@@ -269,9 +293,27 @@ class WeightSanitizer:
                 if g.weight > 0.0001 and 0 <= g.group < vg_count:
                     used_vg_names.add(obj.vertex_groups[g.group].name)
 
+        # Protect skeletal hierarchy: never purge vertex groups matching bones in an active armature
+        protected_bone_names: set[str] = set()
+        armature = None
+        if hasattr(obj, "find_armature"):
+            try:
+                armature = obj.find_armature()
+            except Exception as exc:
+                logger.debug("find_armature failed: %s", exc)
+        if not armature and hasattr(obj, "modifiers"):
+            for m in obj.modifiers:
+                if getattr(m, "type", "") == "ARMATURE" and getattr(m, "object", None):
+                    armature = m.object
+                    break
+        if armature and hasattr(armature, "data") and hasattr(armature.data, "bones"):
+            protected_bone_names = {b.name for b in armature.data.bones}
+
         # Collect unused vertex groups first, then safely remove by reference
         purged_vg_count = 0
-        to_purge = [vg for vg in list(obj.vertex_groups) if vg.name not in used_vg_names]
+        to_purge = [
+            vg for vg in list(obj.vertex_groups) if vg.name not in used_vg_names and vg.name not in protected_bone_names
+        ]
         for vg in to_purge:
             try:
                 obj.vertex_groups.remove(vg)
