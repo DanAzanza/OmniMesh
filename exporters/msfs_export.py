@@ -34,6 +34,17 @@ except (ImportError, ValueError):
         EngineExporterBase = object  # type: ignore
         AssetMeshResolver = None  # type: ignore
 
+try:
+    from core.msfs_xml_merger import ModelXMLMerger
+    from core.msfs.project_scanner import MSFSModelOptions
+except (ImportError, ValueError):
+    try:
+        from ..core.msfs_xml_merger import ModelXMLMerger
+        from ..core.msfs.project_scanner import MSFSModelOptions
+    except (ImportError, ValueError):
+        ModelXMLMerger = None  # type: ignore
+        MSFSModelOptions = None  # type: ignore
+
 
 class MSFSExporter(EngineExporterBase):
     @staticmethod
@@ -158,7 +169,7 @@ class MSFSExporter(EngineExporterBase):
 
                 tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
 
-                # Ensure objects are visible in view layer and select strictly pure meshes
+                # Ensure objects are visible in view layer and select meshes
                 bpy.ops.object.select_all(action="DESELECT")
                 for obj in tier_objs:
                     try:
@@ -170,16 +181,29 @@ class MSFSExporter(EngineExporterBase):
                         )
                     obj.select_set(True)
 
+                # For LOD0: include attachment nodes (ATTACH_POINT_, ATTACH_FX_, socket_, eye_)
+                # Crucial so the MSFS runtime engine can resolve effect nodes and sim attachments
+                if i == 0 and payload.attachment_nodes:
+                    for att_node in payload.attachment_nodes:
+                        try:
+                            att_node.hide_set(False, view_layer=context.view_layer)
+                            att_node.hide_viewport = False
+                        except (RuntimeError, AttributeError):
+                            pass
+                        att_node.select_set(True)
+
                 context.view_layer.objects.active = tier_objs[0]
 
                 gltf_path = os.path.join(export_dir, f"{clean_name}_LOD{i}.gltf")
+                export_apply_val = not getattr(payload, "is_skeletal", False)
                 try:
                     bpy.ops.export_scene.gltf(
                         filepath=gltf_path,
                         use_selection=True,
                         export_format="GLTF_SEPARATE",
-                        export_apply=True,
+                        export_apply=export_apply_val,
                         export_tangents=True,
+                        export_animations=True,
                     )
                     exported_tiers += 1
                 except Exception as e:
@@ -189,13 +213,30 @@ class MSFSExporter(EngineExporterBase):
                 return False, "No valid LOD objects found to export."
 
             cull_pct = float(getattr(props, "cull_screen_size_pct", 0.5)) if props else 0.5
-            xml_content = cls.generate_model_info_xml(clean_name, tier_data, cull_screen_size_pct=cull_pct)
             xml_path = os.path.join(export_dir, f"{clean_name}.xml")
-            try:
-                with open(xml_path, "w", encoding="utf-8") as f:
-                    f.write(xml_content)
-            except OSError as e:
-                return False, f"Failed to write ModelInfo XML: {str(e)}"
+
+            # Format tier payload for ModelXMLMerger
+            merger_tiers: list[dict[str, Any]] = []
+            for item in tier_data:
+                merger_tiers.append(
+                    {
+                        "min_size": item.get("screen_size_pct", 0.0),
+                        "model_file": f"{clean_name}_LOD{item.get('index', 0)}.gltf",
+                    }
+                )
+
+            # Surgical merge if file exists or write new
+            if ModelXMLMerger:
+                merged_ok = ModelXMLMerger.merge_lods_file(xml_path, merger_tiers)
+                if not merged_ok:
+                    return False, f"Failed to write/merge ModelInfo XML at '{xml_path}'"
+            else:
+                xml_content = cls.generate_model_info_xml(clean_name, tier_data, cull_screen_size_pct=cull_pct)
+                try:
+                    with open(xml_path, "w", encoding="utf-8") as f:
+                        f.write(xml_content)
+                except OSError as e:
+                    return False, f"Failed to write ModelInfo XML: {str(e)}"
 
             return True, f"MSFS package ({exported_tiers} LOD tiers) exported to: {export_dir}"
         finally:
@@ -263,8 +304,39 @@ class MSFSExporter(EngineExporterBase):
 
         # 3. Write / Update model/model.cfg
         model_cfg_path = os.path.join(model_dir, "model.cfg")
-        cfg_lines = ["[models]", f"normal={clean_base}.xml"]
-        if has_interior:
+        props = getattr(context.scene, "lod_tool", None) if context else None
+        target_version = getattr(props, "msfs_target_version", "2024") if props else "2024"
+
+        is_scenery = False
+        if props and getattr(props, "asset_category", "HERO_CHARACTER") in (
+            "BUILDING",
+            "PROP",
+            "FOLIAGE",
+            "MICRO_DEBRIS",
+        ):
+            is_scenery = True
+        if clean_base.lower().startswith("scenery_") or clean_base.lower().startswith("prop_"):
+            is_scenery = True
+
+        cfg_lines: list[str] = []
+        # Serialize [model.options] strictly when targeting MSFS 2024 for aircraft (suppressed for scenery)
+        if target_version == "2024" and not is_scenery:
+            cfg_lines.append("[model.options]")
+            with_ext_show_int = "true" if getattr(props, "msfs_with_exterior_show_interior", True) else "false"
+            with_ext_hide_first = (
+                "true" if getattr(props, "msfs_with_exterior_show_interior_hide_first_lod", False) else "false"
+            )
+            with_int_force_first = "true" if getattr(props, "msfs_with_interior_force_first_lod", False) else "false"
+            with_int_show_ext = "true" if getattr(props, "msfs_with_interior_show_exterior", True) else "false"
+
+            cfg_lines.append(f"withExterior_showInterior={with_ext_show_int}")
+            cfg_lines.append(f"withExterior_showInterior_hideFirstLod={with_ext_hide_first}")
+            cfg_lines.append(f"withInterior_forceFirstLod={with_int_force_first}")
+            cfg_lines.append(f"withInterior_showExterior={with_int_show_ext}")
+            cfg_lines.append("")
+
+        cfg_lines.extend(["[models]", f"normal={clean_base}.xml"])
+        if has_interior and not is_scenery:
             cfg_lines.append(f"interior={interior_name}.xml")
         cfg_lines.append("")
         try:

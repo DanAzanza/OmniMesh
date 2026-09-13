@@ -103,6 +103,12 @@ class MSFSCSTParser:
                 cls._parse_fuel_line(key, val_part, record, config, line_idx)
             elif current_section == "LIGHTS":
                 cls._parse_lights_line(key, val_part, record, config, line_idx)
+            elif current_section == "EXITS":
+                cls._parse_exits_line(key, val_part, record, config, line_idx)
+            elif current_section in ("GENERALENGINEDATA", "TURBINE_ENGINE", "PISTON_ENGINE"):
+                cls._parse_engine_line(key, val_part, record, config, line_idx)
+            elif current_section == "AERODYNAMICS":
+                cls._parse_aerodynamics_line(key, val_part, record, config, line_idx)
 
             config.lines.append(record)
 
@@ -114,6 +120,9 @@ class MSFSCSTParser:
     _parse_contact_point_line = staticmethod(MSFSSpatialParsers.parse_contact_point_line)
     _parse_fuel_line = staticmethod(MSFSSpatialParsers.parse_fuel_line)
     _parse_lights_line = staticmethod(MSFSSpatialParsers.parse_lights_line)
+    _parse_exits_line = staticmethod(MSFSSpatialParsers.parse_exits_line)
+    _parse_engine_line = staticmethod(MSFSSpatialParsers.parse_engine_line)
+    _parse_aerodynamics_line = staticmethod(MSFSSpatialParsers.parse_aerodynamics_line)
 
     @classmethod
     def _resolve_spatial_points(cls, config: AircraftSpatialConfig) -> None:
@@ -163,6 +172,22 @@ class MSFSCSTParser:
             rel = p.coords_msfs_rel_ft
             p.coords_msfs_abs_ft = (rel[0] + datum[0], rel[1] + datum[1], rel[2] + datum[2])
             p.coords_blender_m = msfs_to_blender(rel[0], rel[1], rel[2], datum)
+
+        # Resolve exits and engine coordinates
+        for ex in config.exits:
+            rel = ex.coords_msfs_rel_ft
+            ex.coords_msfs_abs_ft = (rel[0] + datum[0], rel[1] + datum[1], rel[2] + datum[2])
+            ex.coords_blender_m = msfs_to_blender(rel[0], rel[1], rel[2], datum)
+
+        for eng in config.engines:
+            rel = eng.coords_msfs_rel_ft
+            eng.coords_msfs_abs_ft = (rel[0] + datum[0], rel[1] + datum[1], rel[2] + datum[2])
+            eng.coords_blender_m = msfs_to_blender(rel[0], rel[1], rel[2], datum)
+
+        for st in config.station_loads:
+            rel = st.coords_msfs_rel_ft
+            st.coords_msfs_abs_ft = (rel[0] + datum[0], rel[1] + datum[1], rel[2] + datum[2])
+            st.coords_blender_m = msfs_to_blender(rel[0], rel[1], rel[2], datum)
 
         # Resolve light coordinates
         for lt in config.lights:
@@ -250,14 +275,18 @@ class MSFSCSTParser:
         serialized_lines: list[str] = []
         nl = config.line_ending
 
-        for record in config.lines:
-            point_id = f"{record.section}:{record.key}" if record.section and record.key else ""
+        # Case-insensitive lookup dictionary for modified coordinates and rotations
+        pts_lower = {k.lower(): v for k, v in updated_points.items()}
+        rots_lower = {k.lower(): v for k, v in rotations.items()}
 
-            if not record.is_spatial or point_id not in updated_points:
+        for record in config.lines:
+            point_id = f"{record.section}:{record.key}".lower() if record.section and record.key else ""
+
+            if not record.is_spatial or point_id not in pts_lower:
                 serialized_lines.append(record.raw_line)
                 continue
 
-            new_coords = updated_points[point_id]
+            new_coords = pts_lower[point_id]
             s_long = format_coordinate_float(new_coords[0])
             s_lat = format_coordinate_float(new_coords[1])
             s_vert = format_coordinate_float(new_coords[2])
@@ -281,8 +310,8 @@ class MSFSCSTParser:
                     # Tagged format: update LocalPosition and LocalRotation tags
                     tags = dict(record.raw_tags)
                     tags["LocalPosition"] = f"{s_long},{s_lat},{s_vert}"
-                    if point_id in rotations:
-                        r = rotations[point_id]
+                    if point_id in rots_lower:
+                        r = rots_lower[point_id]
                         tags["LocalRotation"] = (
                             f"{format_coordinate_float(r[0])},"
                             f"{format_coordinate_float(r[1])},"
@@ -297,7 +326,22 @@ class MSFSCSTParser:
                     if other_tokens:
                         coord_segment += ", " + ", ".join(other_tokens)
                     line_val = coord_segment
+            elif record.section == "EXITS":
+                open_rate = record.prefix_tokens[0] if record.prefix_tokens else "0.5"
+                coord_segment = f"{open_rate}, {s_long}, {s_lat}, {s_vert}"
+                if record.suffix_tokens:
+                    coord_segment += ", " + ", ".join(record.suffix_tokens)
+                line_val = coord_segment
             elif record.section == "WEIGHT_AND_BALANCE":
+                if record.key.lower().startswith("station_load."):
+                    weight = record.prefix_tokens[0] if record.prefix_tokens else "170"
+                    coord_segment = f"{weight}, {s_long}, {s_lat}, {s_vert}"
+                    if record.suffix_tokens:
+                        coord_segment += ", " + ", ".join(record.suffix_tokens)
+                    line_val = coord_segment
+                else:
+                    line_val = f"{s_long}, {s_lat}, {s_vert}"
+            elif record.section in ("GENERALENGINEDATA", "AERODYNAMICS"):
                 line_val = f"{s_long}, {s_lat}, {s_vert}"
             else:
                 line_val = f"{s_long}, {s_lat}, {s_vert}"

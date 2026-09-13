@@ -22,6 +22,10 @@ except ImportError:
     Panel = object
 
 try:
+    from ..core.config_presets import (
+        DEFAULT_CONFIG_PRESET_ID,
+        ConfigPresetManager,
+    )
     from ..core.engine_import_presets import (
         DEFAULT_ENGINE_IMPORT_PRESET_ID,
         EngineImportPresetManager,
@@ -39,6 +43,10 @@ try:
     from .popovers import POPOVER_CLASSES
     from .utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
+    from core.config_presets import (
+        DEFAULT_CONFIG_PRESET_ID,
+        ConfigPresetManager,
+    )
     from core.engine_import_presets import (
         DEFAULT_ENGINE_IMPORT_PRESET_ID,
         EngineImportPresetManager,
@@ -97,11 +105,12 @@ class OMNIMESH_PT_import(Panel):
         sub_eng_del.operator("omnimesh.delete_engine_import_preset", text="", icon="X")
         row_eng_preset.popover(panel="OMNIMESH_PT_popover_engine_import_preset", icon="PREFERENCES", text="")
 
-        # Row 2: [ Import Engine Project ]
+        # Row 2: [ Import Engine Project ] [ Convert Asobo ]
         row_eng_act = box_engine.row(align=True)
         row_eng_act.use_property_split = False
         row_eng_act.scale_y = 1.2
         row_eng_act.operator("omnimesh.import_engine_project", text="Import Engine Project", icon="IMPORT")
+        row_eng_act.operator("omnimesh.convert_asobo_hierarchy", text="Convert x0..x6", icon="OUTLINER_COLLECTION")
 
         if props.last_engine_import_summary:
             box_engine.label(text=props.last_engine_import_summary, icon="CHECKMARK")
@@ -166,6 +175,36 @@ class OMNIMESH_PT_modify(Panel):
         row_asset.prop(props, "active_asset", text="Target Asset", icon="OUTLINER_COLLECTION")
         row_asset.operator("lod_tool.create_helpers_collection", text="", icon="HELP")
 
+        # 0b. Config Preset Subsystem (Spatial / Lights / Cameras / Exits / Engines)
+        box_cfg = layout.box()
+        box_cfg.label(text="Config Objects & Markers", icon="PRESET")
+        cfg_props = getattr(props, "config_presets", None)
+
+        if cfg_props:
+            raw_cfg_preset = getattr(cfg_props, "config_preset", "")
+            cfg_preset_id = str(raw_cfg_preset).strip() or DEFAULT_CONFIG_PRESET_ID
+            is_cfg_builtin = ConfigPresetManager.is_builtin(cfg_preset_id)
+
+            # Row 1: [ Preset Dropdown ▾ ] [ 📋 Copy ] [ ❌ Delete ] [ ⚙️ Gear ]
+            row_cfg_p = box_cfg.row(align=True)
+            row_cfg_p.use_property_split = False
+            row_cfg_p.prop(cfg_props, "config_preset", text="Preset")
+            row_cfg_p.operator("omnimesh.duplicate_config_preset", text="", icon="DUPLICATE")
+
+            sub_cfg_del = row_cfg_p.row(align=True)
+            sub_cfg_del.enabled = not is_cfg_builtin
+            sub_cfg_del.operator("omnimesh.delete_config_preset", text="", icon="X")
+            row_cfg_p.popover(panel="OMNIMESH_PT_popover_config_preset", icon="PREFERENCES", text="")
+
+            # Row 2: [ Add Config Objects ]
+            row_cfg_act = box_cfg.row(align=True)
+            row_cfg_act.use_property_split = False
+            row_cfg_act.scale_y = 1.2
+            row_cfg_act.operator("omnimesh.add_config_preset", text="Add Config Objects", icon="OBJECT_DATA")
+
+            if cfg_props.last_spawn_summary:
+                box_cfg.label(text=cfg_props.last_spawn_summary, icon="CHECKMARK")
+
         # 1. Action Row 1: Mesh Sanitization + Gear Popover
         row_san = layout.row(align=True)
         row_san.use_property_split = False
@@ -204,6 +243,41 @@ class OMNIMESH_PT_modify(Panel):
         sub_del.enabled = collider_count > 0
         sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
         row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
+
+        # 4. Multi-Engine Shader Presets
+        mat_props = getattr(props, "material_preset", None)
+        if mat_props:
+            box_mat = layout.box()
+            row_m_hdr = box_mat.row(align=True)
+            row_m_hdr.label(text="Shader Presets", icon="MATERIAL")
+            row_m = box_mat.row(align=True)
+            row_m.use_property_split = False
+            row_m.prop(mat_props, "preset_type", text="")
+            row_m.operator("omnimesh.assign_material_preset", text="Assign Preset", icon="SHADING_TEXTURE")
+
+        # 5. Interaction Volumes & Clickspots (Non-blocking Triggers)
+        int_props = getattr(props, "interaction", None)
+        if int_props:
+            box_int = layout.box()
+            row_i_hdr = box_int.row(align=True)
+            row_i_hdr.label(text="Interaction Volumes & Clickspots", icon="SNAP_VOLUME")
+            row_i = box_int.row(align=True)
+            row_i.use_property_split = False
+            row_i.prop(int_props, "role", text="")
+            row_i.prop(int_props, "shape", text="")
+            row_i.operator("omnimesh.add_interaction_volume", text="Add Trigger", icon="ADD")
+
+        # 6. Animation Tagging
+        anim_props = getattr(props, "animation_tagging", None)
+        if anim_props:
+            box_anim = layout.box()
+            row_a_hdr = box_anim.row(align=True)
+            row_a_hdr.label(text="Animation Tagging", icon="ACTION")
+            row_a = box_anim.row(align=True)
+            row_a.use_property_split = False
+            row_a.prop(anim_props, "semantic_category", text="")
+            row_a.operator("omnimesh.tag_animation", text="Tag Action", icon="CHECKMARK")
+            row_a.operator("omnimesh.scan_animations", text="", icon="VIEWZOOM")
 
 
 # =========================================================================
@@ -506,6 +580,23 @@ class OMNIMESH_PT_export(Panel):
                 row_pkg = box_exp.row(align=True)
                 row_pkg.use_property_split = False
                 row_pkg.prop(props, "msfs_export_full_package", text="Export Full Aircraft Package")
+
+                box_msfs_opts = box_exp.box()
+                box_msfs_opts.use_property_split = True
+                box_msfs_opts.use_property_decorate = False
+                box_msfs_opts.label(text="MSFS SDK Options", icon="PREFERENCES")
+                box_msfs_opts.prop(props, "msfs_target_version", text="Target SDK")
+                box_msfs_opts.prop(props, "msfs_preserve_decals", text="Preserve Decals")
+
+                if getattr(props, "msfs_target_version", "2024") == "2024":
+                    box_opts_2024 = box_msfs_opts.box()
+                    box_opts_2024.label(text="[model.options] (MSFS 2024)", icon="FILE_TEXT")
+                    box_opts_2024.prop(props, "msfs_with_exterior_show_interior", text="Show Interior")
+                    box_opts_2024.prop(
+                        props, "msfs_with_exterior_show_interior_hide_first_lod", text="Hide First LOD Int"
+                    )
+                    box_opts_2024.prop(props, "msfs_with_interior_force_first_lod", text="Force First LOD Int")
+                    box_opts_2024.prop(props, "msfs_with_interior_show_exterior", text="Show Exterior")
 
             row2_exp = box_exp.row(align=True)
             row2_exp.use_property_split = False

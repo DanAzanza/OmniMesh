@@ -37,6 +37,7 @@ try:
     from core.rigging import KinematicBonePruner, WeightSanitizer
     from core.sanitizer import MeshSanitizer
     from core.slender import SlenderFeatureCuller
+    from core.material_analyzer import MSFSMaterialAnalyzer
 except (ImportError, ValueError):
     from .decimator import MeshDecimator
     from .hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
@@ -53,6 +54,7 @@ except (ImportError, ValueError):
     from .rigging import KinematicBonePruner, WeightSanitizer
     from .sanitizer import MeshSanitizer
     from .slender import SlenderFeatureCuller
+    from .material_analyzer import MSFSMaterialAnalyzer
 
 
 def _count_triangles(mesh_data: Any) -> int:
@@ -429,11 +431,20 @@ def generate_all_lods(
                             bm.free()
                         lod_obj.data.update()
 
+                        # MSFS Material-aware decimation adjustments
+                        is_decal = False
+                        if MSFSMaterialAnalyzer:
+                            is_decal = MSFSMaterialAnalyzer.is_decal_mesh(source_obj)
+
                         qem_ratio = (
                             tier.target_tris_pct / 100.0
                             if getattr(tier, "target_tris_pct", 0.0) > 0.0
                             else tolerances["qem_ratio"]
                         )
+                        # For floating decals: enforce conservative decimation to prevent Z-fighting against fuselage
+                        if is_decal and getattr(props, "msfs_preserve_decals", True):
+                            qem_ratio = max(qem_ratio, 0.75 if i <= 2 else 0.5)
+
                         MeshDecimator.execute_decimate_qem(
                             lod_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True
                         )

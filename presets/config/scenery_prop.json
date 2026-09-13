@@ -1,0 +1,21 @@
+{
+  "$schema": "omnimesh_config_preset",
+  "name": "Scenery - Airfield Prop / GSE",
+  "archetype": "scenery_prop",
+  "description": "Static ground service equipment (GSE), crate, cart, or airfield obstacle with ground datum",
+  "spatial": [
+    {
+      "id": "WEIGHT_AND_BALANCE:reference_datum_position",
+      "name": "Datum_Ground",
+      "point_type": "DATUM",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "reference_datum_position",
+      "anchor": "AABB_ORIGIN",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    }
+  ],
+  "lights": [],
+  "cameras": [],
+  "exits": [],
+  "engines": []
+}

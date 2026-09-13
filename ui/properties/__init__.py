@@ -16,7 +16,18 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Relative imports from submodules
-from . import callbacks, enums, guards, lod_properties, pbr_properties, settings
+from . import (
+    animation_properties,
+    callbacks,
+    config_properties,
+    enums,
+    guards,
+    interaction_properties,
+    lod_properties,
+    material_properties,
+    pbr_properties,
+    settings,
+)
 from .callbacks import (
     ENGINE_TO_FACTORY_PRESET,
     get_lod_preset_items,
@@ -74,17 +85,36 @@ from .pbr_properties import (
     sync_maps_from_preset,
     sync_maps_to_preset,
 )
+from .config_properties import OMNIMESH_ConfigPresetSettings
+from .material_properties import OMNIMESH_MaterialPresetSettings
+from .interaction_properties import OMNIMESH_InteractionSettings
+from .animation_properties import OMNIMESH_AnimationSettings
 from .settings import LODToolSettings
 
 # Dynamic reload sequence in strict dependency order
 if "_OMNIMESH_PROPERTIES_LOADED" in locals():
     import importlib
 
-    for mod in (enums, guards, lod_properties, pbr_properties, callbacks, settings):
+    for mod in (
+        enums,
+        guards,
+        lod_properties,
+        pbr_properties,
+        config_properties,
+        material_properties,
+        interaction_properties,
+        animation_properties,
+        callbacks,
+        settings,
+    ):
         importlib.reload(mod)
 _OMNIMESH_PROPERTIES_LOADED = True
 
 CLASSES = (
+    OMNIMESH_ConfigPresetSettings,
+    OMNIMESH_MaterialPresetSettings,
+    OMNIMESH_InteractionSettings,
+    OMNIMESH_AnimationSettings,
     LODLevelItem,
     LODPresetTierItem,
     PBRMapItem,

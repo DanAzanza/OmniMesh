@@ -202,3 +202,8 @@ MSFS_GEAR_STATE_ITEMS: list[tuple[str, str, str]] = [
     ("STATIC_COMPRESSED", "Static (Compressed)", "Landing gear in model is compressed under aircraft weight"),
     ("UNCOMPRESSED_EXTENDED", "Uncompressed (Extended)", "Landing gear in model is fully extended without load"),
 ]
+
+MSFS_TARGET_VERSION_ITEMS: list[tuple[str, str, str]] = [
+    ("2024", "MSFS 2024", "Microsoft Flight Simulator 2024 format with [model.options]"),
+    ("2020", "MSFS 2020", "Microsoft Flight Simulator 2020 legacy package format"),
+]

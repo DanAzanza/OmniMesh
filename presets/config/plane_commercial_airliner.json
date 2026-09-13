@@ -1,0 +1,268 @@
+{
+  "$schema": "omnimesh_config_preset",
+  "name": "Commercial Airliner (Twin-Jet)",
+  "archetype": "commercial_airliner",
+  "description": "Twin turbofan low-wing airliner with passenger jetway exits and wing inspection lights",
+  "spatial": [
+    {
+      "id": "WEIGHT_AND_BALANCE:reference_datum_position",
+      "name": "Datum",
+      "point_type": "DATUM",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "reference_datum_position",
+      "anchor": "AABB_ORIGIN",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "WEIGHT_AND_BALANCE:empty_weight_CG_position",
+      "name": "Empty_Weight_CG",
+      "point_type": "CG",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "empty_weight_CG_position",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "CONTACT_POINTS:point.0",
+      "name": "Point_0_Wheel_Nose",
+      "point_type": "CONTACT_POINT",
+      "point_class": 1,
+      "section": "CONTACT_POINTS",
+      "key": "point.0",
+      "anchor": "EXTREMA_NOSE",
+      "offset_normalized": [0.0, -0.3, -0.85],
+      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "65.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.1",
+      "name": "Point_1_Wheel_Left",
+      "point_type": "CONTACT_POINT",
+      "point_class": 1,
+      "section": "CONTACT_POINTS",
+      "key": "point.1",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.35, 0.0, -0.85],
+      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.2",
+      "name": "Point_2_Wheel_Right",
+      "point_type": "CONTACT_POINT",
+      "point_class": 1,
+      "section": "CONTACT_POINTS",
+      "key": "point.2",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.35, 0.0, -0.85],
+      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.scrape_wing_l",
+      "name": "Scrape_Wing_L",
+      "point_type": "CONTACT_POINT",
+      "point_class": 2,
+      "section": "CONTACT_POINTS",
+      "key": "point.3",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "CONTACT_POINTS:point.scrape_wing_r",
+      "name": "Scrape_Wing_R",
+      "point_type": "CONTACT_POINT",
+      "point_class": 2,
+      "section": "CONTACT_POINTS",
+      "key": "point.4",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "CONTACT_POINTS:point.scrape_tail",
+      "name": "Scrape_Tail",
+      "point_type": "CONTACT_POINT",
+      "point_class": 2,
+      "section": "CONTACT_POINTS",
+      "key": "point.5",
+      "anchor": "EXTREMA_TAIL",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "FUEL:LeftMain",
+      "name": "Fuel_LeftMain",
+      "point_type": "FUEL_TANK",
+      "section": "FUEL",
+      "key": "LeftMain",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.45, 0.0, 0.0],
+      "default_properties": ["500.0", "0.0"]
+    },
+    {
+      "id": "FUEL:RightMain",
+      "name": "Fuel_RightMain",
+      "point_type": "FUEL_TANK",
+      "section": "FUEL",
+      "key": "RightMain",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.45, 0.0, 0.0],
+      "default_properties": ["500.0", "0.0"]
+    }
+  ],
+  "lights": [
+    {
+      "id": "LIGHTS:lightdef.0",
+      "name": "Light_Nav_Red",
+      "section": "LIGHTS",
+      "key": "lightdef.0",
+      "type": 3,
+      "color": [1.0, 0.0, 0.0, 1.0],
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:lightdef.1",
+      "name": "Light_Nav_Green",
+      "section": "LIGHTS",
+      "key": "lightdef.1",
+      "type": 3,
+      "color": [0.0, 1.0, 0.0, 1.0],
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:lightdef.2",
+      "name": "Light_Nav_Tail",
+      "section": "LIGHTS",
+      "key": "lightdef.2",
+      "type": 3,
+      "color": [1.0, 1.0, 1.0, 1.0],
+      "anchor": "EXTREMA_TAIL",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:lightdef.3",
+      "name": "Light_Strobe_Left",
+      "section": "LIGHTS",
+      "key": "lightdef.3",
+      "type": 2,
+      "color": [1.0, 1.0, 1.0, 1.0],
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:lightdef.4",
+      "name": "Light_Strobe_Right",
+      "section": "LIGHTS",
+      "key": "lightdef.4",
+      "type": 2,
+      "color": [1.0, 1.0, 1.0, 1.0],
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:lightdef.5",
+      "name": "Light_Beacon_Top",
+      "section": "LIGHTS",
+      "key": "lightdef.5",
+      "type": 1,
+      "color": [1.0, 0.0, 0.0, 1.0],
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, 0.0, 0.5]
+    },
+    {
+      "id": "LIGHTS:lightdef.6",
+      "name": "Light_Beacon_Bottom",
+      "section": "LIGHTS",
+      "key": "lightdef.6",
+      "type": 1,
+      "color": [1.0, 0.0, 0.0, 1.0],
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, 0.0, -0.5]
+    },
+    {
+      "id": "LIGHTS:lightdef.7",
+      "name": "Light_Landing_L",
+      "section": "LIGHTS",
+      "key": "lightdef.7",
+      "type": 5,
+      "color": [1.0, 1.0, 0.9, 1.0],
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.2, 0.1, -0.2]
+    },
+    {
+      "id": "LIGHTS:lightdef.8",
+      "name": "Light_Landing_R",
+      "section": "LIGHTS",
+      "key": "lightdef.8",
+      "type": 5,
+      "color": [1.0, 1.0, 0.9, 1.0],
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.2, 0.1, -0.2]
+    }
+  ],
+  "cameras": [
+    {
+      "id": "CAMERAS:eyepoint",
+      "name": "Eyepoint",
+      "is_eyepoint": true,
+      "section": "VIEWS",
+      "key": "eyepoint",
+      "anchor": "COCKPIT_ESTIMATE",
+      "offset_normalized": [-0.45, 0.35, 0.45]
+    },
+    {
+      "id": "CAMERAS:Pilot",
+      "name": "Cam_Cockpit_Pilot",
+      "title": "Pilot",
+      "origin": "Virtual Cockpit",
+      "category": "Cockpit",
+      "subcategory": "Pilot",
+      "parent_to_eyepoint": true,
+      "offset_from_eyepoint_m": [0.0, 0.0, 0.0],
+      "pbh_deg": [0.0, 0.0, 0.0],
+      "zoom": 0.35
+    }
+  ],
+  "exits": [
+    {
+      "id": "EXITS:exit.0",
+      "name": "Exit_Main_Passenger",
+      "section": "EXITS",
+      "key": "exit.0",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [-0.5, 0.25, 0.1],
+      "exit_type": 0,
+      "open_rate": 0.3
+    },
+    {
+      "id": "EXITS:exit.1",
+      "name": "Exit_Cargo_Fwd",
+      "section": "EXITS",
+      "key": "exit.1",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.5, 0.2, -0.2],
+      "exit_type": 1,
+      "open_rate": 0.3
+    }
+  ],
+  "engines": [
+    {
+      "id": "GENERALENGINEDATA:engine.0",
+      "name": "Engine_1_Left",
+      "section": "GENERALENGINEDATA",
+      "key": "engine.0",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.3, 0.1, -0.3],
+      "engine_index": 1,
+      "engine_type": 1
+    },
+    {
+      "id": "GENERALENGINEDATA:engine.1",
+      "name": "Engine_2_Right",
+      "section": "GENERALENGINEDATA",
+      "key": "engine.1",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.3, 0.1, -0.3],
+      "engine_index": 2,
+      "engine_type": 1
+    }
+  ]
+}

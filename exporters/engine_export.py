@@ -34,6 +34,7 @@ class AssetExportPayload:
     has_impostor_tier: bool = False
     role: str = "MODEL_ROOT"  # "MODEL_ROOT", "INTERIOR", or "VARIANT"
     parent_asset_name: Optional[str] = None
+    attachment_nodes: list[Any] = field(default_factory=list)  # ATTACH_POINT_, fx_, eye_ empties for LOD0 glTF export
 
 
 class AssetMeshResolver:
@@ -71,6 +72,10 @@ class AssetMeshResolver:
                 return False
             if getattr(obj, "get", lambda *_: False)("_is_impostor", False):
                 return False
+            if getattr(obj, "get", lambda *_: False)("_is_trigger", False):
+                return False
+            if getattr(obj, "get", lambda *_: False)("_omnimesh_role", "") == "INTERACTION_VOLUME":
+                return False
             if name.startswith("UCX_") or "_Collider_" in name:
                 return False
             # Exclude objects residing in technical auxiliary collections
@@ -83,11 +88,12 @@ class AssetMeshResolver:
                     "CAMERAS",
                     "CONFIG",
                     "HELPERS",
+                    "INTERACTIONS",
                 ):
                     return False
                 if any(
                     c_name.endswith(sfx)
-                    for sfx in ("_Spatial", "_Lights", "_Cameras", "_Colliders", "_Config", "_Helpers")
+                    for sfx in ("_Spatial", "_Lights", "_Cameras", "_Colliders", "_Config", "_Helpers", "_Interactions")
                 ):
                     return False
             return True
@@ -98,10 +104,18 @@ class AssetMeshResolver:
             # LOD0: inspect child collection, then sibling, then direct objects
             lod0_col = None
             if hasattr(root_col, "children"):
-                lod0_col = root_col.children.get(f"{clean_name}_LOD0") or root_col.children.get(f"{clean_name}_Mesh")
+                lod0_col = (
+                    root_col.children.get(f"{clean_name}_LOD0")
+                    or root_col.children.get(f"{clean_name}_Mesh")
+                    or root_col.children.get("x0")
+                    or root_col.children.get(f"x0_{clean_name}")
+                )
             if not lod0_col:
-                lod0_col = bpy.data.collections.get(f"{clean_name}_LOD0") or bpy.data.collections.get(
-                    f"{clean_name}_Mesh"
+                lod0_col = (
+                    bpy.data.collections.get(f"{clean_name}_LOD0")
+                    or bpy.data.collections.get(f"{clean_name}_Mesh")
+                    or bpy.data.collections.get("x0")
+                    or bpy.data.collections.get(f"x0_{clean_name}")
                 )
 
             lod0_objs: list[Any] = []
@@ -117,13 +131,21 @@ class AssetMeshResolver:
             if lod0_objs:
                 lod_tiers[0] = lod0_objs
 
-            # LOD1..max_tiers
+            # LOD1..max_tiers (supporting both _LOD{i} and x{i} aliases)
             for i in range(1, max_tiers + 1):
                 tier_col = None
                 if hasattr(root_col, "children"):
-                    tier_col = root_col.children.get(f"{clean_name}_LOD{i}")
+                    tier_col = (
+                        root_col.children.get(f"{clean_name}_LOD{i}")
+                        or root_col.children.get(f"x{i}")
+                        or root_col.children.get(f"x{i}_{clean_name}")
+                    )
                 if not tier_col:
-                    tier_col = bpy.data.collections.get(f"{clean_name}_LOD{i}")
+                    tier_col = (
+                        bpy.data.collections.get(f"{clean_name}_LOD{i}")
+                        or bpy.data.collections.get(f"x{i}")
+                        or bpy.data.collections.get(f"x{i}_{clean_name}")
+                    )
                 if tier_col:
                     tier_objs: list[Any] = []
                     for obj in getattr(tier_col, "objects", []):
@@ -225,6 +247,28 @@ class AssetMeshResolver:
             else:
                 role = "MODEL_ROOT"
 
+        # Discover Attachment Nodes (ATTACH_POINT_, ATTACH_FX_, eye_, socket_)
+        # Vital for MSFS glTF LOD0 runtime attachments, cameras, and effect positioning
+        attachment_nodes: list[Any] = []
+        if has_bpy_collections and root_col:
+            helpers_col = None
+            if hasattr(root_col, "children"):
+                helpers_col = root_col.children.get(f"{clean_name}_Helpers")
+            if not helpers_col:
+                helpers_col = bpy.data.collections.get(f"{clean_name}_Helpers")
+            if helpers_col:
+                for obj in getattr(helpers_col, "objects", []):
+                    o_name = getattr(obj, "name", "").upper()
+                    if (
+                        o_name.startswith("ATTACH_")
+                        or o_name.startswith("FX_")
+                        or o_name.startswith("SOCKET_")
+                        or o_name.startswith("EYE_")
+                        or "ATTACH_POINT" in o_name
+                    ):
+                        if obj not in attachment_nodes:
+                            attachment_nodes.append(obj)
+
         return AssetExportPayload(
             asset_name=clean_name,
             lod_tiers=lod_tiers,
@@ -235,6 +279,7 @@ class AssetMeshResolver:
             has_impostor_tier=has_impostor_tier,
             role=role,
             parent_asset_name=parent_asset,
+            attachment_nodes=attachment_nodes,
         )
 
 

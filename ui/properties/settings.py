@@ -47,6 +47,7 @@ from .enums import (
     LOD_PRESET_BUDGET_MODE_ITEMS,
     MAX_BONE_INFLUENCES_ITEMS,
     MSFS_GEAR_STATE_ITEMS,
+    MSFS_TARGET_VERSION_ITEMS,
     PBR_EXPORT_BIT_DEPTH_ITEMS,
     PBR_EXPORT_TEXTURE_STRATEGY_ITEMS,
     PBR_IMPORT_AO_MODE_ITEMS,
@@ -57,6 +58,10 @@ from .enums import (
     TARGET_ENGINE_ITEMS,
     TEXTURE_MAX_RESOLUTION_ITEMS,
 )
+from .config_properties import OMNIMESH_ConfigPresetSettings
+from .material_properties import OMNIMESH_MaterialPresetSettings
+from .interaction_properties import OMNIMESH_InteractionSettings
+from .animation_properties import OMNIMESH_AnimationSettings
 from .lod_properties import (
     LODLevelItem,
     LODPresetTierItem,
@@ -719,6 +724,37 @@ class LODToolSettings(PropertyGroup):
     msfs_calculated_cg_height_ft: FloatProperty(name="Calculated Static CG Height (ft)", default=0.0, precision=3)
     msfs_cameras_cfg_path: StringProperty(name="MSFS Cameras File", subtype="FILE_PATH", default="")
     msfs_export_full_package: BoolProperty(name="Export Full Package", default=True)
+    msfs_target_version: EnumProperty(
+        name="MSFS Target Version",
+        items=MSFS_TARGET_VERSION_ITEMS,
+        default="2024",
+        description="Target Microsoft Flight Simulator SDK version",
+    )
+    msfs_with_exterior_show_interior: BoolProperty(
+        name="Show Interior with Exterior",
+        default=True,
+        description="Render cockpit/interior when viewing exterior model (MSFS 2024 [model.options])",
+    )
+    msfs_with_exterior_show_interior_hide_first_lod: BoolProperty(
+        name="Hide First LOD of Interior",
+        default=False,
+        description="Hide LOD0 of interior when viewing exterior model to optimize VRAM (MSFS 2024)",
+    )
+    msfs_with_interior_force_first_lod: BoolProperty(
+        name="Force First LOD Interior",
+        default=False,
+        description="Always render interior at LOD0 when inside cockpit (MSFS 2024)",
+    )
+    msfs_with_interior_show_exterior: BoolProperty(
+        name="Show Exterior with Interior",
+        default=True,
+        description="Render airframe/wings when viewing from inside cockpit (MSFS 2024)",
+    )
+    msfs_preserve_decals: BoolProperty(
+        name="Preserve Decals",
+        default=True,
+        description="Constrain decimation on decal meshes to eliminate Z-fighting",
+    )
 
     # Engine / Project Importer Properties
     engine_import_preset: EnumProperty(
@@ -746,6 +782,12 @@ class LODToolSettings(PropertyGroup):
     engine_import_deduplicate_materials: BoolProperty(name="Deduplicate Materials", default=True)
     engine_import_reuse_master_rig: BoolProperty(name="Reuse Master Armature", default=True)
     last_engine_import_summary: StringProperty(name="Last Import Summary", default="")
+
+    # Config Preset Subsystem (Panel 2 Modify)
+    config_presets: PointerProperty(type=OMNIMESH_ConfigPresetSettings)
+    material_preset: PointerProperty(type=OMNIMESH_MaterialPresetSettings)
+    interaction: PointerProperty(type=OMNIMESH_InteractionSettings)
+    animation_tagging: PointerProperty(type=OMNIMESH_AnimationSettings)
 
 
 __all__ = ["LODToolSettings"]

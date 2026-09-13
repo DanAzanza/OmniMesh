@@ -26,19 +26,24 @@ _OMNIMESH_INITIALIZED = True
 if __package__:
     from . import bridges
     from .core import (
+        animation_manager,
         animations,
         asset_scanner,
         batch,
         batch_worker,
         chunking,
         collision,
+        config_presets,
         decimator,
         engine_import_presets,
         gltf_assembly,
         hierarchy,
         impostor,
+        interaction_volumes,
         lod_generator,
         lod_presets,
+        material_analyzer,
+        material_presets,
         materials,
         metrics,
         modifiers,
@@ -49,6 +54,7 @@ if __package__:
         msfs_models,
         msfs_project_scanner,
         msfs_transforms,
+        msfs_xml_merger,
         normals,
         occlusion,
         pbr_importer,
@@ -75,19 +81,24 @@ if __package__:
         unity_export,
     )
     from .ui import (
+        animation_ops,
         batch_panel,
         chunk_ops,
         cleanup_ops,
+        config_preset_ops,
         engine_import_ops,
         export_ops,
         hud,
         hull_impostor_ops,
+        interaction_ops,
         lists,
         lod_ops,
         lod_preset_ops,
+        material_preset_ops,
         msfs_camera_ops,
         msfs_ground_ops,
         msfs_lighting_ops,
+        msfs_migration_ops,
         msfs_spatial_ops,
         operators,
         panel,
@@ -103,19 +114,24 @@ if __package__:
 else:
     import bridges
     from core import (
+        animation_manager,
         animations,
         asset_scanner,
         batch,
         batch_worker,
         chunking,
         collision,
+        config_presets,
         decimator,
         engine_import_presets,
         gltf_assembly,
         hierarchy,
         impostor,
+        interaction_volumes,
         lod_generator,
         lod_presets,
+        material_analyzer,
+        material_presets,
         materials,
         metrics,
         modifiers,
@@ -126,6 +142,7 @@ else:
         msfs_models,
         msfs_project_scanner,
         msfs_transforms,
+        msfs_xml_merger,
         normals,
         occlusion,
         pbr_importer,
@@ -152,19 +169,24 @@ else:
         unity_export,
     )
     from ui import (
+        animation_ops,
         batch_panel,
         chunk_ops,
         cleanup_ops,
+        config_preset_ops,
         engine_import_ops,
         export_ops,
         hud,
         hull_impostor_ops,
+        interaction_ops,
         lists,
         lod_ops,
         lod_preset_ops,
+        material_preset_ops,
         msfs_camera_ops,
         msfs_ground_ops,
         msfs_lighting_ops,
+        msfs_migration_ops,
         msfs_spatial_ops,
         operators,
         panel,
@@ -206,6 +228,7 @@ if _OMNIMESH_RELOAD:
         png_writer,
         texture_pool,
         materials,
+        material_analyzer,
         pbr_importer,
         pbr_presets,
         pivot,
@@ -215,10 +238,14 @@ if _OMNIMESH_RELOAD:
         rigging,
         textures,
         animations,
+        animation_manager,
         batch,
         batch_worker,
+        config_presets,
         engine_import_presets,
         gltf_assembly,
+        interaction_volumes,
+        material_presets,
         msfs,
         msfs_models,
         msfs_transforms,
@@ -226,6 +253,7 @@ if _OMNIMESH_RELOAD:
         msfs_cst_parser,
         msfs_geometry,
         msfs_project_scanner,
+        msfs_xml_merger,
         simulator,
     ):
         importlib.reload(mod)
@@ -253,6 +281,10 @@ if _OMNIMESH_RELOAD:
         popovers,
         cleanup_ops,
         chunk_ops,
+        config_preset_ops,
+        material_preset_ops,
+        interaction_ops,
+        animation_ops,
         hull_impostor_ops,
         lod_preset_ops,
         lod_ops,
@@ -271,6 +303,7 @@ if _OMNIMESH_RELOAD:
         msfs_ground_ops,
         msfs_lighting_ops,
         msfs_camera_ops,
+        msfs_migration_ops,
     ):
         importlib.reload(mod)
 
@@ -279,11 +312,16 @@ def register():
     properties.register_properties()
     lists.register_lists()
     operators.register_operators()
+    config_preset_ops.register()
+    material_preset_ops.register()
+    interaction_ops.register()
+    animation_ops.register()
     engine_import_ops.register()
     msfs_spatial_ops.register()
     msfs_ground_ops.register()
     msfs_lighting_ops.register()
     msfs_camera_ops.register()
+    msfs_migration_ops.register()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
     batch_panel.register_batch_ops()
@@ -300,11 +338,16 @@ def unregister():
         batch_panel.unregister_batch_ops,
         simulator_ops.unregister_simulator_ops,
         panel.unregister_panel,
+        msfs_migration_ops.unregister,
         msfs_camera_ops.unregister,
         msfs_lighting_ops.unregister,
         msfs_ground_ops.unregister,
         msfs_spatial_ops.unregister,
         engine_import_ops.unregister,
+        animation_ops.unregister,
+        interaction_ops.unregister,
+        material_preset_ops.unregister,
+        config_preset_ops.unregister,
         operators.unregister_operators,
         lists.unregister_lists,
         properties.unregister_properties,

@@ -34,7 +34,11 @@ try:
         duplicate_engine_import_preset,
         get_engine_import_preset,
     )
-    from ..core.gltf_assembly import GLTFAssemblyEngine, bind_manifest_to_omnimesh
+    from ..core.gltf_assembly import (
+        GLTFAssemblyEngine,
+        bind_manifest_to_omnimesh,
+        classify_imported_mesh_node,
+    )
     from ..core.msfs_cst_parser import MSFSCSTParser
     from ..core.msfs_project_scanner import MSFSProjectScanner
     from ..core.msfs_transforms import FEET_TO_METERS, msfs_pbh_to_blender_rotation, msfs_zoom_to_blender_focal_length
@@ -47,7 +51,11 @@ except (ImportError, ValueError):
         duplicate_engine_import_preset,
         get_engine_import_preset,
     )
-    from core.gltf_assembly import GLTFAssemblyEngine, bind_manifest_to_omnimesh
+    from core.gltf_assembly import (
+        GLTFAssemblyEngine,
+        bind_manifest_to_omnimesh,
+        classify_imported_mesh_node,
+    )
     from core.msfs_cst_parser import MSFSCSTParser
     from core.msfs_project_scanner import MSFSProjectScanner
     from core.msfs_transforms import FEET_TO_METERS, msfs_pbh_to_blender_rotation, msfs_zoom_to_blender_focal_length
@@ -181,12 +189,19 @@ class OMNIMESH_OT_import_engine_project(Operator):
                     if not tier_col:
                         continue
 
-                    new_objs = GLTFAssemblyEngine.import_gltf_into_collection(context, lod_info.gltf_path, tier_col)
+                    new_objs = GLTFAssemblyEngine.import_gltf_into_collection(
+                        context, lod_info.gltf_path, tier_col, asset_name=sub_asset, is_interior=(not is_exterior)
+                    )
                     all_imported_objects.extend(new_objs)
                     model_imported_objects.extend(new_objs)
 
-                    # Identify meshes
-                    meshes = [o for o in new_objs if o.type == "MESH"]
+                    # Identify meshes (strictly exclude colliders and interaction clickspots from visual tiers)
+                    meshes = [
+                        o
+                        for o in new_objs
+                        if o.type == "MESH"
+                        and classify_imported_mesh_node(o, is_interior=(not is_exterior)) == "RENDER_MESH"
+                    ]
                     if is_exterior or model_name == primary_model_name:
                         lod_mesh_map[lod_info.index] = meshes
 
@@ -257,6 +272,18 @@ class OMNIMESH_OT_import_engine_project(Operator):
                                 display_type = "PLAIN_AXES"
                                 display_size = 0.2
                                 empty_name = f"Scrape_{point.name_tag or point.key.split('.')[-1]}"
+                            elif point.point_class == 3:
+                                display_type = "SINGLE_ARROW"
+                                display_size = 0.3
+                                empty_name = f"Skid_{point.name_tag or point.key.split('.')[-1]}"
+                            elif point.point_class == 4:
+                                display_type = "CUBE"
+                                display_size = 0.35
+                                empty_name = f"Float_{point.name_tag or point.key.split('.')[-1]}"
+                            elif point.point_class == 5:
+                                display_type = "CONE"
+                                display_size = 0.3
+                                empty_name = f"WaterRudder_{point.name_tag or point.key.split('.')[-1]}"
                             else:
                                 display_type = "PLAIN_AXES"
                                 empty_name = f"Point_{point.key.split('.')[-1]}_{point.name_tag or point.point_type}"
@@ -300,6 +327,97 @@ class OMNIMESH_OT_import_engine_project(Operator):
                         e["msfs_type"] = point.point_type
                         e["msfs_name_tag"] = point.name_tag
                         e["msfs_class"] = point.point_class
+                        spatial_count += 1
+
+                    # Ingest Exits
+                    for exit_pt in getattr(cfg, "exits", []):
+                        clean_key = exit_pt.key.replace("exit.", "")
+                        empty_name = f"Exit_{clean_key}"
+                        existing = next((o for o in spatial_col.objects if o.get("msfs_id") == exit_pt.point_id), None)
+                        if existing:
+                            e = existing
+                            e.name = empty_name
+                        else:
+                            e = bpy.data.objects.new(empty_name, None)
+                            spatial_col.objects.link(e)
+
+                        if datum_empty and e != datum_empty and e.parent != datum_empty:
+                            e.parent = datum_empty
+
+                        rel_ft = exit_pt.coords_msfs_rel_ft
+                        e.location = (
+                            rel_ft[1] * FEET_TO_METERS,
+                            rel_ft[0] * FEET_TO_METERS,
+                            rel_ft[2] * FEET_TO_METERS,
+                        )
+                        e.empty_display_type = "CUBE"
+                        e.empty_display_size = 0.35
+                        e["msfs_id"] = exit_pt.point_id
+                        e["msfs_key"] = exit_pt.key
+                        e["msfs_type"] = "EXIT"
+                        e["msfs_exit_type"] = exit_pt.exit_type
+                        e["msfs_open_rate"] = exit_pt.open_rate
+                        spatial_count += 1
+
+                    # Ingest Engines
+                    for eng in getattr(cfg, "engines", []):
+                        empty_name = f"Engine_{eng.engine_index}"
+                        existing = next((o for o in spatial_col.objects if o.get("msfs_id") == eng.point_id), None)
+                        if existing:
+                            e = existing
+                            e.name = empty_name
+                        else:
+                            e = bpy.data.objects.new(empty_name, None)
+                            spatial_col.objects.link(e)
+
+                        if datum_empty and e != datum_empty and e.parent != datum_empty:
+                            e.parent = datum_empty
+
+                        rel_ft = eng.coords_msfs_rel_ft
+                        e.location = (
+                            rel_ft[1] * FEET_TO_METERS,
+                            rel_ft[0] * FEET_TO_METERS,
+                            rel_ft[2] * FEET_TO_METERS,
+                        )
+                        e.empty_display_type = "CONE"
+                        e.empty_display_size = 0.45
+                        e["msfs_id"] = eng.point_id
+                        e["msfs_key"] = eng.key
+                        e["msfs_type"] = "ENGINE"
+                        e["msfs_engine_index"] = eng.engine_index
+                        e["msfs_engine_type"] = eng.engine_type
+                        spatial_count += 1
+
+                    # Ingest Station Loads (Payload)
+                    for st in getattr(cfg, "station_loads", []):
+                        tag = st.station_name or st.key.replace("station_load.", "")
+                        clean_tag = re.sub(r"[^\w]", "_", tag).strip("_")
+                        empty_name = f"Station_{clean_tag}"
+                        existing = next((o for o in spatial_col.objects if o.get("msfs_id") == st.point_id), None)
+                        if existing:
+                            e = existing
+                            e.name = empty_name
+                        else:
+                            e = bpy.data.objects.new(empty_name, None)
+                            spatial_col.objects.link(e)
+
+                        if datum_empty and e != datum_empty and e.parent != datum_empty:
+                            e.parent = datum_empty
+
+                        rel_ft = st.coords_msfs_rel_ft
+                        e.location = (
+                            rel_ft[1] * FEET_TO_METERS,
+                            rel_ft[0] * FEET_TO_METERS,
+                            rel_ft[2] * FEET_TO_METERS,
+                        )
+                        e.empty_display_type = "SPHERE"
+                        e.empty_display_size = 0.25
+                        e["msfs_id"] = st.point_id
+                        e["msfs_key"] = st.key
+                        e["msfs_type"] = "PAYLOAD_STATION"
+                        e["msfs_station_name"] = st.station_name
+                        e["msfs_station_type"] = st.station_type
+                        e["msfs_weight_lbs"] = st.weight_lbs
                         spatial_count += 1
 
                     if props:

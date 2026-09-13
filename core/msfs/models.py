@@ -18,6 +18,7 @@ class CFGLineRecord:
     section: str = ""
     key: str = ""
     prefix_metadata: str = ""
+    prefix_tokens: list[str] = field(default_factory=list)
     coordinates: Optional[tuple[float, float, float]] = None  # (Longitudinal, Lateral, Vertical) in feet
     rotation: Optional[tuple[float, float, float]] = None  # (Pitch, Bank, Heading) in degrees
     suffix_tokens: list[str] = field(default_factory=list)
@@ -60,6 +61,40 @@ class LightPoint(SpatialPoint):
 
 
 @dataclass
+class ExitPoint(SpatialPoint):
+    """Represents an aircraft passenger, cargo, or service exit."""
+
+    exit_type: int = 0  # 0=Main, 1=Cargo, 2=Emergency, etc.
+    open_rate: float = 1.0
+    raw_properties: list[str] = field(default_factory=list)
+
+
+@dataclass
+class EnginePoint(SpatialPoint):
+    """Represents an engine or propeller thrust vector center."""
+
+    engine_index: int = 1
+    engine_type: int = 0  # 0=Piston, 1=Jet, 2=None, 3=Helo-Turbine, 5=Turboprop
+    thrust_angles_deg: tuple[float, float] = (0.0, 0.0)  # (Pitch, Heading)
+
+
+@dataclass
+class AerodynamicPoint(SpatialPoint):
+    """Represents an aerodynamic reference center (e.g. wing apex, MAC, center of lift)."""
+
+    mac_length_ft: float = 0.0
+
+
+@dataclass
+class PayloadStationPoint(SpatialPoint):
+    """Represents an aircraft payload station (pilot, copilot, passengers, baggage, cargo)."""
+
+    weight_lbs: float = 170.0
+    station_name: str = ""
+    station_type: int = 0  # 0=None, 1=Pilot, 2=Copilot, 3=Passenger, 4=Baggage, etc.
+
+
+@dataclass
 class AircraftSpatialConfig:
     """Container holding parsed spatial points and metadata for round-trip synchronization."""
 
@@ -71,7 +106,15 @@ class AircraftSpatialConfig:
     empty_weight_cg_ft: tuple[float, float, float] = (0.0, 0.0, 0.0)  # (Long, Lat, Vert) in feet
     points: list[SpatialPoint] = field(default_factory=list)
     lights: list[LightPoint] = field(default_factory=list)
+    exits: list[ExitPoint] = field(default_factory=list)
+    engines: list[EnginePoint] = field(default_factory=list)
+    station_loads: list[PayloadStationPoint] = field(default_factory=list)
     lines: list[CFGLineRecord] = field(default_factory=list)
+
+    @property
+    def all_spatial_points(self) -> list[SpatialPoint]:
+        """Returns unified list of all spatial entities anchored to the aircraft."""
+        return list(self.points) + list(self.exits) + list(self.engines) + list(self.station_loads)
 
     def get_point_by_id(self, point_id: str) -> Optional[SpatialPoint]:
         """Look up a spatial point or light by its unique identifier."""
@@ -81,6 +124,15 @@ class AircraftSpatialConfig:
         for lt in self.lights:
             if lt.point_id == point_id:
                 return lt
+        for ex in self.exits:
+            if ex.point_id == point_id:
+                return ex
+        for eng in self.engines:
+            if eng.point_id == point_id:
+                return eng
+        for st in self.station_loads:
+            if st.point_id == point_id:
+                return st
         return None
 
 

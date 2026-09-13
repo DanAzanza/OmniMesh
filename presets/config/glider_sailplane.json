@@ -1,0 +1,165 @@
+{
+  "$schema": "omnimesh_config_preset",
+  "name": "Glider / Sailplane",
+  "archetype": "glider",
+  "description": "High-performance unpowered sailplane with center landing gear, wingtip wheels, water ballast tanks, and tow release",
+  "spatial": [
+    {
+      "id": "WEIGHT_AND_BALANCE:reference_datum_position",
+      "name": "Datum",
+      "point_type": "DATUM",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "reference_datum_position",
+      "anchor": "AABB_ORIGIN",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "WEIGHT_AND_BALANCE:empty_weight_CG_position",
+      "name": "Empty_Weight_CG",
+      "point_type": "CG",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "empty_weight_CG_position",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "CONTACT_POINTS:point.0",
+      "name": "Center_Main_Wheel",
+      "point_type": "CONTACT_POINT",
+      "point_class": 1,
+      "section": "CONTACT_POINTS",
+      "key": "point.0",
+      "anchor": "EXTREMA_BELLY",
+      "offset_normalized": [0.0, 0.05, -0.15],
+      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.1",
+      "name": "Tail_Wheel",
+      "point_type": "CONTACT_POINT",
+      "point_class": 1,
+      "section": "CONTACT_POINTS",
+      "key": "point.1",
+      "anchor": "EXTREMA_TAIL",
+      "offset_normalized": [0.0, 0.0, -0.1],
+      "default_properties": ["1", "0.05", "0.5", "1.0", "0.0", "0.0", "0.0", "0.0", "0.3", "1.5", "0.5"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.2",
+      "name": "Wingtip_Skid_Left",
+      "point_type": "CONTACT_POINT",
+      "point_class": 2,
+      "section": "CONTACT_POINTS",
+      "key": "point.2",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.0, 0.0, -0.05],
+      "default_properties": ["2", "0.05", "0.5", "1.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.3",
+      "name": "Wingtip_Skid_Right",
+      "point_type": "CONTACT_POINT",
+      "point_class": 2,
+      "section": "CONTACT_POINTS",
+      "key": "point.3",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [0.0, 0.0, -0.05],
+      "default_properties": ["2", "0.05", "0.5", "1.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"]
+    },
+    {
+      "id": "FUEL:WaterBallast_L",
+      "name": "Ballast_LeftWing",
+      "point_type": "FUEL_TANK",
+      "section": "FUEL",
+      "key": "LeftWingBallast",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.3, 0.0, 0.0],
+      "default_properties": ["20.0", "0.0"]
+    },
+    {
+      "id": "FUEL:WaterBallast_R",
+      "name": "Ballast_RightWing",
+      "point_type": "FUEL_TANK",
+      "section": "FUEL",
+      "key": "RightWingBallast",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.3, 0.0, 0.0],
+      "default_properties": ["20.0", "0.0"]
+    }
+  ],
+  "engines": [],
+  "exits": [
+    {
+      "id": "EXITS:exit.0",
+      "name": "Canopy_Glider",
+      "point_type": "EXIT",
+      "section": "EXITS",
+      "key": "exit.0",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [0.0, 0.1, 0.15],
+      "open_rate": 0.8,
+      "exit_type": 0
+    }
+  ],
+  "station_loads": [
+    {
+      "id": "WEIGHT_AND_BALANCE:station_load.0",
+      "name": "Station_Pilot",
+      "point_type": "PAYLOAD_STATION",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "station_load.0",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [0.0, 0.0, 0.0],
+      "weight_lbs": 170.0,
+      "station_name": "Pilot",
+      "station_type": 1
+    }
+  ],
+  "interactions": [
+    {
+      "name": "Airbrake_Spoiler_Lever",
+      "role": "LEVER",
+      "shape": "CYLINDER",
+      "size": [0.03, 0.25, 0.03]
+    },
+    {
+      "name": "Tow_Release_Knob",
+      "role": "BUTTON",
+      "shape": "SPHERE",
+      "size": [0.05, 0.05, 0.05]
+    }
+  ],
+  "lights": [
+    {
+      "id": "LIGHTS:light.0",
+      "name": "Light_AntiCollision_Nose",
+      "light_type": 2,
+      "color": [1.0, 0.0, 0.0],
+      "anchor": "EXTREMA_NOSE",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    }
+  ],
+  "cameras": [
+    {
+      "index": 0,
+      "title": "Pilot",
+      "category": "Cockpit",
+      "subcategory": "Pilot",
+      "origin": "Virtual Cockpit",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_m": [0.0, 0.0, 0.1],
+      "initial_zoom": 0.7
+    },
+    {
+      "index": 1,
+      "title": "Wingtip_GoPro_View",
+      "category": "FixedOnPlane",
+      "subcategory": "FixedOnPlaneExtern",
+      "origin": "Center",
+      "anchor": "EXTREMA_WING_L",
+      "offset_m": [0.2, 0.0, 0.1],
+      "initial_zoom": 0.6,
+      "initial_pbh": [0.0, 0.0, 90.0]
+    }
+  ]
+}

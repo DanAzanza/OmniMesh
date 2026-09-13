@@ -561,12 +561,14 @@ def get_or_create_engine_import_collection(
         sub_name = f"{clean_asset}_Lights"
     elif role_upper == "CAMERAS":
         sub_name = f"{clean_asset}_Cameras"
+    elif role_upper in ("INTERACTIONS", "TRIGGERS"):
+        sub_name = f"{clean_asset}_Interactions"
     else:
         sub_name = f"{clean_asset}_{role}"
 
-    # Configuration collections (Spatial, Lights, Cameras) reside under {clean_asset}_Config
+    # Configuration collections (Spatial, Lights, Cameras, Interactions) reside under {clean_asset}_Config
     parent_col = root_col
-    if role_upper in ("SPATIAL", "LIGHTS", "CAMERAS"):
+    if role_upper in ("SPATIAL", "LIGHTS", "CAMERAS", "INTERACTIONS", "TRIGGERS"):
         config_name = f"{clean_asset}_Config"
         config_col = _bpy.data.collections.get(config_name)
         if not config_col:

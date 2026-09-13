@@ -683,7 +683,55 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
         box_opt.prop(props, "engine_import_reuse_master_rig", text="Reuse Master Armature Rig")
 
 
+class OMNIMESH_PT_popover_config_preset(Panel):
+    """Popover for config preset component filters and options."""
+
+    bl_label = "Config Preset Settings"
+    bl_idname = "OMNIMESH_PT_popover_config_preset"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "HEADER"
+    bl_ui_units_x = 16
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = _get_popover_props(context)
+        cfg_props = getattr(props, "config_presets", None) if props else None
+        if not cfg_props:
+            return
+
+        try:
+            from ..core.config_presets import (
+                DEFAULT_CONFIG_PRESET_ID,
+                ConfigPresetManager,
+            )
+        except (ImportError, ValueError):
+            from core.config_presets import (
+                DEFAULT_CONFIG_PRESET_ID,
+                ConfigPresetManager,
+            )
+
+        preset_id = getattr(cfg_props, "config_preset", "") or DEFAULT_CONFIG_PRESET_ID
+        preset = ConfigPresetManager.get_preset(preset_id)
+
+        layout.label(text=preset.get("name", preset_id), icon="PRESET")
+        desc = preset.get("description", "")
+        if desc:
+            layout.label(text=desc)
+
+        layout.separator()
+        layout.label(text="Categories to Include", icon="CHECKBOX_HLT")
+        box_comp = layout.box()
+        box_comp.prop(cfg_props, "include_spatial", text="Spatial & Wheels")
+        box_comp.prop(cfg_props, "include_lights", text="Aviation Lights")
+        box_comp.prop(cfg_props, "include_cameras", text="Cockpit & Cameras")
+        box_comp.prop(cfg_props, "include_exits", text="Exits & Doors")
+        box_comp.prop(cfg_props, "include_engines", text="Engines & Props")
+
+
 POPOVER_CLASSES = (
+    OMNIMESH_PT_popover_config_preset,
     OMNIMESH_PT_popover_engine_import_preset,
     OMNIMESH_PT_popover_import_preset,
     OMNIMESH_PT_popover_sanitize,

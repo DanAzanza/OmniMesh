@@ -1,0 +1,238 @@
+{
+  "$schema": "omnimesh_config_preset",
+  "name": "Helicopter (Turbine / Piston)",
+  "archetype": "helicopter",
+  "description": "Standard rotary-wing helicopter with landing skids, main/tail rotor hubs, turbine engine, and collective/cyclic clickspots",
+  "spatial": [
+    {
+      "id": "WEIGHT_AND_BALANCE:reference_datum_position",
+      "name": "Datum",
+      "point_type": "DATUM",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "reference_datum_position",
+      "anchor": "AABB_ORIGIN",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "WEIGHT_AND_BALANCE:empty_weight_CG_position",
+      "name": "Empty_Weight_CG",
+      "point_type": "CG",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "empty_weight_CG_position",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "CONTACT_POINTS:point.0",
+      "name": "Skid_Front_Left",
+      "point_type": "CONTACT_POINT",
+      "point_class": 3,
+      "section": "CONTACT_POINTS",
+      "key": "point.0",
+      "anchor": "EXTREMA_BELLY",
+      "offset_normalized": [0.25, 0.35, -0.2],
+      "default_properties": ["3", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.1",
+      "name": "Skid_Rear_Left",
+      "point_type": "CONTACT_POINT",
+      "point_class": 3,
+      "section": "CONTACT_POINTS",
+      "key": "point.1",
+      "anchor": "EXTREMA_BELLY",
+      "offset_normalized": [0.25, -0.35, -0.2],
+      "default_properties": ["3", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.2",
+      "name": "Skid_Front_Right",
+      "point_type": "CONTACT_POINT",
+      "point_class": 3,
+      "section": "CONTACT_POINTS",
+      "key": "point.2",
+      "anchor": "EXTREMA_BELLY",
+      "offset_normalized": [-0.25, 0.35, -0.2],
+      "default_properties": ["3", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.3",
+      "name": "Skid_Rear_Right",
+      "point_type": "CONTACT_POINT",
+      "point_class": 3,
+      "section": "CONTACT_POINTS",
+      "key": "point.3",
+      "anchor": "EXTREMA_BELLY",
+      "offset_normalized": [-0.25, -0.35, -0.2],
+      "default_properties": ["3", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.4",
+      "name": "Scrape_Tail_Skid",
+      "point_type": "CONTACT_POINT",
+      "point_class": 2,
+      "section": "CONTACT_POINTS",
+      "key": "point.4",
+      "anchor": "EXTREMA_TAIL",
+      "offset_normalized": [0.0, -0.1, -0.2],
+      "default_properties": ["2", "0.05", "0.5", "1.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"]
+    },
+    {
+      "id": "FUEL:CenterMain",
+      "name": "Fuel_CenterMain",
+      "point_type": "FUEL_TANK",
+      "section": "FUEL",
+      "key": "CenterMain",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, -0.1, -0.2],
+      "default_properties": ["50.0", "0.0"]
+    }
+  ],
+  "engines": [
+    {
+      "id": "GENERALENGINEDATA:Engine.0",
+      "name": "Turbine_Engine_Main",
+      "point_type": "ENGINE",
+      "section": "GENERALENGINEDATA",
+      "key": "engine.0",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, -0.1, 0.3],
+      "engine_index": 1,
+      "engine_type": 3
+    }
+  ],
+  "exits": [
+    {
+      "id": "EXITS:exit.0",
+      "name": "Door_Pilot_Right",
+      "point_type": "EXIT",
+      "section": "EXITS",
+      "key": "exit.0",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [-0.3, 0.0, 0.0],
+      "open_rate": 0.6,
+      "exit_type": 0
+    },
+    {
+      "id": "EXITS:exit.1",
+      "name": "Door_Copilot_Left",
+      "point_type": "EXIT",
+      "section": "EXITS",
+      "key": "exit.1",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [0.3, 0.0, 0.0],
+      "open_rate": 0.6,
+      "exit_type": 0
+    }
+  ],
+  "station_loads": [
+    {
+      "id": "WEIGHT_AND_BALANCE:station_load.0",
+      "name": "Station_Pilot_Right",
+      "point_type": "PAYLOAD_STATION",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "station_load.0",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [-0.15, 0.0, 0.0],
+      "weight_lbs": 170.0,
+      "station_name": "Pilot",
+      "station_type": 1
+    },
+    {
+      "id": "WEIGHT_AND_BALANCE:station_load.1",
+      "name": "Station_Copilot_Left",
+      "point_type": "PAYLOAD_STATION",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "station_load.1",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [0.15, 0.0, 0.0],
+      "weight_lbs": 170.0,
+      "station_name": "Copilot",
+      "station_type": 2
+    },
+    {
+      "id": "WEIGHT_AND_BALANCE:station_load.2",
+      "name": "Station_Cabin_Cargo",
+      "point_type": "PAYLOAD_STATION",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "station_load.2",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, -0.2, -0.1],
+      "weight_lbs": 150.0,
+      "station_name": "Cabin Cargo",
+      "station_type": 4
+    }
+  ],
+  "interactions": [
+    {
+      "name": "Collective_Lever",
+      "role": "LEVER",
+      "shape": "CYLINDER",
+      "size": [0.04, 0.3, 0.04]
+    },
+    {
+      "name": "Cyclic_Stick",
+      "role": "LEVER",
+      "shape": "CYLINDER",
+      "size": [0.04, 0.4, 0.04]
+    }
+  ],
+  "lights": [
+    {
+      "id": "LIGHTS:light.0",
+      "name": "Light_Nav_Red",
+      "light_type": 3,
+      "color": [1.0, 0.0, 0.0],
+      "anchor": "EXTREMA_BELLY",
+      "offset_normalized": [0.3, 0.2, 0.0]
+    },
+    {
+      "id": "LIGHTS:light.1",
+      "name": "Light_Nav_Green",
+      "light_type": 3,
+      "color": [0.0, 1.0, 0.0],
+      "anchor": "EXTREMA_BELLY",
+      "offset_normalized": [-0.3, 0.2, 0.0]
+    },
+    {
+      "id": "LIGHTS:light.2",
+      "name": "Light_Strobe_Tail",
+      "light_type": 2,
+      "color": [1.0, 1.0, 1.0],
+      "anchor": "EXTREMA_FIN",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:light.3",
+      "name": "Light_Searchlight",
+      "light_type": 5,
+      "color": [1.0, 0.95, 0.8],
+      "anchor": "EXTREMA_NOSE",
+      "offset_normalized": [0.0, 0.0, -0.3],
+      "direction_pbh": [15.0, 0.0, 0.0]
+    }
+  ],
+  "cameras": [
+    {
+      "index": 0,
+      "title": "Pilot",
+      "category": "Cockpit",
+      "subcategory": "Pilot",
+      "origin": "Virtual Cockpit",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_m": [-0.25, 0.1, 0.15],
+      "initial_zoom": 0.65
+    },
+    {
+      "index": 1,
+      "title": "Tail_Rotor_View",
+      "category": "FixedOnPlane",
+      "subcategory": "FixedOnPlaneExtern",
+      "origin": "Center",
+      "anchor": "EXTREMA_TAIL",
+      "offset_m": [1.2, 0.0, 0.5],
+      "initial_zoom": 0.85,
+      "initial_pbh": [10.0, 0.0, -90.0]
+    }
+  ]
+}

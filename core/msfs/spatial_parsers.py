@@ -11,9 +11,13 @@ import re
 from typing import Optional
 
 from .models import (
+    AerodynamicPoint,
     AircraftSpatialConfig,
     CFGLineRecord,
+    EnginePoint,
+    ExitPoint,
     LightPoint,
+    PayloadStationPoint,
     SpatialPoint,
 )
 
@@ -31,7 +35,7 @@ class MSFSSpatialParsers:
         config: AircraftSpatialConfig,
         line_idx: int,
     ) -> None:
-        """Parses Reference Datum Position or Empty Weight CG coordinates."""
+        """Parses Reference Datum, Empty Weight CG, and station_load.N entries."""
         key_upper = key.upper()
         if key_upper in ("REFERENCE_DATUM_POSITION", "EMPTY_WEIGHT_CG_POSITION"):
             tokens = [t.strip() for t in val_part.split(",") if t.strip()]
@@ -46,6 +50,40 @@ class MSFSSpatialParsers:
                         config.empty_weight_cg_ft = coords
                 except ValueError as e:
                     logger.warning("Failed parsing coords for %s: %s", key, e)
+        elif key.lower().startswith("station_load."):
+            # Quote-aware CSV split for names with commas/spaces
+            tokens = [t.strip() for t in re.split(r",\s*(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", val_part) if t.strip()]
+            if len(tokens) >= 4:
+                try:
+                    weight_lbs = float(tokens[0])
+                    long_ft = float(tokens[1])
+                    lat_ft = float(tokens[2])
+                    vert_ft = float(tokens[3])
+                    raw_name = tokens[4] if len(tokens) >= 5 else f"Station_{key[13:]}"
+                    station_name = raw_name.strip('"').strip("'")
+                    station_type = int(float(tokens[5])) if len(tokens) >= 6 else 0
+
+                    record.coordinates = (long_ft, lat_ft, vert_ft)
+                    record.prefix_tokens = [tokens[0]]
+                    record.suffix_tokens = tokens[4:]
+                    record.is_spatial = True
+
+                    st_pt = PayloadStationPoint(
+                        point_id=f"WEIGHT_AND_BALANCE:{key}",
+                        section="WEIGHT_AND_BALANCE",
+                        key=key,
+                        point_type="PAYLOAD_STATION",
+                        name_tag=station_name or key,
+                        coords_msfs_rel_ft=(long_ft, lat_ft, vert_ft),
+                        weight_lbs=weight_lbs,
+                        station_name=station_name,
+                        station_type=station_type,
+                        raw_properties=tokens[4:],
+                        line_index=line_idx,
+                    )
+                    config.station_loads.append(st_pt)
+                except (ValueError, IndexError) as exc:
+                    logger.warning("Failed parsing station_load %s: %s", key, exc)
 
     @staticmethod
     def parse_contact_point_line(
@@ -256,3 +294,116 @@ class MSFSSpatialParsers:
                     config.lights.append(light)
                 except (ValueError, IndexError):
                     pass
+
+    @staticmethod
+    def parse_exits_line(
+        key: str,
+        val_part: str,
+        record: CFGLineRecord,
+        config: AircraftSpatialConfig,
+        line_idx: int,
+    ) -> None:
+        """Parses exit definitions (exit.N = open_rate, long, lat, vert, type)."""
+        key_lower = key.lower()
+        if not key_lower.startswith("exit."):
+            return
+
+        tokens = [t.strip() for t in val_part.split(",") if t.strip()]
+        if len(tokens) >= 4:
+            try:
+                open_rate = float(tokens[0])
+                long_ft = float(tokens[1])
+                lat_ft = float(tokens[2])
+                vert_ft = float(tokens[3])
+                exit_type = int(float(tokens[4])) if len(tokens) >= 5 else 0
+                suffix = tokens[5:]
+
+                record.coordinates = (long_ft, lat_ft, vert_ft)
+                record.prefix_tokens = [tokens[0]]
+                record.suffix_tokens = tokens[4:]
+                record.is_spatial = True
+
+                exit_pt = ExitPoint(
+                    point_id=f"EXITS:{key}",
+                    section="EXITS",
+                    key=key,
+                    point_type="EXIT",
+                    name_tag=f"Exit_{key[5:]}",
+                    coords_msfs_rel_ft=(long_ft, lat_ft, vert_ft),
+                    exit_type=exit_type,
+                    open_rate=open_rate,
+                    raw_properties=suffix,
+                    line_index=line_idx,
+                )
+                config.exits.append(exit_pt)
+            except (ValueError, IndexError) as exc:
+                logger.warning("Failed parsing exit %s: %s", key, exc)
+
+    @staticmethod
+    def parse_engine_line(
+        key: str,
+        val_part: str,
+        record: CFGLineRecord,
+        config: AircraftSpatialConfig,
+        line_idx: int,
+    ) -> None:
+        """Parses engine positions (Engine.N = long, lat, vert)."""
+        key_lower = key.lower()
+        if not key_lower.startswith("engine."):
+            return
+
+        tokens = [t.strip() for t in val_part.split(",") if t.strip()]
+        if len(tokens) >= 3:
+            try:
+                long_ft = float(tokens[0])
+                lat_ft = float(tokens[1])
+                vert_ft = float(tokens[2])
+                eng_idx = int(float(key_lower.replace("engine.", "")))
+
+                record.coordinates = (long_ft, lat_ft, vert_ft)
+                record.is_spatial = True
+
+                eng_pt = EnginePoint(
+                    point_id=f"GENERALENGINEDATA:{key}",
+                    section="GENERALENGINEDATA",
+                    key=key,
+                    point_type="ENGINE",
+                    name_tag=f"Engine_{eng_idx}",
+                    engine_index=eng_idx,
+                    coords_msfs_rel_ft=(long_ft, lat_ft, vert_ft),
+                    line_index=line_idx,
+                )
+                config.engines.append(eng_pt)
+            except (ValueError, IndexError) as exc:
+                logger.warning("Failed parsing engine %s: %s", key, exc)
+
+    @staticmethod
+    def parse_aerodynamics_line(
+        key: str,
+        val_part: str,
+        record: CFGLineRecord,
+        config: AircraftSpatialConfig,
+        line_idx: int,
+    ) -> None:
+        """Parses wing apex or aerodynamic center coordinates."""
+        key_upper = key.upper()
+        if key_upper in ("WING_APEX_POS", "AERO_CENTER_LIFT"):
+            tokens = [t.strip() for t in val_part.split(",") if t.strip()]
+            if len(tokens) >= 3:
+                try:
+                    coords = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
+                    record.coordinates = coords
+                    record.is_spatial = True
+
+                    aero_pt = AerodynamicPoint(
+                        point_id=f"AERODYNAMICS:{key}",
+                        section="AERODYNAMICS",
+                        key=key,
+                        point_type="AERO",
+                        name_tag=key,
+                        coords_msfs_rel_ft=coords,
+                        line_index=line_idx,
+                    )
+                    config.points.append(aero_pt)
+                except ValueError as exc:
+                    logger.warning("Failed parsing aerodynamics %s: %s", key, exc)

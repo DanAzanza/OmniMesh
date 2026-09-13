@@ -37,6 +37,70 @@ def find_layer_collection(layer_coll: Any, target_coll: Any) -> Optional[Any]:
     return None
 
 
+try:
+    from .hierarchy import get_or_create_engine_import_collection
+except (ImportError, ValueError):
+    try:
+        from core.hierarchy import get_or_create_engine_import_collection
+    except (ImportError, ValueError):
+        get_or_create_engine_import_collection = None
+
+
+def classify_imported_mesh_node(obj: Any, is_interior: bool = False) -> str:
+    """Classifies an imported mesh node into 'RENDER_MESH', 'PHYSICS_COLLIDER', or 'INTERACTION_VOLUME'.
+
+    Disambiguates airframe crash hulls from cockpit clickspots using name patterns, material shaders,
+    and bounding diagonal heuristics (H-01).
+    """
+    if not obj or getattr(obj, "type", "") != "MESH":
+        return "RENDER_MESH"
+
+    name_lower = obj.name.lower()
+
+    if obj.get("_is_trigger") or obj.get("_omnimesh_role") == "INTERACTION_VOLUME":
+        return "INTERACTION_VOLUME"
+    if obj.get("_is_collider") or obj.get("_omnimesh_role") == "COLLIDER":
+        return "PHYSICS_COLLIDER"
+
+    if (
+        name_lower.startswith("interact_")
+        or name_lower.endswith("-areacol")
+        or "_clickspot" in name_lower
+        or "_trigger" in name_lower
+    ):
+        return "INTERACTION_VOLUME"
+    if name_lower.startswith(("ucx_", "ubx_", "usp_")) or name_lower.endswith("-colonly"):
+        return "PHYSICS_COLLIDER"
+
+    is_collision_named = name_lower.startswith("collision_")
+    is_invisible_mat = False
+    if hasattr(obj, "data") and obj.data and hasattr(obj.data, "materials"):
+        mats = [m for m in obj.data.materials if m]
+        if mats and all(m.get("_omnimesh_invisible") or m.get("msfs_material_type") == 12 for m in mats):
+            is_invisible_mat = True
+
+    if not is_collision_named and not is_invisible_mat:
+        return "RENDER_MESH"
+
+    # Compute bounding diagonal to disambiguate clickspots from large airframe collision hulls
+    diag = 1.0
+    if hasattr(obj, "dimensions"):
+        dim = obj.dimensions
+        diag = (dim.x**2 + dim.y**2 + dim.z**2) ** 0.5
+
+    clickspot_pattern = re.compile(
+        r"^(collision_(button|knob|switch|lever|pedal|handle|door|hatch|cover|dial)|.*_clickspot|.*_trigger)",
+        re.IGNORECASE,
+    )
+    if clickspot_pattern.search(obj.name):
+        return "INTERACTION_VOLUME"
+
+    if is_interior:
+        return "INTERACTION_VOLUME" if diag <= 0.45 else "PHYSICS_COLLIDER"
+    else:
+        return "PHYSICS_COLLIDER"
+
+
 class GLTFAssemblyEngine:
     """Handles isolated importation of glTF LODs and post-import pipeline optimizations."""
 
@@ -46,10 +110,12 @@ class GLTFAssemblyEngine:
         context: Any,
         gltf_path: Path | str,
         target_collection: Any,
+        asset_name: str = "",
+        is_interior: bool = False,
     ) -> list[Any]:
         """Imports a glTF file into target_collection while strictly isolating created objects.
 
-        Unlinks imported objects from any unwanted default collections and redirects them.
+        Unlinks imported objects from unwanted default collections and redirects collision/trigger volumes.
         """
         if not bpy or not context:
             return []
@@ -86,14 +152,60 @@ class GLTFAssemblyEngine:
         # Identify newly created objects
         new_objects = [obj for obj in bpy.data.objects if obj not in existing_objects]
 
-        # Isolate new objects: ensure they are in target_collection and unlinked elsewhere
+        # Isolate new objects and route interaction / collision volumes
+        effective_asset = asset_name or getattr(target_collection, "name", "Asset").split("_")[0]
+        interact_col = None
+        coll_col = None
+
         for obj in new_objects:
-            if obj.name not in target_collection.objects:
-                target_collection.objects.link(obj)
+            # Check classification
+            mesh_role = classify_imported_mesh_node(obj, is_interior=is_interior)
+
+            if mesh_role == "INTERACTION_VOLUME" and get_or_create_engine_import_collection:
+                if hasattr(obj, "data") and getattr(obj.data, "users", 0) > 1:
+                    try:
+                        obj.data = obj.data.copy()
+                    except Exception as exc:
+                        logger.debug("Could not copy interaction mesh datablock: %s", exc)
+                interact_col = get_or_create_engine_import_collection(context, effective_asset, "INTERACTIONS")
+                if interact_col:
+                    interact_col.objects.link(obj)
+                obj.display_type = "WIRE"
+                obj.show_wire = True
+                obj["_omnimesh_role"] = "INTERACTION_VOLUME"
+                obj["_is_trigger"] = True
+            elif mesh_role == "PHYSICS_COLLIDER" and get_or_create_engine_import_collection:
+                if hasattr(obj, "data") and getattr(obj.data, "users", 0) > 1:
+                    try:
+                        obj.data = obj.data.copy()
+                    except Exception as exc:
+                        logger.debug("Could not copy collider mesh datablock: %s", exc)
+                coll_col = get_or_create_engine_import_collection(context, effective_asset, "COLLIDERS")
+                if coll_col:
+                    coll_col.objects.link(obj)
+                obj.display_type = "WIRE"
+                obj.show_wire = True
+                obj["_omnimesh_role"] = "COLLIDER"
+                obj["_is_collider"] = True
+            else:
+                if obj.name not in target_collection.objects:
+                    target_collection.objects.link(obj)
 
             # Unlink from other collections (e.g. scene collection or importer dummy collections)
             for coll in list(obj.users_collection):
-                if coll != target_collection:
+                if mesh_role == "INTERACTION_VOLUME":
+                    if coll != interact_col:
+                        try:
+                            coll.objects.unlink(obj)
+                        except Exception as exc:
+                            logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
+                elif mesh_role == "PHYSICS_COLLIDER":
+                    if coll != coll_col:
+                        try:
+                            coll.objects.unlink(obj)
+                        except Exception as exc:
+                            logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
+                elif coll != target_collection:
                     try:
                         coll.objects.unlink(obj)
                     except Exception as exc:

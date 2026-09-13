@@ -1,0 +1,267 @@
+{
+  "$schema": "omnimesh_config_preset",
+  "name": "Seaplane / Floatplane",
+  "archetype": "seaplane",
+  "description": "Twin float amphibious and pure floatplane aircraft with water contact points, bilge tanks, and marine lighting",
+  "spatial": [
+    {
+      "id": "WEIGHT_AND_BALANCE:reference_datum_position",
+      "name": "Datum",
+      "point_type": "DATUM",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "reference_datum_position",
+      "anchor": "AABB_ORIGIN",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "WEIGHT_AND_BALANCE:empty_weight_CG_position",
+      "name": "Empty_Weight_CG",
+      "point_type": "CG",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "empty_weight_CG_position",
+      "anchor": "AABB_CENTER",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "CONTACT_POINTS:point.0",
+      "name": "Float_Front_Left",
+      "point_type": "CONTACT_POINT",
+      "point_class": 4,
+      "section": "CONTACT_POINTS",
+      "key": "point.0",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.2, 0.35, -0.95],
+      "default_properties": ["4", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.1",
+      "name": "Float_Rear_Left",
+      "point_type": "CONTACT_POINT",
+      "point_class": 4,
+      "section": "CONTACT_POINTS",
+      "key": "point.1",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.2, -0.4, -0.95],
+      "default_properties": ["4", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.2",
+      "name": "Float_Front_Right",
+      "point_type": "CONTACT_POINT",
+      "point_class": 4,
+      "section": "CONTACT_POINTS",
+      "key": "point.2",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.2, 0.35, -0.95],
+      "default_properties": ["4", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.3",
+      "name": "Float_Rear_Right",
+      "point_type": "CONTACT_POINT",
+      "point_class": 4,
+      "section": "CONTACT_POINTS",
+      "key": "point.3",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.2, -0.4, -0.95],
+      "default_properties": ["4", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.4",
+      "name": "Water_Rudder_Left",
+      "point_type": "CONTACT_POINT",
+      "point_class": 5,
+      "section": "CONTACT_POINTS",
+      "key": "point.4",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.2, -0.5, -0.9],
+      "default_properties": ["5", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "25.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "CONTACT_POINTS:point.5",
+      "name": "Water_Rudder_Right",
+      "point_type": "CONTACT_POINT",
+      "point_class": 5,
+      "section": "CONTACT_POINTS",
+      "key": "point.5",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.2, -0.5, -0.9],
+      "default_properties": ["5", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "25.0", "0.5", "2.5", "0.8"]
+    },
+    {
+      "id": "FUEL:LeftMain",
+      "name": "Fuel_LeftMain",
+      "point_type": "FUEL_TANK",
+      "section": "FUEL",
+      "key": "LeftMain",
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.35, 0.0, 0.1],
+      "default_properties": ["25.0", "0.0"]
+    },
+    {
+      "id": "FUEL:RightMain",
+      "name": "Fuel_RightMain",
+      "point_type": "FUEL_TANK",
+      "section": "FUEL",
+      "key": "RightMain",
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [-0.35, 0.0, 0.1],
+      "default_properties": ["25.0", "0.0"]
+    }
+  ],
+  "engines": [
+    {
+      "id": "GENERALENGINEDATA:Engine.0",
+      "name": "Engine_1_Propeller",
+      "point_type": "ENGINE",
+      "section": "GENERALENGINEDATA",
+      "key": "engine.0",
+      "anchor": "EXTREMA_NOSE",
+      "offset_normalized": [0.0, 0.1, 0.05],
+      "engine_index": 1,
+      "engine_type": 0
+    }
+  ],
+  "exits": [
+    {
+      "id": "EXITS:exit.0",
+      "name": "Door_Pilot",
+      "point_type": "EXIT",
+      "section": "EXITS",
+      "key": "exit.0",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [-0.35, 0.0, 0.0],
+      "open_rate": 0.5,
+      "exit_type": 0
+    },
+    {
+      "id": "EXITS:exit.1",
+      "name": "Hatch_Cargo",
+      "point_type": "EXIT",
+      "section": "EXITS",
+      "key": "exit.1",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [0.35, -0.3, 0.0],
+      "open_rate": 0.5,
+      "exit_type": 1
+    }
+  ],
+  "station_loads": [
+    {
+      "id": "WEIGHT_AND_BALANCE:station_load.0",
+      "name": "Station_Pilot",
+      "point_type": "PAYLOAD_STATION",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "station_load.0",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [-0.15, 0.0, 0.0],
+      "weight_lbs": 170.0,
+      "station_name": "Pilot",
+      "station_type": 1
+    },
+    {
+      "id": "WEIGHT_AND_BALANCE:station_load.1",
+      "name": "Station_Passenger",
+      "point_type": "PAYLOAD_STATION",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "station_load.1",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [0.15, 0.0, 0.0],
+      "weight_lbs": 170.0,
+      "station_name": "Front Passenger",
+      "station_type": 2
+    },
+    {
+      "id": "WEIGHT_AND_BALANCE:station_load.2",
+      "name": "Station_Baggage_Anchor",
+      "point_type": "PAYLOAD_STATION",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "station_load.2",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_normalized": [0.0, -0.4, -0.1],
+      "weight_lbs": 50.0,
+      "station_name": "Baggage / Float Gear",
+      "station_type": 4
+    }
+  ],
+  "interactions": [
+    {
+      "name": "Water_Rudder_Retract_Handle",
+      "role": "LEVER",
+      "shape": "CYLINDER",
+      "size": [0.03, 0.25, 0.03]
+    },
+    {
+      "name": "Bilge_Pump_Switch",
+      "role": "SWITCH",
+      "shape": "BOX",
+      "size": [0.04, 0.04, 0.04]
+    }
+  ],
+  "lights": [
+    {
+      "id": "LIGHTS:light.0",
+      "name": "Light_Nav_Red",
+      "light_type": 3,
+      "color": [1.0, 0.0, 0.0],
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:light.1",
+      "name": "Light_Nav_Green",
+      "light_type": 3,
+      "color": [0.0, 1.0, 0.0],
+      "anchor": "EXTREMA_WING_R",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:light.2",
+      "name": "Light_Nav_Stern_White",
+      "light_type": 3,
+      "color": [1.0, 1.0, 1.0],
+      "anchor": "EXTREMA_TAIL",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:light.3",
+      "name": "Light_Beacon_Top",
+      "light_type": 1,
+      "color": [1.0, 0.0, 0.0],
+      "anchor": "EXTREMA_FIN",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "LIGHTS:light.4",
+      "name": "Light_Landing_Left",
+      "light_type": 5,
+      "color": [1.0, 0.95, 0.8],
+      "anchor": "EXTREMA_WING_L",
+      "offset_normalized": [-0.3, 0.1, -0.05],
+      "direction_pbh": [5.0, 0.0, 0.0]
+    }
+  ],
+  "cameras": [
+    {
+      "index": 0,
+      "title": "Pilot",
+      "category": "Cockpit",
+      "subcategory": "Pilot",
+      "origin": "Virtual Cockpit",
+      "anchor": "EXTREMA_COCKPIT",
+      "offset_m": [-0.25, 0.1, 0.15],
+      "initial_zoom": 0.65
+    },
+    {
+      "index": 1,
+      "title": "Left_Float_View",
+      "category": "FixedOnPlane",
+      "subcategory": "FixedOnPlaneExtern",
+      "origin": "Center",
+      "anchor": "EXTREMA_WING_L",
+      "offset_m": [1.5, 0.5, 0.2],
+      "initial_zoom": 0.8,
+      "initial_pbh": [15.0, 0.0, -45.0]
+    }
+  ]
+}

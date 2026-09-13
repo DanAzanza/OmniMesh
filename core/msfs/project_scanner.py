@@ -36,6 +36,18 @@ class MSFSModelTargetInfo:
 
 
 @dataclass(frozen=True)
+class MSFSModelOptions:
+    """Represents options parsed from [model.options] in model.cfg."""
+
+    with_exterior_show_interior: bool = True
+    with_exterior_show_interior_hide_first_lod: bool = False
+    with_interior_force_first_lod: bool = False
+    with_interior_show_exterior: bool = True
+    is_msfs_2024: bool = True
+    has_explicit_section: bool = False
+
+
+@dataclass(frozen=True)
 class MSFSProjectManifest:
     """Comprehensive manifest discovered for an MSFS aircraft project package."""
 
@@ -47,6 +59,7 @@ class MSFSProjectManifest:
     systems_cfg_path: Optional[Path]
     cameras_cfg_path: Optional[Path]
     variants: dict[str, MSFSModelTargetInfo] = field(default_factory=dict)
+    model_options: MSFSModelOptions = field(default_factory=MSFSModelOptions)
 
     @property
     def has_geometry(self) -> bool:
@@ -173,11 +186,22 @@ def find_package_root(start_path: Path | str) -> Optional[Path]:
     if is_package_root(path):
         return path
 
-    # 3. Check child directories 1 level down
+    # 3. Check child directories recursively up to 4 levels down (e.g. PackageSources/SimObjects/Airplanes/<Asset>)
     try:
-        for child in path.iterdir():
-            if child.is_dir() and is_package_root(child):
-                return child
+        candidates = []
+        for candidate in path.rglob("*"):
+            if candidate.is_dir() and is_package_root(candidate):
+                candidates.append(candidate)
+        if candidates:
+            # Score candidates: prefer complete airplane packages over sub-parts (AirplaneParts)
+            def _score_candidate(c: Path) -> tuple[int, int, int]:
+                # Negative priority for AirplaneParts, positive for Airplanes or common/
+                part_penalty = 1 if "airplaneparts" in [p.lower() for p in c.parts] else 0
+                has_common = 0 if resolve_path_ci(c, "common", "model", "model.cfg") else 1
+                return (part_penalty, has_common, len(c.parts))
+
+            candidates.sort(key=_score_candidate)
+            return candidates[0]
     except OSError:
         pass
 
@@ -186,6 +210,57 @@ def find_package_root(start_path: Path | str) -> Optional[Path]:
         return path
 
     return path if path.is_dir() else None
+
+
+def parse_model_options(model_cfg_path: Path) -> MSFSModelOptions:
+    """Parses [model.options] section in model.cfg if present."""
+    if not model_cfg_path.is_file():
+        return MSFSModelOptions(has_explicit_section=False)
+
+    options_dict: dict[str, bool] = {}
+    current_section = ""
+    has_section = False
+
+    def _to_bool(val: str, default: bool) -> bool:
+        v = val.strip().lower()
+        if v in ("true", "1", "yes"):
+            return True
+        if v in ("false", "0", "no"):
+            return False
+        return default
+
+    try:
+        with open(model_cfg_path, "r", encoding="utf-8-sig", errors="replace") as f:
+            for line in f:
+                line_str = line.strip()
+                if not line_str or line_str.startswith(";"):
+                    continue
+                if ";" in line_str:
+                    line_str = line_str.split(";", 1)[0].strip()
+
+                if line_str.startswith("[") and line_str.endswith("]"):
+                    current_section = line_str[1:-1].strip().lower()
+                    if current_section == "model.options":
+                        has_section = True
+                    continue
+
+                if current_section == "model.options" and "=" in line_str:
+                    key, val = line_str.split("=", 1)
+                    options_dict[key.strip().lower()] = _to_bool(val, False)
+    except Exception as exc:
+        logger.warning("Error reading [model.options] from '%s': %s", model_cfg_path, exc)
+
+    if not has_section:
+        return MSFSModelOptions(has_explicit_section=False, is_msfs_2024=False)
+
+    return MSFSModelOptions(
+        with_exterior_show_interior=options_dict.get("withexterior_showinterior", True),
+        with_exterior_show_interior_hide_first_lod=options_dict.get("withexterior_showinterior_hidefirstlod", False),
+        with_interior_force_first_lod=options_dict.get("withinterior_forcefirstlod", False),
+        with_interior_show_exterior=options_dict.get("withinterior_showexterior", True),
+        is_msfs_2024=True,
+        has_explicit_section=True,
+    )
 
 
 def parse_model_cfg(model_cfg_path: Path) -> dict[str, str]:
@@ -328,10 +403,12 @@ class MSFSProjectScanner:
             except OSError:
                 pass
 
-        # 2. Parse model.cfg targets
+        # 2. Parse model.cfg targets and options
         models_dict: dict[str, MSFSModelTargetInfo] = {}
+        model_options = MSFSModelOptions(has_explicit_section=False)
         if model_cfg_path and model_cfg_path.is_file():
             model_dir = model_cfg_path.parent
+            model_options = parse_model_options(model_cfg_path)
             model_targets = parse_model_cfg(model_cfg_path)
             for target_type, xml_rel in model_targets.items():
                 xml_path = resolve_path_ci(model_dir, xml_rel) or (model_dir / xml_rel)
@@ -444,4 +521,5 @@ class MSFSProjectScanner:
             systems_cfg_path=systems_cfg,
             cameras_cfg_path=cameras_cfg,
             variants=variants_dict,
+            model_options=model_options,
         )

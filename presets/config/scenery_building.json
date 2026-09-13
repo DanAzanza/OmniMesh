@@ -1,0 +1,43 @@
+{
+  "$schema": "omnimesh_config_preset",
+  "name": "Scenery - Building / Hangar",
+  "archetype": "scenery_building",
+  "description": "Static airport building, terminal, or hangar with roof obstacle beacons, ground datum, and entrance triggers",
+  "spatial": [
+    {
+      "id": "WEIGHT_AND_BALANCE:reference_datum_position",
+      "name": "Datum_Ground",
+      "point_type": "DATUM",
+      "section": "WEIGHT_AND_BALANCE",
+      "key": "reference_datum_position",
+      "anchor": "AABB_ORIGIN",
+      "offset_normalized": [0.0, 0.0, 0.0]
+    },
+    {
+      "id": "CONTACT_POINTS:point.ground_center",
+      "name": "Point_Ground_Center",
+      "point_type": "CONTACT_POINT",
+      "point_class": 2,
+      "section": "CONTACT_POINTS",
+      "key": "point.0",
+      "anchor": "AABB_MIN_Z",
+      "offset_normalized": [0.0, 0.0, 0.0],
+      "default_properties": ["2", "0.0", "0.0", "0.0", "1000", "0", "0.0", "0.0"]
+    }
+  ],
+  "lights": [
+    {
+      "id": "LIGHTS:lightdef.roof_beacon",
+      "name": "Light_Roof_Obstacle_Beacon",
+      "section": "LIGHTS",
+      "key": "lightdef.0",
+      "type": 1,
+      "color": [1.0, 0.05, 0.05, 1.0],
+      "anchor": "EXTREMA_FIN",
+      "offset_normalized": [0.0, 0.0, 0.2]
+    }
+  ],
+  "cameras": [],
+  "exits": [],
+  "engines": []
+}
