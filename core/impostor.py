@@ -92,9 +92,13 @@ class ImpostorMath:
     def vector_to_hemi_octahedral(vec: Any) -> Tuple[float, float]:
         """
         Projects 3D unit direction vector (Z >= 0) to 2D normalized UV coords [0, 1]^2.
+        Guards against nadir singularity when |x| + |y| + z < 1e-9 by falling back to horizon (0.5, 0.0).
         """
         x, y, z = float(vec[0]), float(vec[1]), max(0.0, float(vec[2]))
-        denom = max(1e-9, abs(x) + abs(y) + z)
+        denom = abs(x) + abs(y) + z
+        if denom < 1e-9:
+            return (0.5, 0.0)
+
         nx = x / denom
         ny = y / denom
 
@@ -122,6 +126,30 @@ class ImpostorMath:
 
         vec = Vector((x, y, z))
         return vec.normalized()
+
+    @staticmethod
+    def vector_to_full_octahedral(vec: Any) -> Tuple[float, float]:
+        """
+        Projects 3D unit direction vector across full sphere to 2D normalized UV coords [0, 1]^2.
+        """
+        x, y, z = float(vec[0]), float(vec[1]), float(vec[2])
+        l1 = abs(x) + abs(y) + abs(z)
+        if l1 < 1e-9:
+            return (0.5, 0.5)
+
+        nx = x / l1
+        ny = y / l1
+
+        if z < 0.0:
+            x_sign = 1.0 if nx >= 0.0 else -1.0
+            y_sign = 1.0 if ny >= 0.0 else -1.0
+            ox = (1.0 - abs(ny)) * x_sign
+            oy = (1.0 - abs(nx)) * y_sign
+            nx, ny = ox, oy
+
+        u = nx * 0.5 + 0.5
+        v = ny * 0.5 + 0.5
+        return max(0.0, min(1.0, u)), max(0.0, min(1.0, v))
 
     @staticmethod
     def compute_camera_space_tangent_normal(
@@ -169,6 +197,7 @@ class ImpostorMath:
         """
         Vectorized push-pull morphological dilation to bleed RGB colors into transparent (Alpha=0) pixels.
         Prevents dark fringe mipmap bleeding at tile borders.
+        Accumulates slice additions directly in-place without intermediate array copies.
         """
         if image_data.ndim != 3 or image_data.shape[2] < 4:
             return image_data
@@ -188,19 +217,18 @@ class ImpostorMath:
             shifted_count = np.zeros((h, w), dtype=np.float32)
 
             for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                s_rgb = np.zeros_like(rgb)
-                s_valid = np.zeros((h, w), dtype=bool)
-
                 src_y = slice(max(0, -dy), min(h, h - dy))
                 dst_y = slice(max(0, dy), min(h, h + dy))
                 src_x = slice(max(0, -dx), min(w, w - dx))
                 dst_x = slice(max(0, dx), min(w, w + dx))
 
-                s_rgb[dst_y, dst_x] = rgb[src_y, src_x]
-                s_valid[dst_y, dst_x] = valid_mask[src_y, src_x]
+                sub_valid = valid_mask[src_y, src_x]
+                if not np.any(sub_valid):
+                    continue
 
-                shifted_sum += s_rgb * s_valid[:, :, None]
-                shifted_count += s_valid
+                # Accumulate directly in-place avoiding redundant temporary image arrays
+                shifted_sum[dst_y, dst_x] += rgb[src_y, src_x].astype(np.float32) * sub_valid[..., None]
+                shifted_count[dst_y, dst_x] += sub_valid.astype(np.float32)
 
             fill_mask = invalid_mask & (shifted_count > 0)
             if not np.any(fill_mask):
@@ -234,17 +262,18 @@ class ImpostorMeshBuilder:
         z_max = ground_z + height
 
         # Plane A: X-aligned (Front view, UV u in [0.0, 0.5])
+        # Winding (v1, v4, v3, v2) ensures positive surface normal pointing to +Y
         v1 = bm.verts.new((-hw, 0.0, z_min))
         v2 = bm.verts.new((hw, 0.0, z_min))
         v3 = bm.verts.new((hw, 0.0, z_max))
         v4 = bm.verts.new((-hw, 0.0, z_max))
-        f_a = bm.faces.new((v1, v2, v3, v4))
+        f_a = bm.faces.new((v1, v4, v3, v2))
 
-        # UV coordinates for Plane A (Left half of atlas: [0.0, 0.5])
+        # UV coordinates synchronized with vertex loop order (v1, v4, v3, v2)
         f_a.loops[0][uv_layer].uv = (0.0, 0.0)
-        f_a.loops[1][uv_layer].uv = (0.5, 0.0)
+        f_a.loops[1][uv_layer].uv = (0.0, 1.0)
         f_a.loops[2][uv_layer].uv = (0.5, 1.0)
-        f_a.loops[3][uv_layer].uv = (0.0, 1.0)
+        f_a.loops[3][uv_layer].uv = (0.5, 0.0)
 
         # Plane B: Y-aligned (Side view, UV u in [0.5, 1.0])
         v5 = bm.verts.new((0.0, -hw, z_min))
@@ -362,6 +391,11 @@ class ImpostorManager:
                 mat.surface_render_method = "DITHERED"
             except Exception as exc:
                 logger.debug("Could not set surface_render_method: %s", exc)
+        if hasattr(mat, "use_transparent_shadow"):
+            try:
+                mat.use_transparent_shadow = True
+            except Exception as exc:
+                logger.debug("Could not set use_transparent_shadow: %s", exc)
         if hasattr(mat, "blend_method"):
             try:
                 mat.blend_method = "CLIP"
@@ -462,8 +496,13 @@ class ImpostorManager:
             target_coll = bpy.data.collections.new(coll_name)
             bpy.context.scene.collection.children.link(target_coll)
 
-        # Calculate bounding dimensions across all selected meshes
-        all_coords = [obj.matrix_world @ v.co for obj in mesh_objs for v in obj.data.vertices]
+        # Calculate bounding dimensions across all selected meshes (using bound_box corners for O(1) efficiency)
+        all_coords = []
+        for obj in mesh_objs:
+            if hasattr(obj, "bound_box") and obj.bound_box:
+                all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
+            elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
+                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
         if not all_coords:
             return None
 

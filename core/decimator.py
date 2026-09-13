@@ -178,12 +178,20 @@ class MeshDecimator:
             vg = obj.vertex_groups.new(name=group_name)
 
         try:
-            bm.verts.ensure_lookup_table()
-            bm.edges.ensure_lookup_table()
-            bm.faces.ensure_lookup_table()
-            bm.verts.index_update()
-            bm.faces.index_update()
-            bm.edges.index_update()
+            if hasattr(bm.verts, "index_update"):
+                bm.verts.index_update()
+            if hasattr(bm.edges, "index_update"):
+                bm.edges.index_update()
+            if hasattr(bm.faces, "index_update"):
+                bm.faces.index_update()
+            if hasattr(bm.verts, "ensure_lookup_table"):
+                bm.verts.ensure_lookup_table()
+            if hasattr(bm.edges, "ensure_lookup_table"):
+                bm.edges.ensure_lookup_table()
+            if hasattr(bm.faces, "ensure_lookup_table"):
+                bm.faces.ensure_lookup_table()
+            if hasattr(bm, "normal_update"):
+                bm.normal_update()
         except Exception as exc:
             logger.debug("Lookup table init error in inject_curvature_weights: %s", exc)
             return

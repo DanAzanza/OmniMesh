@@ -525,3 +525,176 @@ def test_occlusion_zero_vector_normal_safety():
 
     dirs = HardenedOcclusionCuller._stratified_hemisphere_dirs(zero_vec, 16)
     assert dirs == []
+
+
+# =============================================================================
+# Phase 6 Hardening Tests: Impostors, Materials, Decimator, Metrics
+# =============================================================================
+
+
+def test_vector_to_full_octahedral_roundtrip():
+    """Verify forward and inverse full-octahedral directional mappings."""
+    from core.impostor import ImpostorMath, Vector
+
+    directions = [
+        Vector((1.0, 0.0, 0.0)),
+        Vector((-1.0, 0.0, 0.0)),
+        Vector((0.0, 1.0, 0.0)),
+        Vector((0.0, -1.0, 0.0)),
+        Vector((0.0, 0.0, 1.0)),
+        Vector((0.0, 0.0, -1.0)),
+        Vector((0.5773, 0.5773, 0.5773)).normalized(),
+        Vector((-0.5773, -0.5773, -0.5773)).normalized(),
+    ]
+
+    for d in directions:
+        u, v = ImpostorMath.vector_to_full_octahedral(d)
+        assert 0.0 <= u <= 1.0
+        assert 0.0 <= v <= 1.0
+        reconstructed = ImpostorMath.full_octahedral_to_vector(u, v)
+        dot_val = d.dot(reconstructed)
+        assert dot_val >= 0.99, f"Failed roundtrip for {d}: dot={dot_val}"
+
+
+def test_hemi_octahedral_nadir_and_equator():
+    """Verify vector_to_hemi_octahedral handles nadir singularity and horizontal equator."""
+    from core.impostor import ImpostorMath, Vector
+
+    # Equator directions (Z=0) must NOT collapse into nadir
+    east = Vector((1.0, 0.0, 0.0))
+    u_e, v_e = ImpostorMath.vector_to_hemi_octahedral(east)
+    # Forward: nx = 1/1 = 1, ny = 0 => u = (1+0)*0.5+0.5 = 1.0, v = (1-0)*0.5+0.5 = 1.0
+    assert abs(u_e - 1.0) < 1e-4 and abs(v_e - 1.0) < 1e-4
+
+    # Degenerate zero vector or nadir (< 1e-9) falls back to horizon (0.5, 0.0)
+    zero_vec = Vector((0.0, 0.0, 0.0))
+    u_z, v_z = ImpostorMath.vector_to_hemi_octahedral(zero_vec)
+    assert (u_z, v_z) == (0.5, 0.0)
+
+
+def test_morphological_dilate_rgb_in_place_performance():
+    """Verify in-place morphological dilation accumulates correctly without throwing exceptions."""
+    import numpy as np
+    from core.impostor import ImpostorMath
+
+    # 16x16 image with a central 2x2 solid green square
+    img = np.zeros((16, 16, 4), dtype=np.float32)
+    img[7:9, 7:9, :3] = [0.0, 1.0, 0.0]
+    img[7:9, 7:9, 3] = 1.0
+
+    dilated = ImpostorMath.morphological_dilate_rgb(img, iterations=3)
+    # Check that pixel immediately adjacent to green square has been filled
+    assert dilated[6, 7, 1] == 1.0
+    assert dilated[7, 6, 1] == 1.0
+    assert dilated[9, 8, 1] == 1.0
+    # Check that far corner remains empty
+    assert dilated[0, 0, 1] == 0.0
+
+
+def test_headless_slot_compactor_vectorized_and_in_place():
+    """Verify HeadlessSlotCompactor remaps polygon indices and preserves in-place slots."""
+    import numpy as np
+    from unittest.mock import MagicMock
+    from core.materials import HeadlessSlotCompactor
+
+    # Mock object with 3 slots: [MatA, None, MatA]
+    mat_a = MagicMock()
+    mat_a.name = "MatA"
+
+    slot0 = MagicMock(material=mat_a)
+    slot1 = MagicMock(material=None)
+    slot2 = MagicMock(material=mat_a)
+
+    obj = MagicMock()
+    obj.material_slots = [slot0, slot1, slot2]
+
+    # Mock mesh with 4 polygons referencing slots 0 and 2
+    mesh = MagicMock()
+    indices = np.array([0, 2, 0, 2], dtype=np.int32)
+    mesh.polygons = MagicMock()
+    mesh.polygons.__len__.return_value = 4
+    mesh.polygons.__iter__.return_value = iter([MagicMock(material_index=indices[i]) for i in range(4)])
+
+    def foreach_get(attr, buf):
+        if attr == "material_index":
+            np.copyto(buf, indices)
+
+    def foreach_set(attr, buf):
+        nonlocal indices
+        if attr == "material_index":
+            indices = np.copy(buf)
+
+    mesh.polygons.foreach_get = foreach_get
+    mesh.polygons.foreach_set = foreach_set
+
+    materials_list = [mat_a, None, mat_a]
+    mesh.materials = materials_list
+
+    obj.data = mesh
+
+    res = HeadlessSlotCompactor.compact_slots(obj, purge_empty=True, deduplicate_identical=True)
+    assert res["slots_removed"] == 2
+    assert res["faces_remapped"] == 2
+    # All polygons should now reference slot 0
+    assert np.all(indices == 0)
+
+
+def test_consolidate_micro_materials_all_protected_guard():
+    """Verify consolidate_micro_materials guards against empty candidate_areas when all materials are protected."""
+    from unittest.mock import MagicMock
+    from core.materials import MaterialOptimizer
+
+    mat_glass = MagicMock()
+    mat_glass.name = "Glass_Window"
+    mat_emissive = MagicMock()
+    mat_emissive.name = "Lamp_Emissive"
+
+    slot0 = MagicMock(material=mat_glass)
+    slot1 = MagicMock(material=mat_emissive)
+
+    obj = MagicMock()
+    obj.material_slots = [slot0, slot1]
+    mesh = MagicMock()
+    poly0 = MagicMock(material_index=0, area=10.0)
+    poly1 = MagicMock(material_index=1, area=0.01)
+    mesh.polygons = [poly0, poly1]
+    obj.data = mesh
+
+    # Must return without raising ValueError: max() arg is an empty sequence
+    res = MaterialOptimizer.consolidate_micro_materials(obj, area_threshold_pct=1.0, protect_semantic_materials=True)
+    assert res["consolidated_slots"] == 0
+    assert res["faces_reassigned"] == 0
+
+
+def test_shader_tracer_srgb_scalar_linearization_inversion():
+    """Verify _extract_from_image inverts sRGB OETF when scalar data is loaded from sRGB image."""
+    import numpy as np
+    from unittest.mock import MagicMock
+    from core.shader_tracer import ShaderTracer
+
+    img_mock = MagicMock()
+    img_mock.size = (2, 2)
+    img_mock.colorspace_settings.name = "sRGB"
+    # Blender foreach_get delivers linearized float: 0.18 linear
+    raw = np.full(16, 0.18, dtype=np.float32)
+    img_mock.pixels.foreach_get = lambda buf: np.copyto(buf, raw)
+
+    fallback = np.zeros((2, 2), dtype=np.uint8)
+
+    # When extracting a scalar data channel (apply_srgb_oetf=False) from an sRGB-tagged image,
+    # it must re-encode / invert OETF to recover the original byte value (~117)
+    scalar_out = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=False)
+    assert int(scalar_out[0, 0]) >= 110
+
+
+def test_distance_hysteresis_interval():
+    """Verify compute_distance_hysteresis_interval produces valid deadbands."""
+    from core.metrics import compute_distance_hysteresis_interval
+
+    dist_in, dist_out = compute_distance_hysteresis_interval(100.0, hysteresis_ratio=0.05)
+    assert math.isclose(dist_in, 95.0, abs_tol=1e-5)
+    assert math.isclose(dist_out, 105.0, abs_tol=1e-5)
+
+    # Zero distance test
+    d0_in, d0_out = compute_distance_hysteresis_interval(0.0)
+    assert d0_in == 0.0 and d0_out == 0.0

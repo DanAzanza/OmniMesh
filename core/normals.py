@@ -104,6 +104,18 @@ class NormalManager:
             return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)
 
         try:
+            # Move modifier to top of stack so reprojection evaluates against undeformed geometry
+            if hasattr(bpy.ops.object, "modifier_move_to_index"):
+                try:
+                    if hasattr(bpy.context, "temp_override"):
+                        with bpy.context.temp_override(active_object=lod_obj, object=lod_obj):
+                            bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
+                    elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
+                        bpy.context.view_layer.objects.active = lod_obj
+                        bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
+                except Exception as exc:
+                    logger.debug("Failed moving DATA_TRANSFER modifier to index 0: %s", exc)
+
             if hasattr(bpy.context, "temp_override"):
                 with bpy.context.temp_override(active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj]):
                     bpy.ops.object.modifier_apply(modifier=dt_mod.name)

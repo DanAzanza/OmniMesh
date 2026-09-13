@@ -203,3 +203,22 @@ def generate_logarithmic_screen_tiers(num_lods: int, cull_screen_size_pct: float
             pct = 100.0 * math.pow(cull_pct / 100.0, fraction)
             tiers.append(round(pct, 2))
     return tiers
+
+
+def compute_distance_hysteresis_interval(distance: float, hysteresis_ratio: float = 0.05) -> tuple[float, float]:
+    """
+    Computes [dist_in, dist_out] hysteresis band around a nominal transition distance.
+    Prevents camera popping/fluttering when moving near LOD boundary thresholds in real-time engines.
+
+    Args:
+        distance: Nominal transition distance in meters.
+        hysteresis_ratio: Fractional deadband width (default 5% = 0.05).
+
+    Returns:
+        tuple[float, float]: (dist_in, dist_out) where dist_in < distance < dist_out.
+    """
+    d = max(0.0, float(distance))
+    h = max(0.0, min(0.5, float(hysteresis_ratio)))
+    dist_in = max(0.0, d * (1.0 - h))
+    dist_out = d * (1.0 + h)
+    return dist_in, dist_out

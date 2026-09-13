@@ -194,9 +194,11 @@ def generate_all_lods(
                         if ModifierManager.has_unapplied_modifiers(obj):
                             eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
                             if eval_mesh:
-                                tier_tris += _count_triangles(eval_mesh)
-                                if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
-                                    eval_obj.to_mesh_clear()
+                                try:
+                                    tier_tris += _count_triangles(eval_mesh)
+                                finally:
+                                    if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+                                        eval_obj.to_mesh_clear()
                             else:
                                 tier_tris += _count_triangles(getattr(obj, "data", None))
                         else:
@@ -297,6 +299,33 @@ def generate_all_lods(
                         area_crit=tolerances["area_crit"],
                         preserve_slot_indexing=getattr(props, "preserve_slot_indexing", True),
                     )
+
+                    # Reproject custom split normals against consolidated source geometry
+                    ref_merged_obj = None
+                    try:
+                        ref_merged_name = f"__OM_Ref_Merged_LOD0_{i}__"
+                        ref_merged_obj = MeshMergeEngine.consolidate_and_merge_meshes(
+                            mesh_objs, ref_merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
+                        )
+                        NormalManager.reproject_custom_split_normals(
+                            tier_obj, ref_merged_obj, tolerances["delta_world"]
+                        )
+                    except Exception as exc:
+                        logger.debug("Merged custom split normal reprojection exception: %s", exc)
+                        # Fallback to single master object if merge consolidation failed
+                        if mesh_objs:
+                            NormalManager.reproject_custom_split_normals(
+                                tier_obj, mesh_objs[0], tolerances["delta_world"]
+                            )
+                    finally:
+                        if ref_merged_obj and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
+                            ref_mesh = getattr(ref_merged_obj, "data", None)
+                            try:
+                                bpy.data.objects.remove(ref_merged_obj, do_unlink=True)
+                                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+                                    bpy.data.meshes.remove(ref_mesh)
+                            except Exception as exc:
+                                logger.debug("Cleanup ref_merged_obj exception: %s", exc)
 
                     if armature_obj and len(tier_obj.vertex_groups) > 0:
                         if props.enable_bone_pruning and i >= 2:

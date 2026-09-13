@@ -83,8 +83,16 @@ class DeepMaterialHasher:
                 node_data["color_space"] = str(curr.color_space)
             if hasattr(curr, "image") and curr.image:
                 img = curr.image
-                node_data["image_name"] = os.path.basename(getattr(img, "filepath", "") or getattr(img, "name", ""))
+                filepath = getattr(img, "filepath", "")
+                if bpy and filepath:
+                    try:
+                        filepath = bpy.path.abspath(filepath)
+                    except Exception as exc:
+                        logger.debug("Failed resolving abspath for image: %s", exc)
+                node_data["image_filepath"] = filepath or getattr(img, "name", "")
                 node_data["image_size"] = list(getattr(img, "size", [0, 0]))
+                if hasattr(img, "colorspace_settings"):
+                    node_data["image_colorspace"] = getattr(img.colorspace_settings, "name", "")
 
             # Capture unlinked input default values
             input_defaults: dict[str, Any] = {}
@@ -193,17 +201,46 @@ class HeadlessSlotCompactor:
         if len(new_materials) == num_slots and all(slot_remap.get(i, i) == i for i in range(num_slots)):
             return {"slots_removed": 0, "faces_remapped": 0}
 
-        # 3. Remap mesh polygon indices in-place
+        # 3. Remap mesh polygon indices in-place (vectorized numpy with fallback)
         faces_remapped = 0
-        for poly in mesh.polygons:
-            old_i = getattr(poly, "material_index", 0)
-            new_i = slot_remap.get(old_i, 0)
-            if new_i != old_i:
-                poly.material_index = new_i
-                faces_remapped += 1
+        poly_count = len(mesh.polygons)
+        if poly_count > 0:
+            if hasattr(mesh.polygons, "foreach_get") and hasattr(mesh.polygons, "foreach_set"):
+                import numpy as np
 
-        # 4. Atomic replacement of mesh materials array
-        if hasattr(mesh, "materials"):
+                orig_indices = np.empty(poly_count, dtype=np.int32)
+                mesh.polygons.foreach_get("material_index", orig_indices)
+                remapped_indices = orig_indices.copy()
+                for old_idx, new_idx in slot_remap.items():
+                    if old_idx != new_idx:
+                        remapped_indices[orig_indices == old_idx] = new_idx
+                faces_remapped = int(np.count_nonzero(remapped_indices != orig_indices))
+                if faces_remapped > 0:
+                    mesh.polygons.foreach_set("material_index", remapped_indices)
+            else:
+                for poly in mesh.polygons:
+                    old_i = getattr(poly, "material_index", 0)
+                    new_i = slot_remap.get(old_i, 0)
+                    if new_i != old_i:
+                        poly.material_index = new_i
+                        faces_remapped += 1
+
+        # 4. In-place update of material slots and pop trailing excess
+        if hasattr(obj, "material_slots") and hasattr(mesh, "materials"):
+            for i, mat in enumerate(new_materials):
+                if i < len(obj.material_slots):
+                    obj.material_slots[i].material = mat
+                else:
+                    mesh.materials.append(mat)
+            while len(mesh.materials) > len(new_materials):
+                idx_to_pop = len(mesh.materials) - 1
+                try:
+                    # Blender IDMaterials RNA collection accepts index kwarg: pop(index=idx)
+                    mesh.materials.pop(index=idx_to_pop)
+                except TypeError:
+                    # Standard Python list accepts positional argument: pop(idx)
+                    mesh.materials.pop(idx_to_pop)
+        elif hasattr(mesh, "materials"):
             mesh.materials.clear()
             for mat in new_materials:
                 mesh.materials.append(mat)
@@ -328,7 +365,7 @@ class MaterialOptimizer:
 
     @classmethod
     def calculate_material_areas(cls, obj: Any) -> dict[int, float]:
-        """Calculates cumulative surface area per material slot index."""
+        """Calculates cumulative surface area per material slot index, scaled by matrix_world if available."""
         if not obj or not hasattr(obj, "data") or not obj.data:
             return {}
         mesh = obj.data
@@ -339,10 +376,19 @@ class MaterialOptimizer:
         if num_slots == 0:
             return {}
 
+        # Compute surface area scale factor from matrix_world if present
+        area_scale = 1.0
+        if hasattr(obj, "matrix_world") and obj.matrix_world is not None:
+            try:
+                scale = obj.matrix_world.to_scale()
+                area_scale = abs(float(scale.x) * float(scale.y) * float(scale.z)) ** (2.0 / 3.0)
+            except Exception:
+                area_scale = 1.0
+
         areas: dict[int, float] = {i: 0.0 for i in range(num_slots)}
         for poly in mesh.polygons:
             idx = getattr(poly, "material_index", 0)
-            area = getattr(poly, "area", 0.0)
+            area = getattr(poly, "area", 0.0) * area_scale
             if idx in areas:
                 areas[idx] += area
             elif len(areas) > 0:
@@ -402,7 +448,19 @@ class MaterialOptimizer:
         if total_area < 1e-6:
             return {"consolidated_slots": 0, "faces_reassigned": 0}
 
-        dominant_idx = cls.get_dominant_material_index(areas)
+        # Select dominant material excluding protected materials when protection is enabled
+        candidate_areas = {}
+        for slot_idx, area in areas.items():
+            mat = obj.material_slots[slot_idx].material
+            if protect_semantic_materials and cls.is_material_protected(mat):
+                continue
+            candidate_areas[slot_idx] = area
+
+        if not candidate_areas:
+            # All materials on mesh are protected; do not consolidate
+            return {"consolidated_slots": 0, "faces_reassigned": 0}
+
+        dominant_idx = max(candidate_areas.items(), key=lambda item: item[1])[0]
         reassigned_slots: set[int] = set()
 
         # Handle absolute area threshold (area_crit) if provided

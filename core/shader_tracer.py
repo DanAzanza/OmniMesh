@@ -321,8 +321,19 @@ class ShaderTracer:
         np.nan_to_num(raw_floats, copy=False, nan=default_nan, posinf=1.0, neginf=0.0)
 
         ch_data = raw_floats[channel_index::4]
+        colorspace_name = getattr(getattr(img, "colorspace_settings", None), "name", "").lower()
+
         if apply_srgb_oetf:
             # Linear to sRGB transfer function (IEC 61966-2-1) for Base Color / Albedo targets
+            ch_data = np.where(
+                ch_data <= 0.0031308,
+                ch_data * 12.92,
+                1.055 * np.power(np.maximum(ch_data, 1e-8), 1.0 / 2.4) - 0.055,
+            )
+        elif colorspace_name in ("srgb", "srgb 2.2", "gamma2.2") and not apply_srgb_oetf:
+            # If a scalar data channel (Roughness, Metallic, AO) was loaded from an image tagged as sRGB,
+            # Blender automatically linearized it on foreach_get. Invert the OETF (apply sRGB EOTF/re-encoding)
+            # to recover the author's intended raw linear byte values.
             ch_data = np.where(
                 ch_data <= 0.0031308,
                 ch_data * 12.92,
@@ -457,7 +468,22 @@ class ShaderTracer:
             temp_img.pixels.foreach_get(raw_floats)
             max_val = 65535.0 if bit_depth == 16 else 255.0
             dtype = np.uint16 if bit_depth == 16 else np.uint8
-            res = (np.clip(raw_floats[0::4], 0.0, 1.0) * max_val + 0.5).astype(dtype).reshape((target_h, target_w))
+
+            baked_channels = []
+            is_color_socket = socket_name.lower() in ("base color", "basecolor", "albedo", "emission")
+            for c_i in range(3):
+                ch_d = raw_floats[c_i::4]
+                if is_color_socket and bit_depth == 8:
+                    # Apply IEC 61966-2-1 sRGB OETF transfer curve for 8-bit color targets
+                    ch_d = np.where(
+                        ch_d <= 0.0031308,
+                        ch_d * 12.92,
+                        1.055 * np.power(np.maximum(ch_d, 1e-8), 1.0 / 2.4) - 0.055,
+                    )
+                baked_channels.append(ch_d)
+
+            res_rgb = np.stack(baked_channels, axis=-1)
+            res = (np.clip(res_rgb, 0.0, 1.0) * max_val + 0.5).astype(dtype).reshape((target_h, target_w, 3))
             if hasattr(temp_img, "buffers_free"):
                 temp_img.buffers_free()
             return res
