@@ -6,6 +6,7 @@ modular ui.properties package components, and LOD generation engine entrypoints.
 
 from __future__ import annotations
 
+import math
 
 from core.lod_generator import generate_all_lods
 from core.shader_tracer import ShaderTracer
@@ -269,16 +270,26 @@ def test_batch_worker_unc_path_normalization():
 
 
 def test_batch_hierarchical_export_path():
-    """Verify build_hierarchical_export_path mirrors directory hierarchy and sanitizes asset names."""
+    """Verify build_hierarchical_export_path mirrors directory hierarchy and sanitizes asset names across OS path styles."""
     from core.batch_worker_process import build_hierarchical_export_path
 
-    source_root = r"C:\Projects\Assets"
-    blend_path = r"C:\Projects\Assets\Props\Hero Asset 01.blend"
-    export_root = r"D:\Build\GameAssets"
+    # Windows-style path test
+    source_root_win = r"C:\Projects\Assets"
+    blend_path_win = r"C:\Projects\Assets\Props\Hero Asset 01.blend"
+    export_root_win = r"D:\Build\GameAssets"
 
-    target_dir, asset_name = build_hierarchical_export_path(blend_path, source_root, export_root)
-    assert asset_name == "Hero_Asset_01"
-    assert "Props" in target_dir
+    target_dir_w, asset_name_w = build_hierarchical_export_path(blend_path_win, source_root_win, export_root_win)
+    assert asset_name_w == "Hero_Asset_01"
+    assert "Props" in target_dir_w
+
+    # POSIX-style path test
+    source_root_posix = "/projects/assets"
+    blend_path_posix = "/projects/assets/Props/Hero Asset 01.blend"
+    export_root_posix = "/build/gameassets"
+
+    target_dir_p, asset_name_p = build_hierarchical_export_path(blend_path_posix, source_root_posix, export_root_posix)
+    assert asset_name_p == "Hero_Asset_01"
+    assert "Props" in target_dir_p
 
 
 def test_slicing_plane_normal_transform():
@@ -345,3 +356,172 @@ def test_slender_boundary_ring_perimeter_diameter():
     # Derived diameter from perimeter
     derived_diameter = perimeter / math.pi
     assert math.isclose(derived_diameter, 0.10, rel_tol=1e-5)
+
+
+def test_functional_rdp_reduce():
+    """Verify 1D functional RDP decimation preserves extrema and reduces collinear points."""
+    from core.animations import AnimationRigSanitizer
+
+    # Perfectly linear sequence: all internal points should be pruned
+    linear_pts = [(float(i), float(i * 2.0)) for i in range(10)]
+    reduced = AnimationRigSanitizer.functional_rdp_reduce(linear_pts, epsilon=0.01)
+    assert len(reduced) == 2
+    assert reduced[0] == (0.0, 0.0)
+    assert reduced[-1] == (9.0, 18.0)
+
+    # Triangle wave: 11 points with peak at i=5, linear ramps up and down
+    # (0..5 have slope +2.0, 5..10 have slope -2.0)
+    triangle_pts = [
+        (0.0, 0.0),
+        (1.0, 2.0),
+        (2.0, 4.0),
+        (3.0, 6.0),
+        (4.0, 8.0),
+        (5.0, 10.0),
+        (6.0, 8.0),
+        (7.0, 6.0),
+        (8.0, 4.0),
+        (9.0, 2.0),
+        (10.0, 0.0),
+    ]
+    reduced_triangle = AnimationRigSanitizer.functional_rdp_reduce(triangle_pts, epsilon=0.01)
+    assert len(reduced_triangle) == 3
+    assert reduced_triangle == [(0.0, 0.0), (5.0, 10.0), (10.0, 0.0)]
+
+
+def test_quaternion_sign_continuity():
+    """Verify quaternion sign continuity dot product logic eliminates 360-degree spin flips."""
+    # Two equivalent orientations represented by opposite quaternions q and -q
+    q1 = (1.0, 0.0, 0.0, 0.0)  # (w, x, y, z)
+    q2 = (-1.0, 0.0, 0.0, 0.0)
+
+    dot = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3]
+    assert dot < 0.0
+
+    # Invert q2 when dot < 0
+    q2_corrected = (-q2[0], -q2[1], -q2[2], -q2[3])
+    dot_corrected = (
+        q1[0] * q2_corrected[0] + q1[1] * q2_corrected[1] + q1[2] * q2_corrected[2] + q1[3] * q2_corrected[3]
+    )
+    assert dot_corrected > 0.0
+    assert q2_corrected == q1
+
+
+def test_pbr_bsdf_v2_socket_resolution():
+    """Verify ShaderGraphBuilder canonical BSDF socket alias resolution."""
+    from core.pbr_importer import ShaderGraphBuilder
+    from unittest.mock import MagicMock
+
+    mock_bsdf = MagicMock()
+    # Mock inputs dictionary simulating Blender 4.x / 5.x Principled BSDF v2
+    v2_sockets = {
+        "Base Color": MagicMock(name="Base Color"),
+        "Specular IOR Level": MagicMock(name="Specular IOR Level"),
+        "Transmission Weight": MagicMock(name="Transmission Weight"),
+        "Coat Weight": MagicMock(name="Coat Weight"),
+        "Sheen Weight": MagicMock(name="Sheen Weight"),
+    }
+    mock_bsdf.inputs = v2_sockets
+
+    # Querying legacy targets should resolve to modern v2 sockets
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Specular") == v2_sockets["Specular IOR Level"]
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Transmission") == v2_sockets["Transmission Weight"]
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Clearcoat") == v2_sockets["Coat Weight"]
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Sheen") == v2_sockets["Sheen Weight"]
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Base Color") == v2_sockets["Base Color"]
+
+
+def test_msfs_cst_parser_keys_with_spaces(tmp_path):
+    """Verify MSFSCSTParser parses keys containing embedded spaces."""
+    from core.msfs.cst_parser import MSFSCSTParser
+
+    cfg_content = (
+        "[CAMERADEFINITION.0]\n"
+        'Title = "Pilot View"\n'
+        "Initial Zoom = 0.35\n"
+        'SubCategory Title = "Cockpit"\n'
+        "Initial Xyz = 0.0, 1.2, -0.5\n"
+    )
+    test_file = tmp_path / "cameras_test.cfg"
+    test_file.write_text(cfg_content, encoding="utf-8")
+
+    config = MSFSCSTParser.parse_file(str(test_file))
+    assert len(config.lines) >= 5
+
+    parsed_keys = [record.key for record in config.lines if record.key]
+    assert "Title" in parsed_keys
+    assert "Initial Zoom" in parsed_keys
+    assert "SubCategory Title" in parsed_keys
+    assert "Initial Xyz" in parsed_keys
+
+
+def test_camera_cst_key_normalization(tmp_path):
+    """Verify camera CST normalizes keys with spaces and underscores."""
+    from core.msfs.camera_cst import MSFSCameraCST
+
+    cfg_content = (
+        "[CAMERADEFINITION.0]\n"
+        'Title = "Cockpit Center"\n'
+        "Initial Zoom = 0.45\n"
+        'SubCategory Title = "Quickview"\n'
+        "Initial Xyz = 0.1, 0.8, -0.2\n"
+        "Initial Pbh = 5.0, 0.0, 0.0\n"
+    )
+    test_file = tmp_path / "cameras_norm.cfg"
+    test_file.write_text(cfg_content, encoding="utf-8")
+
+    cam_config = MSFSCameraCST.parse_cameras_file(str(test_file))
+    assert len(cam_config.cameras) == 1
+    cam = cam_config.cameras[0]
+    assert cam.title == "Cockpit Center"
+    assert math.isclose(cam.initial_zoom, 0.45, rel_tol=1e-5)
+    assert cam.subcategory == "Quickview"
+    assert cam.initial_xyz_m == (0.1, 0.8, -0.2)
+    assert cam.initial_pbh_deg == (5.0, 0.0, 0.0)
+
+
+def test_detect_file_format_encodings(tmp_path):
+    """Verify detect_file_format handles UTF-8, UTF-8 BOM, UTF-16 LE, and CP1252."""
+    from core.msfs.camera_cst import detect_file_format
+
+    # 1. UTF-8 standard
+    f_utf8 = tmp_path / "utf8.txt"
+    f_utf8.write_bytes(b"sample content\n")
+    enc, bom, nl = detect_file_format(str(f_utf8))
+    assert enc == "utf-8"
+    assert bom is False
+    assert nl == "\n"
+
+    # 2. UTF-8 with BOM
+    f_utf8_bom = tmp_path / "utf8_bom.txt"
+    f_utf8_bom.write_bytes(b"\xef\xbb\xbfsample with bom\r\n")
+    enc, bom, nl = detect_file_format(str(f_utf8_bom))
+    assert enc == "utf-8-sig"
+    assert bom is True
+    assert nl == "\r\n"
+
+    # 3. UTF-16 LE with BOM
+    f_utf16 = tmp_path / "utf16_le.txt"
+    f_utf16.write_bytes(b"\xff\xfe" + "flight config".encode("utf-16-le"))
+    enc, bom, nl = detect_file_format(str(f_utf16))
+    assert enc == "utf-16-le"
+    assert bom is True
+
+    # 4. CP1252 (invalid UTF-8 bytes)
+    f_cp1252 = tmp_path / "cp1252.txt"
+    f_cp1252.write_bytes(b"Caf\xe9 au lait\n")
+    enc, bom, nl = detect_file_format(str(f_cp1252))
+    assert enc == "cp1252"
+    assert bom is False
+
+
+def test_occlusion_zero_vector_normal_safety():
+    """Verify occlusion culler guards against zero-vector face normals."""
+    from core.occlusion import HardenedOcclusionCuller
+    from unittest.mock import MagicMock
+
+    zero_vec = MagicMock()
+    zero_vec.length_squared = 0.0
+
+    dirs = HardenedOcclusionCuller._stratified_hemisphere_dirs(zero_vec, 16)
+    assert dirs == []

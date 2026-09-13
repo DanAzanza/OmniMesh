@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 try:
     import bpy
@@ -24,12 +24,14 @@ except ImportError:
     bpy = None
 
 try:
+    from core.pbr_classifier import PBRSemanticClassifier
     from core.pbr_presets import (
         DEFAULT_PRESET_ID,
         PBRImportPresetManager,
         PBRImporterPresetManager,
     )
 except (ImportError, ValueError):
+    from .pbr_classifier import PBRSemanticClassifier
     from .pbr_presets import (
         DEFAULT_PRESET_ID,
         PBRImportPresetManager,
@@ -37,76 +39,6 @@ except (ImportError, ValueError):
     )
 
 logger = logging.getLogger(__name__)
-
-
-class PBRSemanticClassifier:
-    """
-    Dynamic semantic texture classifier supporting JSON preset templates,
-    UDIM stripping, resolution filtering, and token-bounded regex matching.
-    """
-
-    STRIP_PATTERNS = [
-        re.compile(r"[._-](?:10\d{2}|u\d+_v\d+)(?=\.[^.]+$|$)", re.IGNORECASE),  # UDIM tiles (1001-1099)
-        re.compile(r"[._-](?:[1-8]k|1024|2048|4096|8192)(?=\.[^.]+$|$)", re.IGNORECASE),  # Resolution tags
-        re.compile(r"[._-](?:lod[0-4]|proxy|high|low)(?=\.[^.]+$|$)", re.IGNORECASE),  # LOD/Mesh tags
-        re.compile(r"\.\d{3}$"),  # Blender duplicate extensions (.001)
-    ]
-
-    @classmethod
-    def clean_stem(cls, filename: str) -> str:
-        """Strips path, extension, UDIMs, and resolution tags from filename."""
-        stem = os.path.splitext(os.path.basename(filename))[0]
-        for pattern in cls.STRIP_PATTERNS:
-            stem = pattern.sub("", stem)
-        return stem
-
-    @classmethod
-    def classify_with_preset(cls, filename: str, preset: dict[str, Any]) -> Optional[tuple[str, dict[str, Any]]]:
-        """
-        Classifies filename against a preset's map definitions.
-        Sorts all candidate suffixes by length descending to ensure longer tokens
-        (e.g. '_Normal_DX') match before shorter prefixes (e.g. '_Normal').
-        Returns (map_id, map_dict) or None.
-        """
-        clean = cls.clean_stem(filename)
-        maps = preset.get("maps", [])
-
-        # Flatten (suffix, map_id, map_dict) candidates
-        candidates: list[tuple[str, str, dict[str, Any]]] = []
-        for m in maps:
-            map_id = m.get("id", "")
-            for s in m.get("suffixes", []):
-                candidates.append((s, map_id, m))
-
-        # Sort by length descending for greedy match priority
-        candidates.sort(key=lambda x: len(x[0]), reverse=True)
-
-        for suffix, map_id, map_def in candidates:
-            # Token boundary delimiter check: allows leading/trailing underscore, dash, dot, or boundary
-            s_clean = suffix.lstrip("._-")
-            pattern = re.compile(rf"(?:^|[._-]){re.escape(s_clean)}(?:[._-]|$)", re.IGNORECASE)
-            if pattern.search(clean):
-                return map_id, map_def
-
-        return None
-
-    @classmethod
-    def classify(cls, filename: str) -> Optional[str]:
-        """Backward-compatible fallback classification using default preset."""
-        preset = PBRImporterPresetManager.get_preset(DEFAULT_PRESET_ID)
-        res = cls.classify_with_preset(filename, preset)
-        if res:
-            # Map default preset IDs to legacy semantic types if needed
-            map_id = res[0].upper()
-            if map_id == "BASE_COLOR":
-                return "BASE_COLOR"
-            if map_id == "ORM":
-                return "PACKED_ORM"
-            if map_id == "NORMAL":
-                normal_fmt = res[1].get("normal_format", "OPENGL")
-                return "NORMAL_DIRECTX" if normal_fmt == "DIRECTX" else "NORMAL_OPENGL"
-            return map_id
-        return None
 
 
 class OCIOColorSpaceResolver:
@@ -156,6 +88,38 @@ class ShaderGraphBuilder:
 
     NODE_X_SPACING = 300
     NODE_Y_SPACING = 280
+
+    BSDF_SOCKET_ALIASES: ClassVar[dict[str, list[str]]] = {
+        "Base Color": ["Base Color", "BaseColor", "Albedo"],
+        "Roughness": ["Roughness"],
+        "Metallic": ["Metallic", "Metalness"],
+        "Specular": ["Specular IOR Level", "Specular"],
+        "Specular Tint": ["Specular Tint"],
+        "Transmission": ["Transmission Weight", "Transmission"],
+        "Subsurface": ["Subsurface Weight", "Subsurface"],
+        "Subsurface Radius": ["Subsurface Radius"],
+        "Subsurface Scale": ["Subsurface Scale"],
+        "Clearcoat": ["Coat Weight", "Clearcoat", "Coat"],
+        "Coat": ["Coat Weight", "Coat", "Clearcoat"],
+        "Clearcoat Roughness": ["Coat Roughness", "Clearcoat Roughness"],
+        "Coat Roughness": ["Coat Roughness", "Clearcoat Roughness"],
+        "Sheen": ["Sheen Weight", "Sheen"],
+        "Sheen Tint": ["Sheen Tint"],
+        "Emission": ["Emission Color", "Emission"],
+        "Emission Color": ["Emission Color", "Emission"],
+        "Emission Strength": ["Emission Strength"],
+        "Alpha": ["Alpha", "Opacity"],
+        "Normal": ["Normal"],
+        "IOR": ["IOR"],
+        "Anisotropic": ["Anisotropic"],
+        "Anisotropic Rotation": ["Anisotropic Rotation"],
+    }
+
+    @classmethod
+    def resolve_bsdf_socket(cls, bsdf: Any, target: str) -> Any:
+        """Resolves target socket across Blender 3.x, 4.x, and 5.2 LTS Principled BSDF v2 aliases."""
+        aliases = cls.BSDF_SOCKET_ALIASES.get(target, [target])
+        return cls.get_bsdf_socket(bsdf, aliases)
 
     @staticmethod
     def get_bsdf_socket(bsdf: Any, aliases: list[str]) -> Any:
@@ -337,7 +301,15 @@ class ShaderGraphBuilder:
 
             final_path, is_rel = cls.resolve_texture_path(filepath, mode=path_mode)
             abs_disk_path = bpy.path.abspath(final_path)
-            img = bpy.data.images.load(abs_disk_path, check_existing=True)
+            try:
+                img = bpy.data.images.load(abs_disk_path, check_existing=True)
+            except (RuntimeError, OSError) as exc:
+                logger.warning("Failed to load image '%s': %s", abs_disk_path, exc)
+                return None
+
+            if not img:
+                return None
+
             if is_rel and hasattr(img, "filepath"):
                 img.filepath = final_path
 
@@ -372,6 +344,8 @@ class ShaderGraphBuilder:
             ch = route["channel"]
             invert = route["invert"]
             t_node = get_or_create_tex_node(filepath, route["color_space"])
+            if not t_node or not getattr(t_node, "image", None):
+                continue
             img = getattr(t_node, "image", None)
 
             # Resolve source output socket
@@ -438,23 +412,19 @@ class ShaderGraphBuilder:
                 else:
                     links.new(source_sock, norm_node.inputs["Color"])
 
-                dest_sock = cls.get_bsdf_socket(bsdf_node, ["Normal"])
+                dest_sock = cls.resolve_bsdf_socket(bsdf_node, "Normal")
                 if dest_sock:
                     links.new(norm_node.outputs["Normal"], dest_sock)
                     has_any_link = True
             else:
                 dest_sock = None
-                if target in {"Roughness"}:
-                    dest_sock = cls.get_bsdf_socket(bsdf_node, ["Roughness"])
-                elif target in {"Metallic", "Metalness"}:
-                    dest_sock = cls.get_bsdf_socket(bsdf_node, ["Metallic", "Metalness"])
-                elif target in {"Emission Color", "Emission"}:
-                    dest_sock = cls.get_bsdf_socket(bsdf_node, ["Emission Color", "Emission"])
-                    strength_sock = cls.get_bsdf_socket(bsdf_node, ["Emission Strength"])
+                if target in {"Emission Color", "Emission"}:
+                    dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
+                    strength_sock = cls.resolve_bsdf_socket(bsdf_node, "Emission Strength")
                     if strength_sock and not strength_sock.is_linked:
                         strength_sock.default_value = 1.0
                 elif target in {"Alpha", "Opacity"}:
-                    dest_sock = cls.get_bsdf_socket(bsdf_node, ["Alpha"])
+                    dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
                     if hasattr(material, "surface_render_method"):
                         material.surface_render_method = "DITHERED"
                     if hasattr(material, "blend_method"):
@@ -471,14 +441,14 @@ class ShaderGraphBuilder:
                         links.new(disp_node.outputs["Displacement"], output_node.inputs["Displacement"])
                         has_any_link = True
                 else:
-                    dest_sock = cls.get_bsdf_socket(bsdf_node, [target])
+                    dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
 
                 if dest_sock:
                     links.new(source_sock, dest_sock)
                     has_any_link = True
 
         # 7. AO Multiplicative Blending into Base Color
-        bsdf_base = cls.get_bsdf_socket(bsdf_node, ["Base Color", "BaseColor", "Albedo"])
+        bsdf_base = cls.resolve_bsdf_socket(bsdf_node, "Base Color")
         if bsdf_base:
             if base_color_source and ao_source and ao_blend_mode == "MULTIPLY":
                 mix_node = nodes.new(type="ShaderNodeMix")

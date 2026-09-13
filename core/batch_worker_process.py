@@ -33,20 +33,24 @@ def normalize_export_path_for_cli(path_str: str) -> str:
 
 def build_hierarchical_export_path(blend_path: str, source_root: str, export_root: str) -> tuple[str, str]:
     """Derives output directory preserving source subfolder structure."""
-    norm_blend = os.path.normpath(blend_path)
-    norm_source = os.path.normpath(source_root)
-    norm_export = os.path.normpath(export_root)
+    clean_blend = blend_path.replace("\\", "/")
+    clean_source = source_root.replace("\\", "/")
+    clean_export = export_root.replace("\\", "/")
 
-    try:
-        rel_path = os.path.relpath(norm_blend, norm_source)
-    except ValueError:
-        rel_path = os.path.basename(norm_blend)
+    stem = Path(clean_blend).stem
+    asset_name = re.sub(r"[^\w\-]", "_", stem)
+
+    if clean_blend.lower().startswith(clean_source.lower().rstrip("/") + "/"):
+        rel_path = clean_blend[len(clean_source.rstrip("/")) + 1 :]
+    else:
+        try:
+            rel_path = os.path.relpath(clean_blend, clean_source)
+        except ValueError:
+            rel_path = os.path.basename(clean_blend)
 
     rel_dir = os.path.dirname(rel_path)
-    clean_parts = [re.sub(r"[^\w\-]", "_", part) for part in Path(rel_dir).parts if part and part != "."]
-    target_dir = os.path.join(norm_export, *clean_parts) if clean_parts else norm_export
-    stem = Path(norm_blend).stem
-    asset_name = re.sub(r"[^\w\-]", "_", stem)
+    clean_parts = [re.sub(r"[^\w\-]", "_", part) for part in Path(rel_dir).parts if part and part not in (".", "..")]
+    target_dir = os.path.join(clean_export, *clean_parts) if clean_parts else clean_export
 
     return os.path.normpath(target_dir), asset_name
 

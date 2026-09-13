@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -23,18 +24,28 @@ logger = logging.getLogger(__name__)
 def detect_file_format(file_path: str) -> tuple[str, bool, str]:
     """Detects encoding, BOM presence, and newline style (\\r\\n vs \\n).
 
+    Detects UTF-16 LE/BE, UTF-8 BOM, standard UTF-8, and CP1252 fallback.
     Returns (encoding, has_bom, newline_style).
     """
     with open(file_path, "rb") as f:
-        raw_bytes = f.read(65536)
+        raw_bytes = f.read()
 
-    has_bom = raw_bytes.startswith(b"\xef\xbb\xbf")
-    encoding = "utf-8-sig" if has_bom else "utf-8"
-
-    try:
-        raw_bytes.decode(encoding)
-    except UnicodeDecodeError:
-        encoding = "cp1252"
+    if raw_bytes.startswith(b"\xef\xbb\xbf"):
+        has_bom = True
+        encoding = "utf-8-sig"
+    elif raw_bytes.startswith(b"\xff\xfe"):
+        has_bom = True
+        encoding = "utf-16-le"
+    elif raw_bytes.startswith(b"\xfe\xff"):
+        has_bom = True
+        encoding = "utf-16-be"
+    else:
+        has_bom = False
+        try:
+            raw_bytes.decode("utf-8")
+            encoding = "utf-8"
+        except UnicodeDecodeError:
+            encoding = "cp1252"
 
     newline_style = "\r\n" if b"\r\n" in raw_bytes else "\n"
     return encoding, has_bom, newline_style
@@ -140,25 +151,25 @@ class MSFSCameraCST:
                 if comment:
                     current_cam.property_comments[key] = comment.strip()
 
-                k_lower = key.lower()
-                if k_lower == "title":
+                k_norm = re.sub(r"[\s_]+", "", key.lower())
+                if k_norm == "title":
                     current_cam.title = val.strip("\"'")
-                elif k_lower == "guid":
+                elif k_norm == "guid":
                     current_cam.guid = val.strip("\"'")
-                elif k_lower == "origin":
+                elif k_norm == "origin":
                     current_cam.origin = val.strip("\"'")
-                elif k_lower == "category":
+                elif k_norm == "category":
                     current_cam.category = val.strip("\"'")
-                elif k_lower == "subcategory":
+                elif k_norm in ("subcategory", "subcategorytitle"):
                     current_cam.subcategory = val.strip("\"'")
-                elif k_lower == "subcategoryitem":
+                elif k_norm == "subcategoryitem":
                     current_cam.subcategory_item = val.strip("\"'")
-                elif k_lower == "initialzoom":
+                elif k_norm == "initialzoom":
                     try:
                         current_cam.initial_zoom = float(val)
                     except ValueError:
                         pass
-                elif k_lower == "initialxyz":
+                elif k_norm == "initialxyz":
                     tokens = [t.strip() for t in val.split(",") if t.strip()]
                     if len(tokens) >= 3:
                         try:
@@ -169,7 +180,7 @@ class MSFSCameraCST:
                             )
                         except ValueError:
                             pass
-                elif k_lower == "initialpbh":
+                elif k_norm == "initialpbh":
                     tokens = [t.strip() for t in val.split(",") if t.strip()]
                     if len(tokens) >= 3:
                         try:

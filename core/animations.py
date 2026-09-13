@@ -82,13 +82,13 @@ class AnimationRigSanitizer:
             except Exception as exc:
                 logger.debug("Layered fcurves extraction skipped: %s", exc)
 
-        # Deduplicate while preserving order
+        # Deduplicate while preserving order using composite data_path and array_index
         seen = set()
         unique_fcurves = []
         for fc in raw_fcurves:
-            fc_id = id(fc)
-            if fc_id not in seen:
-                seen.add(fc_id)
+            fc_key = (getattr(fc, "data_path", ""), getattr(fc, "array_index", 0))
+            if fc_key not in seen:
+                seen.add(fc_key)
                 unique_fcurves.append(fc)
         return unique_fcurves
 
@@ -253,6 +253,44 @@ class AnimationRigSanitizer:
 
         return snapped_count
 
+    @staticmethod
+    def functional_rdp_reduce(
+        points: List[Tuple[float, float]],
+        epsilon: float,
+    ) -> List[Tuple[float, float]]:
+        """
+        Ramer-Douglas-Peucker reduction for 1D functional curves (time t -> value v).
+        Evaluates vertical interpolation residual error |v_i - v_interp(t_i)| rather than 2D Euclidean distance,
+        preventing dimensional mixing errors between frame counts and spatial/quaternion units.
+        """
+        if len(points) <= 2 or epsilon <= 1e-7:
+            return points
+
+        t0, v0 = points[0]
+        tn, vn = points[-1]
+        dt = tn - t0
+        if abs(dt) < 1e-6:
+            return [points[0], points[-1]]
+
+        dv = vn - v0
+        max_err = 0.0
+        idx = 0
+
+        for i in range(1, len(points) - 1):
+            ti, vi = points[i]
+            v_interp = v0 + ((ti - t0) / dt) * dv
+            err = abs(vi - v_interp)
+            if err > max_err:
+                max_err = err
+                idx = i
+
+        if max_err > epsilon:
+            left = AnimationRigSanitizer.functional_rdp_reduce(points[: idx + 1], epsilon)
+            right = AnimationRigSanitizer.functional_rdp_reduce(points[idx:], epsilon)
+            return left[:-1] + right
+
+        return [points[0], points[-1]]
+
     @classmethod
     def bake_deform_animation(
         cls,
@@ -260,11 +298,13 @@ class AnimationRigSanitizer:
         source_armature: Any,
         action: Any,
         bake_step: float = 1.0,
+        keyframe_reduction_tolerance: float = 0.0,
     ) -> Optional[Any]:
         """Bakes evaluated depsgraph world matrices of all deforming bones into a clean FK Action.
 
         Eliminates IK constraints, Spline IK, and Copy Transforms for pristine UE5/Unity export.
-        Guarantees timeline frame restoration, matrix singularity safety, and normalized rotation quaternions.
+        Guarantees timeline frame restoration, matrix singularity safety, quaternion sign continuity,
+        and optional functional RDP keyframe reduction.
         """
         if not bpy or not context or not source_armature or not action:
             return None
@@ -321,6 +361,9 @@ class AnimationRigSanitizer:
         orig_frame = scene.frame_current
         orig_subframe = getattr(scene, "frame_subframe", 0.0)
 
+        # Track previous frame rotations for quaternion sign continuity (prevents 360-degree spin flips)
+        prev_rotations: dict[str, Any] = {}
+
         try:
             # Frame-by-frame Depsgraph Evaluation
             curr_f = float(start_f)
@@ -361,6 +404,19 @@ class AnimationRigSanitizer:
                     else:
                         rot.normalize()
 
+                    # Enforce quaternion sign continuity (shortest arc on S^3)
+                    if hasattr(rot, "w"):
+                        if b_name in prev_rotations:
+                            pq = prev_rotations[b_name]
+                            if hasattr(pq, "w"):
+                                dot = rot.w * pq.w + rot.x * pq.x + rot.y * pq.y + rot.z * pq.z
+                                if dot < 0.0:
+                                    if Quaternion:
+                                        rot = Quaternion((-rot.w, -rot.x, -rot.y, -rot.z))
+                                    elif hasattr(rot, "__iter__"):
+                                        rot = type(rot)([-x for x in rot])
+                        prev_rotations[b_name] = rot.copy() if hasattr(rot, "copy") else rot
+
                     # Sanitize location
                     safe_loc = [loc[i] if math.isfinite(loc[i]) else 0.0 for i in range(3)]
                     # Sanitize scale
@@ -384,6 +440,36 @@ class AnimationRigSanitizer:
                             c_rot.keyframe_points.insert(curr_f, safe_rot[i])
 
                 curr_f += step
+
+            # Optional functional Ramer-Douglas-Peucker (RDP) curve reduction
+            if keyframe_reduction_tolerance > 0.0:
+                for c in curves.values():
+                    if not c or not hasattr(c, "keyframe_points") or len(c.keyframe_points) <= 2:
+                        continue
+                    raw_pts = [(kp.co[0], kp.co[1]) for kp in c.keyframe_points]
+                    reduced_pts = cls.functional_rdp_reduce(raw_pts, keyframe_reduction_tolerance)
+                    if len(reduced_pts) < len(raw_pts):
+                        while len(c.keyframe_points) > 0:
+                            c.keyframe_points.remove(c.keyframe_points[0])
+                        for f, v in reduced_pts:
+                            c.keyframe_points.insert(f, v)
+
+            # Update all F-Curves to calculate internal indices and tangents
+            for c in curves.values():
+                if c and hasattr(c, "update"):
+                    try:
+                        c.update()
+                    except Exception as exc:
+                        logger.debug("F-Curve update bypassed: %s", exc)
+
+        except Exception as bake_exc:
+            logger.error("Error during animation baking: %s. Cleaning up orphaned action.", bake_exc)
+            if bpy and hasattr(bpy.data, "actions"):
+                try:
+                    bpy.data.actions.remove(baked_action, do_unlink=True)
+                except Exception as clean_exc:
+                    logger.debug("Failed removing orphaned action: %s", clean_exc)
+            raise
         finally:
             scene.frame_set(orig_frame, subframe=orig_subframe)
 

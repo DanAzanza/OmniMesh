@@ -9,6 +9,7 @@ from __future__ import annotations
 import atexit
 import concurrent.futures
 import ctypes
+import ctypes.util
 import gc
 import logging
 import os
@@ -98,8 +99,11 @@ class TexturePoolManager:
                 logger.debug("Win32 heap compaction skipped: %s", exc)
         elif sys.platform.startswith("linux"):
             try:
-                ctypes.CDLL("libc.so.6").malloc_trim(0)
-            except (AttributeError, OSError) as exc:
+                libc_name = ctypes.util.find_library("c") or "libc.so.6"
+                libc = ctypes.CDLL(libc_name)
+                if hasattr(libc, "malloc_trim"):
+                    libc.malloc_trim(0)
+            except Exception as exc:
                 logger.debug("Linux malloc_trim skipped: %s", exc)
 
     @classmethod

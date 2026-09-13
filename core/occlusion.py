@@ -49,6 +49,10 @@ except ImportError:
         def length(self) -> float:
             return math.sqrt(self[0] * self[0] + self[1] * self[1] + self[2] * self[2])
 
+        @property
+        def length_squared(self) -> float:
+            return self[0] * self[0] + self[1] * self[1] + self[2] * self[2]
+
         def normalized(self) -> Vector:
             l_val = self.length
             if l_val < 1e-9:
@@ -214,6 +218,7 @@ class HardenedOcclusionCuller:
         ray_density: int = 16,
         evaluate_alpha: bool = True,
         delta_world: float = 0.05,
+        mode: str = "ISLAND_ONLY",
     ) -> Dict[str, int]:
         """
         Detects and strips interior/occluded faces from BMesh.
@@ -249,18 +254,32 @@ class HardenedOcclusionCuller:
             bvh_opaque = BVHTree.FromBMesh(bm, epsilon=1e-5)
             opaque_face_map: list[int] = [f.index for f in bm.faces]
         else:
-            polys = [[v.index for v in f.verts] for f in opaque_faces]
-            verts = [v.co for v in bm.verts]
-            bvh_opaque = BVHTree.FromPolygons(verts, polys, epsilon=1e-5)
-            opaque_face_map = [f.index for f in opaque_faces]
+            # Construct isolated BMesh of opaque faces only for accurate raycasts
+            temp_bm = bmesh.new()
+            try:
+                vert_map: dict[Any, Any] = {}
+                opaque_face_map = []
+                for f in opaque_faces:
+                    new_verts = []
+                    for v in f.verts:
+                        if v not in vert_map:
+                            vert_map[v] = temp_bm.verts.new(v.co)
+                        new_verts.append(vert_map[v])
+                    try:
+                        temp_bm.faces.new(new_verts)
+                        opaque_face_map.append(f.index)
+                    except ValueError:
+                        pass
+                temp_bm.faces.ensure_lookup_table()
+                bvh_opaque = BVHTree.FromBMesh(temp_bm, epsilon=1e-5)
+            finally:
+                temp_bm.free()
 
         if not bvh_opaque:
             return {"culled_faces": 0, "culled_islands": 0}
 
         # 4. Compute Bounding Sphere
-        coords = [v.co for v in bm.verts]
-        center = sum(coords, Vector((0.0, 0.0, 0.0))) / len(coords)
-        radius = max((v - center).length for v in coords)
+        center, radius = cls._compute_bounding_sphere(bm)
         if radius < 1e-6:
             return {"culled_faces": 0, "culled_islands": 0}
 
@@ -295,6 +314,9 @@ class HardenedOcclusionCuller:
             if face.index in visible_face_indices:
                 continue
 
+            if not hasattr(face.normal, "length_squared") or face.normal.length_squared < 1e-8:
+                continue
+
             c = face.calc_center_median()
             n = face.normal
             eps = min(1e-4 * radius, 0.02 * math.sqrt(max(1e-9, face.calc_area())))
@@ -321,7 +343,7 @@ class HardenedOcclusionCuller:
             if vis_ratio < 0.02:  # Less than 2% visible -> Purge entire island cleanly
                 faces_to_delete.extend(island)
                 culled_islands_count += 1
-            else:
+            elif mode != "ISLAND_ONLY":
                 for f in island:
                     if f.index not in visible_face_indices:
                         faces_to_delete.append(f)
@@ -385,6 +407,12 @@ class HardenedOcclusionCuller:
     @staticmethod
     def _stratified_hemisphere_dirs(normal: Any, count: int) -> List[Any]:
         """Generates cosine-weighted stratified hemisphere directions oriented along normal."""
+        l_sq = getattr(normal, "length_squared", None)
+        if l_sq is None:
+            length_val = getattr(normal, "length", None)
+            l_sq = (length_val * length_val) if length_val is not None else 0.0
+        if l_sq < 1e-8:
+            return []
         dirs = []
         n = normal.normalized()
         up = Vector((0.0, 0.0, 1.0)) if abs(n.z) < 0.9 else Vector((1.0, 0.0, 0.0))
