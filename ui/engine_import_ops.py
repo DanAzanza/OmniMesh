@@ -575,6 +575,22 @@ class OMNIMESH_OT_import_engine_project(Operator):
             except Exception as exc:
                 logger.warning("Error ingesting cameras: %s", exc)
 
+        # 7. Ingest Modular Attachments (attached_objects.cfg)
+        attachments_count = 0
+        if do_spatial and manifest.attached_objects_cfg_path and os.path.isfile(manifest.attached_objects_cfg_path):
+            try:
+                from ..core.msfs.attachments_cst import MSFSAttachmentsCST
+                from .msfs_attachment_ops import OMNIMESH_OT_import_msfs_attachments
+
+                att_importer = OMNIMESH_OT_import_msfs_attachments()
+                att_importer.filepath = str(manifest.attached_objects_cfg_path)
+                res = att_importer.execute(context)
+                if "FINISHED" in res:
+                    cfg_att = MSFSAttachmentsCST.parse_attachments_file(str(manifest.attached_objects_cfg_path))
+                    attachments_count = len(cfg_att.attachments)
+            except Exception as exc:
+                logger.warning("Error ingesting attachments: %s", exc)
+
         # Summary report
         summary_parts = []
         if lod_mesh_map:
@@ -583,8 +599,11 @@ class OMNIMESH_OT_import_engine_project(Operator):
             summary_parts.append(f"{spatial_count} markers")
         if lights_count:
             summary_parts.append(f"{lights_count} lights")
+
         if cameras_count:
             summary_parts.append(f"{cameras_count} cameras")
+        if attachments_count:
+            summary_parts.append(f"{attachments_count} attachments")
 
         summary_text = f"Imported {asset_name} ({', '.join(summary_parts) if summary_parts else 'Complete'})"
         if props:

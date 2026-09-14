@@ -17,6 +17,7 @@ from typing import Optional
 
 from .models import (
     AircraftSpatialConfig,
+    AttachmentsConfigFile,
     CFGLineRecord,
     CameraConfigFile,
     CameraDefinition,
@@ -28,7 +29,9 @@ from .transforms import (
     msfs_to_blender,
 )
 from .camera_cst import MSFSCameraCST, detect_file_format
+from .attachments_cst import MSFSAttachmentsCST
 from .spatial_parsers import MSFSSpatialParsers
+
 
 logger = logging.getLogger(__name__)
 
@@ -496,3 +499,19 @@ class MSFSCSTParser:
     ) -> str:
         """Serializes cameras back to cameras.cfg with gapless contiguous indexing (0..N-1)."""
         return MSFSCameraCST.serialize_and_save_cameras(config, updated_cameras, updated_eyepoint_ft, target_path)
+
+    @classmethod
+    def parse_attachments_file(cls, file_path: str) -> AttachmentsConfigFile:
+        """Parses an MSFS 2024 attached_objects.cfg file into an AttachmentsConfigFile instance."""
+        return MSFSAttachmentsCST.parse_attachments_file(file_path)
+
+    @classmethod
+    def serialize_and_save_attachments(
+        cls,
+        config: AttachmentsConfigFile,
+        updated_points: Optional[dict[str, tuple[float, float, float]]] = None,
+        updated_rotations: Optional[dict[str, tuple[float, float, float]]] = None,
+        target_path: Optional[str] = None,
+    ) -> str:
+        """Serializes updated attachment offsets back to attached_objects.cfg atomically."""
+        return MSFSAttachmentsCST.serialize_and_save(config, updated_points, updated_rotations, target_path)

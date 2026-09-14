@@ -17,9 +17,9 @@ except ImportError:
     Operator = object
 
 try:
-    from core.collision import CollisionManager
-    from core.impostor import ImpostorManager
-    from ui.utils import (
+    from ..core.collision import CollisionManager
+    from ..core.impostor import ImpostorManager
+    from .utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
         resolve_asset_base_name,
@@ -28,9 +28,9 @@ try:
         safe_report,
     )
 except (ImportError, ValueError):
-    from ..core.collision import CollisionManager
-    from ..core.impostor import ImpostorManager
-    from .utils import (
+    from core.collision import CollisionManager
+    from core.impostor import ImpostorManager
+    from ui.utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
         resolve_asset_base_name,

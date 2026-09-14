@@ -5,8 +5,8 @@ Provides backward compatibility while delegating to the unified core.msfs packag
 
 from __future__ import annotations
 
-from core.msfs.geometry import *  # noqa: F403
-from core.msfs.geometry import (
+from .msfs.geometry import *  # noqa: F403
+from .msfs.geometry import (
     EXCLUDED_OBJECT_PATTERN,
     SCRAPE_CLASS_2_DEFAULTS,
     collect_airframe_vertices,

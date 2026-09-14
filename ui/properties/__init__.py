@@ -25,6 +25,7 @@ from . import (
     interaction_properties,
     lod_properties,
     material_properties,
+    msfs_cfg_properties,
     pbr_properties,
     settings,
 )
@@ -89,6 +90,7 @@ from .config_properties import OMNIMESH_ConfigPresetSettings
 from .material_properties import OMNIMESH_MaterialPresetSettings
 from .interaction_properties import OMNIMESH_InteractionSettings
 from .animation_properties import OMNIMESH_AnimationSettings
+from .msfs_cfg_properties import OMNIMESH_MSFSConfigSettings
 from .settings import LODToolSettings
 
 # Dynamic reload sequence in strict dependency order
@@ -104,6 +106,7 @@ if "_OMNIMESH_PROPERTIES_LOADED" in locals():
         material_properties,
         interaction_properties,
         animation_properties,
+        msfs_cfg_properties,
         callbacks,
         settings,
     ):
@@ -115,6 +118,7 @@ CLASSES = (
     OMNIMESH_MaterialPresetSettings,
     OMNIMESH_InteractionSettings,
     OMNIMESH_AnimationSettings,
+    OMNIMESH_MSFSConfigSettings,
     LODLevelItem,
     LODPresetTierItem,
     PBRMapItem,

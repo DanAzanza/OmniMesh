@@ -41,7 +41,7 @@ try:
     from .hierarchy import get_or_create_engine_import_collection
 except (ImportError, ValueError):
     try:
-        from core.hierarchy import get_or_create_engine_import_collection
+        from ..hierarchy import get_or_create_engine_import_collection
     except (ImportError, ValueError):
         get_or_create_engine_import_collection = None
 

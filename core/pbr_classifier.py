@@ -12,7 +12,7 @@ import re
 from typing import Any, Optional
 
 try:
-    from core.pbr_presets import (
+    from ..pbr_presets import (
         DEFAULT_PRESET_ID,
         PBRImporterPresetManager,
     )

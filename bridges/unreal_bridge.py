@@ -182,14 +182,52 @@ class UnrealLiveBridge(EngineBridgeBase):
         return "\n".join(lines) + "\n"
 
     @classmethod
+    def dispatch_to_ue5_web_remote(
+        cls,
+        payload: str,
+        host: str = "127.0.0.1",
+        port: int = DEFAULT_HTTP_PORT,
+        timeout_sec: float = 5.0,
+    ) -> Tuple[bool, str]:
+        """Dispatches Python payload via UE5 Web Remote Control HTTP endpoint."""
+        url = f"http://{host}:{port}/remote/object/call"
+        req_body = {
+            "objectPath": "/Engine/PythonScripting.Default__PythonScriptLibrary",
+            "functionName": "ExecutePythonCommand",
+            "parameters": {"PythonCommand": payload},
+            "generateTransaction": False,
+        }
+        data_bytes = json.dumps(req_body).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data_bytes,
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:  # noqa: S310
+                if resp.status in (200, 201, 202):
+                    return True, "Successfully dispatched live sync command via UE5 Web Remote Control."
+                return False, f"UE5 Web Remote returned HTTP {resp.status}"
+        except Exception as exc:
+            return False, f"UE5 Web Remote Control failed: {str(exc)}"
+
+    @classmethod
     def dispatch_to_ue5(
         cls,
         payload: str,
         host: str = "127.0.0.1",
         port: int = DEFAULT_TCP_PORT,
+        http_port: int = DEFAULT_HTTP_PORT,
     ) -> Tuple[bool, str]:
-        """Dispatches Python payload via TCP or reports passive fallback."""
-        if not cls.ping_remote_execution(port):
+        """Dispatches Python payload via TCP Remote Execution or Web Remote Control HTTP fallback."""
+        # 1. Check TCP Remote Execution
+        has_tcp = cls.ping_remote_execution(port=port)
+        if not has_tcp:
+            # Try HTTP Web Remote Control
+            if cls.ping_web_remote_control(port=http_port):
+                return cls.dispatch_to_ue5_web_remote(payload, host=host, port=http_port)
+
             return False, (
                 "UE5 Python Remote Execution is unavailable (disabled by default in UE5).\n"
                 "Enable in UE5: Project Settings > Plugins > Python > Enable Remote Execution.\n"
@@ -198,7 +236,7 @@ class UnrealLiveBridge(EngineBridgeBase):
             )
 
         try:
-            with socket.create_connection((host, port), timeout=5.0) as s:
+            with socket.create_connection((host, port), timeout=3.0) as s:
                 s.settimeout(5.0)
                 cmd_dict = {
                     "version": 1,
@@ -206,16 +244,11 @@ class UnrealLiveBridge(EngineBridgeBase):
                     "type": "command",
                     "command": payload,
                     "unattended": True,
+                    "exec_mode": "ExecuteFile",
                 }
                 msg = json.dumps(cmd_dict).encode("utf-8")
                 frame = len(msg).to_bytes(4, byteorder="big") + msg
                 s.sendall(frame)
-
-                # Graceful half-close write channel to prevent WinSock WSAECONNRESET (10054)
-                try:
-                    s.shutdown(socket.SHUT_WR)
-                except OSError:
-                    pass
 
                 # Drain response frame (with 16 MB safety limit)
                 length_bytes = b""
@@ -246,16 +279,19 @@ class UnrealLiveBridge(EngineBridgeBase):
                     return False, f"UE5 script error: {resp_json.get('result', 'Unknown error')}"
                 except Exception:
                     return True, "Successfully dispatched live sync command to active UE5 session."
-        except (socket.timeout, ConnectionRefusedError, OSError) as e:
+        except (socket.timeout, ConnectionRefusedError, BrokenPipeError, ConnectionResetError, OSError) as e:
+            # Fallback to Web Remote Control if TCP failed during transmission
+            if cls.ping_web_remote_control(port=http_port):
+                return cls.dispatch_to_ue5_web_remote(payload, host=host, port=http_port)
             return False, f"Socket transmission failed: {str(e)}"
 
     @classmethod
-    def sync_asset(
+    def sync_asset_headless(
         cls,
-        context: Any,
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
+        extra_options: Any = None,
     ) -> Tuple[bool, str]:
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", os.path.basename(str(asset_name))).strip() or "SM_Asset"
         if not export_dir or not os.path.isdir(export_dir):
@@ -304,3 +340,13 @@ class UnrealLiveBridge(EngineBridgeBase):
         )
 
         return cls.dispatch_to_ue5(payload)
+
+    @classmethod
+    def sync_asset(
+        cls,
+        context: Any,
+        export_dir: str,
+        asset_name: str,
+        project_dir: str = "",
+    ) -> Tuple[bool, str]:
+        return cls.sync_asset_headless(export_dir, asset_name, project_dir)

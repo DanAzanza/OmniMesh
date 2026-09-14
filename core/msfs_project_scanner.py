@@ -5,8 +5,8 @@ Provides backward compatibility while delegating to the unified core.msfs packag
 
 from __future__ import annotations
 
-from core.msfs.project_scanner import *  # noqa: F403
-from core.msfs.project_scanner import (
+from .msfs.project_scanner import *  # noqa: F403
+from .msfs.project_scanner import (
     MSFSLODInfo,
     MSFSModelOptions,
     MSFSModelTargetInfo,

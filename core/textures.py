@@ -30,7 +30,7 @@ try:
     from .texture_pool import TexturePoolManager
     from .shader_tracer import ShaderTracer
     from .png_writer import write_png_direct
-except ImportError:
+except (ImportError, ValueError):
     from core.texture_pool import TexturePoolManager
     from core.shader_tracer import ShaderTracer
     from core.png_writer import write_png_direct

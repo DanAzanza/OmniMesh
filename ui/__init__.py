@@ -12,6 +12,8 @@ from .msfs_camera_ops import register as register_msfs_cameras, unregister as un
 from .msfs_ground_ops import register as register_msfs_ground, unregister as unregister_msfs_ground
 from .msfs_lighting_ops import register as register_msfs_lighting, unregister as unregister_msfs_lighting
 from .msfs_spatial_ops import register as register_msfs_spatial, unregister as unregister_msfs_spatial
+from .msfs_attachment_ops import register as register_msfs_attachments, unregister as unregister_msfs_attachments
+from .msfs_panel import register as register_msfs_panel, unregister as unregister_msfs_panel
 from .operators import register_operators, unregister_operators
 from .panel import register_panel, unregister_panel
 from .properties import register_properties, unregister_properties
@@ -28,7 +30,10 @@ def register_ui() -> None:
     register_msfs_ground()
     register_msfs_lighting()
     register_msfs_cameras()
+    register_msfs_attachments()
     register_panel()
+    register_msfs_panel()
+
     register_simulator_ops()
     register_batch_ops()
     register_split_ops()
@@ -40,11 +45,14 @@ def unregister_ui() -> None:
     unregister_split_ops()
     unregister_batch_ops()
     unregister_simulator_ops()
+    unregister_msfs_panel()
     unregister_panel()
+    unregister_msfs_attachments()
     unregister_msfs_cameras()
     unregister_msfs_lighting()
     unregister_msfs_ground()
     unregister_msfs_spatial()
+
     unregister_engine_import()
     unregister_operators()
     unregister_lists()

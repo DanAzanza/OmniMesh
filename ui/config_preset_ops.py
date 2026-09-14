@@ -372,7 +372,7 @@ class OMNIMESH_OT_add_config_preset(Operator):
         for item in preset_data.get("interactions", []):
             i_name = item.get("name", "Interaction")
             try:
-                from core.interaction_volumes import create_interaction_volume
+                from ..core.interaction_volumes import create_interaction_volume
 
                 create_interaction_volume(
                     context=context,

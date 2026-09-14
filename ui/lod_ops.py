@@ -19,21 +19,21 @@ except ImportError:
     Operator = object
 
 try:
-    from core.lod_generator import generate_all_lods
-    from core.metrics import (
+    from ..core.lod_generator import generate_all_lods
+    from ..core.metrics import (
         compute_distance_from_screen_size,
         compute_vertical_fov,
     )
-    from ui.hud import LODViewportHUD
-    from ui.lod_preset_ops import (
+    from .hud import LODViewportHUD
+    from .lod_preset_ops import (
         LOD_OT_add_preset_tier,
         LOD_OT_apply_preset_tiers,
         LOD_OT_capture_scene_tiers,
         LOD_OT_remove_preset_tier,
         LOD_OT_save_preset_tiers,
     )
-    from ui.properties import project_preset_tiers
-    from ui.utils import (
+    from .properties import project_preset_tiers
+    from .utils import (
         get_asset_base_meshes,
         get_associated_armature,
         get_selected_mesh_objects,
@@ -42,8 +42,8 @@ try:
         safe_report,
     )
 except (ImportError, ValueError):
-    from ..core.lod_generator import generate_all_lods
-    from ..core.metrics import (
+    from core.lod_generator import generate_all_lods
+    from core.metrics import (
         compute_distance_from_screen_size,
         compute_vertical_fov,
     )

@@ -228,27 +228,22 @@ class UnityLiveBridge(EngineBridgeBase):
 
         script_path = os.path.join(editor_dir, "OmniMeshUnityPostprocessor.cs")
         try:
-            with open(script_path, "w", encoding="utf-8") as f:
+            with open(script_path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(cls.generate_postprocessor_csharp_code())
             return True, f"Installed Unity Postprocessor: {script_path}"
         except Exception as e:
             return False, f"Failed to install Unity postprocessor: {str(e)}"
 
     @classmethod
-    def sync_asset(
+    def sync_asset_headless(
         cls,
-        context: Any,
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
+        extra_options: Any = None,
     ) -> Tuple[bool, str]:
-        """Syncs exported package to Unity project."""
+        """Headless sync of exported package to Unity project."""
         target_dir = project_dir
-        if not target_dir and context and hasattr(context, "scene"):
-            props = getattr(context.scene, "lod_tool", None)
-            if props and props.engine_project_path:
-                target_dir = os.path.abspath(bpy.path.abspath(props.engine_project_path)) if bpy else ""
-
         if not target_dir:
             return False, "Unity Project Path not configured in OmniMesh"
 
@@ -256,6 +251,7 @@ class UnityLiveBridge(EngineBridgeBase):
             return False, f"Export directory not found: '{export_dir}'"
 
         import re
+        import time
 
         clean_name = os.path.basename(str(asset_name))
         clean_asset = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", clean_name).strip() or "SM_Asset"
@@ -285,18 +281,24 @@ class UnityLiveBridge(EngineBridgeBase):
 
         import stat
 
-        def _safe_copy(src: str, dst: str) -> None:
-            try:
-                shutil.copy2(src, dst)
-            except PermissionError:
-                if os.path.exists(dst):
-                    try:
-                        os.chmod(dst, stat.S_IWRITE)
-                        shutil.copy2(src, dst)
-                    except Exception:
+        def _safe_copy_with_retry(src: str, dst: str, max_retries: int = 3) -> None:
+            """Copies file with exponential backoff against Windows file locks (WinError 32) and preserves .meta."""
+            # Never overwrite existing .meta file with non-meta file or truncate it
+            for attempt in range(max_retries):
+                try:
+                    shutil.copy2(src, dst)
+                    return
+                except PermissionError:
+                    if os.path.exists(dst):
+                        try:
+                            os.chmod(dst, stat.S_IWRITE)
+                            shutil.copy2(src, dst)
+                            return
+                        except Exception as exc:
+                            logger.debug("Retrying chmod copy on %s: %s", dst, exc)
+                    if attempt == max_retries - 1:
                         raise
-                else:
-                    raise
+                    time.sleep(0.1 * (2**attempt))
 
         try:
             os.makedirs(dest_folder, exist_ok=True)
@@ -306,12 +308,36 @@ class UnityLiveBridge(EngineBridgeBase):
                     s = os.path.join(export_dir, item)
                     d = os.path.join(dest_folder, item)
                     if os.path.isdir(s):
-                        shutil.copytree(s, d, dirs_exist_ok=True, copy_function=_safe_copy)
-                        copied_count += 1
+                        # Recursive directory sync preserving existing .meta files
+                        os.makedirs(d, exist_ok=True)
+                        for sub_root, _, sub_files in os.walk(s):
+                            rel = os.path.relpath(sub_root, s)
+                            sub_dst_dir = os.path.join(d, rel) if rel != "." else d
+                            os.makedirs(sub_dst_dir, exist_ok=True)
+                            for sf in sub_files:
+                                src_f = os.path.join(sub_root, sf)
+                                dst_f = os.path.join(sub_dst_dir, sf)
+                                _safe_copy_with_retry(src_f, dst_f)
+                                copied_count += 1
                     elif os.path.isfile(s):
-                        _safe_copy(s, d)
+                        _safe_copy_with_retry(s, d)
                         copied_count += 1
         except (OSError, shutil.Error) as exc:
             return False, f"Failed copying asset files to Unity project: {exc}"
 
         return True, f"Synced {clean_asset} ({copied_count} items) to Unity: Assets/OmniMesh_Exports/{clean_asset}/"
+
+    @classmethod
+    def sync_asset(
+        cls,
+        context: Any,
+        export_dir: str,
+        asset_name: str,
+        project_dir: str = "",
+    ) -> Tuple[bool, str]:
+        target_dir = project_dir
+        if not target_dir and context and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
+            if props and props.engine_project_path:
+                target_dir = os.path.abspath(bpy.path.abspath(props.engine_project_path)) if bpy else ""
+        return cls.sync_asset_headless(export_dir, asset_name, target_dir)

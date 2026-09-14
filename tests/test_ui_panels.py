@@ -240,15 +240,12 @@ def test_clean_and_repair_mesh_properties(monkeypatch):
     """Verify LOD_OT_clean_and_repair_mesh correctly accesses cleanup_* properties without AttributeError."""
     import ui.cleanup_ops as cleanup_ops
 
-    mock_bpy = MagicMock()
-    mock_bmesh = MagicMock()
+    mock_bpy, mock_bmesh = MagicMock(), MagicMock()
     monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
     monkeypatch.setattr(cleanup_ops, "bmesh", mock_bmesh)
 
     op = cleanup_ops.LOD_OT_clean_and_repair_mesh()
-    mock_context = MagicMock()
-    mock_props = MagicMock()
-    # Configure exact LODToolSettings property names
+    mock_context, mock_props = MagicMock(), MagicMock()
     mock_props.cleanup_enable_weld = False
     mock_props.cleanup_weld_distance = 0.0005
     mock_props.cleanup_enable_split_non_manifold = True
@@ -258,9 +255,8 @@ def test_clean_and_repair_mesh_properties(monkeypatch):
     mock_props.cleanup_normal_policy = "OFF"
     mock_props.last_cleanup_summary = ""
 
-    mock_mesh = MagicMock()
+    mock_mesh = MagicMock(type="MESH")
     mock_mesh.name = "TestMesh"
-    mock_mesh.type = "MESH"
     mock_mesh.get.return_value = False
     mock_context.scene.lod_tool = mock_props
     mock_context.active_object = mock_mesh
@@ -275,8 +271,7 @@ def test_clean_and_repair_mesh_with_apply_modifiers_opt_in(monkeypatch):
     """Verify clean_and_repair_mesh applies modifiers when cleanup_apply_modifiers is enabled."""
     import ui.cleanup_ops as cleanup_ops
 
-    mock_bpy = MagicMock()
-    mock_bmesh = MagicMock()
+    mock_bpy, mock_bmesh = MagicMock(), MagicMock()
     monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
     monkeypatch.setattr(cleanup_ops, "bmesh", mock_bmesh)
 
@@ -286,8 +281,7 @@ def test_clean_and_repair_mesh_with_apply_modifiers_opt_in(monkeypatch):
     monkeypatch.setattr(cleanup_ops, "ModifierManager", mock_mod_mgr)
 
     op = cleanup_ops.LOD_OT_clean_and_repair_mesh()
-    mock_context = MagicMock()
-    mock_props = MagicMock()
+    mock_context, mock_props = MagicMock(), MagicMock()
     mock_props.cleanup_apply_modifiers = True
     mock_props.cleanup_sync_viewport_settings = True
     mock_props.cleanup_enable_weld = False
@@ -297,9 +291,8 @@ def test_clean_and_repair_mesh_with_apply_modifiers_opt_in(monkeypatch):
     mock_props.cleanup_normal_policy = "OFF"
     mock_props.last_cleanup_summary = ""
 
-    mock_mesh = MagicMock()
+    mock_mesh = MagicMock(type="MESH")
     mock_mesh.name = "TestMesh"
-    mock_mesh.type = "MESH"
     mock_mesh.get.return_value = False
     mock_context.scene.lod_tool = mock_props
     mock_context.active_object = mock_mesh
@@ -468,32 +461,24 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
     monkeypatch.setattr(popovers_mod, "bpy", mock_bpy)
 
-    panel_modify = OMNIMESH_PT_modify()
-    popover_san = OMNIMESH_PT_popover_sanitize()
-
-    mock_context = MagicMock()
-    mock_props = MagicMock()
-    mock_mesh = MagicMock()
-    mock_mesh.name = "SM_Chair"
-    mock_mesh.type = "MESH"
+    panel_modify, popover_san = OMNIMESH_PT_modify(), OMNIMESH_PT_popover_sanitize()
+    mock_context, mock_props = MagicMock(), MagicMock()
+    mock_mesh = MagicMock(type="MESH", name="SM_Chair")
     mock_mesh.get.return_value = False
 
     mock_context.scene.lod_tool = mock_props
     mock_context.active_object = mock_mesh
     mock_context.selected_objects = [mock_mesh]
-
     mock_props.export_base_name = ""
     mock_props.last_cleanup_summary = "Cleaned: 2 loose verts."
     mock_props.last_material_cleanup_summary = "Cleaned: 1 slot purged."
     mock_props.last_generated_collider_count = 0
 
-    # 1. Verify Modify Panel draw with 3 clean rows
     mock_layout = MagicMock()
     panel_modify.layout = mock_layout
     panel_modify.draw(mock_context)
     assert mock_layout.row.called
 
-    # 2. Verify Popover Sanitize draw when preflight inspected with issues
     mock_props.preflight_inspected = True
     mock_props.preflight_is_clean = False
     mock_props.preflight_summary_text = "⚠ Issues: 2 Loose Verts"
@@ -511,7 +496,6 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     assert mock_san_layout.label.called
     assert mock_san_layout.prop.called
 
-    # 3. Verify Popover Sanitize draw when preflight is clean
     mock_props.preflight_is_clean = True
     mock_props.preflight_unapplied_scale = False
     mock_props.preflight_loose_verts = 0
@@ -524,23 +508,16 @@ def test_viewport_hud_toast_lifecycle():
     from ui.hud import LODViewportHUD, on_depsgraph_clear_toast
     import time
 
-    # 1. Show toast
     LODViewportHUD.show_toast("Cleaned: 1 transform(s) applied.")
     assert LODViewportHUD._toast_message == "Cleaned: 1 transform(s) applied."
     assert LODViewportHUD._toast_time > 0
-
-    # 2. Draw callback with toast
     LODViewportHUD.draw_callback_px()
 
-    # 3. Depsgraph update grace period check
     on_depsgraph_clear_toast(None, None)
-    # Right away (< duration), toast shouldn't be dismissed immediately
-    # Simulate elapsed time > duration (3.5s)
     LODViewportHUD._toast_time = time.time() - 4.0
     on_depsgraph_clear_toast(None, None)
     assert LODViewportHUD._toast_message == ""
 
-    # 4. Explicit clear toast
     LODViewportHUD.show_toast("Another message")
     assert LODViewportHUD._toast_message == "Another message"
     LODViewportHUD.clear_toast()
@@ -551,21 +528,15 @@ def test_collection_first_tier_projection_and_reset():
     """Verify collection-first tier projection, state badges, and reset operator."""
     from ui.lod_ops import LOD_OT_reset_to_preset
 
-    mock_context = MagicMock()
-    mock_props = MagicMock()
+    mock_context, mock_props = MagicMock(), MagicMock()
     mock_context.scene.lod_tool = mock_props
-
-    # Mock tier items
     created_tiers = []
 
     def mock_add():
-        tier = MagicMock()
-        tier.name = f"LOD{len(created_tiers)}"
+        tier = MagicMock(name=f"LOD{len(created_tiers)}")
         tier.target_tris_pct = 100.0 if not created_tiers else 50.0
         tier.screen_size_pct = 100.0 if not created_tiers else 50.0
-        tier.actual_tris = 0
-        tier.state = "PLANNED"
-        tier.last_baked_target_pct = -1.0
+        tier.actual_tris, tier.state, tier.last_baked_target_pct = 0, "PLANNED", -1.0
         created_tiers.append(tier)
         return tier
 
@@ -574,7 +545,6 @@ def test_collection_first_tier_projection_and_reset():
     mock_props.lods.__iter__ = lambda self: iter(created_tiers)
     mock_props.lods.__len__ = lambda self: len(created_tiers)
 
-    # Test reset_to_preset operator
     op_reset = LOD_OT_reset_to_preset()
     assert op_reset.execute(None) == {"FINISHED"}
     assert op_reset.execute(mock_context) == {"FINISHED"}
@@ -599,51 +569,39 @@ def test_panel2_modify_collection_first_and_lod0_only(monkeypatch):
     monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
     monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
 
-    # Setup LOD0 mesh and derivative LOD mesh
-    mesh_lod0 = MagicMock()
+    mesh_lod0 = MagicMock(type="MESH")
     mesh_lod0.name = "Suzanne"
-    mesh_lod0.type = "MESH"
     mesh_lod0.get.return_value = False
-    mesh_lod0.data = MagicMock()
-    mesh_lod0.data.users = 1
-    mesh_lod0.data.shape_keys = None
+    mesh_lod0.data = MagicMock(users=1, shape_keys=None)
     mesh_lod0.animation_data = None
     mesh_lod0.material_slots = []
 
-    mesh_lod1 = MagicMock()
+    mesh_lod1 = MagicMock(type="MESH")
     mesh_lod1.name = "Suzanne_LOD1"
-    mesh_lod1.type = "MESH"
     mesh_lod1.get.return_value = False
 
     coll_root = MagicMock()
     coll_root.name = "Suzanne"
     coll_root.objects = [mesh_lod0]
-
     mock_bpy.data.collections.get.side_effect = lambda name: coll_root if name in {"Suzanne", "Suzanne_LOD0"} else None
 
-    # Context with zero viewport selection
     mock_context = MagicMock()
     mock_context.scene.collection = MagicMock()
     mock_context.active_object = None
     mock_context.selected_objects = []
-    mock_props = MagicMock()
-    mock_props.active_asset = "Suzanne"
-    mock_props.export_base_name = "Suzanne"
+    mock_props = MagicMock(active_asset="Suzanne", export_base_name="Suzanne")
     mock_context.scene.lod_tool = mock_props
 
-    # 1. Verify get_lod0_mesh_objects finds LOD0 mesh and excludes derivative LODs
     lod0_meshes = get_lod0_mesh_objects(mock_context)
     assert len(lod0_meshes) == 1
     assert lod0_meshes[0].name == "Suzanne"
 
-    # 2. Verify Panel 2 Modify draws without 'No Mesh Selected' box
     panel_modify = OMNIMESH_PT_modify()
     mock_layout = MagicMock()
     panel_modify.layout = mock_layout
     panel_modify.draw(mock_context)
     assert mock_layout.row.called
 
-    # 3. Verify Operators poll True even with zero selection
     assert LOD_OT_clean_and_repair_mesh.poll(mock_context) is True
     assert LOD_OT_clean_and_repair_materials.poll(mock_context) is True
     assert LOD_OT_apply_all_modifiers.poll(mock_context) is True
@@ -652,7 +610,6 @@ def test_panel2_modify_collection_first_and_lod0_only(monkeypatch):
 
 def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
     """Verify that Panel 2 renders the active_asset dropdown and strictly scopes LOD0 resolution."""
-    from unittest.mock import MagicMock
     import ui.panel as panel_mod
     import ui.utils as ui_utils
     from ui.panel import OMNIMESH_PT_modify
@@ -662,23 +619,12 @@ def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
     monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
     monkeypatch.setattr(ui_utils, "bpy", mock_bpy)
 
-    plane_mesh = MagicMock()
-    plane_mesh.name = "Airframe"
-    plane_mesh.type = "MESH"
-    plane_mesh.get.return_value = False
+    plane_mesh, pilot_mesh = MagicMock(type="MESH"), MagicMock(type="MESH")
+    plane_mesh.name, pilot_mesh.name = "Airframe", "Pilot"
+    plane_mesh.get.return_value, pilot_mesh.get.return_value = False, False
 
-    pilot_mesh = MagicMock()
-    pilot_mesh.name = "Pilot"
-    pilot_mesh.type = "MESH"
-    pilot_mesh.get.return_value = False
-
-    coll_plane = MagicMock()
-    coll_plane.name = "Airframe_LOD0"
-    coll_plane.objects = [plane_mesh]
-
-    coll_pilot = MagicMock()
-    coll_pilot.name = "Pilot_LOD0"
-    coll_pilot.objects = [pilot_mesh]
+    coll_plane = MagicMock(name="Airframe_LOD0", objects=[plane_mesh])
+    coll_pilot = MagicMock(name="Pilot_LOD0", objects=[pilot_mesh])
 
     def mock_get_coll(name):
         if name in {"Airframe", "Airframe_LOD0"}:

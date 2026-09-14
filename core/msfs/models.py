@@ -172,3 +172,35 @@ class CameraConfigFile:
     views_lines: list[str] = field(default_factory=list)
     cameras: list[CameraDefinition] = field(default_factory=list)
     preamble_lines: list[str] = field(default_factory=list)  # Lines before first camera section
+
+
+@dataclass
+class SimAttachmentPoint(SpatialPoint):
+    """Represents an MSFS 2024 modular attachment point or submodel hotspot ([sim_attachment.N])."""
+
+    attachment_path: str = ""  # e.g., "SimAttachments/Instruments/.../model/Turn_Coordinator.xml"
+    attachment_root: str = ""  # Root path for attachment package
+    attach_to_model: str = "Interior"  # "Interior" or "Exterior"
+    attach_to_model_minsize: float = 0.0
+    attach_to_node: str = ""  # Target mesh node/empty name (e.g., "ATTACH_POINT_TurnCoordinator")
+    alias: str = ""
+    attach_scale: float = 1.0
+    attach_offset_ft: tuple[float, float, float] = (0.0, 0.0, 0.0)  # (Long, Lat, Vert) in feet
+    attach_pbh_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Pitch, bank, heading in degrees
+    always_execute_js: bool = False
+    always_execute_model_behavior: bool = False
+
+
+@dataclass
+class AttachmentsConfigFile:
+    """Container holding parsed MSFS 2024 attached_objects.cfg definitions."""
+
+    source_file: str = ""
+    encoding: str = "utf-8"
+    has_bom: bool = False
+    line_ending: str = "\r\n"
+    version_major: int = 1
+    version_minor: int = 0
+    merge_models: list[dict[str, str]] = field(default_factory=list)
+    attachments: list[SimAttachmentPoint] = field(default_factory=list)
+    lines: list[CFGLineRecord] = field(default_factory=list)

@@ -36,11 +36,11 @@ except ImportError:
     np = None
 
 try:
-    from core.modifiers import ModifierManager
-    from core.normals import NormalManager
-except (ImportError, ValueError):
     from .modifiers import ModifierManager
     from .normals import NormalManager
+except (ImportError, ValueError):
+    from core.modifiers import ModifierManager
+    from core.normals import NormalManager
 
 
 SEAM_GROUP_NAME = "OMNIMESH_SEAM_LOCKED"

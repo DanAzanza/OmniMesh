@@ -141,14 +141,44 @@ class MSFS2024LiveBridge(EngineBridgeBase):
             try:
                 stdout_data, stderr_data = process.communicate(timeout=timeout_sec)
             except subprocess.TimeoutExpired:
-                process.kill()
+                # Process tree cleanup on Windows to prevent orphaned zombies
+                if sys.platform == "win32":
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                            capture_output=True,
+                            check=False,
+                        )
+                    except Exception:
+                        process.kill()
+                else:
+                    process.kill()
                 process.communicate()
                 return False, f"fspackagetool.exe timed out after {timeout_sec} seconds."
 
             if process.returncode != 0:
-                err_lines = (stderr_data or stdout_data or "").splitlines()[-5:]
-                err_msg = "\n".join(err_lines).strip()
-                return False, f"fspackagetool.exe failed with code {process.returncode}: {err_msg}"
+                combined_output = (stderr_data or "") + "\n" + (stdout_data or "")
+                # Search for known fatal compilation markers
+                fatal_markers = [
+                    "INTERNAL COMPILER ERROR",
+                    "Model file not found",
+                    "LOD error",
+                    "Error:",
+                    "Failed to",
+                    "XML error",
+                ]
+                extracted_errors = []
+                for line in combined_output.splitlines():
+                    if any(m.lower() in line.lower() for m in fatal_markers):
+                        extracted_errors.append(line.strip())
+
+                if extracted_errors:
+                    err_msg = "\n".join(extracted_errors[:4])
+                else:
+                    err_lines = combined_output.splitlines()[-5:]
+                    err_msg = "\n".join(err_lines).strip()
+
+                return False, f"fspackagetool.exe failed (code {process.returncode}): {err_msg}"
 
             # Atomic copy from staging to Community directory
             if output_community_dir and os.path.exists(output_community_dir):
@@ -178,12 +208,12 @@ class MSFS2024LiveBridge(EngineBridgeBase):
                     logger.warning("File locked by active MSFS session (VRAM): %s. Staged in %s", dest_file, src_file)
 
     @classmethod
-    def sync_asset(
+    def sync_asset_headless(
         cls,
-        context: Any,
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
+        extra_options: Any = None,
     ) -> Tuple[bool, str]:
         exe = cls.locate_fspackagetool()
         if not exe:
@@ -208,3 +238,13 @@ class MSFS2024LiveBridge(EngineBridgeBase):
                 return True, f"MSFS glTF and ModelInfo XML files generated at {export_dir}"
 
         return cls.compile_package_safe(exe, pkg_xml, project_dir)
+
+    @classmethod
+    def sync_asset(
+        cls,
+        context: Any,
+        export_dir: str,
+        asset_name: str,
+        project_dir: str = "",
+    ) -> Tuple[bool, str]:
+        return cls.sync_asset_headless(export_dir, asset_name, project_dir)

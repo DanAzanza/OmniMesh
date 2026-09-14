@@ -28,15 +28,15 @@ try:
     from .engine_export import AssetMeshResolver
 except (ImportError, ValueError):
     try:
-        from exporters.base import EngineExporterBase
-        from exporters.engine_export import AssetMeshResolver
+        from ..base import EngineExporterBase
+        from ..engine_export import AssetMeshResolver
     except (ImportError, ValueError):
         EngineExporterBase = object  # type: ignore
         AssetMeshResolver = None  # type: ignore
 
 try:
-    from core.msfs_xml_merger import ModelXMLMerger
-    from core.msfs.project_scanner import MSFSModelOptions
+    from ..core.msfs_xml_merger import ModelXMLMerger
+    from ..core.msfs.project_scanner import MSFSModelOptions
 except (ImportError, ValueError):
     try:
         from ..core.msfs_xml_merger import ModelXMLMerger
@@ -373,6 +373,8 @@ class MSFSExporter(EngineExporterBase):
                         "_Interior",
                         "_Config",
                         "_Helpers",
+                        "_Attachments",
+                        "_Submodel_Previews",
                         "_Mesh",
                         "_HighPoly",
                         "_HP",

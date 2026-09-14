@@ -5,8 +5,8 @@ Provides backward compatibility while delegating to the unified core.msfs packag
 
 from __future__ import annotations
 
-from core.msfs.transforms import *  # noqa: F403
-from core.msfs.transforms import (
+from .msfs.transforms import *  # noqa: F403
+from .msfs.transforms import (
     FEET_TO_METERS,
     METERS_TO_FEET,
     _euler_xyz_to_matrix,

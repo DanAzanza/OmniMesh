@@ -61,3 +61,18 @@ class BridgeManager:
         if not bridge:
             return False, f"Unknown target engine: {target_engine}"
         return bridge.sync_asset(context, export_dir, asset_name, project_dir)
+
+    @classmethod
+    def sync_asset_headless(
+        cls,
+        target_engine: str,
+        export_dir: str,
+        asset_name: str,
+        project_dir: str = "",
+        extra_options: Any = None,
+    ) -> Tuple[bool, str]:
+        """Synchronizes asset in headless/worker-thread mode without Blender context."""
+        bridge = cls.get_bridge(target_engine)
+        if not bridge:
+            return False, f"Unknown target engine: {target_engine}"
+        return bridge.sync_asset_headless(export_dir, asset_name, project_dir, extra_options)

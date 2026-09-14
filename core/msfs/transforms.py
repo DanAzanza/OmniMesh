@@ -244,3 +244,57 @@ def mirror_spatial_coords(
 ) -> tuple[float, float, float]:
     """Reflects an MSFS relative coordinate triplet across the sagittal symmetry plane (X = 0)."""
     return (long_ft, -lat_ft, vert_ft)
+
+
+def msfs_pbh_to_blender_empty_rotation(
+    pitch_deg: float,
+    bank_deg: float,
+    heading_deg: float,
+) -> tuple[float, float, float]:
+    """
+    Transforms MSFS attachment orientation (Pitch, Bank, Heading in degrees)
+    into Blender standard XYZ Euler angles (radians) for a generic Empty or Mesh Node.
+
+    Unlike Camera/Spotlight transformations, standard Empties do NOT have a -Z optical
+    offset and align directly with 3D space.
+
+    MSFS Aerospace Intrinsic Sequence:
+        R = R_z(-heading) * R_x(-pitch) * R_y(bank)
+    """
+    p_rad = math.radians(pitch_deg)
+    b_rad = math.radians(bank_deg)
+    h_rad = math.radians(heading_deg)
+
+    r_heading = _rot_matrix_z(-h_rad)
+    r_pitch = _rot_matrix_x(-p_rad)
+    r_bank = _rot_matrix_y(b_rad)
+
+    r_msfs = _mat_mul(_mat_mul(r_heading, r_pitch), r_bank)
+    return _matrix_to_euler_xyz(r_msfs)
+
+
+def blender_empty_rotation_to_msfs_pbh(
+    rx_rad: float,
+    ry_rad: float,
+    rz_rad: float,
+) -> tuple[float, float, float]:
+    """
+    Inverts Blender XYZ Euler angles (radians) of an attachment empty back to MSFS
+    aerospace orientation (Pitch, Bank, Heading in degrees).
+    """
+    r_msfs = _euler_xyz_to_matrix(rx_rad, ry_rad, rz_rad)
+
+    # Decompose R_z(-h) * R_x(-p) * R_y(b)
+    m21 = max(-1.0, min(1.0, r_msfs[2][1]))
+    pitch_rad = math.asin(-m21)
+    pitch_deg = math.degrees(pitch_rad)
+    cos_p = math.cos(pitch_rad)
+
+    if abs(cos_p) > 1e-5:
+        heading_deg = math.degrees(math.atan2(r_msfs[0][1], r_msfs[1][1]))
+        bank_deg = math.degrees(math.atan2(-r_msfs[2][0], r_msfs[2][2]))
+    else:
+        heading_deg = math.degrees(math.atan2(-r_msfs[1][0], r_msfs[0][0]))
+        bank_deg = 0.0
+
+    return (pitch_deg, bank_deg, heading_deg)

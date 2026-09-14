@@ -56,7 +56,7 @@ except (ImportError, ValueError):
         get_pipeline_state,
         set_pipeline_setting,
     )
-    from ui.utils import (
+    from ..utils import (
         get_asset_base_meshes,
         get_asset_existing_lods,
         resolve_effective_asset_name,
@@ -85,7 +85,7 @@ def update_bridge_status_cached(self: Any, context: Any) -> None:
         if __package__:
             from ...bridges.manager import BridgeManager
         else:
-            from bridges.manager import BridgeManager
+            from ...bridges.manager import BridgeManager
 
         props = context.scene.lod_tool
         engine = props.target_engine
@@ -106,10 +106,7 @@ def on_target_engine_updated(self: Any, context: Any) -> None:
     """Synchronizes target engine selection with export preset and bridge status without mutating presets."""
     if hasattr(self, "export_directory"):
         try:
-            try:
-                from core.project_detector import detect_engine_project
-            except ImportError:
-                from ...core.project_detector import detect_engine_project
+            from ...core.project_detector import detect_engine_project
 
             engine = getattr(self, "target_engine", "UE5")
             detected = detect_engine_project(self.export_directory, engine)
@@ -123,10 +120,7 @@ def on_target_engine_updated(self: Any, context: Any) -> None:
     with PresetSyncGuard():
         engine = getattr(self, "target_engine", "MSFS_2024")
         export_preset_id = getattr(self, "pbr_export_preset", "")
-        try:
-            from core.pbr_presets import PBRExportPresetManager
-        except ImportError:
-            from ...core.pbr_presets import PBRExportPresetManager
+        from ...core.pbr_presets import PBRExportPresetManager
 
         current_preset = PBRExportPresetManager.get_preset(export_preset_id) if export_preset_id else {}
         if current_preset.get("target_engine") != engine:
@@ -153,10 +147,7 @@ def on_export_preset_updated(self: Any, context: Any) -> None:
     export_preset_id = getattr(self, "pbr_export_preset", "")
     if not export_preset_id:
         return
-    try:
-        from core.pbr_presets import PBRExportPresetManager
-    except ImportError:
-        from ...core.pbr_presets import PBRExportPresetManager
+    from ...core.pbr_presets import PBRExportPresetManager
 
     # Persist choice across Blender restarts
     PBRExportPresetManager.set_last_active_preset(export_preset_id)
@@ -277,10 +268,7 @@ def on_export_directory_updated(self: Any, context: Any) -> None:
         logger.debug("Persist export directory: %s", exc)
 
     try:
-        try:
-            from core.project_detector import detect_engine_project
-        except ImportError:
-            from ...core.project_detector import detect_engine_project
+        from ...core.project_detector import detect_engine_project
 
         engine = getattr(self, "target_engine", "UE5")
         detected = detect_engine_project(val, engine)

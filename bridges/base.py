@@ -49,3 +49,18 @@ class EngineBridgeBase(abc.ABC):
         Returns (success, result_message).
         """
         pass
+
+    @classmethod
+    def sync_asset_headless(
+        cls,
+        export_dir: str,
+        asset_name: str,
+        project_dir: str = "",
+        extra_options: Any = None,
+    ) -> Tuple[bool, str]:
+        """Headless synchronization without Blender UI or context dependencies.
+
+        Safe to execute from worker threads.
+        """
+        # Default fallback calls sync_asset with None context
+        return cls.sync_asset(None, export_dir, asset_name, project_dir)

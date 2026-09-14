@@ -20,12 +20,12 @@ except ImportError:
     bpy = None
 
 try:
-    from ui.chunk_ops import (
+    from .chunk_ops import (
         CLASSES as CHUNK_OPERATOR_CLASSES,
         LOD_OT_spatial_chunk_and_generate,
         LOD_OT_voxel_scan_cleanup,
     )
-    from ui.cleanup_ops import (
+    from .cleanup_ops import (
         CLEANUP_OPERATOR_CLASSES,
         LOD_OT_apply_all_modifiers,
         LOD_OT_apply_transforms,
@@ -34,14 +34,14 @@ try:
         LOD_OT_create_helpers_collection,
         LOD_OT_inspect_lod0,
     )
-    from ui.hull_impostor_ops import (
+    from .hull_impostor_ops import (
         HULL_IMPOSTOR_OPERATOR_CLASSES,
         LOD_OT_generate_collision_hulls,
         LOD_OT_generate_impostor,
         LOD_OT_remove_collision_hulls,
         LOD_OT_remove_impostor,
     )
-    from ui.lod_ops import (
+    from .lod_ops import (
         LOD_OPERATOR_CLASSES,
         LOD_OT_add_lod_tier,
         LOD_OT_analyze_and_configure,
@@ -53,7 +53,7 @@ try:
         LOD_OT_solo_tier,
         LOD_OT_sync_selection_settings,
     )
-    from ui.pbr_ops import (
+    from .pbr_ops import (
         PBR_OPERATOR_CLASSES,
         LOD_OT_auto_match_pbr_folder,
         LOD_OT_delete_export_preset,
@@ -66,9 +66,9 @@ try:
         LOD_OT_reset_pbr_preset,
         LOD_OT_save_export_preset,
     )
-    from ui.simulator_ops import LOD_OT_toggle_simulator
-    from ui.split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
-    from ui.utils import (
+    from .simulator_ops import LOD_OT_toggle_simulator
+    from .split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
+    from .utils import (
         get_associated_armature,
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -134,7 +134,7 @@ except (ImportError, ValueError):
     )
 
 try:
-    from ui.export_ops import EXPORT_OPS_CLASSES
+    from .export_ops import EXPORT_OPS_CLASSES
 except (ImportError, ValueError):
     try:
         from .export_ops import EXPORT_OPS_CLASSES
@@ -142,7 +142,7 @@ except (ImportError, ValueError):
         EXPORT_OPS_CLASSES = ()
 
 try:
-    from ui.preset_ops import PRESET_OPERATOR_CLASSES
+    from .preset_ops import PRESET_OPERATOR_CLASSES
 except (ImportError, ValueError):
     try:
         from .preset_ops import PRESET_OPERATOR_CLASSES

@@ -5,8 +5,8 @@ Provides backward compatibility while delegating to the unified core.msfs packag
 
 from __future__ import annotations
 
-from core.msfs.models import *  # noqa: F403
-from core.msfs.models import (
+from .msfs.models import *  # noqa: F403
+from .msfs.models import (
     AircraftSpatialConfig,
     CFGLineRecord,
     CameraConfigFile,

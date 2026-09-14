@@ -31,7 +31,7 @@ try:
         LOD_OT_save_export_preset,
     )
 except (ImportError, ValueError):
-    from ui.lod_preset_ops import (
+    from .lod_preset_ops import (
         LOD_PRESET_OPERATOR_CLASSES,
         LOD_OT_add_preset_tier,
         LOD_OT_apply_preset_tiers,
@@ -40,7 +40,7 @@ except (ImportError, ValueError):
         LOD_OT_remove_preset_tier,
         LOD_OT_save_preset_tiers,
     )
-    from ui.pbr_preset_ops import (
+    from .pbr_preset_ops import (
         PBR_PRESET_OPERATOR_CLASSES,
         LOD_OT_add_export_preset_map,
         LOD_OT_add_preset_map,

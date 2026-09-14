@@ -60,6 +60,7 @@ class MSFSProjectManifest:
     cameras_cfg_path: Optional[Path]
     variants: dict[str, MSFSModelTargetInfo] = field(default_factory=dict)
     model_options: MSFSModelOptions = field(default_factory=MSFSModelOptions)
+    attached_objects_cfg_path: Optional[Path] = None
 
     @property
     def has_geometry(self) -> bool:
@@ -512,6 +513,25 @@ class MSFSProjectScanner:
             or resolve_path_ci(root, "cameras.cfg")
         )
 
+        # 7. Locate attached_objects.cfg (MSFS 2024 modular submodels and attachments)
+        attached_objects_cfg = (
+            resolve_path_ci(root, "common", "config", "attached_objects.cfg")
+            or resolve_path_ci(root, "config", "attached_objects.cfg")
+            or resolve_path_ci(root, "attached_objects.cfg")
+        )
+        if attached_objects_cfg is None:
+            # Check attachments/**/config/attached_objects.cfg or attachments/**/attachment.cfg
+            att_root = resolve_path_ci(root, "attachments")
+            if att_root and att_root.is_dir():
+                try:
+                    for cand in att_root.rglob("*.cfg"):
+                        c_name = cand.name.lower()
+                        if c_name in ("attached_objects.cfg", "attachment.cfg") and cand.is_file():
+                            attached_objects_cfg = cand
+                            break
+                except OSError:
+                    pass
+
         return MSFSProjectManifest(
             package_root=root,
             asset_name=asset_name,
@@ -522,4 +542,5 @@ class MSFSProjectScanner:
             cameras_cfg_path=cameras_cfg,
             variants=variants_dict,
             model_options=model_options,
+            attached_objects_cfg_path=attached_objects_cfg,
         )

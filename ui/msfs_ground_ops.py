@@ -45,7 +45,7 @@ except (ImportError, ValueError):
         format_class_2_scrape_tokens,
     )
     from core.msfs_transforms import METERS_TO_FEET
-    from ui.msfs_spatial_ops import (
+    from .msfs_spatial_ops import (
         COLLECTION_NAME,
         DATUM_POINT_ID,
         find_spatial_collection,

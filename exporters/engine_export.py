@@ -89,11 +89,23 @@ class AssetMeshResolver:
                     "CONFIG",
                     "HELPERS",
                     "INTERACTIONS",
+                    "ATTACHMENTS",
+                    "PREVIEW",
                 ):
                     return False
                 if any(
                     c_name.endswith(sfx)
-                    for sfx in ("_Spatial", "_Lights", "_Cameras", "_Colliders", "_Config", "_Helpers", "_Interactions")
+                    for sfx in (
+                        "_Spatial",
+                        "_Lights",
+                        "_Cameras",
+                        "_Colliders",
+                        "_Config",
+                        "_Helpers",
+                        "_Interactions",
+                        "_Attachments",
+                        "_Submodel_Previews",
+                    )
                 ):
                     return False
             return True
@@ -251,13 +263,25 @@ class AssetMeshResolver:
         # Vital for MSFS glTF LOD0 runtime attachments, cameras, and effect positioning
         attachment_nodes: list[Any] = []
         if has_bpy_collections and root_col:
-            helpers_col = None
+            candidate_cols = []
             if hasattr(root_col, "children"):
-                helpers_col = root_col.children.get(f"{clean_name}_Helpers")
-            if not helpers_col:
-                helpers_col = bpy.data.collections.get(f"{clean_name}_Helpers")
-            if helpers_col:
-                for obj in getattr(helpers_col, "objects", []):
+                h_col = root_col.children.get(f"{clean_name}_Helpers")
+                if h_col:
+                    candidate_cols.append(h_col)
+                l0_col = root_col.children.get(f"{clean_name}_LOD0")
+                if l0_col:
+                    candidate_cols.append(l0_col)
+            if not candidate_cols:
+                h_col = bpy.data.collections.get(f"{clean_name}_Helpers")
+                if h_col:
+                    candidate_cols.append(h_col)
+                l0_col = bpy.data.collections.get(f"{clean_name}_LOD0")
+                if l0_col:
+                    candidate_cols.append(l0_col)
+            candidate_cols.append(root_col)
+
+            for col in candidate_cols:
+                for obj in getattr(col, "objects", []):
                     o_name = getattr(obj, "name", "").upper()
                     if (
                         o_name.startswith("ATTACH_")
@@ -266,7 +290,7 @@ class AssetMeshResolver:
                         or o_name.startswith("EYE_")
                         or "ATTACH_POINT" in o_name
                     ):
-                        if obj not in attachment_nodes:
+                        if getattr(obj, "type", "") == "EMPTY" and obj not in attachment_nodes:
                             attachment_nodes.append(obj)
 
         return AssetExportPayload(
@@ -291,7 +315,10 @@ def resolve_export_asset_name(context: Any, props: Any = None) -> str:
         return str(props.active_asset)
     raw_name = ""
     try:
-        from core.asset_scanner import resolve_effective_asset_name
+        try:
+            from ..core.asset_scanner import resolve_effective_asset_name
+        except ImportError:
+            from core.asset_scanner import resolve_effective_asset_name
 
         raw_name = resolve_effective_asset_name(context, props)
     except Exception as e:

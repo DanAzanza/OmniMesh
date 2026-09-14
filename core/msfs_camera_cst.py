@@ -5,8 +5,8 @@ Provides backward compatibility while delegating to the unified core.msfs packag
 
 from __future__ import annotations
 
-from core.msfs.camera_cst import *  # noqa: F403
-from core.msfs.camera_cst import (
+from .msfs.camera_cst import *  # noqa: F403
+from .msfs.camera_cst import (
     MSFSCameraCST,
     detect_file_format,
 )

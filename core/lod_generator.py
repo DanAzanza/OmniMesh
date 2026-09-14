@@ -22,22 +22,22 @@ except ImportError:
     Vector = None
 
 try:
-    from core.decimator import MeshDecimator
-    from core.hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
-    from core.materials import MaterialOptimizer
-    from core.metrics import (
+    from ..decimator import MeshDecimator
+    from ..hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
+    from ..materials import MaterialOptimizer
+    from ..metrics import (
         compute_bounding_sphere,
         compute_coupled_tolerances,
         compute_vertical_fov,
     )
-    from core.modifiers import ModifierManager
-    from core.normals import NormalManager
-    from core.occlusion import HardenedOcclusionCuller
-    from core.pivot import PivotPreservationEngine
-    from core.rigging import KinematicBonePruner, WeightSanitizer
-    from core.sanitizer import MeshSanitizer
-    from core.slender import SlenderFeatureCuller
-    from core.material_analyzer import MSFSMaterialAnalyzer
+    from ..modifiers import ModifierManager
+    from ..normals import NormalManager
+    from ..occlusion import HardenedOcclusionCuller
+    from ..pivot import PivotPreservationEngine
+    from ..rigging import KinematicBonePruner, WeightSanitizer
+    from ..sanitizer import MeshSanitizer
+    from ..slender import SlenderFeatureCuller
+    from ..material_analyzer import MSFSMaterialAnalyzer
 except (ImportError, ValueError):
     from .decimator import MeshDecimator
     from .hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine

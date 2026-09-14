@@ -390,6 +390,8 @@ def _strip_collection_suffixes(name: str) -> str:
         "_Spatial",
         "_Lights",
         "_Cameras",
+        "_Attachments",
+        "_Submodel_Previews",
         "_Config",
         "_Helpers",
     ):
@@ -608,7 +610,10 @@ def get_or_create_engine_import_collection(
     use_lod0_suffix: bool = True,
 ) -> Any | None:
     """Delegates to core.hierarchy.get_or_create_engine_import_collection with active bpy."""
-    from core.hierarchy import get_or_create_engine_import_collection as _impl
+    try:
+        from ..core.hierarchy import get_or_create_engine_import_collection as _impl
+    except ImportError:
+        from core.hierarchy import get_or_create_engine_import_collection as _impl
 
     return _impl(context, asset_name, role, use_lod0_suffix, bpy_module=bpy)
 

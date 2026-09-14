@@ -24,8 +24,8 @@ except ImportError:
     bpy = None
 
 try:
-    from core.pbr_classifier import PBRSemanticClassifier
-    from core.pbr_presets import (
+    from ..pbr_classifier import PBRSemanticClassifier
+    from ..pbr_presets import (
         DEFAULT_PRESET_ID,
         PBRImportPresetManager,
         PBRImporterPresetManager,

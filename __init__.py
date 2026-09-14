@@ -25,6 +25,10 @@ _OMNIMESH_INITIALIZED = True
 
 if __package__:
     from . import bridges
+    from . import core as core
+    from . import exporters as exporters
+    from . import ui as ui
+
     from .core import (
         animation_manager,
         animations,

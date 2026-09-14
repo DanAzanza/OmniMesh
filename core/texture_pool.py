@@ -20,7 +20,7 @@ import numpy as np
 
 try:
     from .png_writer import write_png_direct
-except ImportError:
+except (ImportError, ValueError):
     from core.png_writer import write_png_direct
 
 logger = logging.getLogger(__name__)

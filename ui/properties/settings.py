@@ -62,6 +62,7 @@ from .config_properties import OMNIMESH_ConfigPresetSettings
 from .material_properties import OMNIMESH_MaterialPresetSettings
 from .interaction_properties import OMNIMESH_InteractionSettings
 from .animation_properties import OMNIMESH_AnimationSettings
+from .msfs_cfg_properties import OMNIMESH_MSFSConfigSettings
 from .lod_properties import (
     LODLevelItem,
     LODPresetTierItem,
@@ -201,98 +202,41 @@ class LODToolSettings(PropertyGroup):
         description="Screen-Space Error bound in percentage of screen height",
         update=on_lod_preset_property_modified,
     )
-    preserve_silhouette: BoolProperty(
-        name="Preserve Silhouettes", default=True, description="Legacy silhouette protection (deprecated)"
-    )
-    pin_uv_seams: BoolProperty(
-        name="Pin UV Seams",
-        default=True,
-        description="Locks UV boundary edges from collapsing (always active)",
-    )
+    preserve_silhouette: BoolProperty(name="Preserve Silhouettes", default=True)
+    pin_uv_seams: BoolProperty(name="Pin UV Seams", default=True, description="Locks UV boundary edges from collapsing")
     pin_material_borders: BoolProperty(
         name="Pin Material Borders",
         default=True,
-        description="Prevents edges on material slot transitions from warping (always active)",
+        description="Prevents edges on material slot transitions from warping",
     )
 
     # Mesh Cleanup & Topology Repair Settings
-    auto_sanitize_before_lod: BoolProperty(
-        name="Auto-Sanitize Before LOD", default=True, description="Run safe Tier 0 hygiene before generating LOD tiers"
-    )
-    cleanup_auto_apply_transforms: BoolProperty(
-        name="Auto-Apply Scale & Rotation",
-        default=False,
-        description="Apply scale and rotation transforms before mesh sanitization",
-    )
-    cleanup_apply_modifiers: BoolProperty(
-        name="Apply Modifiers (Bake Viewport)",
-        default=False,
-        description="Bake procedural modifier stacks using Viewport settings into base geometry",
-    )
-    cleanup_sync_viewport_settings: BoolProperty(
-        name="Sync Viewport to Render Settings",
-        default=True,
-        description="Synchronize modifier render settings to viewport settings before applying",
-    )
-    cleanup_enable_weld: BoolProperty(
-        name="Merge Close Vertices", default=False, description="Weld coincident vertices within tolerance"
-    )
+    auto_sanitize_before_lod: BoolProperty(name="Auto-Sanitize Before LOD", default=True)
+    cleanup_auto_apply_transforms: BoolProperty(name="Auto-Apply Scale & Rotation", default=False)
+    cleanup_apply_modifiers: BoolProperty(name="Apply Modifiers (Bake Viewport)", default=False)
+    cleanup_sync_viewport_settings: BoolProperty(name="Sync Viewport to Render Settings", default=True)
+    cleanup_enable_weld: BoolProperty(name="Merge Close Vertices", default=False)
     cleanup_weld_distance: FloatProperty(
         name="Weld Distance", default=0.0005, min=0.00001, max=0.05, precision=5, unit="LENGTH"
     )
-    cleanup_enable_split_non_manifold: BoolProperty(
-        name="Repair Non-Manifold & Bowties", default=True, description="Split non-manifold bowtie pinch points"
-    )
-    cleanup_enable_fill_holes: BoolProperty(
-        name="Fill Small Holes", default=False, description="Detect and seal open boundary loops with <= Max Edges"
-    )
-    cleanup_hole_max_edges: IntProperty(
-        name="Max Hole Edges", default=4, min=3, max=16, description="Maximum edge count of open loops to fill"
-    )
-    cleanup_enable_triangulate_ngons: BoolProperty(
-        name="Triangulate N-Gons", default=False, description="Triangulate polygons with >4 vertices during cleanup"
-    )
+    cleanup_enable_split_non_manifold: BoolProperty(name="Repair Non-Manifold & Bowties", default=True)
+    cleanup_enable_fill_holes: BoolProperty(name="Fill Small Holes", default=False)
+    cleanup_hole_max_edges: IntProperty(name="Max Hole Edges", default=4, min=3, max=16)
+    cleanup_enable_triangulate_ngons: BoolProperty(name="Triangulate N-Gons", default=False)
     cleanup_normal_policy: EnumProperty(
-        name="Normal Alignment",
-        items=CLEANUP_NORMAL_POLICY_ITEMS,
-        default="MANIFOLD_ONLY",
-        description="Face normal orientation policy",
+        name="Normal Alignment", items=CLEANUP_NORMAL_POLICY_ITEMS, default="MANIFOLD_ONLY"
     )
     last_cleanup_summary: StringProperty(name="Cleanup Summary", default="")
 
     # Material Cleanup & Slot Consolidation Settings
-    mat_cleanup_purge_unused_slots: BoolProperty(
-        name="Purge Empty & Unused Slots", default=True, description="Remove slots with no material assigned"
-    )
-    mat_cleanup_deduplicate_slots: BoolProperty(
-        name="Deduplicate Repeated Slots",
-        default=True,
-        description="Merge duplicate slots pointing to identical materials",
-    )
-    mat_cleanup_merge_duplicate_datablocks: BoolProperty(
-        name="Merge Duplicate Materials (AST Hash)",
-        default=True,
-        description="Merge identical material datablocks using deep SHA-256 node graph hashing",
-    )
-    mat_cleanup_remove_orphan_nodes: BoolProperty(
-        name="Remove Dead Shader Nodes", default=True, description="Remove disconnected and unused image texture nodes"
-    )
-    mat_cleanup_enable_micro_consolidation: BoolProperty(
-        name="Consolidate Micro-Materials",
-        default=False,
-        description="Reassign surfaces < threshold % into dominant material",
-    )
+    mat_cleanup_purge_unused_slots: BoolProperty(name="Purge Empty & Unused Slots", default=True)
+    mat_cleanup_deduplicate_slots: BoolProperty(name="Deduplicate Repeated Slots", default=True)
+    mat_cleanup_merge_duplicate_datablocks: BoolProperty(name="Merge Duplicate Materials (AST Hash)", default=True)
+    mat_cleanup_remove_orphan_nodes: BoolProperty(name="Remove Dead Shader Nodes", default=True)
+    mat_cleanup_enable_micro_consolidation: BoolProperty(name="Consolidate Micro-Materials", default=False)
     mat_cleanup_micro_area_pct: FloatProperty(name="Micro Threshold %", default=0.5, min=0.01, max=5.0, precision=2)
-    mat_cleanup_repair_missing_textures: BoolProperty(
-        name="Repair Missing Textures",
-        default=False,
-        description="Replace broken filepaths with safe procedural PBR defaults",
-    )
-    mat_cleanup_purge_orphans_blendfile: BoolProperty(
-        name="Purge Orphan Materials from .blend",
-        default=False,
-        description="Permanently delete unused zero-user materials from the Blender file",
-    )
+    mat_cleanup_repair_missing_textures: BoolProperty(name="Repair Missing Textures", default=False)
+    mat_cleanup_purge_orphans_blendfile: BoolProperty(name="Purge Orphan Materials from .blend", default=False)
     last_material_cleanup_summary: StringProperty(name="Material Cleanup Summary", default="")
 
     # PBR Texture Set Importer Settings
@@ -710,19 +654,7 @@ class LODToolSettings(PropertyGroup):
     batch_processed_count: IntProperty(name="Processed Assets", default=0)
     batch_current_asset: StringProperty(name="Current Asset", default="")
 
-    # MSFS Spatial Configuration
-    msfs_spatial_cfg_path: StringProperty(
-        name="MSFS Flight Model File", subtype="FILE_PATH", default="", description="Path to flight_model.cfg"
-    )
-    msfs_systems_cfg_path: StringProperty(
-        name="MSFS Systems / Lights File", subtype="FILE_PATH", default="", description="Path to systems.cfg"
-    )
-    msfs_spatial_status: StringProperty(name="MSFS Spatial Status", default="Ready")
-    msfs_scrape_margin_m: FloatProperty(name="Scrape Margin (m)", default=0.0, min=-0.5, max=0.5)
-    msfs_gear_state: EnumProperty(name="Gear State", items=MSFS_GEAR_STATE_ITEMS, default="STATIC_COMPRESSED")
-    msfs_gear_compression_m: FloatProperty(name="Strut Compression (m)", default=0.12, min=0.0, max=1.0)
-    msfs_calculated_cg_height_ft: FloatProperty(name="Calculated Static CG Height (ft)", default=0.0, precision=3)
-    msfs_cameras_cfg_path: StringProperty(name="MSFS Cameras File", subtype="FILE_PATH", default="")
+    # MSFS Package & Export Settings
     msfs_export_full_package: BoolProperty(name="Export Full Package", default=True)
     msfs_target_version: EnumProperty(
         name="MSFS Target Version",
@@ -756,7 +688,18 @@ class LODToolSettings(PropertyGroup):
         description="Constrain decimation on decal meshes to eliminate Z-fighting",
     )
 
+    # Legacy MSFS properties preserved for API compatibility
+    msfs_spatial_cfg_path: StringProperty(name="MSFS Flight Model File", subtype="FILE_PATH", default="")
+    msfs_systems_cfg_path: StringProperty(name="MSFS Systems File", subtype="FILE_PATH", default="")
+    msfs_cameras_cfg_path: StringProperty(name="MSFS Cameras File", subtype="FILE_PATH", default="")
+    msfs_spatial_status: StringProperty(name="MSFS Spatial Status", default="Ready")
+    msfs_scrape_margin_m: FloatProperty(name="Scrape Margin (m)", default=0.0, min=-0.5, max=0.5)
+    msfs_gear_state: EnumProperty(name="Gear State", items=MSFS_GEAR_STATE_ITEMS, default="STATIC_COMPRESSED")
+    msfs_gear_compression_m: FloatProperty(name="Strut Compression (m)", default=0.12, min=0.0, max=1.0)
+    msfs_calculated_cg_height_ft: FloatProperty(name="Static CG Height (ft)", default=0.0, precision=3)
+
     # Engine / Project Importer Properties
+
     engine_import_preset: EnumProperty(
         name="Engine Import Preset",
         items=get_engine_import_preset_items,
@@ -788,6 +731,7 @@ class LODToolSettings(PropertyGroup):
     material_preset: PointerProperty(type=OMNIMESH_MaterialPresetSettings)
     interaction: PointerProperty(type=OMNIMESH_InteractionSettings)
     animation_tagging: PointerProperty(type=OMNIMESH_AnimationSettings)
+    msfs_configs: PointerProperty(type=OMNIMESH_MSFSConfigSettings)
 
 
 __all__ = ["LODToolSettings"]
