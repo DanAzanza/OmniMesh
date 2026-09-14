@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+
 import tomllib
 
 from scripts.build_extension import get_version
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

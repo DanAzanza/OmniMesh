@@ -6,9 +6,10 @@ Builds the official Blender extension ZIP archive for Blender 4.2+ and 5.2 LTS.
 from __future__ import annotations
 
 import os
-import tomllib
 import zipfile
 from pathlib import Path
+
+import tomllib
 
 INCLUDE_DIRS = ["bridges", "core", "exporters", "presets", "ui"]
 INCLUDE_FILES = [
