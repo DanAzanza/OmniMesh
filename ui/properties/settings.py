@@ -5,11 +5,13 @@ Attached to Scene (for project-wide pipeline globals) and Object (for per-asset 
 
 from typing import Any
 
+from .animation_properties import OMNIMESH_AnimationSettings
 from .callbacks import (
     get_engine_import_preset_items,
     get_lod_preset_items,
     get_pbr_export_preset_items,
     get_pbr_import_preset_items,
+    on_active_asset_updated,
     on_active_lod_index_updated,
     on_batch_mode_updated,
     on_batch_source_updated,
@@ -27,12 +29,12 @@ from .callbacks import (
     on_import_path_mode_updated,
     on_import_preserve_updated,
     on_import_preset_updated,
-    on_active_asset_updated,
     on_legacy_preset_updated,
     on_lod_budget_mode_updated,
     on_lod_preset_updated,
     on_target_engine_updated,
 )
+from .config_properties import OMNIMESH_ConfigPresetSettings
 from .enums import (
     ASSET_CATEGORY_ITEMS,
     BATCH_FILE_FORMATS_ITEMS,
@@ -58,17 +60,15 @@ from .enums import (
     TARGET_ENGINE_ITEMS,
     TEXTURE_MAX_RESOLUTION_ITEMS,
 )
-from .config_properties import OMNIMESH_ConfigPresetSettings
-from .material_properties import OMNIMESH_MaterialPresetSettings
 from .interaction_properties import OMNIMESH_InteractionSettings
-from .animation_properties import OMNIMESH_AnimationSettings
-from .msfs_cfg_properties import OMNIMESH_MSFSConfigSettings
 from .lod_properties import (
     LODLevelItem,
     LODPresetTierItem,
     on_lod_preset_property_modified,
     on_split_preview_updated,
 )
+from .material_properties import OMNIMESH_MaterialPresetSettings
+from .msfs_cfg_properties import OMNIMESH_MSFSConfigSettings
 from .pbr_properties import PBRExportMapItem, PBRMapItem
 
 try:

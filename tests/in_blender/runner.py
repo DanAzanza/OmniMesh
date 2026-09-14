@@ -8,10 +8,13 @@ import importlib
 import io
 import logging
 import os
+from pathlib import Path
 import sys
+import tempfile
 import time
 import unittest
 from typing import Any
+import zipfile
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +94,68 @@ def bootstrap_addon() -> None:
         logger.error("Failed to register OmniMesh add-on: %s", exc)
 
 
+def run_extension_installation_smoke_test() -> None:
+    """Install the built ZIP into Blender's extension namespace and register it."""
+    if not bpy:
+        raise RuntimeError("Blender bpy runtime is required for the extension smoke test.")
+
+    repo_root = Path(REPO_ROOT)
+    configured_zip = os.environ.get("OMNIMESH_EXTENSION_ZIP")
+    if configured_zip:
+        zip_path = Path(configured_zip)
+    else:
+        candidates = sorted((repo_root / "dist").glob("omnimesh-v*.zip"))
+        zip_path = candidates[-1] if candidates else Path()
+    if not zip_path.is_file():
+        raise FileNotFoundError(
+            "Built extension ZIP not found. Run scripts/build_extension.py or set OMNIMESH_EXTENSION_ZIP."
+        )
+
+    module_name = "bl_ext.user_default.omnimesh"
+    with tempfile.TemporaryDirectory(prefix="omnimesh-extension-") as temp_dir:
+        install_dir = Path(temp_dir) / "extensions" / "user_default" / "omnimesh"
+        install_dir.mkdir(parents=True)
+        with zipfile.ZipFile(zip_path) as archive:
+            archive.extractall(install_dir)
+
+        if not (install_dir / "blender_manifest.toml").is_file():
+            raise AssertionError("Installed extension is missing blender_manifest.toml.")
+
+        previous_path = list(sys.path)
+        sys.path.insert(0, temp_dir)
+        module = None
+        try:
+            spec = importlib.util.spec_from_file_location(
+                module_name,
+                install_dir / "__init__.py",
+                submodule_search_locations=[str(install_dir)],
+            )
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not create import specification for {module_name}.")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            module.register()
+            logger.info("Installed extension smoke test passed for %s.", zip_path.name)
+        finally:
+            if module is not None:
+                try:
+                    module.unregister()
+                except Exception as exc:
+                    logger.debug("Extension smoke-test unregister skipped: %s", exc)
+            for loaded_name in list(sys.modules):
+                if loaded_name == module_name or loaded_name.startswith(f"{module_name}."):
+                    del sys.modules[loaded_name]
+            sys.path[:] = previous_path
+
+
 def run_all_in_blender_tests() -> dict[str, Any]:
     """Execute all in-blender integration test suites.
 
     Safe for interactive MCP sessions (does NOT call sys.exit).
     Returns a JSON-serializable dictionary of test results.
     """
+    run_extension_installation_smoke_test()
     bootstrap_addon()
 
     from tests.in_blender.test_cleanup_pipeline import TestCleanupPipeline

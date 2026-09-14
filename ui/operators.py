@@ -22,6 +22,8 @@ except ImportError:
 try:
     from .chunk_ops import (
         CLASSES as CHUNK_OPERATOR_CLASSES,
+    )
+    from .chunk_ops import (
         LOD_OT_spatial_chunk_and_generate,
         LOD_OT_voxel_scan_cleanup,
     )
@@ -79,6 +81,8 @@ try:
 except (ImportError, ValueError):
     from .chunk_ops import (
         CLASSES as CHUNK_OPERATOR_CLASSES,
+    )
+    from .chunk_ops import (
         LOD_OT_spatial_chunk_and_generate,
         LOD_OT_voxel_scan_cleanup,
     )

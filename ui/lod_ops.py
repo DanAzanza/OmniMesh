@@ -47,6 +47,7 @@ except (ImportError, ValueError):
         compute_distance_from_screen_size,
         compute_vertical_fov,
     )
+
     from .hud import LODViewportHUD
     from .lod_preset_ops import (
         LOD_OT_add_preset_tier,

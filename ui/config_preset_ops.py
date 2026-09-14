@@ -59,7 +59,7 @@ if Vector is None:
 
 
 try:
-    from ..core.config_presets import ConfigPresetManager, DEFAULT_CONFIG_PRESET_ID
+    from ..core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
     from ..core.hierarchy import get_or_create_engine_import_collection
     from ..core.msfs.geometry import detect_airframe_extrema, extract_world_vertices_numpy
     from .utils import (
@@ -68,7 +68,7 @@ try:
         safe_report,
     )
 except (ImportError, ValueError):
-    from core.config_presets import ConfigPresetManager, DEFAULT_CONFIG_PRESET_ID
+    from core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
     from core.hierarchy import get_or_create_engine_import_collection
     from core.msfs.geometry import detect_airframe_extrema, extract_world_vertices_numpy
     from ui.utils import (

@@ -11,6 +11,7 @@ import logging
 import os
 import re
 from typing import Any, Optional, Tuple
+
 import numpy as np
 
 try:
@@ -27,13 +28,13 @@ logger = logging.getLogger(__name__)
 
 
 try:
-    from .texture_pool import TexturePoolManager
-    from .shader_tracer import ShaderTracer
     from .png_writer import write_png_direct
+    from .shader_tracer import ShaderTracer
+    from .texture_pool import TexturePoolManager
 except (ImportError, ValueError):
-    from core.texture_pool import TexturePoolManager
-    from core.shader_tracer import ShaderTracer
     from core.png_writer import write_png_direct
+    from core.shader_tracer import ShaderTracer
+    from core.texture_pool import TexturePoolManager
 
 
 class TextureChannelPacker:

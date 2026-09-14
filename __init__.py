@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 bl_info = {
     "name": "OmniMesh",
     "author": "Daniel (DanAzanza)",
-    "version": (0, 8, 0),
+    "version": (0, 8, 1),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > OmniMesh",
     "description": "Screen-Space Error driven LOD generation, topology sanitization, occlusion culling, collision hulls, multi-mesh hierarchies, skeletal rigging, bone pruning, billboard impostors, real-time viewport simulator, and multi-engine export (MSFS 2024, UE5, Unity 6, Godot 4)",
@@ -28,7 +28,6 @@ if __package__:
     from . import core as core
     from . import exporters as exporters
     from . import ui as ui
-
     from .core import (
         animation_manager,
         animations,
@@ -77,12 +76,16 @@ if __package__:
     )
     from .exporters import (
         base as exporter_base,
+    )
+    from .exporters import (
         engine_export,
         godot_export,
-        manager as exporter_manager,
         msfs_export,
         ue5_export,
         unity_export,
+    )
+    from .exporters import (
+        manager as exporter_manager,
     )
     from .ui import (
         animation_ops,
@@ -165,12 +168,16 @@ else:
     )
     from exporters import (
         base as exporter_base,
+    )
+    from exporters import (
         engine_export,
         godot_export,
-        manager as exporter_manager,
         msfs_export,
         ue5_export,
         unity_export,
+    )
+    from exporters import (
+        manager as exporter_manager,
     )
     from ui import (
         animation_ops,

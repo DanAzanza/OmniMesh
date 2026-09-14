@@ -75,9 +75,17 @@ jobs:
           chmod +x /opt/blender/blender
           /opt/blender/blender --version
 
+      - name: Build Extension Package for Installation Test
+        run: python scripts/build_extension.py
+
+      - name: Locate Extension Package
+        id: extension_package
+        run: echo "zip=$(pwd)/$(ls dist/omnimesh-v*.zip)" >> "$GITHUB_OUTPUT"
+
       - name: Run In-Blender Test Suite
         env:
           BLENDER_PATH: /opt/blender/blender
+          OMNIMESH_EXTENSION_ZIP: ${{ steps.extension_package.outputs.zip }}
         run: python scripts/run_blender_tests.py
 
   build-and-release:

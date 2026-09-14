@@ -24,9 +24,9 @@ except ImportError:
     BoolProperty = EnumProperty = StringProperty = _mock_prop
 
 try:
-    from ...core.config_presets import ConfigPresetManager, DEFAULT_CONFIG_PRESET_ID
+    from ...core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
 except (ImportError, ValueError):
-    from core.config_presets import ConfigPresetManager, DEFAULT_CONFIG_PRESET_ID
+    from core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
 
 
 def get_config_preset_items(self: Any, context: Any) -> list[tuple[str, str, str]]:

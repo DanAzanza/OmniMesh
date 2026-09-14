@@ -8,9 +8,9 @@ from __future__ import annotations
 from .msfs.models import *  # noqa: F403
 from .msfs.models import (
     AircraftSpatialConfig,
-    CFGLineRecord,
     CameraConfigFile,
     CameraDefinition,
+    CFGLineRecord,
     LightPoint,
     SpatialPoint,
 )

@@ -39,9 +39,9 @@ try:
         PBRExportPresetManager,
         PBRImportPresetManager,
     )
+    from .msfs_panel import OMNIMESH_PT_export_msfs_spatial
     from .operators import resolve_lod_context
     from .popovers import POPOVER_CLASSES
-    from .msfs_panel import OMNIMESH_PT_export_msfs_spatial
     from .utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
     from core.config_presets import (
@@ -61,9 +61,9 @@ except (ImportError, ValueError):
         PBRExportPresetManager,
         PBRImportPresetManager,
     )
+    from ui.msfs_panel import OMNIMESH_PT_export_msfs_spatial
     from ui.operators import resolve_lod_context
     from ui.popovers import POPOVER_CLASSES
-    from ui.msfs_panel import OMNIMESH_PT_export_msfs_spatial
     from ui.utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 
 

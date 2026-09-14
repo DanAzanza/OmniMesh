@@ -16,8 +16,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import Optional
 
 

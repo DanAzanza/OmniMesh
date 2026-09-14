@@ -1,11 +1,12 @@
 """
 OmniMesh Packaging Script.
-Builds the official blender extension .zip archive (omnimesh-v1.2.0.zip) for Blender 4.2+ and 5.2 LTS.
+Builds the official Blender extension ZIP archive for Blender 4.2+ and 5.2 LTS.
 """
 
 from __future__ import annotations
 
 import os
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -22,11 +23,12 @@ def get_version(repo_root: Path) -> str:
     """Reads the version string from blender_manifest.toml."""
     manifest_path = repo_root / "blender_manifest.toml"
     if manifest_path.exists():
-        for line in manifest_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("version ="):
-                return line.split("=")[1].strip().strip('"').strip("'")
-    return "0.8.0"
+        with manifest_path.open("rb") as manifest_file:
+            manifest = tomllib.load(manifest_file)
+        version = manifest.get("version")
+        if isinstance(version, str) and version:
+            return version
+    raise FileNotFoundError(f"Blender manifest with a valid version not found: {manifest_path}")
 
 
 def build_package():
