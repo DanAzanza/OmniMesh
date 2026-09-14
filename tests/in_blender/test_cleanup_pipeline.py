@@ -1,5 +1,5 @@
 """
-In-Engine Integration Tests for LOD0 Preflight Inspection and Mesh/Material Sanitization.
+In-Blender Integration Tests for LOD0 Preflight Inspection and Mesh/Material Sanitization.
 """
 
 from __future__ import annotations
@@ -8,11 +8,11 @@ import unittest
 
 try:
     import bpy
-    from tests.in_engine.fixtures import create_dirty_mesh, in_engine_sandbox
+    from tests.in_blender.fixtures import create_dirty_mesh, in_blender_sandbox
 except ImportError:
     bpy = None
     create_dirty_mesh = None  # type: ignore
-    in_engine_sandbox = None  # type: ignore
+    in_blender_sandbox = None  # type: ignore
 
 
 class TestCleanupPipeline(unittest.TestCase):
@@ -24,7 +24,7 @@ class TestCleanupPipeline(unittest.TestCase):
 
     def test_preflight_detects_all_synthetic_defects(self) -> None:
         """Verify inspect_lod0 accurately detects unapplied scale, loose verts, and degenerates."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             obj = create_dirty_mesh("SM_DirtyPreflight")
             bpy.context.view_layer.objects.active = obj
             obj.select_set(True)
@@ -41,7 +41,7 @@ class TestCleanupPipeline(unittest.TestCase):
 
     def test_clean_and_repair_mesh_heals_topology(self) -> None:
         """Verify clean_and_repair_mesh purges loose verts, degenerates, and splits bowties."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             obj = create_dirty_mesh("SM_DirtyRepair")
             bpy.context.view_layer.objects.active = obj
             obj.select_set(True)
@@ -65,7 +65,7 @@ class TestCleanupPipeline(unittest.TestCase):
 
     def test_clean_and_repair_materials_purges_unused_slots(self) -> None:
         """Verify clean_and_repair_materials purges empty or unused material slots."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             mesh = bpy.data.meshes.new("SM_MatTest_Mesh")
             cube_obj = bpy.data.objects.new("SM_MatTest", mesh)
             scene.collection.objects.link(cube_obj)

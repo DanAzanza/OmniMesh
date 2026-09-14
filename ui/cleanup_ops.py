@@ -287,11 +287,13 @@ class LOD_OT_clean_and_repair_materials(Operator):
         for obj in mesh_objs:
             if props.mat_cleanup_purge_unused_slots:
                 res_purge = MaterialOptimizer.purge_unused_materials(obj)
-                purged_slots += res_purge.get("purged_slots", 0)
-            if props.mat_cleanup_merge_duplicate_datablocks:
-                merged_blocks += MaterialOptimizer.merge_duplicate_materials_scene()
-            if props.mat_cleanup_remove_orphan_nodes:
-                MaterialOptimizer.clean_orphan_shader_nodes()
+                purged_slots += res_purge.get("slots_removed", 0)
+
+        if props.mat_cleanup_merge_duplicate_datablocks:
+            merged_blocks += MaterialOptimizer.merge_duplicate_materials_scene()
+
+        if props.mat_cleanup_remove_orphan_nodes:
+            MaterialOptimizer.clean_orphan_shader_nodes()
 
         props.last_material_cleanup_summary = f"Purged {purged_slots} unused slots, merged {merged_blocks} materials."
 

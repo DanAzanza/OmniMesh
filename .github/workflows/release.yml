@@ -1,24 +1,17 @@
-name: OmniMesh CI
+name: OmniMesh Release
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    tags:
+      - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  lint-and-typecheck:
-    name: CI (${{ matrix.os }} - Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
-
+  quality-gate:
+    name: Quality Gate (Lint, Types, Tests)
+    runs-on: ubuntu-latest
     env:
       PYTHONPATH: .
 
@@ -26,27 +19,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
-      - name: Run Ruff Linter
-        run: python -m ruff check .
-
-      - name: Run Ruff Formatter Check
-        run: python -m ruff format --check .
-
-      - name: Run Pyright Type Checker
-        run: python -m pyright .
-
-      - name: Run Pytest Test Suite with Coverage
-        run: python -m pytest --cov=core --cov=exporters --cov=ui --cov=bridges --cov-report=term-missing -v
+      - name: Run Full CI & Quality Gate (Deps, Ruff, Pyright, Pytest with Coverage)
+        run: python scripts/verify_ci.py
 
   blender-tests:
     name: In-Blender Integration Tests (Headless Blender)
@@ -94,3 +79,27 @@ jobs:
         env:
           BLENDER_PATH: /opt/blender/blender
         run: python scripts/run_blender_tests.py
+
+  build-and-release:
+    name: Build and Publish Release
+    needs: [quality-gate, blender-tests]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build Extension Package
+        run: python scripts/build_extension.py
+
+      - name: Create GitHub Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+          prerelease: true

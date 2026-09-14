@@ -9,8 +9,7 @@ import os
 import zipfile
 from pathlib import Path
 
-PACKAGE_NAME = "omnimesh-v1.2.0.zip"
-INCLUDE_DIRS = ["core", "exporters", "ui"]
+INCLUDE_DIRS = ["bridges", "core", "exporters", "presets", "ui"]
 INCLUDE_FILES = [
     "__init__.py",
     "blender_manifest.toml",
@@ -19,13 +18,26 @@ INCLUDE_FILES = [
 ]
 
 
+def get_version(repo_root: Path) -> str:
+    """Reads the version string from blender_manifest.toml."""
+    manifest_path = repo_root / "blender_manifest.toml"
+    if manifest_path.exists():
+        for line in manifest_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("version ="):
+                return line.split("=")[1].strip().strip('"').strip("'")
+    return "0.8.0"
+
+
 def build_package():
     repo_root = Path(__file__).resolve().parent.parent
     dist_dir = repo_root / "dist"
     dist_dir.mkdir(exist_ok=True)
-    zip_path = dist_dir / PACKAGE_NAME
+    version = get_version(repo_root)
+    package_name = f"omnimesh-v{version}.zip"
+    zip_path = dist_dir / package_name
 
-    print(f"Building OmniMesh release package: {zip_path}")
+    print(f"Building OmniMesh release package v{version}: {zip_path}")
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         # Include root files

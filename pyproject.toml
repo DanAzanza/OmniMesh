@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnimesh"
-version = "1.2.0"
+version = "0.8.0"
 description = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigging, Real-Time LOD Simulation & Multi-Engine Pipeline"
 readme = "README.md"
 authors = [{ name = "Daniel" }]
@@ -23,6 +23,7 @@ classifiers = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "pytest-cov>=4.1.0",
     "ruff>=0.4.0",
     "pyright>=1.1.0",
     "fake-bpy-module-latest",
@@ -65,3 +66,21 @@ reportOptionalMemberAccess = false
 reportOptionalCall = false
 reportAttributeAccessIssue = false
 reportGeneralTypeIssues = false
+
+[tool.coverage.run]
+source = ["core", "exporters", "ui", "bridges"]
+omit = ["tests/*", "scripts/*"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "if not bpy:",
+]

@@ -59,10 +59,9 @@ class LOD_OT_generate_impostor(Operator):
             props = context.scene.lod_tool
 
         mesh_objs = get_selected_mesh_objects(context)
-        base_name = props.export_base_name or (
-            context.active_object.name if context.active_object else mesh_objs[0].name
-        )
-        base_name = base_name.split("_LOD")[0]
+        base_name = resolve_effective_asset_name(context, props)
+        if not base_name or base_name in {"AUTO", "NONE"}:
+            base_name = resolve_asset_base_name(context, mesh_objs)
 
         target_coll_name = f"{base_name}_LOD_Impostor"
 
@@ -116,8 +115,10 @@ class LOD_OT_remove_impostor(Operator):
         if not props:
             props = context.scene.lod_tool
 
-        base_name = props.export_base_name or (context.active_object.name if context.active_object else "Asset")
-        base_name = base_name.split("_LOD")[0]
+        mesh_objs = get_selected_mesh_objects(context)
+        base_name = resolve_effective_asset_name(context, props)
+        if not base_name or base_name in {"AUTO", "NONE"}:
+            base_name = resolve_asset_base_name(context, mesh_objs) if mesh_objs else "Asset"
 
         target_coll = bpy.data.collections.get(f"{base_name}_LOD_Impostor")
         if target_coll:

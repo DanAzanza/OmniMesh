@@ -513,19 +513,23 @@ class MaterialOptimizer:
         if not bpy:
             return 0
 
-        hash_to_master: dict[str, Any] = {}
+        hash_to_materials: dict[str, list[Any]] = {}
+        for mat in bpy.data.materials:
+            h = DeepMaterialHasher.hash_material(mat)
+            hash_to_materials.setdefault(h, []).append(mat)
+
         mat_remap: dict[Any, Any] = {}
         merged_count = 0
 
-        for mat in bpy.data.materials:
-            h = DeepMaterialHasher.hash_material(mat)
-            if h in hash_to_master:
-                master_mat = hash_to_master[h]
-                if master_mat != mat:
-                    mat_remap[mat] = master_mat
-                    merged_count += 1
-            else:
-                hash_to_master[h] = mat
+        for cluster in hash_to_materials.values():
+            if len(cluster) <= 1:
+                continue
+            # Prefer root name without dot suffix, then shorter name, then alphabetical
+            cluster.sort(key=lambda m: ("." in m.name, len(m.name), m.name))
+            master_mat = cluster[0]
+            for dup_mat in cluster[1:]:
+                mat_remap[dup_mat] = master_mat
+                merged_count += 1
 
         if not mat_remap:
             return 0

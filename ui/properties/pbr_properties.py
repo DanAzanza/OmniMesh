@@ -229,7 +229,11 @@ def sync_export_maps_from_preset(props: Any, preset: dict[str, Any]) -> None:
                 item.target_rgb = rgb_info.get("target", "Base Color") if isinstance(rgb_info, dict) else "Base Color"
                 if "a" in channels:
                     a_info = channels.get("a", {})
-                    item.target_a = a_info.get("target", "NONE") if isinstance(a_info, dict) else "NONE"
+                    a_target = a_info.get("target", "NONE") if isinstance(a_info, dict) else "NONE"
+                    try:
+                        item.target_a = a_target
+                    except (TypeError, ValueError):
+                        item.target_a = "NONE"
                     item.invert_a = bool(a_info.get("invert", False)) if isinstance(a_info, dict) else False
                 else:
                     item.target_a = "NONE"
@@ -239,7 +243,11 @@ def sync_export_maps_from_preset(props: Any, preset: dict[str, Any]) -> None:
                 for ch in ("r", "g", "b", "a"):
                     ch_data = channels.get(ch, {})
                     if isinstance(ch_data, dict):
-                        setattr(item, f"target_{ch}", ch_data.get("target", "NONE"))
+                        target_val = ch_data.get("target", "NONE")
+                        try:
+                            setattr(item, f"target_{ch}", target_val)
+                        except (TypeError, ValueError):
+                            setattr(item, f"target_{ch}", "NONE")
                         setattr(item, f"invert_{ch}", bool(ch_data.get("invert", False)))
                     else:
                         setattr(item, f"target_{ch}", "NONE")

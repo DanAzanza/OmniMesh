@@ -1,11 +1,12 @@
 """
-In-Engine Integration Tests for Multi-Engine Export Packages (UE5, Unity 6, Godot 4, MSFS 2024).
+In-Blender Integration Tests for Multi-Engine Export Packages (UE5, Unity 6, Godot 4, MSFS 2024).
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 import tempfile
 import unittest
 
@@ -14,12 +15,12 @@ logger = logging.getLogger(__name__)
 try:
     import addon_utils
     import bpy
-    from tests.in_engine.fixtures import create_hierarchy_fixture, in_engine_sandbox
+    from tests.in_blender.fixtures import create_hierarchy_fixture, in_blender_sandbox
 except ImportError:
     bpy = None
     addon_utils = None
     create_hierarchy_fixture = None  # type: ignore
-    in_engine_sandbox = None  # type: ignore
+    in_blender_sandbox = None  # type: ignore
 
 
 class TestExportPipeline(unittest.TestCase):
@@ -42,7 +43,7 @@ class TestExportPipeline(unittest.TestCase):
 
     def test_multi_engine_exports_generate_valid_files(self) -> None:
         """Verify exports create valid disk artifacts for MSFS 2024, UE5, Unity 6, and Godot 4."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             mesh_objs = create_hierarchy_fixture("SM_ExpAsset")
             for obj in mesh_objs:
                 obj.select_set(True)
@@ -63,12 +64,16 @@ class TestExportPipeline(unittest.TestCase):
                 props.target_engine = "MSFS_2024"
                 res_msfs = bpy.ops.lod_tool.export_engine_package()
                 self.assertEqual(res_msfs, {"FINISHED"})
-                xml_path = os.path.join(tmpdir, "SM_ExpAsset.xml")
-                self.assertTrue(os.path.exists(xml_path), "MSFS XML file must exist.")
-                with open(xml_path, "r", encoding="utf-8") as f:
-                    xml_content = f.read()
-                    self.assertIn("<LODS>", xml_content)
-                    self.assertIn("minSize=", xml_content)
+                tmp_path = Path(tmpdir)
+                xml_path = (
+                    tmp_path / "model" / "SM_ExpAsset.xml"
+                    if (tmp_path / "model").exists()
+                    else tmp_path / "SM_ExpAsset.xml"
+                )
+                self.assertTrue(xml_path.is_file(), f"MSFS XML file must exist at: {xml_path}")
+                xml_content = xml_path.read_text(encoding="utf-8")
+                self.assertIn("<LODS>", xml_content)
+                self.assertIn("minSize=", xml_content)
 
                 # 2. Test Unreal Engine 5 (Single Multi-LOD FBX)
                 props.target_engine = "UE5"

@@ -1,5 +1,5 @@
 """
-In-Engine Integration Tests for Viewport Camera Parameter Extraction and Real-time LOD Simulation.
+In-Blender Integration Tests for Viewport Camera Parameter Extraction and Real-time LOD Simulation.
 """
 
 from __future__ import annotations
@@ -9,13 +9,13 @@ import unittest
 try:
     import bpy
     from core.simulator import LODSimulatorEngine, extract_viewport_camera_params
-    from tests.in_engine.fixtures import create_hierarchy_fixture, in_engine_sandbox
+    from tests.in_blender.fixtures import create_hierarchy_fixture, in_blender_sandbox
 except ImportError:
     bpy = None
     LODSimulatorEngine = None  # type: ignore
     extract_viewport_camera_params = None  # type: ignore
     create_hierarchy_fixture = None  # type: ignore
-    in_engine_sandbox = None  # type: ignore
+    in_blender_sandbox = None  # type: ignore
 
 
 class TestSimulatorPipeline(unittest.TestCase):
@@ -31,7 +31,7 @@ class TestSimulatorPipeline(unittest.TestCase):
 
     def test_simulator_index_scene_assets(self) -> None:
         """Verify LODSimulatorEngine indexes sibling collections accurately."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             mesh_objs = create_hierarchy_fixture("SM_SimAsset")
             for obj in mesh_objs:
                 obj.select_set(True)
@@ -54,7 +54,7 @@ class TestSimulatorPipeline(unittest.TestCase):
 
     def test_extract_viewport_camera_params(self) -> None:
         """Verify extract_viewport_camera_params returns safe camera parameters in all view modes."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             # Create a scene camera
             cam_data = bpy.data.cameras.new("TestCamera")
             cam_obj = bpy.data.objects.new("TestCamera", cam_data)

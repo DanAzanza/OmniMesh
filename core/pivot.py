@@ -180,6 +180,12 @@ class PivotPreservationEngine:
         Clones sockets into target collection and parents them to the tier's Pivot Empty
         while strictly preserving their exact world-space locations.
         """
+        if bpy and hasattr(bpy.context, "view_layer") and bpy.context.view_layer:
+            try:
+                bpy.context.view_layer.update()
+            except Exception as exc:
+                logger.debug("View layer update skipped: %s", exc)
+
         cloned_sockets = []
         for sock in sockets:
             if not sock or not hasattr(sock, "copy"):

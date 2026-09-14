@@ -1,5 +1,5 @@
 """
-In-Engine Integration Tests for Logarithmic Tier Generation, Sibling Collection DAGs, and Rigged Clamping.
+In-Blender Integration Tests for Logarithmic Tier Generation, Sibling Collection DAGs, and Rigged Clamping.
 """
 
 from __future__ import annotations
@@ -8,12 +8,12 @@ import unittest
 
 try:
     import bpy
-    from tests.in_engine.fixtures import create_hierarchy_fixture, create_skinned_mesh, in_engine_sandbox
+    from tests.in_blender.fixtures import create_hierarchy_fixture, create_skinned_mesh, in_blender_sandbox
 except ImportError:
     bpy = None
     create_hierarchy_fixture = None  # type: ignore
     create_skinned_mesh = None  # type: ignore
-    in_engine_sandbox = None  # type: ignore
+    in_blender_sandbox = None  # type: ignore
 
 
 class TestLODGenerationPipeline(unittest.TestCase):
@@ -25,7 +25,7 @@ class TestLODGenerationPipeline(unittest.TestCase):
 
     def test_analyze_and_configure_logarithmic_tiers(self) -> None:
         """Verify analyze_and_configure sets up logarithmic screen tiers and bounding radius."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             mesh_objs = create_hierarchy_fixture("SM_TestCompound")
             for obj in mesh_objs:
                 obj.select_set(True)
@@ -44,7 +44,7 @@ class TestLODGenerationPipeline(unittest.TestCase):
 
     def test_generate_all_sibling_collections_and_isolation(self) -> None:
         """Verify generate_all creates sibling collections, unlinks from master, and isolates tiers."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             mesh_objs = create_hierarchy_fixture("SM_DagAsset")
             for obj in mesh_objs:
                 obj.select_set(True)
@@ -90,7 +90,7 @@ class TestLODGenerationPipeline(unittest.TestCase):
 
     def test_skinned_mesh_weight_clamping_and_shape_keys(self) -> None:
         """Verify rigged meshes have bone influences clamped to 4 and shape keys purged in distant tiers."""
-        with in_engine_sandbox() as scene:
+        with in_blender_sandbox() as scene:
             mesh_obj, arm_obj = create_skinned_mesh("SM_SkinnedChar")
             bpy.context.view_layer.objects.active = mesh_obj
             mesh_obj.select_set(True)

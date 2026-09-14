@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "omnimesh"
-version = "1.2.0"
+version = "0.8.0"
 name = "OmniMesh"
 tagline = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigging, Real-Time LOD Simulation & Multi-Engine Pipeline"
 maintainer = "Daniel <https://github.com/DanAzanza>"

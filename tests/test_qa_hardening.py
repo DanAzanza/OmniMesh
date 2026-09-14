@@ -29,6 +29,15 @@ def test_lod_generator_graceful_handling():
     assert success is True  # Blender context not available in headless test mock
     assert "not available" in msg.lower()
 
+    # Verify handling with empty mesh list
+    from unittest.mock import MagicMock
+
+    mock_ctx = MagicMock()
+    mock_props = MagicMock()
+    mock_props.lods = []
+    success, msg = generate_all_lods(context=mock_ctx, props=mock_props, mesh_objs=[])
+    assert success is False or "no" in msg.lower() or "not" in msg.lower()
+
 
 def test_texture_pool_lifecycle():
     """Verify TexturePoolManager singleton lifecycle and shutdown."""
@@ -55,18 +64,48 @@ def test_shader_tracer_methods():
 
 
 def test_preset_operator_classes_integrity():
-    """Verify preset operator tuples are populated and distinct."""
+    """Verify preset operator classes have unique idnames and valid Blender metadata."""
     assert len(PBR_PRESET_OPERATOR_CLASSES) >= 10
     assert len(LOD_PRESET_OPERATOR_CLASSES) >= 5
     assert len(PRESET_OPERATOR_CLASSES) == len(PBR_PRESET_OPERATOR_CLASSES) + len(LOD_PRESET_OPERATOR_CLASSES)
 
+    # Invariant: Every operator class must have a unique bl_idname and bl_label
+    idnames = [cls.bl_idname for cls in PRESET_OPERATOR_CLASSES]
+    assert len(idnames) == len(set(idnames)), "Operator bl_idname entries must be strictly unique."
+    for cls in PRESET_OPERATOR_CLASSES:
+        assert hasattr(cls, "bl_idname") and cls.bl_idname.startswith("lod_tool.")
+        assert hasattr(cls, "bl_label") and len(cls.bl_label) > 0
+
 
 def test_ui_properties_enums():
-    """Verify enum items in modularized ui.properties.enums."""
-    assert len(ASSET_CATEGORY_ITEMS) >= 3
-    assert len(IMPOSTOR_MODE_ITEMS) >= 3
-    assert len(PROGRESSION_MODE_ITEMS) >= 2
-    assert len(TARGET_ENGINE_ITEMS) >= 3
+    """Verify enum items in modularized ui.properties.enums enforce strict invariants."""
+    # 1. Target engines structural contract
+    engine_ids = {item[0] for item in TARGET_ENGINE_ITEMS}
+    expected_engines = {"MSFS_2024", "UE5", "UNITY_6", "GODOT_4"}
+    assert expected_engines.issubset(engine_ids), f"Missing core target engines: {expected_engines - engine_ids}"
+
+    # 2. Asset category structural contract
+    category_ids = {item[0] for item in ASSET_CATEGORY_ITEMS}
+    expected_categories = {"HERO_CHARACTER", "BUILDING", "PROP", "FOLIAGE"}
+    assert expected_categories.issubset(category_ids), f"Missing asset categories: {expected_categories - category_ids}"
+
+    # 3. Impostor mode structural contract
+    impostor_ids = {item[0] for item in IMPOSTOR_MODE_ITEMS}
+    expected_impostors = {"CROSS_QUADS", "STAR_QUADS", "OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}
+    assert expected_impostors.issubset(impostor_ids), f"Missing impostor modes: {expected_impostors - impostor_ids}"
+
+    # 4. Progression mode structural contract
+    prog_ids = {item[0] for item in PROGRESSION_MODE_ITEMS}
+    assert {"EXPONENTIAL", "LOGARITHMIC", "AGGRESSIVE", "LINEAR"}.issubset(prog_ids)
+
+    # 5. Invariant: Each enum item must be a 3-tuple with non-empty (id, name, description)
+    for enum_list in (TARGET_ENGINE_ITEMS, ASSET_CATEGORY_ITEMS, IMPOSTOR_MODE_ITEMS, PROGRESSION_MODE_ITEMS):
+        for item in enum_list:
+            assert len(item) == 3, f"Enum item must be a 3-tuple: {item}"
+            ident, name, desc = item
+            assert isinstance(ident, str) and len(ident) > 0
+            assert isinstance(name, str) and len(name) > 0
+            assert isinstance(desc, str) and len(desc) > 0
 
 
 def test_sync_guards_reentrancy():

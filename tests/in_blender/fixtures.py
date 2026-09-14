@@ -1,5 +1,5 @@
 """
-Synthetic Mockup Mesh & Armature Fixtures and Scene Sandbox for In-Engine Testing.
+Synthetic Mockup Mesh & Armature Fixtures and Scene Sandbox for In-Blender Testing.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ except (ImportError, ValueError):
 
 
 @contextlib.contextmanager
-def in_engine_sandbox() -> Generator[bpy.types.Scene, None, None]:
-    """Isolate in-engine test execution within a transient Blender scene.
+def in_blender_sandbox() -> Generator[bpy.types.Scene, None, None]:
+    """Isolate in-blender test execution within a transient Blender scene.
 
     Protects developer workspace/artwork in live MCP sessions from deletion.
     """

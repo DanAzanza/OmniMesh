@@ -212,15 +212,37 @@ class LOD_OT_solo_tier(Operator):
             props = context.scene.lod_tool
 
         target_idx = int(self.tier_index)
+        base_name = props.export_base_name or (context.active_object.name if context.active_object else "Asset")
+        base_name = base_name.split("_LOD")[0]
+        view_layer = context.view_layer
+
+        if target_idx == -1:
+            # RESET: make all tiers visible
+            for i, itm in enumerate(props.lods):
+                itm.is_soloed = False
+                c_name = f"{base_name}_LOD{i}"
+                coll = bpy.data.collections.get(c_name)
+                if not coll and i == 0:
+                    coll = bpy.data.collections.get(base_name)
+                if coll:
+                    coll.hide_viewport = False
+                    target_objs = (
+                        list(coll.objects)
+                        if coll.objects
+                        else [o for o in coll.all_objects if coll in o.users_collection]
+                    )
+                    for obj in target_objs:
+                        obj.hide_set(False, view_layer=view_layer)
+            safe_report(self, {"INFO"}, "Preview reset: All tiers visible.")
+            LODViewportHUD.update_cache(context)
+            LODViewportHUD.tag_redraw()
+            return {"FINISHED"}
+
         if not props.lods or target_idx < 0 or target_idx >= len(props.lods):
             return {"CANCELLED"}
 
         target_tier = props.lods[target_idx]
         already_soloed = getattr(target_tier, "is_soloed", False)
-
-        base_name = props.export_base_name or (context.active_object.name if context.active_object else "Asset")
-        base_name = base_name.split("_LOD")[0]
-        view_layer = context.view_layer
 
         if already_soloed:
             # UN-SOLO: Restore standard visibility (LOD0 shown, LOD1..k hidden)
@@ -231,6 +253,7 @@ class LOD_OT_solo_tier(Operator):
                 if not coll and i == 0:
                     coll = bpy.data.collections.get(base_name)
                 if coll:
+                    coll.hide_viewport = i != 0
                     target_objs = (
                         list(coll.objects)
                         if coll.objects
@@ -249,6 +272,7 @@ class LOD_OT_solo_tier(Operator):
                 if not coll and i == 0:
                     coll = bpy.data.collections.get(base_name)
                 if coll:
+                    coll.hide_viewport = not is_target
                     target_objs = (
                         list(coll.objects)
                         if coll.objects

@@ -1,5 +1,5 @@
 """
-Cross-Platform CLI Runner for OmniMesh In-Engine Integration Tests.
+Cross-Platform CLI Runner for OmniMesh In-Blender Integration Tests.
 Executes headless Blender with factory startup and streams results.
 """
 
@@ -82,7 +82,7 @@ def main() -> int:
     print(f"Using Blender Binary: {blender_bin}")
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    runner_script = os.path.join(repo_root, "tests", "in_engine", "runner.py")
+    runner_script = os.path.join(repo_root, "tests", "in_blender", "runner.py")
 
     if not os.path.isfile(runner_script):
         print(f"ERROR: Runner script not found at {runner_script}", file=sys.stderr)

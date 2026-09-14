@@ -29,7 +29,7 @@ def check_dependency_parity() -> bool:
         pkg_name = dep.split(">=")[0].split("==")[0].split("<")[0].strip().lower()
         all_declared.add(pkg_name)
 
-    required_packages = ["numpy", "pillow", "pytest", "ruff", "pyright"]
+    required_packages = ["numpy", "pillow", "pytest", "pytest-cov", "ruff", "pyright"]
     missing = []
     for pkg in required_packages:
         if pkg not in all_declared:
@@ -70,7 +70,18 @@ def main() -> int:
     if not run_command([sys.executable, "-m", "pyright", "."], "Pyright Static Type Checker"):
         return 1
 
-    if not run_command([sys.executable, "-m", "pytest", "-v"], "Pytest Test Suite"):
+    pytest_cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "--cov=core",
+        "--cov=exporters",
+        "--cov=ui",
+        "--cov=bridges",
+        "--cov-report=term-missing",
+        "-v",
+    ]
+    if not run_command(pytest_cmd, "Pytest Test Suite with Coverage"):
         return 1
 
     print("\n" + "=" * 60)

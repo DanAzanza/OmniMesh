@@ -36,8 +36,8 @@
 * **Centralized Configuration & State Access**: Never hardcode path lookups or read configuration files manually inside operators or exporters. Always access runtime settings through central state objects (`context.scene.lod_tool` or active `object.lod_tool`).
 * **Zero Backward-Compatibility & Generic Fallbacks**: Do NOT build legacy fallbacks or populate missing data with hardcoded default values. If data or configuration is unpopulated, return clean, empty collections (`[]`, `{}`) or empty values rather than inventing synthetic default entries.
 * **Modularization & File Size Limits**:
-  * **Target Range**: Aim for files between **100 and 500 lines of code**.
-  * **Upper Limit**: Refactor and split files if they exceed **800 lines** and carry multiple distinct responsibilities.
+  * **Target Range**: Aim for files between **100 and 750 lines of code**.
+  * **Upper Limit**: Refactor and split files if they exceed **750 lines** and carry multiple distinct responsibilities.
   * **Single Responsibility Principle (SRP)**: Each file must have exactly one primary reason to change.
 
 ---

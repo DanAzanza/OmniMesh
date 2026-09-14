@@ -303,7 +303,20 @@ def get_available_asset_names(context: Any) -> list[str]:
         return []
 
     asset_names: set[str] = set()
-    for coll in bpy.data.collections:
+    scene = getattr(context, "scene", None)
+    scene_colls: list[Any] = []
+    if scene and hasattr(scene, "collection") and getattr(scene.collection, "children", None):
+        stack = [scene.collection]
+        while stack:
+            curr = stack.pop()
+            for child in getattr(curr, "children", []):
+                scene_colls.append(child)
+                stack.append(child)
+
+    if not scene_colls and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections"):
+        scene_colls = list(bpy.data.collections)
+
+    for coll in scene_colls:
         c_name = getattr(coll, "name", "")
         # Ignore derivative / auxiliary collections
         if any(f"_LOD{n}" in c_name for n in range(1, 11)):
@@ -341,13 +354,9 @@ def get_available_asset_names(context: Any) -> list[str]:
             if base_name and base_name not in {"Collection"}:
                 asset_names.add(base_name)
 
-    # Fallback if only default 'Collection' exists and has meshes
+    # Fallback if only default 'Collection' exists in current scene and has meshes
     if not asset_names and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections"):
-        default_c = (
-            bpy.data.collections.get("Collection")
-            if hasattr(bpy.data.collections, "get")
-            else next((c for c in bpy.data.collections if getattr(c, "name", "") == "Collection"), None)
-        )
+        default_c = next((c for c in scene_colls if getattr(c, "name", "") == "Collection"), None)
         if default_c:
             has_mesh = any(
                 getattr(obj, "type", "") == "MESH" for obj in getattr(default_c, "objects", []) if is_object_valid(obj)
@@ -394,10 +403,11 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
     """
     Resolves the active asset name deterministically:
     1. If props.active_asset is set and != "AUTO" and != "NONE", returns it.
-    2. If "AUTO" (or not set), checks active Outliner collection (active_layer_collection).
-    3. Fallback: checks active object's collection or name (supporting meshes, lights, empties, cameras).
-    4. Fallback: first discovered asset from get_available_asset_names(context).
-    5. Final fallback: 'Asset'.
+    2. If props.export_base_name is set, returns it.
+    3. If "AUTO" (or not set), checks active Outliner collection (active_layer_collection).
+    4. Fallback: checks active object's collection or name stem.
+    5. Fallback: first discovered asset from get_available_asset_names(context).
+    6. Final fallback: 'Asset'.
     """
     if not context:
         return "Asset"
@@ -405,11 +415,15 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
     if not props:
         props = getattr(getattr(context, "scene", None), "lod_tool", None)
 
-    configured_asset = getattr(props, "active_asset", "") or getattr(props, "export_base_name", "")
-    available = get_available_asset_names(context)
+    active_asset = getattr(props, "active_asset", "")
+    if isinstance(active_asset, str) and active_asset and active_asset not in {"AUTO", "NONE"}:
+        return active_asset
 
-    if configured_asset and configured_asset not in {"AUTO", "NONE"} and configured_asset in available:
-        return configured_asset
+    export_base_name = getattr(props, "export_base_name", "")
+    if isinstance(export_base_name, str) and export_base_name and export_base_name not in {"AUTO", "NONE"}:
+        return export_base_name
+
+    available = get_available_asset_names(context)
 
     # AUTO: check active Outliner collection
     vl = getattr(context, "view_layer", None)
@@ -422,21 +436,23 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
             and c_name != "Scene Collection"
         ):
             stem = _strip_collection_suffixes(c_name)
-            if stem in available:
+            if stem:
                 return stem
 
     # Fallback to active object (MESH, EMPTY, LIGHT, CAMERA)
     active_obj = getattr(context, "active_object", None)
     if active_obj and is_object_valid(active_obj):
-        obj_name = getattr(active_obj, "name", "")
-        stem = _strip_collection_suffixes(obj_name)
-        if stem in available:
-            return stem
         if hasattr(active_obj, "users_collection"):
             for uc in active_obj.users_collection:
+                if getattr(context, "scene", None) and uc == context.scene.collection:
+                    continue
                 u_stem = _strip_collection_suffixes(getattr(uc, "name", ""))
-                if u_stem in available:
+                if u_stem:
                     return u_stem
+        obj_name = getattr(active_obj, "name", "")
+        stem = _strip_collection_suffixes(obj_name)
+        if stem:
+            return stem
 
     # Fallback to first available asset
     if available:
