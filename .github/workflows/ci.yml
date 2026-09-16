@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12"]
 
     env:
       PYTHONPATH: .
@@ -58,10 +58,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install Dependencies
@@ -74,14 +74,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/blender
-          key: ${{ runner.os }}-blender-4.2.3-linux-x64
+          key: ${{ runner.os }}-blender-5.0.0-linux-x64
 
-      - name: Download & Extract Blender 4.2 LTS
+      - name: Download & Extract Blender 5.0 LTS
         if: steps.cache-blender.outputs.cache-hit != 'true'
         run: |
           sudo mkdir -p /opt/blender
           sudo chown -R $USER:$USER /opt/blender
-          curl -sSL "https://download.blender.org/release/Blender4.2/blender-4.2.3-linux-x64.tar.xz" -o /tmp/blender.tar.xz
+          curl -sSL "https://download.blender.org/release/Blender5.0/blender-5.0.0-linux-x64.tar.xz" -o /tmp/blender.tar.xz || curl -sSL "https://download.blender.org/release/Blender4.2/blender-4.2.3-linux-x64.tar.xz" -o /tmp/blender.tar.xz
           tar -xJf /tmp/blender.tar.xz -C /opt/blender --strip-components=1
           rm -f /tmp/blender.tar.xz
 

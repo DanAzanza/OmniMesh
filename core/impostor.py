@@ -396,16 +396,6 @@ class ImpostorManager:
                 mat.use_transparent_shadow = True
             except Exception as exc:
                 logger.debug("Could not set use_transparent_shadow: %s", exc)
-        if hasattr(mat, "blend_method"):
-            try:
-                mat.blend_method = "CLIP"
-            except Exception as exc:
-                logger.debug("Could not set blend_method: %s", exc)
-        if hasattr(mat, "shadow_method"):
-            try:
-                mat.shadow_method = "CLIP"
-            except Exception as exc:
-                logger.debug("Could not set shadow_method: %s", exc)
         if hasattr(mat, "use_backface_culling"):
             mat.use_backface_culling = not is_two_sided
 

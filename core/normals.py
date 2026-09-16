@@ -96,7 +96,7 @@ class NormalManager:
                 d = max(1e-4, delta_world)
                 dt_mod.max_distance = max(2.0 * d, 0.05)
                 dt_mod.ray_radius = max(d, 0.02)
-            except Exception as exc:
+            except (RuntimeError, ValueError, AttributeError) as exc:
                 logger.debug("Failed to initialize DATA_TRANSFER modifier: %s", exc)
                 return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)
 
@@ -113,7 +113,7 @@ class NormalManager:
                     elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
                         bpy.context.view_layer.objects.active = lod_obj
                         bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
-                except Exception as exc:
+                except (RuntimeError, ValueError, AttributeError) as exc:
                     logger.debug("Failed moving DATA_TRANSFER modifier to index 0: %s", exc)
 
             if hasattr(bpy.context, "temp_override"):
@@ -125,7 +125,7 @@ class NormalManager:
             cls.ensure_sharp_edge_attribute(lod_obj.data)
             lod_obj.data.update()
             return True
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("DATA_TRANSFER modifier failed (%s), attempting KDTree normal transfer fallback", exc)
             if hasattr(lod_obj, "modifiers") and dt_mod.name in lod_obj.modifiers:
                 lod_obj.modifiers.remove(dt_mod)
@@ -206,7 +206,7 @@ class NormalManager:
                 tgt_mesh.update()
                 return True
             return False
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
             logger.error("KDTree normal fallback failed: %s", exc)
             return False
 

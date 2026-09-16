@@ -427,11 +427,6 @@ class ShaderGraphBuilder:
                     dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
                     if hasattr(material, "surface_render_method"):
                         material.surface_render_method = "DITHERED"
-                    if hasattr(material, "blend_method"):
-                        try:
-                            material.blend_method = "CLIP"
-                        except (AttributeError, TypeError):
-                            pass
                 elif target in {"Displacement", "Height"}:
                     # Connect to Material Output Displacement via Displacement node
                     disp_node = nodes.new(type="ShaderNodeDisplacement")

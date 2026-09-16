@@ -58,23 +58,16 @@ def configure_material_transparency(
     if not mat:
         return
 
-    # Blender 4.2+ EEVEE Next API
+    # Blender 5.0+ EEVEE Next API
     if hasattr(mat, "surface_render_method"):
         try:
             mat.surface_render_method = "BLENDED" if mode in ("BLEND", "HASHED") else "DITHERED"
         except (AttributeError, TypeError):
             pass
 
-    # Legacy Blender 3.6 - 4.1 EEVEE API
-    if hasattr(mat, "blend_method"):
+    if hasattr(mat, "use_transparent_shadow"):
         try:
-            mat.blend_method = mode
-        except (AttributeError, TypeError):
-            pass
-
-    if hasattr(mat, "shadow_method"):
-        try:
-            mat.shadow_method = shadow
+            mat.use_transparent_shadow = shadow != "NONE"
         except (AttributeError, TypeError):
             pass
 

@@ -388,6 +388,17 @@ if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "handlers"):
                     lod_preset_data = LODPresetManager.get_preset(lod_to_set)
                     sync_preset_tiers_from_preset(props, lod_preset_data)
 
+                # Auto-migrate legacy MSFS 2020 target version to MSFS 2024
+                if hasattr(props, "msfs_target_version") and getattr(props, "msfs_target_version", "") == "2020":
+                    props.msfs_target_version = "2024"
+                msfs_cfg = getattr(props, "msfs_cfg", None)
+                if (
+                    msfs_cfg
+                    and hasattr(msfs_cfg, "target_version")
+                    and getattr(msfs_cfg, "target_version", "") == "2020"
+                ):
+                    msfs_cfg.target_version = "2024"
+
                 # Hydrate persistent preferences
                 if "pbr_import_directory" in state and hasattr(props, "pbr_import_directory"):
                     props.pbr_import_directory = state["pbr_import_directory"]

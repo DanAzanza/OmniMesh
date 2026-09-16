@@ -137,7 +137,7 @@ def test_cst_parser_msfs2024():
             os.remove(tf_path)
 
 
-SYNTHETIC_CFG_MSFS2020 = """[WEIGHT_AND_BALANCE]
+SYNTHETIC_CFG_UNTAGGED_CLASSIC = """[WEIGHT_AND_BALANCE]
 reference_datum_position = 0, 0, 0
 
 [CONTACT_POINTS]
@@ -149,9 +149,9 @@ Center1 = 0, 0, 0, 50, 2
 """
 
 
-def test_cst_parser_msfs2020_classic():
+def test_cst_parser_untagged_classic_syntax():
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".cfg", encoding="utf-8") as tf:
-        tf.write(SYNTHETIC_CFG_MSFS2020)
+        tf.write(SYNTHETIC_CFG_UNTAGGED_CLASSIC)
         tf_path = tf.name
 
     try:

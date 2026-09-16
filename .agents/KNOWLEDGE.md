@@ -4,14 +4,22 @@
 
 ---
 
-## 1. Blender 4.2+ & 5.2 LTS API Quirks & Runtime Invariants
+## 1. Blender 5.0+ & 5.2 LTS API Quirks & Runtime Invariants
+
+### 1.0 Runtime Baseline & Target Engine Specifications (2026 Standard)
+* **Blender 5.0+ Runtime Baseline**: OmniMesh requires Blender 5.0+ (`blender_version_min = "5.0.0"`). Blender 4.x legacy code paths (such as `mat.shadow_method` or legacy `mat.blend_method = 'CLIP'`) are strictly purged. In Blender 5.x EEVEE Next, transparency for cutout textures and impostors strictly requires `mat.surface_render_method = 'DITHERED'` (or `'BLENDED'`).
+* **Explicit Game Engine Target Standards**:
+  * **Microsoft Flight Simulator 2024**: Exclusively MSFS 2024 is targeted for exports and SDK builds (`fspackagetool.exe`). For `.blend` files saved in prior versions where `msfs_target_version == "2020"`, `restore_preset_state_on_load` automatically migrates the property to `"2024"`. In `spatial_parsers.py`, ingestion maintains non-destructive backward compatibility with legacy comma-separated syntax in `.cfg` files, but all exports generate official tagged MSFS 2024 syntax.
+  * **Unreal Engine 5 (5.4 - 5.5+)**: Standard FBX export with `UCX_` collision naming and `LODGroup` empty hierarchy.
+  * **Unity 6 (6000.x LTS)**: Automatic `OmniMeshUnityPostprocessor.cs` generation and `LODGroup` setup.
+  * **Godot 4 (4.3 - 4.4+)**: Visibility range metadata and `-convcolonly` collision hulls in standard glTF 2.0.
 
 ### 1.1 Collection & Object RNA Lifecycle
 * **RNA Pointer Invalidation on Collection Purge**: Storing a collection reference (`target = bpy.data.collections.get(...)`) before executing a cleanup/purge routine that unlinks or removes collections invalidates the C struct pointer (`ReferenceError: StructRNA of type Collection has been removed`). Purges and deletions must strictly precede retrieving or creating target collections.
 * **View Layer Collection Exclusion (`LayerCollectionGuard`)**: Evaluating modifiers, depsgraphs, or transferring normals fails or outputs empty meshes when the target collection is excluded (`layer_collection.exclude = True`). All multi-collection processing must be wrapped in `LayerCollectionGuard` to temporarily un-exclude collections and restore view layer state in `finally`.
 
 ### 1.2 Shading, Enums & EEVEE Next Compatibility
-* **EEVEE Next `shadow_method` & `surface_render_method`**: In Blender 4.2+ and 5.2 LTS, `material.shadow_method` was removed (`AttributeError: 'Material' object has no attribute 'shadow_method'`). For alpha-cutout textures and impostor billboards, setting transparency requires `mat.surface_render_method = 'DITHERED'` (or `'BLENDED'`). Legacy settings like `mat.blend_method = 'CLIP'` are either ignored or result in opaque black cutout backgrounds. Always guard: `if hasattr(mat, "surface_render_method"): mat.surface_render_method = 'DITHERED'`.
+* **EEVEE Next `surface_render_method`**: In Blender 5.0+ and 5.2 LTS, `material.shadow_method` does not exist and `mat.blend_method = 'CLIP'` is dead code. Transparency requires setting `mat.surface_render_method = 'DITHERED'` (or `'BLENDED'`). Always guard: `if hasattr(mat, "surface_render_method"): mat.surface_render_method = 'DITHERED'`.
 * **glTF 2.0 Export Format**: Use `export_format='GLTF_SEPARATE'` for `.gltf` + `.bin` export in Blender 5.2 LTS (`GLTF_EMBEDDED` was deprecated).
 * **`DATA_TRANSFER` Loop Mapping**: `dt_mod.loop_mapping = 'POLYINTERP_LNORPROJ'` is the only valid enum in Blender 5.2 LTS (`POLYINTERP_NEAREST_CORNER` was deprecated/removed).
 * **Native `mathutils.geometry.delaunay_2d_cdt` Return Length**: Unlike standard 2D triangulation routines that return `(verts, edges, faces)`, Blender's native `delaunay_2d_cdt` returns a 6-item tuple: `(verts, edges, faces, orig_verts, orig_edges, orig_faces)`. Unpacking fewer items raises `ValueError`.

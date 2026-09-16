@@ -65,7 +65,10 @@ class EngineImportPresetManager(BasePresetManager):
             return None
 
         engine = str(data.get("engine", "MSFS_2024")).strip().upper()
-        if engine not in {"MSFS_2024", "MSFS_2020", "GENERIC"}:
+        if engine == "MSFS_2020":
+            logger.info("Migrating legacy preset engine 'MSFS_2020' to 'MSFS_2024'")
+            engine = "MSFS_2024"
+        elif engine not in {"MSFS_2024", "GENERIC"}:
             engine = "MSFS_2024"
 
         model_target = str(data.get("model_target", "EXTERIOR_ONLY")).strip().upper()

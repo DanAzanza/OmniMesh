@@ -49,8 +49,6 @@ class MSFS2024LiveBridge(EngineBridgeBase):
                     (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Microsoft Flight Simulator 2024\SDK"),
                     (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Microsoft Flight Simulator 2024\SDK"),
                     (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Microsoft Flight Simulator 2024\SDK"),
-                    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\FlightSimulator\SDK"),
-                    (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\FlightSimulator\SDK"),
                 ]
 
                 for hkey, subkey in registry_paths:

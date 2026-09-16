@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnimesh"
-version = "0.8.0"
+version = "0.8.1"
 description = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigging, Real-Time LOD Simulation & Multi-Engine Pipeline"
 readme = "README.md"
 authors = [{ name = "Daniel" }]
 license = "GPL-3.0-or-later"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.22.0",
     "Pillow>=9.0.0",
@@ -29,14 +29,13 @@ dev = [
     "fake-bpy-module-latest",
     "numpy>=1.22.0",
     "Pillow>=9.0.0",
-    "tomli>=1.1.0;python_version<'3.11'",
 ]
 
 [tool.setuptools.packages.find]
 include = ["core*", "bridges*", "ui*", "exporters*"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
@@ -55,7 +54,7 @@ python_files = ["test_*.py"]
 [tool.pyright]
 include = ["core", "ui", "exporters", "bridges", "tests"]
 exclude = ["**/__pycache__", ".pytest_cache"]
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 reportMissingImports = false
 reportMissingModuleSource = false
 reportCallIssue = true

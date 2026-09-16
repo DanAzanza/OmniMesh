@@ -41,7 +41,7 @@ def test_schema_validation_rules():
     assert valid is not None
     assert valid["engine"] == "MSFS_2024"
 
-    # Valid schema structure
+    # Valid schema structure with legacy MSFS_2020 engine migrated to MSFS_2024
     full = {
         "name": "Custom Setup",
         "engine": "MSFS_2020",
@@ -58,7 +58,7 @@ def test_schema_validation_rules():
     validated = EngineImportPresetManager.validate_preset_schema(full)
     assert validated is not None
     assert validated["name"] == "Custom Setup"
-    assert validated["engine"] == "MSFS_2020"
+    assert validated["engine"] == "MSFS_2024"
     assert validated["import_spatial"] is False
     assert validated["model_target"] == "INTERIOR_ONLY"
 

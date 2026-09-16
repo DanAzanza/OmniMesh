@@ -1,18 +1,18 @@
 # OmniMesh 🚀
-### All-in-One 3D Mesh Optimization, Physics Collision, LOD Engine & Live Multi-Engine Pipeline for Blender (4.2+ & 5.2 LTS)
+### All-in-One 3D Mesh Optimization, Physics Collision, LOD Engine & Live Multi-Engine Pipeline for Blender (5.0+ & 5.2 LTS)
 
-[![Blender 4.2+ / 5.2 LTS](https://img.shields.io/badge/Blender-4.2%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
+[![Blender 5.0+ / 5.2 LTS](https://img.shields.io/badge/Blender-5.0%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-416%20passed%20%28100%25%29-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-394%20passed%20%28100%25%29-brightgreen.svg)]()
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
-[![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5%20%7C%20Unity%206%20%7C%20Godot%204-purple.svg)]()
+[![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5.4%2B%20%7C%20Unity%206%20%7C%20Godot%204.3%2B-purple.svg)]()
 
 > ⚠️ **Work in Progress (WIP):** This project is actively under development and may change significantly over time.
 
-**OmniMesh** is an open-source, production-grade 3D mesh optimization and engine-export pipeline for **Blender 4.2+ and 5.2 LTS**.
+**OmniMesh** is an open-source, production-grade 3D mesh optimization and engine-export pipeline for **Blender 5.0+ and 5.2 LTS**.
 
-It bridges the gap between raw, multi-million-polygon photogrammetry, CAD, sculpted heroes, or kitbash models and ready-to-ship game assets. Instead of running destructive decimation scripts or paying thousands of dollars for proprietary external software, OmniMesh provides a seamless, non-destructive 4-step pipeline directly inside Blender with live synchronization to **Unreal Engine 5**, **Unity 6**, **Godot 4**, and **Microsoft Flight Simulator 2024 / 2020**.
+It bridges the gap between raw, multi-million-polygon photogrammetry, CAD, sculpted heroes, or kitbash models and ready-to-ship game assets. Instead of running destructive decimation scripts or paying thousands of dollars for proprietary external software, OmniMesh provides a seamless, non-destructive 4-step pipeline directly inside Blender with live synchronization to **Unreal Engine 5 (5.4+)**, **Unity 6 (6000.x LTS)**, **Godot 4 (4.3+)**, and **Microsoft Flight Simulator 2024**.
 
 ---
 
@@ -128,7 +128,7 @@ graph LR
   * **Unreal Engine 5**: Live communication via Python Remote Execution (port 6776) / Web Remote Control (port 30010), instanced static mesh matching, and `UCX_` collision setup.
   * **Unity 6**: Installs `OmniMeshUnityPostprocessor.cs`, auto-creates `LODGroup` components, sets up convex `MeshCollider` objects, and configures URP/HDRP MaskMaps.
   * **Godot 4**: Generates `OmniMeshPostImport.gd`, sets up Visibility Ranges, and routes ORM materials.
-  * **MSFS 2024 / 2020**: Multi-hive registry SDK discovery, compiles packages via `fspackagetool.exe`, and generates official SDK-compliant `ModelInfo` XML with `<LOD minSize="...">`.
+  * **Microsoft Flight Simulator 2024**: Multi-hive registry SDK discovery, compiles packages via `fspackagetool.exe`, and generates official SDK-compliant `ModelInfo` XML with `<LOD minSize="...">`.
 * **Batch Processing**: Process entire directories of `.blend` files in headless background workers.
 
 ---
@@ -179,7 +179,7 @@ Tested across **100 photogrammetry and hero game assets** from Epic Games FabLib
 
 ## 📥 Installation
 
-### Method A: Blender 4.2+ / 5.2 LTS Extension (Recommended)
+### Method A: Blender 5.0+ / 5.2 LTS Extension (Recommended)
 1. Download a Zip of the Code. When the plugin reaches a finished state, there will be a release. at [Releases](https://github.com/DanAzanza/OmniMesh/releases).
 2. In Blender, navigate to `Edit` > `Preferences` > `Get Extensions` (or `Add-ons`).
 3. Click the **Repositories** / gear icon (top right) > **Install from Disk...**
@@ -213,7 +213,7 @@ OmniMesh maintains a deterministic, strict CI quality gate with **416 unit & In-
 # Run CI verification (dependencies, linter, formatter, type checker, unit tests with coverage)
 python scripts/verify_ci.py
 
-# Run headless In-Blender integration tests (Blender 4.2+ & 5.2 LTS)
+# Run headless In-Blender integration tests (Blender 5.0+ & 5.2 LTS)
 python scripts/run_blender_tests.py
 
 # Run pytest directly

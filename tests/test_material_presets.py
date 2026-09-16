@@ -51,8 +51,7 @@ class MockMaterial:
         }
         self.node_tree.nodes = [self.bsdf]
         self.surface_render_method = "DITHERED"
-        self.blend_method = "OPAQUE"
-        self.shadow_method = "OPAQUE"
+        self.use_transparent_shadow = False
 
     def __setitem__(self, key: str, value: any):
         self.custom_props[key] = value
@@ -98,13 +97,16 @@ def test_set_principled_socket_missing_socket():
 
 
 def test_configure_material_transparency_eevee_next():
-    """Verify EEVEE Next surface_render_method is assigned safely."""
+    """Verify EEVEE Next surface_render_method and use_transparent_shadow are assigned safely."""
     mat = MockMaterial("GlassMat")
     configure_material_transparency(mat, mode="BLEND", shadow="NONE")
 
     assert mat.surface_render_method == "BLENDED"
-    assert mat.blend_method == "BLEND"
-    assert mat.shadow_method == "NONE"
+    assert mat.use_transparent_shadow is False
+
+    configure_material_transparency(mat, mode="DITHERED", shadow="OPAQUE")
+    assert mat.surface_render_method == "DITHERED"
+    assert mat.use_transparent_shadow is True
 
 
 def test_get_or_create_principled_node_existing():

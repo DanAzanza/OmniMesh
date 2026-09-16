@@ -19,6 +19,8 @@ except ImportError:
     bmesh = None
     Vector = None
 
+UV_SEAM_EPSILON: float = 1e-4
+
 
 class MeshDecimator:
     @staticmethod
@@ -45,7 +47,7 @@ class MeshDecimator:
             bm.edges.ensure_lookup_table()
             bm.faces.ensure_lookup_table()
             bm.verts.index_update()
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("Decimator lookup table init error: %s", exc)
             return pinned_vert_indices
 
@@ -103,7 +105,7 @@ class MeshDecimator:
                             uv2 = lp2_v0[uv_layer].uv
                             du = float(uv1[0] - uv2[0])
                             dv = float(uv1[1] - uv2[1])
-                            if math.hypot(du, dv) > 1e-4:
+                            if math.hypot(du, dv) > UV_SEAM_EPSILON:
                                 pinned_vert_indices.add(v0.index)
                                 pinned_vert_indices.add(v1.index)
                                 break
@@ -113,11 +115,11 @@ class MeshDecimator:
                             uv2 = lp2_v1[uv_layer].uv
                             du = float(uv1[0] - uv2[0])
                             dv = float(uv1[1] - uv2[1])
-                            if math.hypot(du, dv) > 1e-4:
+                            if math.hypot(du, dv) > UV_SEAM_EPSILON:
                                 pinned_vert_indices.add(v0.index)
                                 pinned_vert_indices.add(v1.index)
                                 break
-                    except Exception as exc:
+                    except (KeyError, IndexError, AttributeError, TypeError) as exc:
                         logger.debug("UV seam check error: %s", exc)
 
         return pinned_vert_indices
@@ -156,7 +158,7 @@ class MeshDecimator:
             bm.edges.index_update()
             bm.faces.index_update()
             bm.normal_update()
-        except Exception as exc:
+        except (RuntimeError, ValueError) as exc:
             logger.debug("Planar limited dissolve exception: %s", exc)
 
     @staticmethod
@@ -192,7 +194,7 @@ class MeshDecimator:
                 bm.faces.ensure_lookup_table()
             if hasattr(bm, "normal_update"):
                 bm.normal_update()
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("Lookup table init error in inject_curvature_weights: %s", exc)
             return
 
@@ -254,7 +256,7 @@ class MeshDecimator:
                     for vert in bm.verts:
                         vert[dvert_lay][vg_idx] = float(weights[vert.index])
                     return
-            except Exception as exc:
+            except (ImportError, ValueError, TypeError, IndexError) as exc:
                 logger.debug("Vectorized curvature fallback to BMesh: %s", exc)
 
         # Robust scalar fallback for small meshes or environments without NumPy
@@ -284,7 +286,7 @@ class MeshDecimator:
                                 angle = math.acos(dot_val)
                             if angle > max_dihedral:
                                 max_dihedral = angle
-                        except Exception as exc:
+                        except (ValueError, ZeroDivisionError, AttributeError) as exc:
                             logger.debug("Dihedral angle calculation failed: %s", exc)
 
             # Strict protection for pinned boundaries / seams / non-manifold vertices
@@ -296,7 +298,7 @@ class MeshDecimator:
             try:
                 dvert = vert[dvert_lay]
                 dvert[vg_idx] = final_weight
-            except Exception as exc:
+            except (RuntimeError, ValueError, TypeError, KeyError) as exc:
                 logger.debug("Error assigning deform weight: %s", exc)
 
     @staticmethod
@@ -386,7 +388,7 @@ class MeshDecimator:
                     try:
                         with bpy.context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
                             bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
-                    except Exception as exc:
+                    except (RuntimeError, ValueError, AttributeError) as exc:
                         logger.debug("Modifier move to index 0 skipped: %s", exc)
 
             if hasattr(bpy.context, "temp_override"):
@@ -395,7 +397,7 @@ class MeshDecimator:
             elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
                 bpy.context.view_layer.objects.active = obj
                 bpy.ops.object.modifier_apply(modifier=dec_mod.name)
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("QEM Decimate modifier apply error: %s", exc)
             if hasattr(obj, "modifiers") and dec_mod.name in obj.modifiers:
                 obj.modifiers.remove(dec_mod)
@@ -404,7 +406,7 @@ class MeshDecimator:
             for m, orig_state in orig_armature_states.items():
                 try:
                     m.show_viewport = orig_state
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Restoring armature show_viewport failed: %s", exc)
 
             # Cleanup protection vertex group if requested
