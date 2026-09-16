@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from typing import Any, List, Tuple
 
 import numpy as np
@@ -263,6 +264,8 @@ class ImpostorMeshBuilder:
 
         # Plane A: X-aligned (Front view, UV u in [0.0, 0.5])
         # Winding (v1, v4, v3, v2) ensures positive surface normal pointing to +Y
+        # Inset UVs by 0.002 (gutter margin) to prevent bilinear mipmap bleeding across tile seams
+        g = 0.002
         v1 = bm.verts.new((-hw, 0.0, z_min))
         v2 = bm.verts.new((hw, 0.0, z_min))
         v3 = bm.verts.new((hw, 0.0, z_max))
@@ -270,10 +273,10 @@ class ImpostorMeshBuilder:
         f_a = bm.faces.new((v1, v4, v3, v2))
 
         # UV coordinates synchronized with vertex loop order (v1, v4, v3, v2)
-        f_a.loops[0][uv_layer].uv = (0.0, 0.0)
-        f_a.loops[1][uv_layer].uv = (0.0, 1.0)
-        f_a.loops[2][uv_layer].uv = (0.5, 1.0)
-        f_a.loops[3][uv_layer].uv = (0.5, 0.0)
+        f_a.loops[0][uv_layer].uv = (0.0 + g, 0.0 + g)
+        f_a.loops[1][uv_layer].uv = (0.0 + g, 1.0 - g)
+        f_a.loops[2][uv_layer].uv = (0.5 - g, 1.0 - g)
+        f_a.loops[3][uv_layer].uv = (0.5 - g, 0.0 + g)
 
         # Plane B: Y-aligned (Side view, UV u in [0.5, 1.0])
         v5 = bm.verts.new((0.0, -hw, z_min))
@@ -282,10 +285,10 @@ class ImpostorMeshBuilder:
         v8 = bm.verts.new((0.0, -hw, z_max))
         f_b = bm.faces.new((v5, v6, v7, v8))
 
-        f_b.loops[0][uv_layer].uv = (0.5, 0.0)
-        f_b.loops[1][uv_layer].uv = (1.0, 0.0)
-        f_b.loops[2][uv_layer].uv = (1.0, 1.0)
-        f_b.loops[3][uv_layer].uv = (0.5, 1.0)
+        f_b.loops[0][uv_layer].uv = (0.5 + g, 0.0 + g)
+        f_b.loops[1][uv_layer].uv = (1.0 - g, 0.0 + g)
+        f_b.loops[2][uv_layer].uv = (1.0 - g, 1.0 - g)
+        f_b.loops[3][uv_layer].uv = (0.5 + g, 1.0 - g)
 
         bm.verts.ensure_lookup_table()
         bm.faces.ensure_lookup_table()
@@ -295,6 +298,7 @@ class ImpostorMeshBuilder:
     def build_star_quads(cls, width: float = 2.0, height: float = 2.0, ground_z: float = 0.0) -> Any:
         """
         Constructs 3 intersecting vertical quads at 60 degree intervals (Star '*', 6 tris, 12 verts).
+        Maps UVs into clean 2x2 power-of-two quadrants (0,0), (1,0), (0,1) with gutter insets.
         """
         if not bmesh:
             return None
@@ -306,6 +310,8 @@ class ImpostorMeshBuilder:
         z_min = ground_z
         z_max = ground_z + height
         angles = [0.0, math.radians(60.0), math.radians(120.0)]
+        quad_tiles = [(0, 0), (1, 0), (0, 1)]
+        g = 0.002
 
         for i, angle in enumerate(angles):
             dx = hw * math.cos(angle)
@@ -317,12 +323,16 @@ class ImpostorMeshBuilder:
             v4 = bm.verts.new((-dx, -dy, z_max))
             face = bm.faces.new((v1, v2, v3, v4))
 
-            u_start = i / 3.0
-            u_end = (i + 1) / 3.0
-            face.loops[0][uv_layer].uv = (u_start, 0.0)
-            face.loops[1][uv_layer].uv = (u_end, 0.0)
-            face.loops[2][uv_layer].uv = (u_end, 1.0)
-            face.loops[3][uv_layer].uv = (u_start, 1.0)
+            col, row = quad_tiles[i]
+            u_min = col * 0.5 + g
+            u_max = (col + 1) * 0.5 - g
+            v_min = row * 0.5 + g
+            v_max = (row + 1) * 0.5 - g
+
+            face.loops[0][uv_layer].uv = (u_min, v_min)
+            face.loops[1][uv_layer].uv = (u_max, v_min)
+            face.loops[2][uv_layer].uv = (u_max, v_max)
+            face.loops[3][uv_layer].uv = (u_min, v_max)
 
         bm.verts.ensure_lookup_table()
         bm.faces.ensure_lookup_table()
@@ -462,6 +472,44 @@ class ImpostorManager:
                 links.new(node_separate.outputs["Blue"], node_bsdf.inputs["Metallic"])
 
         return mat
+
+    @classmethod
+    def bind_baked_textures_to_material(
+        cls,
+        mat: Any,
+        base_color_path: str = "",
+        normal_path: str = "",
+        orm_path: str = "",
+    ) -> None:
+        """Loads and assigns baked PNG files into TexImage shader nodes on Impostor material."""
+        if not bpy or not mat or not getattr(mat, "use_nodes", False) or not mat.node_tree:
+            return
+
+        nodes = mat.node_tree.nodes
+
+        if base_color_path and os.path.exists(base_color_path):
+            tex_base = nodes.get("Tex_BaseColor")
+            if tex_base and getattr(tex_base, "type", "") == "TEX_IMAGE":
+                img = bpy.data.images.load(base_color_path)
+                tex_base.image = img
+                if hasattr(img, "colorspace_settings"):
+                    img.colorspace_settings.name = "sRGB"
+
+        if normal_path and os.path.exists(normal_path):
+            tex_norm = nodes.get("Tex_Normal")
+            if tex_norm and getattr(tex_norm, "type", "") == "TEX_IMAGE":
+                img = bpy.data.images.load(normal_path)
+                tex_norm.image = img
+                if hasattr(img, "colorspace_settings"):
+                    img.colorspace_settings.name = "Non-Color"
+
+        if orm_path and os.path.exists(orm_path):
+            tex_orm = nodes.get("Tex_ORM")
+            if tex_orm and getattr(tex_orm, "type", "") == "TEX_IMAGE":
+                img = bpy.data.images.load(orm_path)
+                tex_orm.image = img
+                if hasattr(img, "colorspace_settings"):
+                    img.colorspace_settings.name = "Non-Color"
 
     @classmethod
     def generate_impostor_for_objects(

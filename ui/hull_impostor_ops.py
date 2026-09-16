@@ -5,6 +5,7 @@ Convex Collision Hull Decomposition and Billboard Impostor Operators.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ except ImportError:
 try:
     from ..core.collision import CollisionManager
     from ..core.impostor import ImpostorManager
+    from ..core.impostor_baker import ImpostorAtlasBaker
     from .utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -30,6 +32,7 @@ try:
 except (ImportError, ValueError):
     from core.collision import CollisionManager
     from core.impostor import ImpostorManager
+    from core.impostor_baker import ImpostorAtlasBaker
     from ui.utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -92,7 +95,39 @@ class LOD_OT_generate_impostor(Operator):
             safe_report(self, {"ERROR"}, "Failed to generate impostor billboard.")
             return {"CANCELLED"}
 
-        props.last_impostor_status = f"Generated {props.impostor_mode} in '{target_coll_name}'"
+        # Determine output texture directory
+        export_dir = getattr(props, "export_directory", "") or "//Textures/"
+        if export_dir.startswith("//") and bpy and hasattr(bpy.data, "filepath") and bpy.data.filepath:
+            export_dir = bpy.path.abspath(export_dir)
+        elif not os.path.isabs(export_dir):
+            export_dir = os.path.abspath(export_dir)
+        tex_dir = os.path.join(export_dir, "Textures") if not export_dir.endswith("Textures") else export_dir
+
+        # Execute unlit multi-angle baking pass
+        baked_maps = ImpostorAtlasBaker.bake_impostor_textures(
+            mesh_objs,
+            base_name,
+            output_dir=tex_dir,
+            mode=props.impostor_mode,
+            atlas_resolution=calc_res,
+            target_engine=getattr(props, "target_engine", "UE5"),
+            dilation_iterations=4,
+        )
+
+        if baked_maps and hasattr(res, "data") and res.data.materials:
+            imp_mat = res.data.materials[0]
+            ImpostorManager.bind_baked_textures_to_material(
+                imp_mat,
+                base_color_path=baked_maps.get("BaseColor", ""),
+                normal_path=baked_maps.get("Normal", ""),
+                orm_path=baked_maps.get("ORM", ""),
+            )
+            props.last_impostor_status = (
+                f"Baked {calc_res}px Impostor Atlas ({len(baked_maps)} maps) in '{target_coll_name}'"
+            )
+        else:
+            props.last_impostor_status = f"Generated {props.impostor_mode} in '{target_coll_name}'"
+
         safe_report(self, {"INFO"}, props.last_impostor_status)
         return {"FINISHED"}
 
