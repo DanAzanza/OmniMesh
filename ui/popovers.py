@@ -347,7 +347,11 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
                 box_chunk.prop(props, "chunk_cell_size_z", text="Z Cell Size (m)")
             box_chunk.prop(props, "enable_hlod", text="Enable HLOD")
             if props.enable_hlod:
+                box_chunk.prop(props, "enable_hierarchical_hlod", text="Hierarchical (Quadtree)")
                 box_chunk.prop(props, "hlod_start_tier", text="HLOD Start Tier")
+                box_chunk.prop(props, "hlod_proxy_remesh", text="Terminal Voxel Wrap")
+                if props.hlod_proxy_remesh:
+                    box_chunk.prop(props, "hlod_proxy_voxel_size", text="Voxel Shell Size (m)")
 
         # 6. Billboard Impostor
         box_imp = layout.box()

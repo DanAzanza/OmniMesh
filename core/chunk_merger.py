@@ -10,16 +10,19 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import math
+
 from .normals import NormalManager
 
 try:
     import bmesh
     import bpy
-    from mathutils import Matrix
+    from mathutils import Matrix, Vector
 except ImportError:
     bpy = None  # type: ignore
     bmesh = None  # type: ignore
     Matrix = None  # type: ignore
+    Vector = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +170,48 @@ class HLODClusterMerger:
             NormalManager.ensure_sharp_edge_attribute(hlod_mesh)
             hlod_mesh.update()
 
+            # Recenter local pivot stationary to composite cluster AABB center
+            HLODClusterMerger._recenter_pivot_stationary(hlod_obj)
+
             return hlod_obj
 
         finally:
             merged_bm.free()
+
+    @staticmethod
+    def _recenter_pivot_stationary(obj: Any) -> None:
+        """
+        Recalculates object origin to its local bounding box center
+        while compensating vertex coordinates so world geometry remains stationary.
+        """
+        if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
+            return
+        mesh = obj.data
+        if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
+            return
+
+        verts = mesh.vertices
+        min_co = [min(v.co[i] for v in verts) for i in range(3)]
+        max_co = [max(v.co[i] for v in verts) for i in range(3)]
+        center_coords = [(min_co[i] + max_co[i]) * 0.5 for i in range(3)]
+        center_len = math.sqrt(sum(c * c for c in center_coords))
+
+        if center_len < 1e-5:
+            return
+
+        center_offset = Vector(center_coords) if Vector is not None else center_coords
+
+        # Shift all vertices by -center_offset
+        for v in verts:
+            try:
+                v.co -= center_offset
+            except (TypeError, AttributeError):
+                v.co = type(v.co)([v.co[i] - center_coords[i] for i in range(3)])
+
+        # Compensate object world transform by +center_local
+        if hasattr(obj, "matrix_world") and obj.matrix_world is not None and Matrix is not None:
+            trans_mat = Matrix.Translation(Vector(center_coords) if Vector else center_coords)
+            obj.matrix_world = obj.matrix_world @ trans_mat
+
+        if hasattr(mesh, "update"):
+            mesh.update()

@@ -28,12 +28,14 @@ try:
     from ..core.decimator import MeshDecimator
     from ..core.hierarchy import LayerCollectionGuard
     from ..core.materials import MaterialOptimizer
+    from ..core.recursive_hlod import RecursiveHLODManager
     from .utils import get_selected_mesh_objects, resolve_lod_context, safe_report
 except (ImportError, ValueError):
     from core.chunking import HLODClusterMerger, MeshChunkSlicer, SpatialGridSpec
     from core.decimator import MeshDecimator
     from core.hierarchy import LayerCollectionGuard
     from core.materials import MaterialOptimizer
+    from core.recursive_hlod import RecursiveHLODManager
     from ui.utils import get_selected_mesh_objects, resolve_lod_context, safe_report
 
 
@@ -171,33 +173,88 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
 
         # 5. Generate HLOD (LOD2+) if enabled
         if props.enable_hlod and props.hlod_start_tier <= 2:
-            hlod_coll_name = f"{base_name}_HLOD_LOD2"
-            hlod_coll = bpy.data.collections.get(hlod_coll_name)
-            if not hlod_coll:
-                hlod_coll = bpy.data.collections.new(name=hlod_coll_name)
-                context.scene.collection.children.link(hlod_coll)
+            use_hierarchical = bool(getattr(props, "enable_hierarchical_hlod", True))
+            use_voxel_shell = bool(getattr(props, "hlod_proxy_remesh", False))
+            voxel_size = float(getattr(props, "hlod_proxy_voxel_size", 0.5))
 
-            vl = getattr(context, "view_layer", None)
-            with LayerCollectionGuard(vl, [hlod_coll]):
-                try:
-                    hlod_obj = HLODClusterMerger.merge_chunks_for_hlod(
-                        chunk_objs=chunk_objs_lod1,
-                        hlod_name=f"{base_name}_HLOD_LOD2",
-                        target_collection=hlod_coll,
-                        weld_dist=0.002,
+            if use_hierarchical and len(props.lods) >= 3:
+                # Hierarchical Quadtree HLOD generation across distance tiers
+                current_input_chunks = chunk_objs_lod1
+                start_tier = max(2, int(props.hlod_start_tier))
+                max_tier = len(props.lods) - 1
+
+                for tier_idx in range(start_tier, max_tier + 1):
+                    tier_ratio = max(0.005, min(0.5, props.lods[tier_idx].target_tris_pct / 100.0))
+                    is_terminal = tier_idx == max_tier
+
+                    hlod_coll_name = f"{base_name}_HLOD_LOD{tier_idx}"
+                    hlod_coll = bpy.data.collections.get(hlod_coll_name)
+                    if not hlod_coll:
+                        hlod_coll = bpy.data.collections.new(name=hlod_coll_name)
+                        context.scene.collection.children.link(hlod_coll)
+
+                    # Group input chunks pairwise (2x2 quadtree) using normalized stride 2
+                    clusters = RecursiveHLODManager.group_chunks_quadtree(
+                        chunk_objs=current_input_chunks,
+                        grid_spec=grid_spec,
+                        stride=2,
                     )
-                    if hlod_obj:
-                        # Global aggressive decimation without seam boundary lock
-                        MeshDecimator.execute_decimate_qem(
-                            obj=hlod_obj,
-                            target_ratio=hlod_ratio,
-                            use_curvature_weight=False,
-                            cleanup_group=True,
+
+                    vl = getattr(context, "view_layer", None)
+                    with LayerCollectionGuard(vl, [hlod_coll]):
+                        try:
+                            tier_hlod_objs = RecursiveHLODManager.build_hierarchical_tier(
+                                parent_clusters=clusters,
+                                base_name=base_name,
+                                tier_index=tier_idx,
+                                target_collection=hlod_coll,
+                                target_ratio=tier_ratio,
+                                weld_dist=0.002,
+                                is_terminal_tier=is_terminal,
+                                use_voxel_shell=(is_terminal and use_voxel_shell),
+                                voxel_size=voxel_size,
+                                context=context,
+                            )
+                            logger.info(
+                                "Generated Hierarchical HLOD LOD%d: %d clusters (ratio %.3f)",
+                                tier_idx,
+                                len(tier_hlod_objs),
+                                tier_ratio,
+                            )
+                            if tier_hlod_objs:
+                                current_input_chunks = tier_hlod_objs
+                        except Exception as exc:
+                            logger.error("Hierarchical HLOD tier LOD%d failed: %s", tier_idx, exc, exc_info=True)
+                            safe_report(self, {"WARNING"}, f"HLOD tier {tier_idx} failed: {exc}")
+            else:
+                # Flat single-mesh merge fallback
+                hlod_coll_name = f"{base_name}_HLOD_LOD2"
+                hlod_coll = bpy.data.collections.get(hlod_coll_name)
+                if not hlod_coll:
+                    hlod_coll = bpy.data.collections.new(name=hlod_coll_name)
+                    context.scene.collection.children.link(hlod_coll)
+
+                vl = getattr(context, "view_layer", None)
+                with LayerCollectionGuard(vl, [hlod_coll]):
+                    try:
+                        hlod_obj = HLODClusterMerger.merge_chunks_for_hlod(
+                            chunk_objs=chunk_objs_lod1,
+                            hlod_name=f"{base_name}_HLOD_LOD2",
+                            target_collection=hlod_coll,
+                            weld_dist=0.002,
                         )
-                        logger.info("Generated HLOD mesh: %s (ratio %.3f)", hlod_obj.name, hlod_ratio)
-                except Exception as exc:
-                    logger.error("HLOD cluster merging failed: %s", exc, exc_info=True)
-                    safe_report(self, {"WARNING"}, f"HLOD merging failed: {exc}")
+                        if hlod_obj:
+                            # Global aggressive decimation without seam boundary lock
+                            MeshDecimator.execute_decimate_qem(
+                                obj=hlod_obj,
+                                target_ratio=hlod_ratio,
+                                use_curvature_weight=False,
+                                cleanup_group=True,
+                            )
+                            logger.info("Generated flat HLOD mesh: %s (ratio %.3f)", hlod_obj.name, hlod_ratio)
+                    except Exception as exc:
+                        logger.error("HLOD cluster merging failed: %s", exc, exc_info=True)
+                        safe_report(self, {"WARNING"}, f"HLOD merging failed: {exc}")
 
         safe_report(
             self,

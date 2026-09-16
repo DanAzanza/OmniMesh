@@ -135,6 +135,14 @@ class SpatialGridSpec:
         iz = max(0, min(self.num_cells_z - 1, iz)) if self.split_z else 0
         return ix, iy, iz
 
+    def get_parent_cluster_index(self, ix: int, iy: int, iz: int = 0, stride: int = 2) -> tuple[int, int, int]:
+        """
+        Calculates downsampled parent cluster coordinates for quadtree/octree HLOD grouping.
+        Uses normalized pairwise stride (default: 2 for 2x2 quadtree grouping).
+        """
+        st = max(1, int(stride))
+        return (ix // st, iy // st, (iz // st) if self.split_z else 0)
+
 
 class AdaptiveCellClusterer:
     """Hierarchically clusters adjacent sparse grid cells to balance polycounts with zero T-junctions."""

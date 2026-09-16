@@ -420,8 +420,21 @@ class LODToolSettings(PropertyGroup):
     enable_hlod: BoolProperty(
         name="Enable HLOD Merging", default=True, description="Merges tiles into unified mesh at distant LOD tiers"
     )
+    enable_hierarchical_hlod: BoolProperty(
+        name="Hierarchical HLOD (Quadtree)",
+        default=True,
+        description="Recursively clusters 2x2 adjacent chunks per LOD tier instead of collapsing all into one",
+    )
     hlod_start_tier: IntProperty(
         name="HLOD Start Tier", default=2, min=1, max=6, description="LOD tier at which chunk tiles are merged"
+    )
+    hlod_proxy_remesh: BoolProperty(
+        name="Terminal HLOD Voxel Wrap",
+        default=False,
+        description="Voxel remesh terminal HLOD tier into a sealed watertight shell",
+    )
+    hlod_proxy_voxel_size: FloatProperty(
+        name="Voxel Shell Size (m)", default=0.5, min=0.05, max=5.0, precision=2, unit="LENGTH"
     )
     enable_scan_pre_remesh: BoolProperty(
         name="Pre-Process: Voxel Remesh", default=False, description="Voxel remesh cleanup for photogrammetry scans"

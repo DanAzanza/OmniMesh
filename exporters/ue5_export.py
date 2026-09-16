@@ -132,6 +132,7 @@ class UE5Exporter(EngineExporterBase):
 
             bpy.ops.object.select_all(action="DESELECT")
 
+            is_chunked_asset = any(len(objs) > 1 for objs in payload.lod_tiers.values())
             if armature_obj:
                 armature_obj.select_set(True)
                 for obj in export_objects:
@@ -139,6 +140,14 @@ class UE5Exporter(EngineExporterBase):
                 for c_obj in collider_objects:
                     c_obj.select_set(True)
                 context.view_layer.objects.active = armature_obj
+            elif is_chunked_asset:
+                # For chunked / HLOD assets with multiple objects per tier, bypass single LodGroup empty
+                # to avoid UE5 importing each individual chunk as a distinct sequential LOD tier.
+                for obj in export_objects:
+                    obj.select_set(True)
+                for c_obj in collider_objects:
+                    c_obj.select_set(True)
+                context.view_layer.objects.active = export_objects[0]
             else:
                 empty_name = f"LODGroup_{clean_name}"
                 lod_group_empty = bpy.data.objects.get(empty_name)

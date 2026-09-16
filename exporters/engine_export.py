@@ -143,21 +143,26 @@ class AssetMeshResolver:
             if lod0_objs:
                 lod_tiers[0] = lod0_objs
 
-            # LOD1..max_tiers (supporting both _LOD{i} and x{i} aliases)
+            # LOD1..max_tiers (supporting both _LOD{i}, _HLOD_LOD{i}, _Chunks_LOD{i}, and x{i} aliases)
             for i in range(1, max_tiers + 1):
                 tier_col = None
+                aliases = (
+                    f"{clean_name}_LOD{i}",
+                    f"{clean_name}_HLOD_LOD{i}",
+                    f"{clean_name}_Chunks_LOD{i}",
+                    f"x{i}",
+                    f"x{i}_{clean_name}",
+                )
                 if hasattr(root_col, "children"):
-                    tier_col = (
-                        root_col.children.get(f"{clean_name}_LOD{i}")
-                        or root_col.children.get(f"x{i}")
-                        or root_col.children.get(f"x{i}_{clean_name}")
-                    )
+                    for alias in aliases:
+                        tier_col = root_col.children.get(alias)
+                        if tier_col:
+                            break
                 if not tier_col:
-                    tier_col = (
-                        bpy.data.collections.get(f"{clean_name}_LOD{i}")
-                        or bpy.data.collections.get(f"x{i}")
-                        or bpy.data.collections.get(f"x{i}_{clean_name}")
-                    )
+                    for alias in aliases:
+                        tier_col = bpy.data.collections.get(alias)
+                        if tier_col:
+                            break
                 if tier_col:
                     tier_objs: list[Any] = []
                     for obj in getattr(tier_col, "objects", []):
