@@ -293,14 +293,13 @@ class CollisionDecomposer:
                 logger.debug("Failed evaluating modifier mesh for collision: %s", exc)
             bm_master = bmesh.new()
             try:
-                try:
-                    if eval_mesh:
-                        bm_master.from_mesh(eval_mesh)
-                    else:
-                        bm_master.from_mesh(source_obj.data)
-                except Exception:
-                    bm_master.free()
-                    raise
+                if eval_mesh:
+                    bm_master.from_mesh(eval_mesh)
+                else:
+                    bm_master.from_mesh(source_obj.data)
+            except Exception:
+                bm_master.free()
+                raise
             finally:
                 if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
                     eval_obj.to_mesh_clear()

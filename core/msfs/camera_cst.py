@@ -324,13 +324,11 @@ class MSFSCameraCST:
                         raise
                     time.sleep(0.05 * (2**attempt))
 
-            logger.info("Successfully serialized %d cameras to %s", len(cams), dest_file)
-        except Exception:
+        finally:
             if os.path.exists(temp_file_path):
                 try:
                     os.remove(temp_file_path)
                 except OSError:
                     pass
-            raise
 
         return backup_path

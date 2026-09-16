@@ -171,7 +171,7 @@ class NormalManager:
             if src_rot and hasattr(src_rot, "determinant") and abs(src_rot.determinant()) > 1e-9:
                 try:
                     src_norm_to_world = src_rot.inverted().transposed()
-                except Exception:
+                except (ValueError, AttributeError, ReferenceError):
                     src_norm_to_world = None
 
             # Build custom loop normals directly in loop order transformed into target local space

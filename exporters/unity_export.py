@@ -23,8 +23,8 @@ try:
     from .engine_export import AssetMeshResolver
 except (ImportError, ValueError):
     try:
-        from ..base import EngineExporterBase
-        from ..engine_export import AssetMeshResolver
+        from exporters.base import EngineExporterBase
+        from exporters.engine_export import AssetMeshResolver
     except (ImportError, ValueError):
         EngineExporterBase = object  # type: ignore
         AssetMeshResolver = None  # type: ignore

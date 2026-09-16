@@ -12,12 +12,12 @@ import re
 from typing import Any, Optional
 
 try:
-    from ..pbr_presets import (
+    from .pbr_presets import (
         DEFAULT_PRESET_ID,
         PBRImporterPresetManager,
     )
 except (ImportError, ValueError):
-    from .pbr_presets import (
+    from core.pbr_presets import (
         DEFAULT_PRESET_ID,
         PBRImporterPresetManager,
     )

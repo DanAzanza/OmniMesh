@@ -79,7 +79,7 @@ class TopologyRepairEngine:
                     try:
                         if vert[dvert_lay]:
                             orig_weights = dict(vert[dvert_lay])
-                    except Exception:
+                    except (KeyError, IndexError, AttributeError, TypeError, ReferenceError):
                         orig_weights = {}
 
                 for extra_fan in fans[1:]:

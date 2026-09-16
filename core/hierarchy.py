@@ -174,7 +174,7 @@ class MeshMergeEngine:
         if pivot_obj and hasattr(pivot_obj, "matrix_world") and Matrix:
             try:
                 m_pivot_inv = pivot_obj.matrix_world.inverted()
-            except Exception:
+            except (ValueError, AttributeError, ReferenceError):
                 m_pivot_inv = Matrix.Identity(4)
 
         # 4. Construct Merged BMesh
@@ -600,7 +600,7 @@ def get_or_create_engine_import_collection(
                         if hasattr(lod0_col.children, "get")
                         else _bpy.data.collections.get(sub_name)
                     )
-            except Exception:
+            except (AttributeError, TypeError, ReferenceError):
                 has_old = False
             if has_old and old_sub:
                 if old_sub.name not in config_col.children:

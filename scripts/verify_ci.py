@@ -7,9 +7,17 @@ linters, formatters, and full test suite.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
-import tomllib
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:  # pragma: no cover
+        tomllib = None  # type: ignore[assignment]
 
 
 def check_dependency_parity() -> bool:
@@ -19,14 +27,19 @@ def check_dependency_parity() -> bool:
         print("[ERROR] [DepCheck] pyproject.toml not found!")
         return False
 
-    with open(pyproject_path, "rb") as f:
-        data = tomllib.load(f)
+    if tomllib is not None:
+        with open(pyproject_path, "rb") as f:
+            data = tomllib.load(f)
+        project_deps = data.get("project", {}).get("dependencies", [])
+        dev_deps = data.get("project", {}).get("optional-dependencies", {}).get("dev", [])
+    else:
+        content = open(pyproject_path, "r", encoding="utf-8").read()
+        project_deps = re.findall(r'"([^"]+)"', content)
+        dev_deps = []
 
-    project_deps = data.get("project", {}).get("dependencies", [])
-    dev_deps = data.get("project", {}).get("optional-dependencies", {}).get("dev", [])
     all_declared = set()
     for dep in project_deps + dev_deps:
-        pkg_name = dep.split(">=")[0].split("==")[0].split("<")[0].strip().lower()
+        pkg_name = dep.split(">=")[0].split("==")[0].split("<")[0].split(";")[0].strip().lower()
         all_declared.add(pkg_name)
 
     required_packages = ["numpy", "pillow", "pytest", "pytest-cov", "ruff", "pyright"]

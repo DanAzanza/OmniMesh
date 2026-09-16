@@ -43,7 +43,7 @@ class ConfigPresetManager(BasePresetManager):
         if bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / "config"
-            except Exception:
+            except (RuntimeError, ValueError, AttributeError, TypeError):
                 base = Path.home() / ".omnimesh" / "presets" / "config"
         else:
             base = Path.home() / ".omnimesh" / "presets" / "config"

@@ -45,6 +45,28 @@ try:
 except (ImportError, ValueError):
     from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
 
+try:
+    from ..core.engine_import_presets import (
+        DEFAULT_ENGINE_IMPORT_PRESET_ID,
+        EngineImportPresetManager,
+    )
+except (ImportError, ValueError):
+    from core.engine_import_presets import (
+        DEFAULT_ENGINE_IMPORT_PRESET_ID,
+        EngineImportPresetManager,
+    )
+
+try:
+    from ..core.config_presets import (
+        DEFAULT_CONFIG_PRESET_ID,
+        ConfigPresetManager,
+    )
+except (ImportError, ValueError):
+    from core.config_presets import (
+        DEFAULT_CONFIG_PRESET_ID,
+        ConfigPresetManager,
+    )
+
 
 def _get_popover_props(context: Any) -> Any | None:
     if not context:
@@ -450,10 +472,7 @@ class OMNIMESH_PT_popover_import_preset(Panel):
             try:
                 from .properties import sync_maps_from_preset
             except (ImportError, ValueError):
-                try:
-                    from .properties import sync_maps_from_preset
-                except (ImportError, ValueError):
-                    sync_maps_from_preset = None
+                sync_maps_from_preset = None
             if sync_maps_from_preset:
                 sync_maps_from_preset(props, preset)
 
@@ -548,10 +567,7 @@ class OMNIMESH_PT_popover_export_preset(Panel):
             try:
                 from .properties import sync_export_maps_from_preset
             except (ImportError, ValueError):
-                try:
-                    from .properties import sync_export_maps_from_preset
-                except (ImportError, ValueError):
-                    sync_export_maps_from_preset = None
+                sync_export_maps_from_preset = None
             if sync_export_maps_from_preset:
                 sync_export_maps_from_preset(props, preset)
 
@@ -643,17 +659,6 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
         if not props:
             return
 
-        try:
-            from ..core.engine_import_presets import (
-                DEFAULT_ENGINE_IMPORT_PRESET_ID,
-                EngineImportPresetManager,
-            )
-        except (ImportError, ValueError):
-            from ..core.engine_import_presets import (
-                DEFAULT_ENGINE_IMPORT_PRESET_ID,
-                EngineImportPresetManager,
-            )
-
         preset_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
         preset = EngineImportPresetManager.get_preset(preset_id)
 
@@ -700,17 +705,6 @@ class OMNIMESH_PT_popover_config_preset(Panel):
         cfg_props = getattr(props, "config_presets", None) if props else None
         if not cfg_props:
             return
-
-        try:
-            from ..core.config_presets import (
-                DEFAULT_CONFIG_PRESET_ID,
-                ConfigPresetManager,
-            )
-        except (ImportError, ValueError):
-            from ..core.config_presets import (
-                DEFAULT_CONFIG_PRESET_ID,
-                ConfigPresetManager,
-            )
 
         preset_id = getattr(cfg_props, "config_preset", "") or DEFAULT_CONFIG_PRESET_ID
         preset = ConfigPresetManager.get_preset(preset_id)

@@ -42,22 +42,22 @@ try:
     from .sanitizer import MeshSanitizer
     from .textures import TextureChannelPacker, TexturePoolManager
 except (ImportError, ValueError):
-    from ..batch_worker_process import (
+    from core.decimator import MeshDecimator
+    from core.materials import MaterialOptimizer
+    from core.batch_worker_process import (
         BatchWorkerProcessManager,
         build_hierarchical_export_path,
     )
-    from ..decimator import MeshDecimator
-    from ..materials import MaterialOptimizer
-    from ..metrics import (
+    from core.metrics import (
         compute_bounding_sphere,
         compute_coupled_tolerances,
         compute_distance_from_screen_size,
         generate_logarithmic_screen_tiers,
     )
-    from ..normals import NormalManager
-    from ..pbr_presets import PBRImporterPresetManager
-    from ..sanitizer import MeshSanitizer
-    from ..textures import TextureChannelPacker, TexturePoolManager
+    from core.normals import NormalManager
+    from core.pbr_presets import PBRImporterPresetManager
+    from core.sanitizer import MeshSanitizer
+    from core.textures import TextureChannelPacker, TexturePoolManager
 
 logger = logging.getLogger(__name__)
 
@@ -84,28 +84,28 @@ class BatchProcessorEngine:
                 try:
                     from ..exporters.msfs_export import MSFSExporter
                 except (ImportError, ValueError):
-                    from ..exporters.msfs_export import MSFSExporter
+                    from exporters.msfs_export import MSFSExporter
 
                 return MSFSExporter.export_asset
             elif engine == "UE5":
                 try:
                     from ..exporters.ue5_export import UE5Exporter
                 except (ImportError, ValueError):
-                    from ..exporters.ue5_export import UE5Exporter
+                    from exporters.ue5_export import UE5Exporter
 
                 return UE5Exporter.export_asset
             elif engine == "UNITY_6":
                 try:
                     from ..exporters.unity_export import UnityExporter
                 except (ImportError, ValueError):
-                    from ..exporters.unity_export import UnityExporter
+                    from exporters.unity_export import UnityExporter
 
                 return UnityExporter.export_asset
             elif engine == "GODOT_4":
                 try:
                     from ..exporters.godot_export import GodotExporter
                 except (ImportError, ValueError):
-                    from ..exporters.godot_export import GodotExporter
+                    from exporters.godot_export import GodotExporter
 
                 return GodotExporter.export_asset
         except (ImportError, ValueError) as exc:
@@ -327,7 +327,7 @@ class BatchProcessorEngine:
                         coords.append(
                             primary_obj.matrix_world @ v.co if hasattr(primary_obj.matrix_world, "__matmul__") else v.co
                         )
-                    except Exception:
+                    except (TypeError, ValueError, AttributeError, ReferenceError):
                         coords.append(v.co)
 
             center, radius = compute_bounding_sphere(coords)

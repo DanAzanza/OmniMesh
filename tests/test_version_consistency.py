@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import re
+import sys
 
-import tomllib
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:  # pragma: no cover
+        tomllib = None  # type: ignore[assignment]
 
 from scripts.build_extension import get_version
 
@@ -24,11 +32,21 @@ def _read_bl_info_version() -> tuple[int, ...]:
     raise AssertionError("bl_info assignment not found")
 
 
-def test_extension_versions_are_consistent() -> None:
-    with (REPO_ROOT / "blender_manifest.toml").open("rb") as manifest_file:
-        manifest = tomllib.load(manifest_file)
+def _read_manifest_version() -> str:
+    manifest_path = REPO_ROOT / "blender_manifest.toml"
+    if tomllib is not None:
+        with manifest_path.open("rb") as manifest_file:
+            manifest = tomllib.load(manifest_file)
+        return str(manifest["version"])
+    content = manifest_path.read_text(encoding="utf-8")
+    match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+    if match:
+        return match.group(1)
+    raise AssertionError(f"Version not found in {manifest_path}")
 
-    manifest_version = str(manifest["version"])
+
+def test_extension_versions_are_consistent() -> None:
+    manifest_version = _read_manifest_version()
     expected_bl_info = tuple(int(part) for part in manifest_version.split("."))
 
     assert get_version(REPO_ROOT) == manifest_version
@@ -41,6 +59,4 @@ def test_manifest_version_matches_latest_release_tag() -> None:
         key=lambda value: tuple(int(part) for part in value.split(".")),
     )
     if release_tags:
-        with (REPO_ROOT / "blender_manifest.toml").open("rb") as manifest_file:
-            manifest = tomllib.load(manifest_file)
-        assert str(manifest["version"]) == release_tags[-1]
+        assert _read_manifest_version() == release_tags[-1]

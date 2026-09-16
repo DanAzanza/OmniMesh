@@ -102,7 +102,7 @@ class DeepMaterialHasher:
                     if hasattr(val, "__iter__") and not isinstance(val, (str, bytes)):
                         try:
                             input_defaults[str(sock.name)] = [round(float(v), 5) for v in val]
-                        except Exception:
+                        except (ValueError, TypeError):
                             input_defaults[str(sock.name)] = str(val)
                     elif isinstance(val, (int, float)):
                         input_defaults[str(sock.name)] = round(float(val), 5)
@@ -272,7 +272,7 @@ class SemanticTextureAuditor:
             try:
                 abs_path = bpy.path.abspath(filepath)
                 return os.path.exists(abs_path)
-            except Exception:
+            except (RuntimeError, ValueError, TypeError, OSError):
                 return os.path.exists(filepath)
         return os.path.exists(filepath)
 
@@ -382,7 +382,7 @@ class MaterialOptimizer:
             try:
                 scale = obj.matrix_world.to_scale()
                 area_scale = abs(float(scale.x) * float(scale.y) * float(scale.z)) ** (2.0 / 3.0)
-            except Exception:
+            except (ValueError, AttributeError, TypeError, ReferenceError):
                 area_scale = 1.0
 
         areas: dict[int, float] = {i: 0.0 for i in range(num_slots)}

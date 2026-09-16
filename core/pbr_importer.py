@@ -24,15 +24,15 @@ except ImportError:
     bpy = None
 
 try:
-    from ..pbr_classifier import PBRSemanticClassifier
-    from ..pbr_presets import (
+    from .pbr_classifier import PBRSemanticClassifier
+    from .pbr_presets import (
         DEFAULT_PRESET_ID,
         PBRImportPresetManager,
         PBRImporterPresetManager,
     )
 except (ImportError, ValueError):
-    from .pbr_classifier import PBRSemanticClassifier
-    from .pbr_presets import (
+    from core.pbr_classifier import PBRSemanticClassifier
+    from core.pbr_presets import (
         DEFAULT_PRESET_ID,
         PBRImportPresetManager,
         PBRImporterPresetManager,
@@ -190,7 +190,7 @@ class ShaderGraphBuilder:
         try:
             rel = bpy.path.relpath(abs_path).replace("\\", "/")
             return rel, True
-        except Exception:
+        except (ValueError, RuntimeError, OSError):
             return abs_path, False
 
     @classmethod

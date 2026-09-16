@@ -93,7 +93,7 @@ class BasePresetManager:
         if bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets"
-            except Exception:
+            except (RuntimeError, ValueError, AttributeError, TypeError):
                 base = Path.home() / ".omnimesh" / "presets"
         else:
             base = Path.home() / ".omnimesh" / "presets"
@@ -162,7 +162,7 @@ class BasePresetManager:
         if bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / cls.CATEGORY
-            except Exception:
+            except (RuntimeError, ValueError, AttributeError, TypeError):
                 base = Path.home() / ".omnimesh" / "presets" / cls.CATEGORY
         else:
             base = Path.home() / ".omnimesh" / "presets" / cls.CATEGORY
@@ -252,7 +252,7 @@ class BasePresetManager:
         with cls._get_category_lock():
             cache = cls._get_category_cache()
             init_key = f"_init_{cls.CATEGORY}"
-            if getattr(sys, init_key, False) and not force_reload:
+            if cache and getattr(sys, init_key, False) and not force_reload:
                 return cache
 
             loaded: dict[str, dict[str, Any]] = {}
@@ -402,13 +402,12 @@ class BasePresetManager:
                     if attempt == len(backoff) - 1:
                         raise
                     time.sleep(delay)
-        except Exception:
+        finally:
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
-            raise
 
         cls.load_presets(force_reload=True)
         return pid

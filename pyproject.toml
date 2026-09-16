@@ -29,6 +29,7 @@ dev = [
     "fake-bpy-module-latest",
     "numpy>=1.22.0",
     "Pillow>=9.0.0",
+    "tomli>=1.1.0;python_version<'3.11'",
 ]
 
 [tool.setuptools.packages.find]

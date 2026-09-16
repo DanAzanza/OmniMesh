@@ -41,7 +41,7 @@ try:
     from .hierarchy import get_or_create_engine_import_collection
 except (ImportError, ValueError):
     try:
-        from ..hierarchy import get_or_create_engine_import_collection
+        from core.hierarchy import get_or_create_engine_import_collection
     except (ImportError, ValueError):
         get_or_create_engine_import_collection = None
 
@@ -319,7 +319,7 @@ def count_mesh_triangles(mesh_obj: Any) -> int:
             mesh.calc_loop_triangles()
             return len(mesh.loop_triangles)
         return len(mesh.polygons)
-    except Exception:
+    except (AttributeError, RuntimeError, ReferenceError, TypeError):
         return 0
 
 

@@ -371,13 +371,12 @@ class MSFSCSTParser:
                     time.sleep(0.05 * (2**attempt))
 
             logger.info("Successfully synced spatial coordinates to %s", dest_file)
-        except Exception:
+        finally:
             if os.path.exists(temp_file_path):
                 try:
                     os.remove(temp_file_path)
                 except OSError:
                     pass
-            raise
 
         return backup_path
 
@@ -474,13 +473,12 @@ class MSFSCSTParser:
                     time.sleep(0.05 * (2**attempt))
 
             logger.info("Successfully updated scalar param %s.%s = %s in %s", section, key, value_str, dest_file)
-        except Exception:
+        finally:
             if os.path.exists(temp_file_path):
                 try:
                     os.remove(temp_file_path)
                 except OSError:
                     pass
-            raise
 
         return backup_path
 

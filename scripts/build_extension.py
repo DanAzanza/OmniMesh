@@ -8,8 +8,16 @@ from __future__ import annotations
 import os
 import zipfile
 from pathlib import Path
+import re
+import sys
 
-import tomllib
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:  # pragma: no cover
+        tomllib = None  # type: ignore[assignment]
 
 INCLUDE_DIRS = ["bridges", "core", "exporters", "presets", "ui"]
 INCLUDE_FILES = [
@@ -24,11 +32,17 @@ def get_version(repo_root: Path) -> str:
     """Reads the version string from blender_manifest.toml."""
     manifest_path = repo_root / "blender_manifest.toml"
     if manifest_path.exists():
-        with manifest_path.open("rb") as manifest_file:
-            manifest = tomllib.load(manifest_file)
-        version = manifest.get("version")
-        if isinstance(version, str) and version:
-            return version
+        if tomllib is not None:
+            with manifest_path.open("rb") as manifest_file:
+                manifest = tomllib.load(manifest_file)
+            version = manifest.get("version")
+            if isinstance(version, str) and version:
+                return version
+        else:
+            content = manifest_path.read_text(encoding="utf-8")
+            match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+            if match:
+                return match.group(1)
     raise FileNotFoundError(f"Blender manifest with a valid version not found: {manifest_path}")
 
 

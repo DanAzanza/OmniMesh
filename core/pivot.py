@@ -135,7 +135,7 @@ class PivotPreservationEngine:
             inv_trans_3x3 = mat3.inverted().transposed()
             transformed_no = inv_trans_3x3 @ no
             return transformed_no.normalized()
-        except Exception:
+        except (ValueError, AttributeError, ReferenceError):
             return no
 
     @classmethod

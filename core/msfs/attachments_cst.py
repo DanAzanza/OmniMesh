@@ -364,12 +364,11 @@ class MSFSAttachmentsCST:
                         raise
                     time.sleep(0.05 * (2**attempt))
             logger.info("Successfully serialized attached_objects.cfg to %s", dest_file)
-        except Exception:
+        finally:
             if os.path.exists(temp_file_path):
                 try:
                     os.remove(temp_file_path)
                 except OSError:
                     pass
-            raise
 
         return backup_path

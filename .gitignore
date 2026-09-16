@@ -29,6 +29,10 @@ env/
 venv/
 ENV/
 
+# IDE
+.vscode/
+.idea/
+
 # OS specific files
 .DS_Store
 Thumbs.db

@@ -22,25 +22,9 @@ except ImportError:
     Vector = None
 
 try:
-    from ..decimator import MeshDecimator
-    from ..hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
-    from ..materials import MaterialOptimizer
-    from ..metrics import (
-        compute_bounding_sphere,
-        compute_coupled_tolerances,
-        compute_vertical_fov,
-    )
-    from ..modifiers import ModifierManager
-    from ..normals import NormalManager
-    from ..occlusion import HardenedOcclusionCuller
-    from ..pivot import PivotPreservationEngine
-    from ..rigging import KinematicBonePruner, WeightSanitizer
-    from ..sanitizer import MeshSanitizer
-    from ..slender import SlenderFeatureCuller
-    from ..material_analyzer import MSFSMaterialAnalyzer
-except (ImportError, ValueError):
     from .decimator import MeshDecimator
     from .hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
+    from .material_analyzer import MSFSMaterialAnalyzer
     from .materials import MaterialOptimizer
     from .metrics import (
         compute_bounding_sphere,
@@ -54,7 +38,23 @@ except (ImportError, ValueError):
     from .rigging import KinematicBonePruner, WeightSanitizer
     from .sanitizer import MeshSanitizer
     from .slender import SlenderFeatureCuller
-    from .material_analyzer import MSFSMaterialAnalyzer
+except (ImportError, ValueError):
+    from core.decimator import MeshDecimator
+    from core.hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
+    from core.material_analyzer import MSFSMaterialAnalyzer
+    from core.materials import MaterialOptimizer
+    from core.metrics import (
+        compute_bounding_sphere,
+        compute_coupled_tolerances,
+        compute_vertical_fov,
+    )
+    from core.modifiers import ModifierManager
+    from core.normals import NormalManager
+    from core.occlusion import HardenedOcclusionCuller
+    from core.pivot import PivotPreservationEngine
+    from core.rigging import KinematicBonePruner, WeightSanitizer
+    from core.sanitizer import MeshSanitizer
+    from core.slender import SlenderFeatureCuller
 
 
 def _count_triangles(mesh_data: Any) -> int:
@@ -84,8 +84,294 @@ def _count_triangles(mesh_data: Any) -> int:
         elif hasattr(first, "verts"):
             return sum(max(0, len(f.verts) - 2) for f in polys)
         return len(polys)
-    except Exception:
+    except (IndexError, AttributeError, TypeError, ReferenceError, RuntimeError):
         return len(polys)
+
+
+def _compute_lod0_stats(mesh_objs: list[Any]) -> tuple[int, int]:
+    """Calculates initial triangle count and material slot count for LOD0."""
+    tier_tris = 0
+    tier_mats = sum(len(obj.material_slots) for obj in mesh_objs if hasattr(obj, "material_slots"))
+    for obj in mesh_objs:
+        if ModifierManager.has_unapplied_modifiers(obj):
+            eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
+            if eval_mesh:
+                try:
+                    tier_tris += _count_triangles(eval_mesh)
+                finally:
+                    if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+                        eval_obj.to_mesh_clear()
+            else:
+                tier_tris += _count_triangles(getattr(obj, "data", None))
+        else:
+            tier_tris += _count_triangles(getattr(obj, "data", None))
+    return tier_tris, tier_mats
+
+
+def _process_merged_tier(
+    tier_coll: Any,
+    tier: Any,
+    tier_idx: int,
+    base_name: str,
+    mesh_objs: list[Any],
+    armature_obj: Any,
+    tier_pivot: Any,
+    tolerances: dict[str, Any],
+    props: Any,
+    render: Any,
+    radius: float,
+    fov_v: float,
+    max_influences: int,
+) -> tuple[int, int, int, Any]:
+    """Processes a merged LOD tier, combining meshes and applying decimation pipeline."""
+    merged_name = f"{base_name}_LOD{tier_idx}"
+    existing = bpy.data.objects.get(merged_name)
+    if existing and existing not in mesh_objs:
+        old_mesh = getattr(existing, "data", None)
+        bpy.data.objects.remove(existing, do_unlink=True)
+        if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+            try:
+                bpy.data.meshes.remove(old_mesh)
+            except Exception as exc:
+                logger.debug("Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc)
+
+    tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
+        mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
+    )
+    if tier_obj.name not in tier_coll.objects:
+        tier_coll.objects.link(tier_obj)
+
+    culled_slender_count = 0
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(tier_obj.data)
+        MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
+
+        if props.enable_slender_culling:
+            res_slender = SlenderFeatureCuller.cull_slender_features(
+                bm,
+                screen_size_pct=tier.screen_size_pct,
+                resolution_y=render.resolution_y,
+                root_radius_m=radius,
+                tau_sse=props.tau_sse,
+            )
+            culled_slender_count += res_slender.get("culled_islands", 0)
+
+        if getattr(props, "enable_occlusion_culling", False) and tier_idx >= getattr(props, "occlusion_lod_start", 1):
+            HardenedOcclusionCuller.cull_interior_faces(
+                tier_obj,
+                bm,
+                ray_density=getattr(props, "occlusion_ray_density", 16),
+                evaluate_alpha=getattr(props, "occlusion_evaluate_alpha", True),
+                delta_world=tolerances["delta_world"],
+            )
+
+        MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
+        pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(
+            bm,
+            pin_uv_seams=getattr(props, "pin_uv_seams", True),
+            pin_material_borders=getattr(props, "pin_material_borders", True),
+        )
+        MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
+        bm.to_mesh(tier_obj.data)
+    finally:
+        bm.free()
+
+    if props.purge_shape_keys and tier_idx >= 2:
+        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
+
+    qem_ratio = tier.target_tris_pct / 100.0 if getattr(tier, "target_tris_pct", 0.0) > 0.0 else tolerances["qem_ratio"]
+    MeshDecimator.execute_decimate_qem(tier_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True)
+
+    tier_obj.data.update()
+    MaterialOptimizer.consolidate_micro_materials(
+        tier_obj,
+        area_crit=tolerances["area_crit"],
+        preserve_slot_indexing=getattr(props, "preserve_slot_indexing", True),
+    )
+
+    # Reproject custom split normals against consolidated source geometry
+    ref_merged_obj = None
+    try:
+        ref_merged_name = f"__OM_Ref_Merged_LOD0_{tier_idx}__"
+        ref_merged_obj = MeshMergeEngine.consolidate_and_merge_meshes(
+            mesh_objs, ref_merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
+        )
+        NormalManager.reproject_custom_split_normals(tier_obj, ref_merged_obj, tolerances["delta_world"])
+    except Exception as exc:
+        logger.debug("Merged custom split normal reprojection exception: %s", exc)
+        if mesh_objs:
+            NormalManager.reproject_custom_split_normals(tier_obj, mesh_objs[0], tolerances["delta_world"])
+    finally:
+        if ref_merged_obj and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
+            ref_mesh = getattr(ref_merged_obj, "data", None)
+            try:
+                bpy.data.objects.remove(ref_merged_obj, do_unlink=True)
+                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+                    bpy.data.meshes.remove(ref_mesh)
+            except Exception as exc:
+                logger.debug("Cleanup ref_merged_obj exception: %s", exc)
+
+    if armature_obj and len(tier_obj.vertex_groups) > 0:
+        if props.enable_bone_pruning and tier_idx >= 2:
+            KinematicBonePruner.prune_kinematic_subtrees(
+                tier_obj,
+                armature_obj,
+                screen_distance_m=tier.distance_m,
+                fov_v_rad=fov_v,
+                resolution_y=render.resolution_y,
+                pixel_threshold=1.5,
+            )
+        WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
+
+    tier_obj.data.update()
+    actual_tris = _count_triangles(getattr(tier_obj, "data", None))
+    actual_mats = len(tier_obj.material_slots)
+    if hasattr(tier_obj, "lod_tool"):
+        tier_obj.lod_tool.lod_root_object = mesh_objs[0] if mesh_objs else None
+        tier_obj.lod_tool.is_generated_lod = True
+        tier_obj.lod_tool.lod_index = tier_idx
+
+    return actual_tris, actual_mats, culled_slender_count, tier_obj
+
+
+def _process_unmerged_tier(
+    tier_coll: Any,
+    tier: Any,
+    tier_idx: int,
+    base_name: str,
+    mesh_objs: list[Any],
+    armature_obj: Any,
+    tier_pivot: Any,
+    root_pivot: Any,
+    tolerances: dict[str, Any],
+    props: Any,
+    render: Any,
+    radius: float,
+    fov_v: float,
+    max_influences: int,
+) -> tuple[int, int, int, Any]:
+    """Processes an unmerged multi-mesh LOD tier, decimating each object individually."""
+    tier_tris = 0
+    tier_mats = 0
+    culled_slender_count = 0
+    first_generated_obj = None
+
+    for obj_idx, source_obj in enumerate(mesh_objs):
+        sub_name = f"{source_obj.name}_LOD{tier_idx}" if len(mesh_objs) > 1 else f"{base_name}_LOD{tier_idx}"
+        existing = bpy.data.objects.get(sub_name)
+        if existing and existing not in mesh_objs and existing != source_obj:
+            old_mesh = getattr(existing, "data", None)
+            bpy.data.objects.remove(existing, do_unlink=True)
+            if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+                try:
+                    bpy.data.meshes.remove(old_mesh)
+                except Exception as exc:
+                    logger.debug("Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc)
+
+        lod_obj = source_obj.copy()
+        lod_obj.data = source_obj.data.copy()
+        lod_obj.name = sub_name
+        lod_obj.data.name = f"{sub_name}_Mesh"
+        tier_coll.objects.link(lod_obj)
+
+        if props.purge_shape_keys and tier_idx >= 2:
+            MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
+
+        ModifierManager.apply_all_modifiers_in_place(lod_obj, preserve_armature=True)
+
+        if tier_pivot:
+            is_parent_pivot = (
+                lod_obj.parent is None
+                or (root_pivot and lod_obj.parent == root_pivot)
+                or (root_pivot and getattr(lod_obj.parent, "name", "") == root_pivot.name)
+                or "pivot" in getattr(lod_obj.parent, "name", "").lower()
+            )
+            if is_parent_pivot:
+                lod_obj.parent = tier_pivot
+                lod_obj.matrix_parent_inverse = source_obj.matrix_parent_inverse.copy()
+
+        bm = bmesh.new()
+        try:
+            bm.from_mesh(lod_obj.data)
+            MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
+
+            if props.enable_slender_culling:
+                res_slender = SlenderFeatureCuller.cull_slender_features(
+                    bm,
+                    screen_size_pct=tier.screen_size_pct,
+                    resolution_y=render.resolution_y,
+                    root_radius_m=radius,
+                    tau_sse=props.tau_sse,
+                )
+                culled_slender_count += res_slender.get("culled_islands", 0)
+
+            if getattr(props, "enable_occlusion_culling", False) and tier_idx >= getattr(
+                props, "occlusion_lod_start", 1
+            ):
+                HardenedOcclusionCuller.cull_interior_faces(
+                    lod_obj,
+                    bm,
+                    ray_density=getattr(props, "occlusion_ray_density", 16),
+                    evaluate_alpha=getattr(props, "occlusion_evaluate_alpha", True),
+                    delta_world=tolerances["delta_world"],
+                )
+
+            MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
+            pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(
+                bm,
+                pin_uv_seams=getattr(props, "pin_uv_seams", True),
+                pin_material_borders=getattr(props, "pin_material_borders", True),
+            )
+            MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
+            bm.to_mesh(lod_obj.data)
+        finally:
+            bm.free()
+        lod_obj.data.update()
+
+        is_decal = False
+        if MSFSMaterialAnalyzer:
+            is_decal = MSFSMaterialAnalyzer.is_decal_mesh(source_obj)
+
+        qem_ratio = (
+            tier.target_tris_pct / 100.0 if getattr(tier, "target_tris_pct", 0.0) > 0.0 else tolerances["qem_ratio"]
+        )
+        if is_decal and getattr(props, "msfs_preserve_decals", True):
+            qem_ratio = max(qem_ratio, 0.75 if tier_idx <= 2 else 0.5)
+
+        MeshDecimator.execute_decimate_qem(lod_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True)
+
+        MaterialOptimizer.consolidate_micro_materials(
+            lod_obj,
+            area_crit=tolerances["area_crit"],
+            preserve_slot_indexing=props.preserve_slot_indexing,
+        )
+
+        NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"])
+
+        if armature_obj and len(lod_obj.vertex_groups) > 0:
+            if props.enable_bone_pruning and tier_idx >= 2:
+                KinematicBonePruner.prune_kinematic_subtrees(
+                    lod_obj,
+                    armature_obj,
+                    screen_distance_m=tier.distance_m,
+                    fov_v_rad=fov_v,
+                    resolution_y=render.resolution_y,
+                    pixel_threshold=1.5,
+                )
+            WeightSanitizer.normalize_and_clamp_weights(lod_obj, max_influences=max_influences)
+
+        lod_obj.data.update()
+        tier_tris += _count_triangles(getattr(lod_obj, "data", None))
+        tier_mats += len(lod_obj.material_slots)
+        if hasattr(lod_obj, "lod_tool"):
+            lod_obj.lod_tool.lod_root_object = source_obj
+            lod_obj.lod_tool.is_generated_lod = True
+            lod_obj.lod_tool.lod_index = tier_idx
+        if obj_idx == 0:
+            first_generated_obj = lod_obj
+
+    return tier_tris, tier_mats, culled_slender_count, first_generated_obj
 
 
 def generate_all_lods(
@@ -179,32 +465,8 @@ def generate_all_lods(
         # Safe View Layer Scoper
         with LayerCollectionGuard(context.view_layer, all_tier_collections):
             for i, tier in enumerate(props.lods):
-                s_frac = tier.screen_size_pct / 100.0
-                tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
-                should_merge = i >= 1 and (
-                    getattr(props, "consolidate_hierarchy", False)
-                    or props.hierarchy_mode == "MERGE_ALL"
-                    or (props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier)
-                )
-
-                tier_coll = all_tier_collections[i]
-
                 if i == 0:
-                    tier_tris = 0
-                    tier_mats = sum(len(obj.material_slots) for obj in mesh_objs)
-                    for obj in mesh_objs:
-                        if ModifierManager.has_unapplied_modifiers(obj):
-                            eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
-                            if eval_mesh:
-                                try:
-                                    tier_tris += _count_triangles(eval_mesh)
-                                finally:
-                                    if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
-                                        eval_obj.to_mesh_clear()
-                            else:
-                                tier_tris += _count_triangles(getattr(obj, "data", None))
-                        else:
-                            tier_tris += _count_triangles(getattr(obj, "data", None))
+                    tier_tris, tier_mats = _compute_lod0_stats(mesh_objs)
                     tier.actual_tris = tier_tris
                     tier.actual_triangles = tier_tris
                     tier.mat_slots_count = tier_mats
@@ -214,6 +476,7 @@ def generate_all_lods(
 
                 # Check if tier is already baked and in sync when only_out_of_sync is requested
                 last_target = getattr(tier, "last_baked_target_pct", -1.0)
+                tier_coll = all_tier_collections[i]
                 has_mesh_in_scene = bool(tier_coll and getattr(tier_coll, "objects", None))
                 is_in_sync = has_mesh_in_scene and last_target > 0.0 and abs(tier.target_tris_pct - last_target) <= 0.01
                 if only_out_of_sync and is_in_sync:
@@ -227,264 +490,56 @@ def generate_all_lods(
                 )
                 tier_pivot = dag_info.get("pivot")
 
+                s_frac = tier.screen_size_pct / 100.0
+                tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
+                should_merge = i >= 1 and (
+                    getattr(props, "consolidate_hierarchy", False)
+                    or props.hierarchy_mode == "MERGE_ALL"
+                    or (props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier)
+                )
+
                 if should_merge and len(mesh_objs) > 1:
-                    merged_name = f"{base_name}_LOD{i}"
-                    existing = bpy.data.objects.get(merged_name)
-                    if existing and existing not in mesh_objs:
-                        old_mesh = getattr(existing, "data", None)
-                        bpy.data.objects.remove(existing, do_unlink=True)
-                        if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
-                            try:
-                                bpy.data.meshes.remove(old_mesh)
-                            except Exception as exc:
-                                logger.debug(
-                                    "Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc
-                                )
-
-                    tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
-                        mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
+                    tris, mats, slender_cull, gen_obj = _process_merged_tier(
+                        tier_coll=tier_coll,
+                        tier=tier,
+                        tier_idx=i,
+                        base_name=base_name,
+                        mesh_objs=mesh_objs,
+                        armature_obj=armature_obj,
+                        tier_pivot=tier_pivot,
+                        tolerances=tolerances,
+                        props=props,
+                        render=render,
+                        radius=radius,
+                        fov_v=fov_v,
+                        max_influences=max_influences,
                     )
-                    if tier_obj.name not in tier_coll.objects:
-                        tier_coll.objects.link(tier_obj)
-
-                    bm = bmesh.new()
-                    try:
-                        bm.from_mesh(tier_obj.data)
-                        MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
-
-                        if props.enable_slender_culling:
-                            res_slender = SlenderFeatureCuller.cull_slender_features(
-                                bm,
-                                screen_size_pct=tier.screen_size_pct,
-                                resolution_y=render.resolution_y,
-                                root_radius_m=radius,
-                                tau_sse=props.tau_sse,
-                            )
-                            props.last_culled_slender_count += res_slender.get("culled_islands", 0)
-
-                        if getattr(props, "enable_occlusion_culling", False) and i >= getattr(
-                            props, "occlusion_lod_start", 1
-                        ):
-                            HardenedOcclusionCuller.cull_interior_faces(
-                                tier_obj,
-                                bm,
-                                ray_density=getattr(props, "occlusion_ray_density", 16),
-                                evaluate_alpha=getattr(props, "occlusion_evaluate_alpha", True),
-                                delta_world=tolerances["delta_world"],
-                            )
-
-                        MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
-                        pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(
-                            bm,
-                            pin_uv_seams=getattr(props, "pin_uv_seams", True),
-                            pin_material_borders=getattr(props, "pin_material_borders", True),
-                        )
-                        MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
-                        bm.to_mesh(tier_obj.data)
-                    finally:
-                        bm.free()
-                    if props.purge_shape_keys and i >= 2:
-                        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
-
-                    qem_ratio = (
-                        tier.target_tris_pct / 100.0
-                        if getattr(tier, "target_tris_pct", 0.0) > 0.0
-                        else tolerances["qem_ratio"]
-                    )
-                    MeshDecimator.execute_decimate_qem(
-                        tier_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True
-                    )
-
-                    tier_obj.data.update()
-                    MaterialOptimizer.consolidate_micro_materials(
-                        tier_obj,
-                        area_crit=tolerances["area_crit"],
-                        preserve_slot_indexing=getattr(props, "preserve_slot_indexing", True),
-                    )
-
-                    # Reproject custom split normals against consolidated source geometry
-                    ref_merged_obj = None
-                    try:
-                        ref_merged_name = f"__OM_Ref_Merged_LOD0_{i}__"
-                        ref_merged_obj = MeshMergeEngine.consolidate_and_merge_meshes(
-                            mesh_objs, ref_merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
-                        )
-                        NormalManager.reproject_custom_split_normals(
-                            tier_obj, ref_merged_obj, tolerances["delta_world"]
-                        )
-                    except Exception as exc:
-                        logger.debug("Merged custom split normal reprojection exception: %s", exc)
-                        # Fallback to single master object if merge consolidation failed
-                        if mesh_objs:
-                            NormalManager.reproject_custom_split_normals(
-                                tier_obj, mesh_objs[0], tolerances["delta_world"]
-                            )
-                    finally:
-                        if ref_merged_obj and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
-                            ref_mesh = getattr(ref_merged_obj, "data", None)
-                            try:
-                                bpy.data.objects.remove(ref_merged_obj, do_unlink=True)
-                                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
-                                    bpy.data.meshes.remove(ref_mesh)
-                            except Exception as exc:
-                                logger.debug("Cleanup ref_merged_obj exception: %s", exc)
-
-                    if armature_obj and len(tier_obj.vertex_groups) > 0:
-                        if props.enable_bone_pruning and i >= 2:
-                            KinematicBonePruner.prune_kinematic_subtrees(
-                                tier_obj,
-                                armature_obj,
-                                screen_distance_m=tier.distance_m,
-                                fov_v_rad=fov_v,
-                                resolution_y=render.resolution_y,
-                                pixel_threshold=1.5,
-                            )
-                        WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
-
-                    tier.actual_tris = _count_triangles(getattr(tier_obj, "data", None))
-                    tier.actual_triangles = tier.actual_tris
-                    tier.mat_slots_count = len(tier_obj.material_slots)
-                    if hasattr(tier_obj, "lod_tool"):
-                        tier_obj.lod_tool.lod_root_object = mesh_objs[0] if mesh_objs else None
-                        tier_obj.lod_tool.is_generated_lod = True
-                        tier_obj.lod_tool.lod_index = i
-                    tier.generated_obj = tier_obj
-
                 else:
-                    tier_tris = 0
-                    tier_mats = 0
-                    for obj_idx, source_obj in enumerate(mesh_objs):
-                        sub_name = f"{source_obj.name}_LOD{i}" if len(mesh_objs) > 1 else f"{base_name}_LOD{i}"
-                        existing = bpy.data.objects.get(sub_name)
-                        if existing and existing not in mesh_objs and existing != source_obj:
-                            old_mesh = getattr(existing, "data", None)
-                            bpy.data.objects.remove(existing, do_unlink=True)
-                            if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
-                                try:
-                                    bpy.data.meshes.remove(old_mesh)
-                                except Exception as exc:
-                                    logger.debug(
-                                        "Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc
-                                    )
+                    tris, mats, slender_cull, gen_obj = _process_unmerged_tier(
+                        tier_coll=tier_coll,
+                        tier=tier,
+                        tier_idx=i,
+                        base_name=base_name,
+                        mesh_objs=mesh_objs,
+                        armature_obj=armature_obj,
+                        tier_pivot=tier_pivot,
+                        root_pivot=root_pivot,
+                        tolerances=tolerances,
+                        props=props,
+                        render=render,
+                        radius=radius,
+                        fov_v=fov_v,
+                        max_influences=max_influences,
+                    )
 
-                        lod_obj = source_obj.copy()
-                        lod_obj.data = source_obj.data.copy()
-                        lod_obj.name = sub_name
-                        lod_obj.data.name = f"{sub_name}_Mesh"
-                        tier_coll.objects.link(lod_obj)
-
-                        # Clean shape keys BEFORE baking modifiers to avoid Blender RuntimeError on modifier apply
-                        if props.purge_shape_keys and i >= 2:
-                            MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
-
-                        # Bake procedural modifiers so LOD operations run on evaluated geometry
-                        ModifierManager.apply_all_modifiers_in_place(lod_obj, preserve_armature=True)
-
-                        if tier_pivot:
-                            is_parent_pivot = (
-                                lod_obj.parent is None
-                                or (root_pivot and lod_obj.parent == root_pivot)
-                                or (root_pivot and getattr(lod_obj.parent, "name", "") == root_pivot.name)
-                                or "pivot" in getattr(lod_obj.parent, "name", "").lower()
-                            )
-                            if is_parent_pivot:
-                                lod_obj.parent = tier_pivot
-                                lod_obj.matrix_parent_inverse = source_obj.matrix_parent_inverse.copy()
-
-                        bm = bmesh.new()
-                        try:
-                            bm.from_mesh(lod_obj.data)
-                            MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
-
-                            if props.enable_slender_culling:
-                                res_slender = SlenderFeatureCuller.cull_slender_features(
-                                    bm,
-                                    screen_size_pct=tier.screen_size_pct,
-                                    resolution_y=render.resolution_y,
-                                    root_radius_m=radius,
-                                    tau_sse=props.tau_sse,
-                                )
-                                props.last_culled_slender_count += res_slender.get("culled_islands", 0)
-
-                            if getattr(props, "enable_occlusion_culling", False) and i >= getattr(
-                                props, "occlusion_lod_start", 1
-                            ):
-                                HardenedOcclusionCuller.cull_interior_faces(
-                                    lod_obj,
-                                    bm,
-                                    ray_density=getattr(props, "occlusion_ray_density", 16),
-                                    evaluate_alpha=getattr(props, "occlusion_evaluate_alpha", True),
-                                    delta_world=tolerances["delta_world"],
-                                )
-
-                            MeshDecimator.apply_planar_limited_dissolve(
-                                bm, math.radians(tolerances["planar_angle_deg"])
-                            )
-                            pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(
-                                bm,
-                                pin_uv_seams=getattr(props, "pin_uv_seams", True),
-                                pin_material_borders=getattr(props, "pin_material_borders", True),
-                            )
-                            MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
-                            bm.to_mesh(lod_obj.data)
-                        finally:
-                            bm.free()
-                        lod_obj.data.update()
-
-                        # MSFS Material-aware decimation adjustments
-                        is_decal = False
-                        if MSFSMaterialAnalyzer:
-                            is_decal = MSFSMaterialAnalyzer.is_decal_mesh(source_obj)
-
-                        qem_ratio = (
-                            tier.target_tris_pct / 100.0
-                            if getattr(tier, "target_tris_pct", 0.0) > 0.0
-                            else tolerances["qem_ratio"]
-                        )
-                        # For floating decals: enforce conservative decimation to prevent Z-fighting against fuselage
-                        if is_decal and getattr(props, "msfs_preserve_decals", True):
-                            qem_ratio = max(qem_ratio, 0.75 if i <= 2 else 0.5)
-
-                        MeshDecimator.execute_decimate_qem(
-                            lod_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True
-                        )
-
-                        MaterialOptimizer.consolidate_micro_materials(
-                            lod_obj,
-                            area_crit=tolerances["area_crit"],
-                            preserve_slot_indexing=props.preserve_slot_indexing,
-                        )
-
-                        NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"])
-
-                        if armature_obj and len(lod_obj.vertex_groups) > 0:
-                            if props.enable_bone_pruning and i >= 2:
-                                KinematicBonePruner.prune_kinematic_subtrees(
-                                    lod_obj,
-                                    armature_obj,
-                                    screen_distance_m=tier.distance_m,
-                                    fov_v_rad=fov_v,
-                                    resolution_y=render.resolution_y,
-                                    pixel_threshold=1.5,
-                                )
-                            WeightSanitizer.normalize_and_clamp_weights(lod_obj, max_influences=max_influences)
-
-                        lod_obj.data.update()
-                        tier_tris += _count_triangles(getattr(lod_obj, "data", None))
-                        tier_mats += len(lod_obj.material_slots)
-                        if hasattr(lod_obj, "lod_tool"):
-                            lod_obj.lod_tool.lod_root_object = source_obj
-                            lod_obj.lod_tool.is_generated_lod = True
-                            lod_obj.lod_tool.lod_index = i
-                        if obj_idx == 0:
-                            tier.generated_obj = lod_obj
-
-                    tier.actual_tris = tier_tris
-                    tier.actual_triangles = tier_tris
-                    tier.mat_slots_count = tier_mats
-                    tier.last_baked_target_pct = tier.target_tris_pct
-                    tier.last_baked_screen_pct = tier.screen_size_pct
-                    tier.state = "BAKED"
+                props.last_culled_slender_count += slender_cull
+                tier.actual_tris = tris
+                tier.actual_triangles = tris
+                tier.mat_slots_count = mats
+                tier.generated_obj = gen_obj
+                tier.last_baked_target_pct = tier.target_tris_pct
+                tier.last_baked_screen_pct = tier.screen_size_pct
+                tier.state = "BAKED"
 
         if len(props.lods) > 0:
             base_tris_val = props.lods[0].actual_tris or props.lods[0].target_tris or 1

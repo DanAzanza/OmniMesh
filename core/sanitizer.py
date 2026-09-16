@@ -176,7 +176,7 @@ class MeshSanitizer:
                     try:
                         if f.calc_area() < max(1e-15, min_face_area):
                             zero_faces.append(f)
-                    except Exception:
+                    except (ValueError, RuntimeError, ReferenceError):
                         zero_faces.append(f)
 
             if zero_faces:
@@ -197,7 +197,7 @@ class MeshSanitizer:
                     try:
                         if e.calc_length() < max(1e-12, min_edge_length):
                             zero_edges.append(e)
-                    except Exception:
+                    except (ValueError, RuntimeError, ReferenceError):
                         zero_edges.append(e)
 
             if zero_edges:

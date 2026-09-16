@@ -43,7 +43,7 @@ class EngineImportPresetManager(BasePresetManager):
         if bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / "engine_import"
-            except Exception:
+            except (RuntimeError, ValueError, AttributeError, TypeError):
                 base = Path.home() / ".omnimesh" / "presets" / "engine_import"
         else:
             base = Path.home() / ".omnimesh" / "presets" / "engine_import"

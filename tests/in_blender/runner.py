@@ -146,6 +146,9 @@ def run_extension_installation_smoke_test() -> None:
             for loaded_name in list(sys.modules):
                 if loaded_name == module_name or loaded_name.startswith(f"{module_name}."):
                     del sys.modules[loaded_name]
+            for attr in list(vars(sys)):
+                if attr.startswith("_init_"):
+                    delattr(sys, attr)
             sys.path[:] = previous_path
 
 

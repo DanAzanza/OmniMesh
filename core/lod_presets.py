@@ -44,7 +44,7 @@ class LODPresetManager(BasePresetManager):
         if bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / "lod_presets"
-            except Exception:
+            except (RuntimeError, ValueError, AttributeError, TypeError):
                 base = Path.home() / ".omnimesh" / "presets" / "lod_presets"
         else:
             base = Path.home() / ".omnimesh" / "presets" / "lod_presets"
@@ -281,13 +281,12 @@ class LODPresetManager(BasePresetManager):
                     if attempt == len(backoff) - 1:
                         raise
                     time.sleep(delay)
-        except Exception:
+        finally:
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
-            raise
 
         cls.load_presets(force_reload=True)
         return pid
