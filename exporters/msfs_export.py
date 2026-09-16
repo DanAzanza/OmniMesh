@@ -35,12 +35,12 @@ except (ImportError, ValueError):
         AssetMeshResolver = None  # type: ignore
 
 try:
-    from ..core.msfs_xml_merger import ModelXMLMerger
     from ..core.msfs.project_scanner import MSFSModelOptions
+    from ..core.msfs.xml_merger import ModelXMLMerger
 except (ImportError, ValueError):
     try:
-        from core.msfs_xml_merger import ModelXMLMerger
         from core.msfs.project_scanner import MSFSModelOptions
+        from core.msfs.xml_merger import ModelXMLMerger
     except (ImportError, ValueError):
         ModelXMLMerger = None  # type: ignore
         MSFSModelOptions = None  # type: ignore

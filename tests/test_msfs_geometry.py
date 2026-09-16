@@ -5,8 +5,8 @@ import os
 import numpy as np
 import pytest
 
-from core.msfs_cst_parser import MSFSCSTParser
-from core.msfs_geometry import (
+from core.msfs.cst_parser import MSFSCSTParser
+from core.msfs.geometry import (
     detect_airframe_extrema,
     format_class_2_scrape_tokens,
     is_structural_airframe_object,

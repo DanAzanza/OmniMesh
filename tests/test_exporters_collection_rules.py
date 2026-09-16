@@ -630,7 +630,7 @@ def test_msfs_xml_minsize_descending_monotonicity():
 
 def test_parse_model_xml_bom_and_encoding(tmp_path):
     """Verifies parse_model_xml handles UTF-8 with BOM gracefully."""
-    from core.msfs_project_scanner import parse_model_xml
+    from core.msfs.project_scanner import parse_model_xml
 
     xml_file = tmp_path / "ModelWithBOM.xml"
     content = '<?xml version="1.0" encoding="utf-8"?>\n<ModelInfo>\n  <LODS>\n    <LOD minSize="25" ModelFile="Model_LOD0.gltf"/>\n  </LODS>\n</ModelInfo>'

@@ -4,7 +4,7 @@ Verifies lossless preservation of comments, CDATA, RPN logic, and existing behav
 """
 
 from pathlib import Path
-from core.msfs_xml_merger import ModelXMLMerger
+from core.msfs.xml_merger import ModelXMLMerger
 
 
 SAMPLE_COMPLEX_MSFS_XML = """<?xml version="1.0" encoding="utf-8" ?>

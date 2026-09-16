@@ -10,9 +10,9 @@ import os
 import tempfile
 import pytest
 
-from core.msfs_cst_parser import MSFSCSTParser
-from core.msfs_models import CFGLineRecord
-from core.msfs_transforms import (
+from core.msfs.cst_parser import MSFSCSTParser
+from core.msfs.models import CFGLineRecord
+from core.msfs.transforms import (
     _euler_xyz_to_matrix,
     blender_rotation_to_msfs_pbh,
     mirror_pbh_rotation,

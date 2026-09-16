@@ -3,9 +3,9 @@
 import os
 import pytest
 
-from core.msfs_cst_parser import MSFSCSTParser
-from core.msfs_models import CameraDefinition
-from core.msfs_transforms import (
+from core.msfs.cst_parser import MSFSCSTParser
+from core.msfs.models import CameraDefinition
+from core.msfs.transforms import (
     blender_focal_length_to_msfs_zoom,
     blender_rotation_to_msfs_pbh,
     msfs_pbh_to_blender_rotation,

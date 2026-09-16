@@ -287,7 +287,7 @@ def test_real_msfs_sdk_samples_pipeline():
         pytest.skip("MSFS 2024 SDK Samples directory not found on host machine.")
 
     from core.msfs.project_scanner import MSFSProjectScanner
-    from core.msfs_xml_merger import ModelXMLMerger
+    from core.msfs.xml_merger import ModelXMLMerger
 
     # 1. Test SimpleAircraft
     simple_ac_dir = sdk_root / "SimpleAircraft"

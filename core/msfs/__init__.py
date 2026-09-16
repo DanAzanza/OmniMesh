@@ -47,12 +47,14 @@ from .project_scanner import (
     resolve_path_ci,
     sanitize_asset_name,
 )
+from .xml_merger import ModelXMLMerger
 
 __all__ = [
     "AircraftSpatialConfig",
     "CFGLineRecord",
     "CameraConfigFile",
     "CameraDefinition",
+    "ModelXMLMerger",
     "EXCLUDED_OBJECT_PATTERN",
     "LightPoint",
     "MSFSCameraCST",

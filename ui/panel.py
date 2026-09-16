@@ -506,11 +506,21 @@ class OMNIMESH_PT_lods_testing(Panel):
             box_split.prop(props, "split_compare_tier", text="Compare Tier")
             box_split.prop(props, "split_ratio", text="Split Ratio", slider=True)
 
-        # Virtual Distance Override & HUD Toggle
+        # Virtual Distance Scrubber & HUD Controls
         row_sweep = layout.row(align=True)
         row_sweep.use_property_split = False
-        row_sweep.prop(props, "virtual_distance_override", text="Virtual Dist (m)", slider=True)
+        row_sweep.prop(props, "virtual_distance_override", text="Distance (m)", slider=True)
+        if props.virtual_distance_override > 0.0:
+            row_sweep.operator("lod_tool.reset_virtual_distance", text="", icon="LOOP_BACK")
         row_sweep.prop(props, "show_viewport_hud", text="", icon="WINDOW")
+
+        # Live Scrubber Status Badge
+        if props.virtual_distance_override > 0.0 and getattr(props, "last_scrub_status", ""):
+            box_status = layout.box()
+            box_status.scale_y = 0.85
+            row_status = box_status.row(align=True)
+            row_status.alignment = "CENTER"
+            row_status.label(text=props.last_scrub_status, icon="VIEW_CAMERA")
 
 
 # =========================================================================

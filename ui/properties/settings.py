@@ -33,33 +33,10 @@ from .callbacks import (
     on_lod_budget_mode_updated,
     on_lod_preset_updated,
     on_target_engine_updated,
+    on_virtual_distance_updated,
 )
 from .config_properties import OMNIMESH_ConfigPresetSettings
-from .enums import (
-    ASSET_CATEGORY_ITEMS,
-    BATCH_FILE_FORMATS_ITEMS,
-    CHUNK_PARTITIONING_MODE_ITEMS,
-    CLEANUP_NORMAL_POLICY_ITEMS,
-    COLLISION_DECOMPOSITION_MODE_ITEMS,
-    ENGINE_IMPORT_MODEL_TARGET_ITEMS,
-    HIERARCHY_MODE_ITEMS,
-    IMPOSTOR_MODE_ITEMS,
-    IMPOSTOR_RESOLUTION_ITEMS,
-    LOD_GENERATION_SOURCE_ITEMS,
-    LOD_PRESET_BUDGET_MODE_ITEMS,
-    MAX_BONE_INFLUENCES_ITEMS,
-    MSFS_GEAR_STATE_ITEMS,
-    MSFS_TARGET_VERSION_ITEMS,
-    PBR_EXPORT_BIT_DEPTH_ITEMS,
-    PBR_EXPORT_TEXTURE_STRATEGY_ITEMS,
-    PBR_IMPORT_AO_MODE_ITEMS,
-    PBR_IMPORT_PATH_MODE_ITEMS,
-    PROGRESSION_MODE_ITEMS,
-    SIMULATOR_CAMERA_MODE_ITEMS,
-    SIMULATOR_MODE_ITEMS,
-    TARGET_ENGINE_ITEMS,
-    TEXTURE_MAX_RESOLUTION_ITEMS,
-)
+from . import enums
 from .interaction_properties import OMNIMESH_InteractionSettings
 from .lod_properties import (
     LODLevelItem,
@@ -109,7 +86,7 @@ class LODToolSettings(PropertyGroup):
     # Source Scope Architecture (Selection vs Collection Mode)
     lod_generation_source: EnumProperty(
         name="Source Scope",
-        items=LOD_GENERATION_SOURCE_ITEMS,
+        items=enums.LOD_GENERATION_SOURCE_ITEMS,
         default="SELECTION",
         description="Whether to generate LODs from active selection or an entire collection hierarchy",
     )
@@ -162,7 +139,7 @@ class LODToolSettings(PropertyGroup):
     # Target Engine Presets
     target_engine: EnumProperty(
         name="Target Engine",
-        items=TARGET_ENGINE_ITEMS,
+        items=enums.TARGET_ENGINE_ITEMS,
         default="MSFS_2024",
         description="Target engine determines naming conventions, metadata hierarchy, and export formats",
         update=on_target_engine_updated,
@@ -171,7 +148,7 @@ class LODToolSettings(PropertyGroup):
     # Asset Category Presets
     asset_category: EnumProperty(
         name="Asset Category",
-        items=ASSET_CATEGORY_ITEMS,
+        items=enums.ASSET_CATEGORY_ITEMS,
         default="PROP",
         description="Selects default error tolerances, decimation curve exponent, and island culling factors",
     )
@@ -179,7 +156,7 @@ class LODToolSettings(PropertyGroup):
     # Progression Curve Mode
     progression_mode: EnumProperty(
         name="Tier Progression",
-        items=PROGRESSION_MODE_ITEMS,
+        items=enums.PROGRESSION_MODE_ITEMS,
         default="EXPONENTIAL",
         description="Mathematical curve used to compute automatic screen size and triangle budgets",
     )
@@ -224,7 +201,7 @@ class LODToolSettings(PropertyGroup):
     cleanup_hole_max_edges: IntProperty(name="Max Hole Edges", default=4, min=3, max=16)
     cleanup_enable_triangulate_ngons: BoolProperty(name="Triangulate N-Gons", default=False)
     cleanup_normal_policy: EnumProperty(
-        name="Normal Alignment", items=CLEANUP_NORMAL_POLICY_ITEMS, default="MANIFOLD_ONLY"
+        name="Normal Alignment", items=enums.CLEANUP_NORMAL_POLICY_ITEMS, default="MANIFOLD_ONLY"
     )
     last_cleanup_summary: StringProperty(name="Cleanup Summary", default="")
 
@@ -258,7 +235,7 @@ class LODToolSettings(PropertyGroup):
     )
     pbr_import_path_mode: EnumProperty(
         name="Path Mode",
-        items=PBR_IMPORT_PATH_MODE_ITEMS,
+        items=enums.PBR_IMPORT_PATH_MODE_ITEMS,
         default="RELATIVE",
         description="Whether imported textures use relative (//) or absolute paths",
         update=on_import_path_mode_updated,
@@ -272,7 +249,7 @@ class LODToolSettings(PropertyGroup):
     )
     pbr_import_ao_mode: EnumProperty(
         name="AO Mode",
-        items=PBR_IMPORT_AO_MODE_ITEMS,
+        items=enums.PBR_IMPORT_AO_MODE_ITEMS,
         default="MULTIPLY",
         description="How Ambient Occlusion maps are wired into the shader graph",
         update=on_import_ao_mode_updated,
@@ -294,14 +271,14 @@ class LODToolSettings(PropertyGroup):
     )
     impostor_mode: EnumProperty(
         name="Impostor Mode",
-        items=IMPOSTOR_MODE_ITEMS,
+        items=enums.IMPOSTOR_MODE_ITEMS,
         default="CROSS_QUADS",
         description="Billboard geometry type and multi-angle projection layout",
         update=on_lod_preset_property_modified,
     )
     impostor_resolution: EnumProperty(
         name="Atlas Resolution",
-        items=IMPOSTOR_RESOLUTION_ITEMS,
+        items=enums.IMPOSTOR_RESOLUTION_ITEMS,
         default="2048",
         description="Texture resolution for baked Impostor PBR atlas maps",
         update=on_lod_preset_property_modified,
@@ -364,7 +341,7 @@ class LODToolSettings(PropertyGroup):
     # Multi-Convex Collision Hull Generator Settings
     collision_decomposition_mode: EnumProperty(
         name="Decomposition Mode",
-        items=COLLISION_DECOMPOSITION_MODE_ITEMS,
+        items=enums.COLLISION_DECOMPOSITION_MODE_ITEMS,
         default="PER_OBJECT",
         description="How multi-mesh selections are decomposed into collision hulls",
     )
@@ -388,7 +365,7 @@ class LODToolSettings(PropertyGroup):
     )
     hierarchy_mode: EnumProperty(
         name="Hierarchy Mode",
-        items=HIERARCHY_MODE_ITEMS,
+        items=enums.HIERARCHY_MODE_ITEMS,
         default="PRESERVE",
         description="How multi-mesh hierarchies and accessories are structured across LOD tiers",
     )
@@ -412,7 +389,7 @@ class LODToolSettings(PropertyGroup):
     chunk_cell_size_z: FloatProperty(name="Z Cell Size (m)", default=32.0, min=1.0, max=1000.0, unit="LENGTH")
     chunk_partitioning_mode: EnumProperty(
         name="Partitioning Mode",
-        items=CHUNK_PARTITIONING_MODE_ITEMS,
+        items=enums.CHUNK_PARTITIONING_MODE_ITEMS,
         default="UNIFORM_GRID",
         description="Spatial chunk tiling strategy",
     )
@@ -451,7 +428,7 @@ class LODToolSettings(PropertyGroup):
     )
     max_bone_influences: EnumProperty(
         name="Max GPU Bone Influences",
-        items=MAX_BONE_INFLUENCES_ITEMS,
+        items=enums.MAX_BONE_INFLUENCES_ITEMS,
         default="4",
     )
     enable_bone_pruning: BoolProperty(
@@ -489,7 +466,7 @@ class LODToolSettings(PropertyGroup):
     )
     texture_max_resolution: EnumProperty(
         name="Max Resolution",
-        items=TEXTURE_MAX_RESOLUTION_ITEMS,
+        items=enums.TEXTURE_MAX_RESOLUTION_ITEMS,
         default="2048",
         description="Maximum texture resolution for exported PBR channel sets",
     )
@@ -504,7 +481,7 @@ class LODToolSettings(PropertyGroup):
     pbr_export_active_maps_preset_id: StringProperty(name="Active Export Maps Preset ID", default="")
     pbr_export_texture_strategy: EnumProperty(
         name="Texture Strategy",
-        items=PBR_EXPORT_TEXTURE_STRATEGY_ITEMS,
+        items=enums.PBR_EXPORT_TEXTURE_STRATEGY_ITEMS,
         default="SMART_AUTO",
         description="PBR texture export processing pipeline strategy",
         update=on_export_strategy_updated,
@@ -517,7 +494,7 @@ class LODToolSettings(PropertyGroup):
     )
     pbr_export_bit_depth: EnumProperty(
         name="Bit Depth",
-        items=PBR_EXPORT_BIT_DEPTH_ITEMS,
+        items=enums.PBR_EXPORT_BIT_DEPTH_ITEMS,
         default="8",
         description="PNG channel depth for exported texture maps",
         update=on_export_bit_depth_updated,
@@ -535,7 +512,7 @@ class LODToolSettings(PropertyGroup):
     )
     simulator_mode: EnumProperty(
         name="Simulator Mode",
-        items=SIMULATOR_MODE_ITEMS,
+        items=enums.SIMULATOR_MODE_ITEMS,
         default="LIVE_ORBIT",
     )
     virtual_preview_dist_m: FloatProperty(
@@ -546,11 +523,19 @@ class LODToolSettings(PropertyGroup):
     )
     simulator_camera_mode: EnumProperty(
         name="Camera Source",
-        items=SIMULATOR_CAMERA_MODE_ITEMS,
+        items=enums.SIMULATOR_CAMERA_MODE_ITEMS,
         default="VIEWPORT",
         description="Camera position reference used to calculate live switch distances",
     )
-    virtual_distance_override: FloatProperty(name="Virtual Distance (m)", default=0.0, min=0.0, max=5000.0, precision=2)
+    virtual_distance_override: FloatProperty(
+        name="Virtual Distance (m)",
+        default=0.0,
+        min=0.0,
+        max=5000.0,
+        precision=2,
+        update=lambda self, context: on_virtual_distance_updated(self, context),
+    )
+    last_scrub_status: StringProperty(name="Scrub Status", default="")
     show_viewport_hud: BoolProperty(
         name="Show Viewport HUD", default=True, description="Display real-time statistics HUD overlay in 3D Viewport"
     )
@@ -573,7 +558,7 @@ class LODToolSettings(PropertyGroup):
     )
     lod_preset_budget_mode: EnumProperty(
         name="Budget Mode",
-        items=LOD_PRESET_BUDGET_MODE_ITEMS,
+        items=enums.LOD_PRESET_BUDGET_MODE_ITEMS,
         default="PERCENTAGE",
         description="Whether target budgets are specified as relative percentages or absolute triangle counts",
         update=on_lod_budget_mode_updated,
@@ -658,7 +643,7 @@ class LODToolSettings(PropertyGroup):
     )
     batch_file_formats: EnumProperty(
         name="Formats",
-        items=BATCH_FILE_FORMATS_ITEMS,
+        items=enums.BATCH_FILE_FORMATS_ITEMS,
         default="ALL",
     )
     batch_status_text: StringProperty(name="Batch Status", default="Batch Ready")
@@ -671,7 +656,7 @@ class LODToolSettings(PropertyGroup):
     msfs_export_full_package: BoolProperty(name="Export Full Package", default=True)
     msfs_target_version: EnumProperty(
         name="MSFS Target Version",
-        items=MSFS_TARGET_VERSION_ITEMS,
+        items=enums.MSFS_TARGET_VERSION_ITEMS,
         default="2024",
         description="Target Microsoft Flight Simulator SDK version",
     )
@@ -707,7 +692,7 @@ class LODToolSettings(PropertyGroup):
     msfs_cameras_cfg_path: StringProperty(name="MSFS Cameras File", subtype="FILE_PATH", default="")
     msfs_spatial_status: StringProperty(name="MSFS Spatial Status", default="Ready")
     msfs_scrape_margin_m: FloatProperty(name="Scrape Margin (m)", default=0.0, min=-0.5, max=0.5)
-    msfs_gear_state: EnumProperty(name="Gear State", items=MSFS_GEAR_STATE_ITEMS, default="STATIC_COMPRESSED")
+    msfs_gear_state: EnumProperty(name="Gear State", items=enums.MSFS_GEAR_STATE_ITEMS, default="STATIC_COMPRESSED")
     msfs_gear_compression_m: FloatProperty(name="Strut Compression (m)", default=0.12, min=0.0, max=1.0)
     msfs_calculated_cg_height_ft: FloatProperty(name="Static CG Height (ft)", default=0.0, precision=3)
 
@@ -731,7 +716,7 @@ class LODToolSettings(PropertyGroup):
     engine_import_lights: BoolProperty(name="Import Lights", default=True)
     engine_import_cameras: BoolProperty(name="Import Cameras", default=True)
     engine_import_model_target: EnumProperty(
-        name="Model Target", items=ENGINE_IMPORT_MODEL_TARGET_ITEMS, default="EXTERIOR_ONLY"
+        name="Model Target", items=enums.ENGINE_IMPORT_MODEL_TARGET_ITEMS, default="EXTERIOR_ONLY"
     )
     engine_import_use_lod0_suffix: BoolProperty(name="Use LOD0 Suffix", default=True)
     engine_import_auto_assign_screen_pct: BoolProperty(name="Auto-Assign Screen %", default=True)

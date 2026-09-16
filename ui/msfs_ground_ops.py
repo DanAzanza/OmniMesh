@@ -22,14 +22,14 @@ except ImportError:
     Operator = object
 
 try:
-    from ..core.msfs_cst_parser import MSFSCSTParser
-    from ..core.msfs_geometry import (
+    from ..core.msfs.cst_parser import MSFSCSTParser
+    from ..core.msfs.geometry import (
         collect_airframe_vertices,
         detect_airframe_extrema,
         extract_world_vertices_numpy,
         format_class_2_scrape_tokens,
     )
-    from ..core.msfs_transforms import METERS_TO_FEET
+    from ..core.msfs.transforms import METERS_TO_FEET
     from .msfs_spatial_ops import (
         COLLECTION_NAME,
         DATUM_POINT_ID,
@@ -37,14 +37,14 @@ try:
         get_or_create_spatial_collection,
     )
 except (ImportError, ValueError):
-    from core.msfs_cst_parser import MSFSCSTParser
-    from core.msfs_geometry import (
+    from core.msfs.cst_parser import MSFSCSTParser
+    from core.msfs.geometry import (
         collect_airframe_vertices,
         detect_airframe_extrema,
         extract_world_vertices_numpy,
         format_class_2_scrape_tokens,
     )
-    from core.msfs_transforms import METERS_TO_FEET
+    from core.msfs.transforms import METERS_TO_FEET
 
     from .msfs_spatial_ops import (
         COLLECTION_NAME,

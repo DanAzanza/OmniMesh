@@ -166,6 +166,8 @@ class LOD_OT_toggle_simulator(Operator):
         if context and hasattr(context.scene, "lod_tool"):
             context.scene.lod_tool.is_simulator_active = False
             context.scene.lod_tool.is_simulator_running = False
+            context.scene.lod_tool.virtual_distance_override = 0.0
+            context.scene.lod_tool.last_scrub_status = ""
 
         if self._timer and context and hasattr(context, "window_manager") and context.window_manager:
             try:
@@ -187,6 +189,37 @@ class LOD_OT_toggle_simulator(Operator):
         return {"FINISHED"}
 
 
+class LOD_OT_reset_virtual_distance(Operator):
+    """Reset virtual distance override and restore default viewport LOD visibility"""
+
+    bl_idname = "lod_tool.reset_virtual_distance"
+    bl_label = "Reset Distance"
+    bl_options = {"REGISTER"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        return bool(bpy and context and hasattr(context.scene, "lod_tool"))
+
+    def execute(self, context: Any) -> set[str]:
+        if not context or not context.scene:
+            return {"CANCELLED"}
+        props = getattr(context.scene, "lod_tool", None)
+        if not props:
+            return {"CANCELLED"}
+
+        props.virtual_distance_override = 0.0
+        props.last_scrub_status = ""
+        LODSimulatorEngine.reset_distance_scrub(context)
+
+        screen = getattr(context, "screen", None)
+        if screen:
+            for area in getattr(screen, "areas", []):
+                if getattr(area, "type", "") == "VIEW_3D":
+                    area.tag_redraw()
+
+        return {"FINISHED"}
+
+
 # Alias class for backward compatibility
 class LOD_OT_toggle_live_simulator(Operator):
     """Alias operator for backward compatibility delegating to primary operator."""
@@ -204,7 +237,7 @@ class LOD_OT_toggle_live_simulator(Operator):
 def register_simulator_ops() -> None:
     if not bpy:
         return
-    for cls in (LOD_OT_toggle_simulator, LOD_OT_toggle_live_simulator):
+    for cls in (LOD_OT_toggle_simulator, LOD_OT_toggle_live_simulator, LOD_OT_reset_virtual_distance):
         try:
             bpy.utils.unregister_class(cls)
         except Exception as exc:
@@ -215,5 +248,6 @@ def register_simulator_ops() -> None:
 def unregister_simulator_ops() -> None:
     if not bpy:
         return
+    bpy.utils.unregister_class(LOD_OT_reset_virtual_distance)
     bpy.utils.unregister_class(LOD_OT_toggle_live_simulator)
     bpy.utils.unregister_class(LOD_OT_toggle_simulator)

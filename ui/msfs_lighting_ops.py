@@ -27,9 +27,9 @@ except ImportError:
 
 
 try:
-    from ..core.msfs_cst_parser import MSFSCSTParser
-    from ..core.msfs_models import CFGLineRecord, LightPoint
-    from ..core.msfs_transforms import (
+    from ..core.msfs.cst_parser import MSFSCSTParser
+    from ..core.msfs.models import CFGLineRecord, LightPoint
+    from ..core.msfs.transforms import (
         FEET_TO_METERS,
         METERS_TO_FEET,
         blender_rotation_to_msfs_pbh,
@@ -37,9 +37,9 @@ try:
         msfs_pbh_to_blender_rotation,
     )
 except (ImportError, ValueError):
-    from core.msfs_cst_parser import MSFSCSTParser
-    from core.msfs_models import CFGLineRecord, LightPoint
-    from core.msfs_transforms import (
+    from core.msfs.cst_parser import MSFSCSTParser
+    from core.msfs.models import CFGLineRecord, LightPoint
+    from core.msfs.transforms import (
         FEET_TO_METERS,
         METERS_TO_FEET,
         blender_rotation_to_msfs_pbh,
@@ -196,8 +196,9 @@ class OMNIMESH_OT_import_msfs_lights(Operator):
         )
         return {"FINISHED"}
 
+    @classmethod
     def _ensure_light_object(
-        self,
+        cls,
         col: Collection,
         light: LightPoint,
         datum_empty: Optional[Object],

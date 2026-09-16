@@ -3,7 +3,7 @@ Unit tests for MSFS model.options parsing and MSFSModelOptions domain model.
 """
 
 from pathlib import Path
-from core.msfs_project_scanner import parse_model_options
+from core.msfs.project_scanner import parse_model_options
 
 
 def test_parse_model_options_msfs_2024(tmp_path: Path):

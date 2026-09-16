@@ -12,56 +12,27 @@ from .lod_properties import sync_preset_tiers_from_preset
 from .pbr_properties import sync_export_maps_from_preset, sync_maps_from_preset
 
 try:
-    from ...core.engine_import_presets import (
-        DEFAULT_ENGINE_IMPORT_PRESET_ID,
-        EngineImportPresetManager,
-    )
-    from ...core.lod_presets import (
-        DEFAULT_LOD_PRESET_ID,
-        LODPresetManager,
-    )
-    from ...core.metrics import (
-        compute_bounding_sphere,
-        compute_distance_from_screen_size,
-        compute_vertical_fov,
-    )
+    from ...core.engine_import_presets import DEFAULT_ENGINE_IMPORT_PRESET_ID, EngineImportPresetManager
+    from ...core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
+    from ...core.metrics import compute_bounding_sphere, compute_distance_from_screen_size, compute_vertical_fov
     from ...core.pbr_presets import (
         PBRExportPresetManager,
         PBRImportPresetManager,
         get_pipeline_state,
         set_pipeline_setting,
     )
-    from ..utils import (
-        get_asset_base_meshes,
-        get_asset_existing_lods,
-        resolve_effective_asset_name,
-    )
+    from ..utils import get_asset_base_meshes, get_asset_existing_lods, resolve_effective_asset_name
 except (ImportError, ValueError):
-    from core.engine_import_presets import (
-        DEFAULT_ENGINE_IMPORT_PRESET_ID,
-        EngineImportPresetManager,
-    )
-    from core.lod_presets import (
-        DEFAULT_LOD_PRESET_ID,
-        LODPresetManager,
-    )
-    from core.metrics import (
-        compute_bounding_sphere,
-        compute_distance_from_screen_size,
-        compute_vertical_fov,
-    )
+    from core.engine_import_presets import DEFAULT_ENGINE_IMPORT_PRESET_ID, EngineImportPresetManager
+    from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
+    from core.metrics import compute_bounding_sphere, compute_distance_from_screen_size, compute_vertical_fov
     from core.pbr_presets import (
         PBRExportPresetManager,
         PBRImportPresetManager,
         get_pipeline_state,
         set_pipeline_setting,
     )
-
-    from ..utils import (
-        get_asset_base_meshes,
-        get_asset_existing_lods,
-        resolve_effective_asset_name,
-    )
+    from ui.utils import get_asset_base_meshes, get_asset_existing_lods, resolve_effective_asset_name
 
 try:
     import bpy
@@ -124,11 +95,6 @@ def on_target_engine_updated(self: Any, context: Any) -> None:
     with PresetSyncGuard():
         engine = getattr(self, "target_engine", "MSFS_2024")
         export_preset_id = getattr(self, "pbr_export_preset", "")
-        try:
-            from ...core.pbr_presets import PBRExportPresetManager
-        except ImportError:
-            from core.pbr_presets import PBRExportPresetManager
-
         current_preset = PBRExportPresetManager.get_preset(export_preset_id) if export_preset_id else {}
         if current_preset.get("target_engine") != engine:
             factory_id = ENGINE_TO_FACTORY_PRESET.get(engine, "unreal_engine_5")
@@ -154,10 +120,6 @@ def on_export_preset_updated(self: Any, context: Any) -> None:
     export_preset_id = getattr(self, "pbr_export_preset", "")
     if not export_preset_id:
         return
-    try:
-        from ...core.pbr_presets import PBRExportPresetManager
-    except ImportError:
-        from core.pbr_presets import PBRExportPresetManager
 
     # Persist choice across Blender restarts
     PBRExportPresetManager.set_last_active_preset(export_preset_id)
@@ -717,6 +679,33 @@ def on_active_lod_index_updated(self: Any, context: Any) -> None:
         logger.debug("Active LOD index HUD update exception: %s", exc)
 
 
+def on_virtual_distance_updated(self: Any, context: Any) -> None:
+    """Dispatches non-modal distance scrubber updates to LODSimulatorEngine."""
+    if not context or StateRestorationGuard.is_active():
+        return
+    props = getattr(context.scene, "lod_tool", None) if getattr(context, "scene", None) else None
+    if not props or getattr(props, "is_simulator_running", False):
+        return
+
+    try:
+        from ...core.simulator import LODSimulatorEngine
+    except (ImportError, ValueError):
+        from core.simulator import LODSimulatorEngine
+
+    dist = float(getattr(self, "virtual_distance_override", 0.0))
+    summary = LODSimulatorEngine.evaluate_distance_scrub(context, dist)
+    if summary:
+        props.last_scrub_status = f"Active: {summary['root_name']} (LOD{summary['current_tier']}, {summary['active_tris']:,} tris, {summary['distance_m']:.1f}m)"
+    else:
+        props.last_scrub_status = ""
+
+    screen = getattr(context, "screen", None)
+    if screen:
+        for area in getattr(screen, "areas", []):
+            if getattr(area, "type", "") == "VIEW_3D":
+                area.tag_redraw()
+
+
 __all__ = [
     "ENGINE_TO_FACTORY_PRESET",
     "update_bridge_status_cached",
@@ -748,4 +737,5 @@ __all__ = [
     "on_engine_import_preset_updated",
     "on_engine_import_directory_updated",
     "on_active_lod_index_updated",
+    "on_virtual_distance_updated",
 ]

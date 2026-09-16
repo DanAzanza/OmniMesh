@@ -23,7 +23,7 @@ except ImportError:
     Material = object
     Object = object
 
-from .msfs_project_scanner import MSFSProjectManifest
+from .msfs.project_scanner import MSFSProjectManifest
 
 
 def find_layer_collection(layer_coll: Any, target_coll: Any) -> Optional[Any]:

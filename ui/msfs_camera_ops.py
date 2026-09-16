@@ -26,9 +26,9 @@ except ImportError:
 
 
 try:
-    from ..core.msfs_cst_parser import MSFSCSTParser
-    from ..core.msfs_models import CameraDefinition
-    from ..core.msfs_transforms import (
+    from ..core.msfs.cst_parser import MSFSCSTParser
+    from ..core.msfs.models import CameraDefinition
+    from ..core.msfs.transforms import (
         FEET_TO_METERS,
         METERS_TO_FEET,
         blender_focal_length_to_msfs_zoom,
@@ -37,9 +37,9 @@ try:
         msfs_zoom_to_blender_focal_length,
     )
 except (ImportError, ValueError):
-    from core.msfs_cst_parser import MSFSCSTParser
-    from core.msfs_models import CameraDefinition
-    from core.msfs_transforms import (
+    from core.msfs.cst_parser import MSFSCSTParser
+    from core.msfs.models import CameraDefinition
+    from core.msfs.transforms import (
         FEET_TO_METERS,
         METERS_TO_FEET,
         blender_focal_length_to_msfs_zoom,

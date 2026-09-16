@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 
-from core.msfs_project_scanner import (
+from core.msfs.project_scanner import (
     MSFSProjectScanner,
     parse_model_cfg,
     parse_model_xml,

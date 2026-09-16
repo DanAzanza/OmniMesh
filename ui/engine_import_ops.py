@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from typing import Any, Optional
 
 try:
@@ -39,9 +38,13 @@ try:
         bind_manifest_to_omnimesh,
         classify_imported_mesh_node,
     )
-    from ..core.msfs_cst_parser import MSFSCSTParser
-    from ..core.msfs_project_scanner import MSFSProjectScanner
-    from ..core.msfs_transforms import FEET_TO_METERS, msfs_pbh_to_blender_rotation, msfs_zoom_to_blender_focal_length
+    from ..core.msfs.project_scanner import MSFSProjectScanner
+    from .engine_import_helpers import (
+        import_attachments,
+        import_cameras,
+        import_lighting_points,
+        import_spatial_points,
+    )
     from .utils import get_or_create_engine_import_collection
 except (ImportError, ValueError):
     from core.engine_import_presets import (
@@ -56,9 +59,13 @@ except (ImportError, ValueError):
         bind_manifest_to_omnimesh,
         classify_imported_mesh_node,
     )
-    from core.msfs_cst_parser import MSFSCSTParser
-    from core.msfs_project_scanner import MSFSProjectScanner
-    from core.msfs_transforms import FEET_TO_METERS, msfs_pbh_to_blender_rotation, msfs_zoom_to_blender_focal_length
+    from core.msfs.project_scanner import MSFSProjectScanner
+    from ui.engine_import_helpers import (
+        import_attachments,
+        import_cameras,
+        import_lighting_points,
+        import_spatial_points,
+    )
     from ui.utils import get_or_create_engine_import_collection
 
 logger = logging.getLogger(__name__)
@@ -204,207 +211,7 @@ class OMNIMESH_OT_import_engine_project(Operator):
         asset_name: str,
         props: Any,
     ) -> tuple[int, Optional[Any]]:
-        """Parses flight_model.cfg and creates datum and spatial locator empties."""
-        spatial_count = 0
-        datum_empty: Optional[Any] = None
-        if not manifest.flight_model_cfg_path or not os.path.isfile(manifest.flight_model_cfg_path):
-            return 0, None
-
-        spatial_col = get_or_create_engine_import_collection(context, asset_name, "SPATIAL")
-        if not spatial_col:
-            return 0, None
-
-        try:
-            cfg = MSFSCSTParser.parse_file(manifest.flight_model_cfg_path)
-            datum_coords = cfg.points[0].coords_blender_m if cfg.points else (0.0, 0.0, 0.0)
-
-            # Datum Empty (scoped strictly to spatial_col)
-            datum_empty = next(
-                (o for o in spatial_col.objects if o.get("msfs_id") == "WEIGHT_AND_BALANCE:reference_datum_position"),
-                None,
-            )
-            if not datum_empty:
-                d_name = "Datum" if "Datum" not in bpy.data.objects else f"{asset_name}_Datum"
-                datum_empty = bpy.data.objects.new(d_name, None)
-                spatial_col.objects.link(datum_empty)
-
-            datum_empty.location = datum_coords
-            datum_empty.empty_display_type = "PLAIN_AXES"
-            datum_empty.empty_display_size = 0.5
-            datum_empty["msfs_id"] = "WEIGHT_AND_BALANCE:reference_datum_position"
-            context.view_layer.update()
-
-            # Relative points
-            for point in cfg.points:
-                if point.point_type == "DATUM":
-                    continue
-
-                display_type = "PLAIN_AXES"
-                display_size = 0.25
-                if point.point_type == "CONTACT_POINT":
-                    if point.point_class == 1:
-                        display_type = "CIRCLE"
-                        display_size = 0.35
-                        clean_tag = point.name_tag or "Wheel"
-                        empty_name = f"Point_{point.key.split('.')[-1]}_{clean_tag}"
-                    elif point.point_class == 2:
-                        display_type = "PLAIN_AXES"
-                        display_size = 0.2
-                        empty_name = f"Scrape_{point.name_tag or point.key.split('.')[-1]}"
-                    elif point.point_class == 3:
-                        display_type = "SINGLE_ARROW"
-                        display_size = 0.3
-                        empty_name = f"Skid_{point.name_tag or point.key.split('.')[-1]}"
-                    elif point.point_class == 4:
-                        display_type = "CUBE"
-                        display_size = 0.35
-                        empty_name = f"Float_{point.name_tag or point.key.split('.')[-1]}"
-                    elif point.point_class == 5:
-                        display_type = "CONE"
-                        display_size = 0.3
-                        empty_name = f"WaterRudder_{point.name_tag or point.key.split('.')[-1]}"
-                    else:
-                        display_type = "PLAIN_AXES"
-                        empty_name = f"Point_{point.key.split('.')[-1]}_{point.name_tag or point.point_type}"
-                elif point.point_type == "FUEL_TANK":
-                    display_type = "CUBE"
-                    display_size = 0.4
-                    empty_name = f"Fuel_{point.name_tag or point.key}"
-                elif point.point_type == "CG":
-                    display_type = "SPHERE"
-                    display_size = 0.25
-                    empty_name = "CG"
-                else:
-                    empty_name = f"{point.name_tag or point.key}"
-
-                existing = None
-                for obj in spatial_col.objects:
-                    if obj.get("msfs_id") == point.point_id:
-                        existing = obj
-                        break
-
-                if existing:
-                    e = existing
-                    e.name = empty_name
-                else:
-                    e = bpy.data.objects.new(empty_name, None)
-                    spatial_col.objects.link(e)
-
-                if datum_empty and e != datum_empty and e.parent != datum_empty:
-                    e.parent = datum_empty
-
-                rel_ft = point.coords_msfs_rel_ft
-                e.location = (
-                    rel_ft[1] * FEET_TO_METERS,
-                    rel_ft[0] * FEET_TO_METERS,
-                    rel_ft[2] * FEET_TO_METERS,
-                )
-                e.empty_display_type = display_type
-                e.empty_display_size = display_size
-                e["msfs_id"] = point.point_id
-                e["msfs_key"] = point.key
-                e["msfs_type"] = point.point_type
-                e["msfs_name_tag"] = point.name_tag
-                e["msfs_class"] = point.point_class
-                spatial_count += 1
-
-            # Ingest Exits
-            for exit_pt in getattr(cfg, "exits", []):
-                clean_key = exit_pt.key.replace("exit.", "")
-                empty_name = f"Exit_{clean_key}"
-                existing = next((o for o in spatial_col.objects if o.get("msfs_id") == exit_pt.point_id), None)
-                if existing:
-                    e = existing
-                    e.name = empty_name
-                else:
-                    e = bpy.data.objects.new(empty_name, None)
-                    spatial_col.objects.link(e)
-
-                if datum_empty and e != datum_empty and e.parent != datum_empty:
-                    e.parent = datum_empty
-
-                rel_ft = exit_pt.coords_msfs_rel_ft
-                e.location = (
-                    rel_ft[1] * FEET_TO_METERS,
-                    rel_ft[0] * FEET_TO_METERS,
-                    rel_ft[2] * FEET_TO_METERS,
-                )
-                e.empty_display_type = "CUBE"
-                e.empty_display_size = 0.35
-                e["msfs_id"] = exit_pt.point_id
-                e["msfs_key"] = exit_pt.key
-                e["msfs_type"] = "EXIT"
-                e["msfs_exit_type"] = exit_pt.exit_type
-                e["msfs_open_rate"] = exit_pt.open_rate
-                spatial_count += 1
-
-            # Ingest Engines
-            for eng in getattr(cfg, "engines", []):
-                empty_name = f"Engine_{eng.engine_index}"
-                existing = next((o for o in spatial_col.objects if o.get("msfs_id") == eng.point_id), None)
-                if existing:
-                    e = existing
-                    e.name = empty_name
-                else:
-                    e = bpy.data.objects.new(empty_name, None)
-                    spatial_col.objects.link(e)
-
-                if datum_empty and e != datum_empty and e.parent != datum_empty:
-                    e.parent = datum_empty
-
-                rel_ft = eng.coords_msfs_rel_ft
-                e.location = (
-                    rel_ft[1] * FEET_TO_METERS,
-                    rel_ft[0] * FEET_TO_METERS,
-                    rel_ft[2] * FEET_TO_METERS,
-                )
-                e.empty_display_type = "CONE"
-                e.empty_display_size = 0.45
-                e["msfs_id"] = eng.point_id
-                e["msfs_key"] = eng.key
-                e["msfs_type"] = "ENGINE"
-                e["msfs_engine_index"] = eng.engine_index
-                e["msfs_engine_type"] = eng.engine_type
-                spatial_count += 1
-
-            # Ingest Station Loads (Payload)
-            for st in getattr(cfg, "station_loads", []):
-                tag = st.station_name or st.key.replace("station_load.", "")
-                clean_tag = re.sub(r"[^\w]", "_", tag).strip("_")
-                empty_name = f"Station_{clean_tag}"
-                existing = next((o for o in spatial_col.objects if o.get("msfs_id") == st.point_id), None)
-                if existing:
-                    e = existing
-                    e.name = empty_name
-                else:
-                    e = bpy.data.objects.new(empty_name, None)
-                    spatial_col.objects.link(e)
-
-                if datum_empty and e != datum_empty and e.parent != datum_empty:
-                    e.parent = datum_empty
-
-                rel_ft = st.coords_msfs_rel_ft
-                e.location = (
-                    rel_ft[1] * FEET_TO_METERS,
-                    rel_ft[0] * FEET_TO_METERS,
-                    rel_ft[2] * FEET_TO_METERS,
-                )
-                e.empty_display_type = "SPHERE"
-                e.empty_display_size = 0.25
-                e["msfs_id"] = st.point_id
-                e["msfs_key"] = st.key
-                e["msfs_type"] = "PAYLOAD_STATION"
-                e["msfs_station_name"] = st.station_name
-                e["msfs_station_type"] = st.station_type
-                e["msfs_weight_lbs"] = st.weight_lbs
-                spatial_count += 1
-
-            if props:
-                props.msfs_spatial_cfg_path = str(manifest.flight_model_cfg_path)
-        except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
-            logger.warning("Error ingesting spatial config: %s", exc)
-
-        return spatial_count, datum_empty
+        return import_spatial_points(context, manifest, asset_name, props)
 
     def _import_lighting_points(
         self,
@@ -414,50 +221,7 @@ class OMNIMESH_OT_import_engine_project(Operator):
         datum_empty: Optional[Any],
         props: Any,
     ) -> int:
-        """Parses systems.cfg and creates aviation light sources."""
-        lights_count = 0
-        if not manifest.systems_cfg_path or not os.path.isfile(manifest.systems_cfg_path):
-            return 0
-
-        lights_col = get_or_create_engine_import_collection(context, asset_name, "LIGHTS")
-        has_interior = manifest.interior_model is not None or (
-            bpy
-            and hasattr(bpy.data, "collections")
-            and (
-                f"{asset_name}_Interior" in bpy.data.collections
-                or bpy.data.collections.get(f"{asset_name}_Interior_LOD0") is not None
-            )
-        )
-        inte_lights_col = (
-            get_or_create_engine_import_collection(context, f"{asset_name}_Interior", "LIGHTS")
-            if has_interior
-            else None
-        )
-        if lights_col:
-            try:
-                from .msfs_lighting_ops import OMNIMESH_OT_import_msfs_lights
-
-                cfg_lights = MSFSCSTParser.parse_file(manifest.systems_cfg_path)
-                datum = datum_empty or bpy.data.objects.get("Datum") or bpy.data.objects.get("MSFS_Datum")
-
-                # Instantiate helper
-                light_importer = OMNIMESH_OT_import_msfs_lights()
-                for light in cfg_lights.lights:
-                    target_col = inte_lights_col if (inte_lights_col and light.light_type in (4, 10)) else lights_col
-                    light_importer._ensure_light_object(
-                        col=target_col,
-                        light=light,
-                        datum_empty=datum,
-                        context=context,
-                    )
-                    lights_count += 1
-
-                if props:
-                    props.msfs_systems_cfg_path = str(manifest.systems_cfg_path)
-            except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
-                logger.warning("Error ingesting lights: %s", exc)
-
-        return lights_count
+        return import_lighting_points(context, manifest, asset_name, datum_empty, props)
 
     def _import_cameras(
         self,
@@ -467,137 +231,10 @@ class OMNIMESH_OT_import_engine_project(Operator):
         datum_empty: Optional[Any],
         props: Any,
     ) -> int:
-        """Parses cameras.cfg and creates eyepoint and camera objects."""
-        cameras_count = 0
-        if not manifest.cameras_cfg_path or not os.path.isfile(manifest.cameras_cfg_path):
-            return 0
-
-        try:
-            cam_cfg = MSFSCSTParser.parse_cameras_file(manifest.cameras_cfg_path)
-            datum = datum_empty or bpy.data.objects.get("Datum") or bpy.data.objects.get("MSFS_Datum")
-
-            # Check if interior model is part of this asset / scene
-            has_interior = (
-                manifest.interior_model is not None
-                or f"{asset_name}_Interior" in bpy.data.collections
-                or bpy.data.collections.get(f"{asset_name}_Interior_LOD0") is not None
-            )
-
-            ext_cam_col = get_or_create_engine_import_collection(context, asset_name, "CAMERAS")
-            inte_cam_col = (
-                get_or_create_engine_import_collection(context, f"{asset_name}_Interior", "CAMERAS")
-                if has_interior
-                else None
-            )
-            target_eye_col = inte_cam_col or ext_cam_col
-
-            # Eyepoint (scoped strictly to target_eye_col)
-            eye_empty = None
-            if target_eye_col:
-                eye_empty = next(
-                    (
-                        o
-                        for o in target_eye_col.objects
-                        if o.get("msfs_id") == "VIEWS:eyepoint" or o.get("msfs_type") == "EYEPOINT"
-                    ),
-                    None,
-                )
-            if not eye_empty:
-                e_name = "Eyepoint" if "Eyepoint" not in bpy.data.objects else f"{asset_name}_Eyepoint"
-                eye_empty = bpy.data.objects.new(e_name, None)
-                if target_eye_col:
-                    target_eye_col.objects.link(eye_empty)
-
-            if datum and eye_empty != datum:
-                eye_empty.parent = datum
-
-            eye_ft = cam_cfg.eyepoint_ft
-            eye_empty.location = (
-                eye_ft[1] * FEET_TO_METERS,
-                eye_ft[0] * FEET_TO_METERS,
-                eye_ft[2] * FEET_TO_METERS,
-            )
-            eye_empty.empty_display_type = "SINGLE_ARROW"
-            eye_empty.empty_display_size = 0.3
-            eye_empty["msfs_id"] = "VIEWS:eyepoint"
-            eye_empty["msfs_type"] = "EYEPOINT"
-            context.view_layer.update()
-
-            # Cameras
-            for cam in cam_cfg.cameras:
-                clean_title = re.sub(r"[^\w]", "_", cam.title or cam.category or f"Cam_{cam.index}").strip("_")
-                cam_name = f"Cam_{cam.index}_{clean_title}"
-                is_vc = cam.origin == "Virtual Cockpit"
-                target_cam_col = inte_cam_col if is_vc and inte_cam_col else ext_cam_col
-                if not target_cam_col:
-                    continue
-
-                cam_obj = None
-                for obj in target_cam_col.objects:
-                    if obj.get("msfs_camera_guid") == cam.guid or obj.get("msfs_camera_index") == cam.index:
-                        cam_obj = obj
-                        break
-
-                if not cam_obj:
-                    camera_data = bpy.data.cameras.new(name=cam_name)
-                    cam_obj = bpy.data.objects.new(cam_name, camera_data)
-                    target_cam_col.objects.link(cam_obj)
-                else:
-                    cam_obj.name = cam_name
-                    camera_data = cam_obj.data
-
-                camera_data.lens = msfs_zoom_to_blender_focal_length(cam.initial_zoom)
-                camera_data.clip_start = 0.05
-                camera_data.clip_end = 1000.0
-
-                p_deg, b_deg, h_deg = cam.initial_pbh_deg
-                cam_obj.rotation_euler = msfs_pbh_to_blender_rotation(p_deg, b_deg, h_deg)
-
-                init_x, init_y, init_z = cam.initial_xyz_m
-                offset_m = (init_x, init_z, init_y)
-                if is_vc and eye_empty:
-                    cam_obj.parent = eye_empty
-                    cam_obj.location = offset_m
-                elif datum:
-                    cam_obj.parent = datum
-                    cam_obj.location = offset_m
-                else:
-                    cam_obj.location = offset_m
-
-                cam_obj["msfs_camera_index"] = cam.index
-                cam_obj["msfs_camera_guid"] = cam.guid
-                cam_obj["msfs_camera_title"] = cam.title
-                cam_obj["msfs_camera_origin"] = cam.origin
-                cam_obj["msfs_camera_category"] = cam.category
-                cameras_count += 1
-
-            if props:
-                props.msfs_cameras_cfg_path = str(manifest.cameras_cfg_path)
-        except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
-            logger.warning("Error ingesting cameras: %s", exc)
-
-        return cameras_count
+        return import_cameras(context, manifest, asset_name, datum_empty, props)
 
     def _import_attachments(self, context: Any, manifest: Any) -> int:
-        """Parses and imports attached objects configuration."""
-        attachments_count = 0
-        if not manifest.attached_objects_cfg_path or not os.path.isfile(manifest.attached_objects_cfg_path):
-            return 0
-
-        try:
-            from ..core.msfs.attachments_cst import MSFSAttachmentsCST
-            from .msfs_attachment_ops import OMNIMESH_OT_import_msfs_attachments
-
-            att_importer = OMNIMESH_OT_import_msfs_attachments()
-            att_importer.filepath = str(manifest.attached_objects_cfg_path)
-            res = att_importer.execute(context)
-            if "FINISHED" in res:
-                cfg_att = MSFSAttachmentsCST.parse_attachments_file(str(manifest.attached_objects_cfg_path))
-                attachments_count = len(cfg_att.attachments)
-        except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
-            logger.warning("Error ingesting attachments: %s", exc)
-
-        return attachments_count
+        return import_attachments(context, manifest)
 
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context:

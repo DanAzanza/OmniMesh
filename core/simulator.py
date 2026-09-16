@@ -353,6 +353,134 @@ class LODSimulatorEngine:
 
         return updates
 
+    _visibility_snapshot: dict[str, bool] = {}
+
+    @classmethod
+    def evaluate_distance_scrub(cls, context: Any, distance_m: float) -> dict[str, Any]:
+        """Evaluates and applies distance-based LOD tier visibility across tracked assets
+
+        without requiring an active modal timer loop. Preserves previous visibility state
+        via non-destructive snapshot.
+        """
+        if not bpy or not context:
+            return {}
+
+        if distance_m <= 0.0:
+            cls.reset_distance_scrub(context)
+            return {}
+
+        scene = getattr(context, "scene", None)
+        if not scene:
+            return {}
+
+        if not cls._tracked_assets:
+            cls.index_scene_assets(scene)
+
+        if not cls._tracked_assets:
+            return {}
+
+        view_layer = getattr(context, "view_layer", None)
+
+        # 1. Take snapshot of original visibility state on initial transition from 0.0m
+        if not cls._visibility_snapshot:
+            for record in cls._tracked_assets.values():
+                for objs in record.tier_objects.values():
+                    for obj in objs:
+                        if hasattr(obj, "hide_get"):
+                            cls._visibility_snapshot[obj.name] = obj.hide_get(view_layer=view_layer)
+
+        # 2. Extract viewport or default camera parameters safely
+        space_3d = None
+        region_3d = None
+        region = None
+        wm = getattr(context, "window_manager", None)
+        if wm and hasattr(wm, "windows"):
+            for window in getattr(wm, "windows", []):
+                screen = getattr(window, "screen", None)
+                if not screen:
+                    continue
+                for area in getattr(screen, "areas", []):
+                    if getattr(area, "type", "") == "VIEW_3D":
+                        space_3d = getattr(area.spaces, "active", None)
+                        for reg in getattr(area, "regions", []):
+                            if getattr(reg, "type", "") == "WINDOW":
+                                region_3d = getattr(reg, "data", None)
+                                region = reg
+                                break
+                        break
+                if space_3d:
+                    break
+
+        _cam_pos, fov_v_rad, is_perspective = extract_viewport_camera_params(space_3d, region_3d, region, scene)
+
+        # 3. Apply distance evaluation per-asset
+        updates: list[dict[str, Any]] = []
+        for record in cls._tracked_assets.values():
+            if not record.is_valid:
+                continue
+
+            if is_perspective:
+                s_frac = record.radius / max(0.001, distance_m * math.tan(fov_v_rad / 2.0))
+                s_pct = min(100.0, max(0.01, s_frac * 100.0))
+            else:
+                s_frac = (2.0 * record.radius) / max(0.01, fov_v_rad)
+                s_pct = min(100.0, max(0.01, s_frac * 100.0))
+
+            target_tier = evaluate_lod_tier_index_pure(s_pct, record.tier_screen_pcts, current_tier=record.current_tier)
+            record.current_tier = target_tier
+
+            for tier_idx, objs in record.tier_objects.items():
+                is_active = tier_idx == target_tier
+                should_hide = not is_active
+                for obj in objs:
+                    if hasattr(obj, "hide_get") and obj.hide_get(view_layer=view_layer) != should_hide:
+                        obj.hide_set(should_hide, view_layer=view_layer)
+
+            active_objs = record.tier_objects.get(target_tier, [])
+            active_tris = sum(
+                len(o.data.polygons) for o in active_objs if hasattr(o, "data") and hasattr(o.data, "polygons")
+            )
+
+            updates.append(
+                {
+                    "root_name": record.root_name,
+                    "current_tier": target_tier,
+                    "distance_m": distance_m,
+                    "screen_pct": s_pct,
+                    "active_tris": active_tris,
+                }
+            )
+
+        if not updates:
+            return {}
+
+        # Resolve primary focus asset (active or selected object match)
+        primary = updates[0]
+        act_obj = getattr(context, "active_object", None)
+        if act_obj:
+            for up in updates:
+                rec = cls._tracked_assets.get(up["root_name"])
+                if rec and any(act_obj in objs for objs in rec.tier_objects.values()):
+                    primary = up
+                    break
+
+        return primary
+
+    @classmethod
+    def reset_distance_scrub(cls, context: Any) -> None:
+        """Restores exact pre-scrub visibility state from snapshot."""
+        if not bpy or not context:
+            return
+        view_layer = getattr(context, "view_layer", None)
+        if cls._visibility_snapshot:
+            for obj_name, was_hidden in cls._visibility_snapshot.items():
+                obj = bpy.data.objects.get(obj_name)
+                if obj and hasattr(obj, "hide_get") and obj.hide_get(view_layer=view_layer) != was_hidden:
+                    obj.hide_set(was_hidden, view_layer=view_layer)
+            cls._visibility_snapshot.clear()
+        else:
+            cls.restore_all_visibility(context)
+
     @classmethod
     def restore_all_visibility(cls, context: Any):
         if not bpy or not context:

@@ -65,7 +65,7 @@ from .pbr_ops import (
     LOD_OT_reset_pbr_preset,
     LOD_OT_save_export_preset,
 )
-from .simulator_ops import LOD_OT_toggle_simulator
+from .simulator_ops import LOD_OT_reset_virtual_distance, LOD_OT_toggle_simulator
 from .split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
 from .utils import (
     get_associated_armature,
@@ -94,6 +94,9 @@ OPERATOR_CLASSES = [
     *PRESET_OPERATOR_CLASSES,
     *CHUNK_OPERATOR_CLASSES,
     *EXPORT_OPS_CLASSES,
+    LOD_OT_toggle_simulator,
+    LOD_OT_reset_virtual_distance,
+    LOD_OT_toggle_split_preview,
 ]
 
 
@@ -150,6 +153,7 @@ __all__ = [
     "LOD_OT_add_lod_tier",
     "LOD_OT_remove_lod_tier",
     "LOD_OT_toggle_simulator",
+    "LOD_OT_reset_virtual_distance",
     "LOD_OT_toggle_split_preview",
     "LOD_OT_clean_and_repair_mesh",
     "LOD_OT_clean_and_repair_materials",

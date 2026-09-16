@@ -10,8 +10,8 @@ import os
 import tempfile
 import pytest
 
-from core.msfs_cst_parser import MSFSCSTParser
-from core.msfs_transforms import (
+from core.msfs.cst_parser import MSFSCSTParser
+from core.msfs.transforms import (
     FEET_TO_METERS,
     blender_to_msfs,
     format_coordinate_float,
