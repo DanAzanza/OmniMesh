@@ -67,9 +67,9 @@ PBR_IMPORT_AO_MODE_ITEMS: list[tuple[str, str, str]] = [
 
 IMPOSTOR_MODE_ITEMS: list[tuple[str, str, str]] = [
     (
-        "STAR_4_PLANES",
-        "4-Plane Star (* + Horizontal, 8 Faces)",
-        "Zero-shader universal standard for MSFS, standard glTF, and all game engines",
+        "ORTHO_3_AXES",
+        "3 Orthogonal Planes (XY, YZ, XZ, 6 Faces)",
+        "Zero-shader universal standard for MSFS, vehicles, standard glTF, and all game engines",
     ),
     (
         "OCTAHEDRAL_HEMI",

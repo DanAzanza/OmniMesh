@@ -42,10 +42,13 @@ def test_impostor_atlas_grid_layouts():
     assert len(cross_angles) == 2
     assert ImpostorAtlasBaker.get_grid_dimensions("CROSS_QUADS") == (2, 1)
 
-    # Star Quads (3 views, 2x2 grid)
+    # Star Quads & Ortho 3 Axes (3 views, 2x2 grid)
     star_angles = ImpostorAtlasBaker.get_view_angles_for_mode("STAR_QUADS")
     assert len(star_angles) == 3
     assert ImpostorAtlasBaker.get_grid_dimensions("STAR_QUADS") == (2, 2)
+    ortho_angles = ImpostorAtlasBaker.get_view_angles_for_mode("ORTHO_3_AXES")
+    assert len(ortho_angles) == 3
+    assert ImpostorAtlasBaker.get_grid_dimensions("ORTHO_3_AXES") == (2, 2)
 
     # Octahedral (64 views, 8x8 grid)
     octa_angles = ImpostorAtlasBaker.get_view_angles_for_mode("OCTAHEDRAL_HEMI")

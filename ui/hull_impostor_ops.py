@@ -21,6 +21,7 @@ try:
     from ..core.collision import CollisionManager
     from ..core.impostor import ImpostorManager
     from ..core.impostor_baker import ImpostorAtlasBaker
+    from ..exporters.shaders import export_companion_shaders
     from .utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -33,6 +34,7 @@ except (ImportError, ValueError):
     from core.collision import CollisionManager
     from core.impostor import ImpostorManager
     from core.impostor_baker import ImpostorAtlasBaker
+    from exporters.shaders import export_companion_shaders
     from ui.utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -130,10 +132,8 @@ class LOD_OT_generate_impostor(Operator):
             props.last_impostor_status = f"Generated {props.impostor_mode} in '{target_coll_name}'"
 
         # Automatically export engine companion shaders for octahedral impostors
-        if props.impostor_mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+        if props.impostor_mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"} and export_companion_shaders:
             try:
-                from exporters.shaders import export_companion_shaders
-
                 target_eng = getattr(props, "target_engine", "ALL")
                 shader_res = export_companion_shaders(
                     base_name=base_name,

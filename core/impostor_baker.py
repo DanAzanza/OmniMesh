@@ -314,8 +314,8 @@ class ImpostorAtlasBaker:
     def get_view_angles_for_mode(cls, mode: str) -> list[tuple[float, float, tuple[int, int]]]:
         angles: list[tuple[float, float, tuple[int, int]]] = []
 
-        if mode == "STAR_QUADS":
-            return [(0.0, 0.0, (0, 0)), (math.radians(60.0), 0.0, (1, 0)), (math.radians(120.0), 0.0, (0, 1))]
+        if mode in {"STAR_QUADS", "ORTHO_3_AXES"}:
+            return [(0.0, 0.0, (0, 0)), (math.radians(90.0), 0.0, (1, 0)), (0.0, math.radians(90.0), (0, 1))]
         if mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             return [(0.0, 0.0, (0, 0)), (math.radians(90.0), 0.0, (1, 0))]
 
@@ -335,7 +335,7 @@ class ImpostorAtlasBaker:
 
     @classmethod
     def get_grid_dimensions(cls, mode: str) -> tuple[int, int]:
-        if mode == "STAR_QUADS":
+        if mode in {"STAR_QUADS", "ORTHO_3_AXES"}:
             return 2, 2
         elif mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             return 8, 8
@@ -637,7 +637,8 @@ class ImpostorAtlasBaker:
 
         # Bake configuration
         scene.render.bake.use_selected_to_active = True
-        scene.render.bake.max_ray_distance = max(4.0, max_span * 1.5)
+        scene.render.bake.cage_extrusion = max(1.0, max_span * 1.0)
+        scene.render.bake.max_ray_distance = max(4.0, max_span * 2.5)
         scene.render.bake.margin = 4
         scene.render.bake.target = "IMAGE_TEXTURES"
 

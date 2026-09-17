@@ -190,7 +190,7 @@ def test_impostor_culling_pinning_preset_schema():
         "tiers": [{"name": "LOD0", "screen_size_pct": 100.0, "target_tris_pct": 100.0}],
         "impostor": {
             "enabled": True,
-            "mode": "STAR_4_PLANES",
+            "mode": "ORTHO_3_AXES",
             "resolution": "512",
             "replace_last_lod": True,
             "screen_size_pct": 2.0,
@@ -212,7 +212,7 @@ def test_impostor_culling_pinning_preset_schema():
 
     imp = val["impostor"]
     assert imp["enabled"] is True
-    assert imp["mode"] == "STAR_4_PLANES"
+    assert imp["mode"] == "ORTHO_3_AXES"
     assert imp["resolution"] == "512"
     assert imp["replace_last_lod"] is True
     assert imp["screen_size_pct"] == 2.0

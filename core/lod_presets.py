@@ -131,9 +131,9 @@ class LODPresetManager(BasePresetManager):
         imp_dict = raw_imp if isinstance(raw_imp, dict) else {}
         validated_imp = {
             "enabled": bool(imp_dict.get("enabled", False)),
-            "mode": str(imp_dict.get("mode", "STAR_4_PLANES"))
-            if imp_dict.get("mode") in {"STAR_4_PLANES", "OCTAHEDRAL_HEMI"}
-            else "STAR_4_PLANES",
+            "mode": str(imp_dict.get("mode", "ORTHO_3_AXES"))
+            if imp_dict.get("mode") in {"ORTHO_3_AXES", "OCTAHEDRAL_HEMI"}
+            else "ORTHO_3_AXES",
             "resolution": str(imp_dict.get("resolution", "2048"))
             if str(imp_dict.get("resolution")) in {"512", "1024", "2048", "4096"}
             else "2048",

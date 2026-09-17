@@ -303,17 +303,14 @@ class ImpostorMeshBuilder:
         bm = bmesh.new()
         uv_layer = bm.loops.layers.uv.new("UVMap")
 
-        # 4 Planes: 3 Vertical Star Planes at 60 deg intervals + 1 Horizontal Plane (8 faces total)
-        sqrt3_half = math.sqrt(3.0) * 0.5
+        # 3 Orthogonal Planes: XY (Horizontal), YZ (Longitudinal), XZ (Transverse) (6 faces total)
         plane_defs = [
-            # 1. 0 deg (Front/Back)
-            (Vector((1.0, 0.0, 0.0)), Vector((0.0, 0.0, 1.0)), Vector((0.0, -1.0, 0.0))),
-            # 2. 60 deg
-            (Vector((0.5, sqrt3_half, 0.0)), Vector((0.0, 0.0, 1.0)), Vector((sqrt3_half, -0.5, 0.0))),
-            # 3. 120 deg
-            (Vector((-0.5, sqrt3_half, 0.0)), Vector((0.0, 0.0, 1.0)), Vector((sqrt3_half, 0.5, 0.0))),
-            # 4. Horizontal (Top/Bottom)
+            # 1. XY Plane (Horizontal / Top & Bottom): spanning X and Y, normal along +Z
             (Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), Vector((0.0, 0.0, 1.0))),
+            # 2. YZ Plane (Vertical Longitudinal / Left & Right): spanning Y and Z, normal along +X
+            (Vector((0.0, 1.0, 0.0)), Vector((0.0, 0.0, 1.0)), Vector((1.0, 0.0, 0.0))),
+            # 3. XZ Plane (Vertical Transverse / Front & Rear): spanning X and Z, normal along -Y
+            (Vector((1.0, 0.0, 0.0)), Vector((0.0, 0.0, 1.0)), Vector((0.0, -1.0, 0.0))),
         ]
 
         pts = (
@@ -516,7 +513,12 @@ class ImpostorManager:
             except Exception as exc:
                 logger.debug("Could not set use_transparent_shadow: %s", exc)
         if hasattr(mat, "use_backface_culling"):
-            mat.use_backface_culling = not is_two_sided
+            mat.use_backface_culling = True
+        if hasattr(mat, "use_backface_culling_shadow"):
+            try:
+                mat.use_backface_culling_shadow = True
+            except Exception as exc:
+                logger.debug("Could not set use_backface_culling_shadow: %s", exc)
 
         nodes.clear()
 
@@ -625,7 +627,7 @@ class ImpostorManager:
         cls,
         mesh_objs: List[Any],
         base_name: str,
-        mode: str = "STAR_4_PLANES",
+        mode: str = "ORTHO_3_AXES",
         target_engine: str = "UE5",
         target_collection_name: str = "",
         atlas_resolution: int = 2048,
@@ -726,7 +728,7 @@ class ImpostorManager:
                     logger.debug("pack_islands skipped or failed: %s", pack_err)
 
             logger.info(
-                "Generated Impostor '%s' (6 planes, Bounds: %.2fm x %.2fm x %.2fm)",
+                "Generated Impostor '%s' (3 orthogonal planes, Bounds: %.2fm x %.2fm x %.2fm)",
                 impostor_name,
                 dim_x,
                 dim_y,

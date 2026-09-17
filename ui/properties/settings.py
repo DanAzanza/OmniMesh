@@ -272,7 +272,7 @@ class LODToolSettings(PropertyGroup):
     impostor_mode: EnumProperty(
         name="Impostor Mode",
         items=enums.IMPOSTOR_MODE_ITEMS,
-        default="STAR_4_PLANES",
+        default="ORTHO_3_AXES",
         description="Billboard geometry type and multi-angle projection layout",
         update=on_lod_preset_property_modified,
     )

@@ -91,7 +91,7 @@ def test_ui_properties_enums():
 
     # 3. Impostor mode structural contract
     impostor_ids = {item[0] for item in IMPOSTOR_MODE_ITEMS}
-    expected_impostors = {"STAR_4_PLANES", "OCTAHEDRAL_HEMI"}
+    expected_impostors = {"ORTHO_3_AXES", "OCTAHEDRAL_HEMI"}
     assert expected_impostors.issubset(impostor_ids), f"Missing impostor modes: {expected_impostors - impostor_ids}"
 
     # 4. Progression mode structural contract
