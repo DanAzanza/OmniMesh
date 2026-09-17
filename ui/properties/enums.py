@@ -67,24 +67,14 @@ PBR_IMPORT_AO_MODE_ITEMS: list[tuple[str, str, str]] = [
 
 IMPOSTOR_MODE_ITEMS: list[tuple[str, str, str]] = [
     (
-        "CROSS_QUADS",
-        "Cross-Quads (2-Plane '+', 4 Tris)",
-        "Universal zero-shader billboard standard for all engines (MSFS, UE5, Unity, Godot)",
-    ),
-    (
-        "STAR_QUADS",
-        "Star-Quads (3-Plane '*', 6 Tris)",
-        "High-fidelity 3D volume for dense trees and round props",
+        "STAR_4_PLANES",
+        "4-Plane Star (* + Horizontal, 8 Faces)",
+        "Zero-shader universal standard for MSFS, standard glTF, and all game engines",
     ),
     (
         "OCTAHEDRAL_HEMI",
-        "Octahedral (Upper Hemisphere)",
-        "1 Quad camera billboard with 8x8 / 12x12 upper-hemisphere atlas",
-    ),
-    (
-        "OCTAHEDRAL_SPHERE",
-        "Octahedral (Full Sphere)",
-        "1 Quad camera billboard with 8x8 / 12x12 full 360 degree sphere atlas",
+        "Octahedral Impostor (1 Quad, 64 Views)",
+        "Modern AAA standard with companion shaders for Unreal Engine 5, Unity, and Godot 4",
     ),
 ]
 

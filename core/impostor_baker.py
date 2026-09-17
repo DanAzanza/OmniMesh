@@ -46,6 +46,23 @@ except ImportError:
         def z(self) -> float:
             return self[2]
 
+        def __add__(self, o: Any) -> Vector:
+            return Vector((self[0] + o[0], self[1] + o[1], self[2] + o[2]))
+
+        def __sub__(self, o: Any) -> Vector:
+            return Vector((self[0] - o[0], self[1] - o[1], self[2] - o[2]))
+
+        def __mul__(self, scalar: Any) -> Vector:
+            s = float(scalar)
+            return Vector((self[0] * s, self[1] * s, self[2] * s))
+
+        def __rmul__(self, scalar: Any) -> Vector:
+            s = float(scalar)
+            return Vector((self[0] * s, self[1] * s, self[2] * s))
+
+        def __neg__(self) -> Vector:
+            return Vector((-self[0], -self[1], -self[2]))
+
 
 try:
     from .impostor import ImpostorMath
@@ -80,16 +97,22 @@ class EphemeralBakeSceneGuard:
         render.film_transparent = True
         render.dither_intensity = 0.0
 
-        # Prefer EEVEE-Next or fallback cleanly
-        if hasattr(self.bake_scene, "eevee"):
-            self.bake_scene.render.engine = "BLENDER_EEVEE_NEXT"
-            if hasattr(self.bake_scene.eevee, "taa_render_samples"):
-                self.bake_scene.eevee.taa_render_samples = 1
-        elif "CYCLES" in [e.identifier for e in bpy.types.RenderEngine.bl_rna.properties["engine"].enum_items]:
-            self.bake_scene.render.engine = "CYCLES"
-            if hasattr(self.bake_scene, "cycles"):
-                self.bake_scene.cycles.samples = 1
-                self.bake_scene.cycles.max_bounces = 0
+        # Prefer EEVEE (or EEVEE-Next in 4.2) or Cycles fallback
+        avail_engines = set()
+        try:
+            avail_engines = {e.identifier for e in bpy.types.RenderEngine.bl_rna.properties["engine"].enum_items}
+        except Exception as exc:
+            logger.debug("Failed querying render engines: %s", exc)
+
+        for eng in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES"):
+            if eng in avail_engines:
+                self.bake_scene.render.engine = eng
+                if hasattr(self.bake_scene, "eevee") and hasattr(self.bake_scene.eevee, "taa_render_samples"):
+                    self.bake_scene.eevee.taa_render_samples = 1
+                elif eng == "CYCLES" and hasattr(self.bake_scene, "cycles"):
+                    self.bake_scene.cycles.samples = 1
+                    self.bake_scene.cycles.max_bounces = 0
+                break
 
         # Black unlit world background
         world = bpy.data.worlds.new(f"{self.temp_scene_name}_World")
@@ -167,21 +190,10 @@ class ImpostorCameraRig:
         else:
             cam_obj = scene.camera
 
-        cos_p = math.cos(pitch_rad)
-        sin_p = math.sin(pitch_rad)
-        sin_a = math.sin(angle_rad)
-        cos_a = math.cos(angle_rad)
-
-        offset_x = dist * cos_p * sin_a
-        offset_y = -dist * cos_p * cos_a
-        offset_z = dist * sin_p
-
-        cx = float(center[0])
-        cy = float(center[1])
-        cz = float(center[2])
-
-        cam_obj.location = Vector((cx + offset_x, cy + offset_y, cz + offset_z))
-        dir_vec = Vector((cx - cam_obj.location.x, cy - cam_obj.location.y, cz - cam_obj.location.z))
+        cp = math.cos(pitch_rad)
+        offset = Vector((dist * cp * math.sin(angle_rad), -dist * cp * math.cos(angle_rad), dist * math.sin(pitch_rad)))
+        cam_obj.location = Vector(center) + offset
+        dir_vec = Vector(center) - Vector(cam_obj.location)
         if dir_vec.length > 1e-6:
             rot_quat = dir_vec.to_track_quat("-Z", "Y")
             cam_obj.rotation_euler = rot_quat.to_euler()
@@ -303,28 +315,22 @@ class ImpostorAtlasBaker:
         angles: list[tuple[float, float, tuple[int, int]]] = []
 
         if mode == "STAR_QUADS":
-            steps = [0.0, math.radians(60.0), math.radians(120.0)]
-            coords = [(0, 0), (1, 0), (0, 1)]
-            for i in range(3):
-                angles.append((steps[i], 0.0, coords[i]))
-        elif mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
-            grid_n = 8
-            for row in range(grid_n):
-                for col in range(grid_n):
-                    u = (col + 0.5) / float(grid_n)
-                    v = (row + 0.5) / float(grid_n)
-                    if mode == "OCTAHEDRAL_HEMI":
-                        vec = ImpostorMath.hemi_octahedral_to_vector(u, v)
-                    else:
-                        vec = ImpostorMath.full_octahedral_to_vector(u, v)
-                    length_xy = math.sqrt(vec[0] * vec[0] + vec[1] * vec[1])
-                    azimuth = math.atan2(vec[0], -vec[1])
-                    pitch = math.atan2(vec[2], max(1e-6, length_xy))
-                    angles.append((azimuth, pitch, (col, row)))
-        else:
-            angles.append((0.0, 0.0, (0, 0)))
-            angles.append((math.radians(90.0), 0.0, (1, 0)))
+            return [(0.0, 0.0, (0, 0)), (math.radians(60.0), 0.0, (1, 0)), (math.radians(120.0), 0.0, (0, 1))]
+        if mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+            return [(0.0, 0.0, (0, 0)), (math.radians(90.0), 0.0, (1, 0))]
 
+        grid_n = 8
+        fn = (
+            ImpostorMath.hemi_octahedral_to_vector
+            if mode == "OCTAHEDRAL_HEMI"
+            else ImpostorMath.full_octahedral_to_vector
+        )
+        for row in range(grid_n):
+            for col in range(grid_n):
+                vec = fn((col + 0.5) / float(grid_n), (row + 0.5) / float(grid_n))
+                angles.append(
+                    (math.atan2(vec[0], -vec[1]), math.atan2(vec[2], max(1e-6, math.hypot(vec[0], vec[1]))), (col, row))
+                )
         return angles
 
     @classmethod
@@ -366,27 +372,235 @@ class ImpostorAtlasBaker:
         return atlas
 
     @classmethod
+    def configure_cycles_compute_device(cls, scene: Any) -> tuple[str, list[str]]:
+        """
+        Automatically probes and configures the optimal compute device for Cycles baking.
+        Supports NVIDIA (OptiX, CUDA), Apple Silicon (Metal), AMD (HIP), Intel (oneAPI),
+        and safely falls back to CPU if no compatible GPU hardware is detected.
+        """
+        if not bpy:
+            return "CPU", ["CPU"]
+
+        backend_priority = ["OPTIX", "METAL", "HIP", "ONEAPI", "CUDA"]
+        try:
+            cycles_addon = bpy.context.preferences.addons.get("cycles")
+            if cycles_addon and hasattr(cycles_addon, "preferences"):
+                cpref = cycles_addon.preferences
+                avail = (
+                    {item[0] for item in cpref.get_device_types(bpy.context)}
+                    if hasattr(cpref, "get_device_types")
+                    else set()
+                )
+                for backend in backend_priority:
+                    if backend in avail:
+                        try:
+                            cpref.compute_device_type = backend
+                            if hasattr(cpref, "get_devices"):
+                                cpref.get_devices()
+                            active_devs = [
+                                d for d in getattr(cpref, "devices", []) if getattr(d, "type", "") == backend
+                            ]
+                            if active_devs:
+                                for d in active_devs:
+                                    d.use = True
+                                if hasattr(scene, "cycles"):
+                                    scene.cycles.device = "GPU"
+                                dev_names = [getattr(d, "name", backend) for d in active_devs]
+                                logger.info("Configured Cycles GPU baking: %s (%s)", backend, ", ".join(dev_names))
+                                return backend, dev_names
+                        except Exception as b_err:
+                            logger.debug("Cycles backend %s failed: %s", backend, b_err)
+                if hasattr(cpref, "compute_device_type"):
+                    cpref.compute_device_type = "NONE"
+        except Exception as exc:
+            logger.debug("Failed configuring Cycles compute device: %s", exc)
+
+        if hasattr(scene, "cycles"):
+            scene.cycles.device = "CPU"
+        return "CPU", ["CPU"]
+
+    @classmethod
+    def bake_octahedral_animation_atlas(
+        cls,
+        mesh_objs: list[Any],
+        base_name: str,
+        output_dir: str,
+        atlas_resolution: int = 2048,
+        target_engine: str = "UE5",
+        dilation_iterations: int = 4,
+        grid_size: int = 8,
+    ) -> dict[str, str]:
+        """
+        Bakes an 8x8 (64-view) Octahedral Impostor atlas using an ephemeral animation timeline render.
+        Camera orbits across frames 1..64 capturing BaseColor, Tangent Normal, and ORM passes.
+        Applies tile-local morphological dilation and composites into final atlas textures.
+        """
+        if not bpy or not mesh_objs:
+            return {}
+
+        import tempfile
+
+        os.makedirs(output_dir, exist_ok=True)
+        results: dict[str, str] = {}
+
+        all_coords: list[Any] = []
+        for obj in mesh_objs:
+            if hasattr(obj, "bound_box") and obj.bound_box:
+                all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
+            elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
+                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
+
+        if not all_coords:
+            all_coords = [Vector((-1.0, -1.0, -1.0)), Vector((1.0, 1.0, 1.0))]
+
+        center, radius, ortho_scale = ImpostorCameraRig.compute_rig_parameters(all_coords)
+        tile_res = max(32, atlas_resolution // grid_size)
+        total_frames = grid_size * grid_size
+
+        with EphemeralBakeSceneGuard() as bake_scene:
+            if not bake_scene:
+                return {}
+
+            for obj in mesh_objs:
+                if obj.name not in bake_scene.collection.objects:
+                    bake_scene.collection.objects.link(obj)
+
+            cam_obj = ImpostorCameraRig.setup_camera(
+                bake_scene, center, radius, ortho_scale, angle_rad=0.0, pitch_rad=0.0
+            )
+
+            # Keyframe camera orbit across frames 1..total_frames
+            for frame_idx in range(1, total_frames + 1):
+                col = (frame_idx - 1) % grid_size
+                row = (frame_idx - 1) // grid_size
+                u = (col + 0.5) / float(grid_size)
+                v = (row + 0.5) / float(grid_size)
+
+                dir_vec = ImpostorMath.hemi_octahedral_to_vector(u, v)
+                dist = radius * 2.5
+                cam_pos = Vector(center) + Vector(dir_vec) * dist
+                cam_obj.location = cam_pos
+
+                right, up, forward = ImpostorMath.compute_camera_basis(dir_vec)
+                rot_mat = Matrix((right, up, -forward)).transposed()
+                cam_obj.rotation_euler = rot_mat.to_euler()
+
+                cam_obj.keyframe_insert(data_path="location", frame=frame_idx)
+                cam_obj.keyframe_insert(data_path="rotation_euler", frame=frame_idx)
+
+            bake_scene.render.resolution_x = tile_res
+            bake_scene.render.resolution_y = tile_res
+            bake_scene.render.resolution_percentage = 100
+            bake_scene.frame_start = 1
+            bake_scene.frame_end = total_frames
+
+            channels = [
+                ("BaseColor", "BASE_COLOR", f"T_{base_name}_Impostor_BaseColor.png"),
+                ("Normal", "NORMAL", f"T_{base_name}_Impostor_Normal.png"),
+                ("ORM", "ORM", f"T_{base_name}_Impostor_ORM.png"),
+            ]
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                for chan_name, harness_layer, out_fname in channels:
+                    orig_materials: list[tuple[Any, list[Any]]] = []
+                    for obj in mesh_objs:
+                        if hasattr(obj, "data") and hasattr(obj.data, "materials"):
+                            mats = list(obj.data.materials)
+                            orig_materials.append((obj, mats))
+                            override_mats = [
+                                ImpostorShaderHarness.create_unlit_override_material(
+                                    m, channel_layer=harness_layer, target_engine=target_engine
+                                )
+                                for m in mats
+                            ]
+                            obj.data.materials.clear()
+                            for ov_m in override_mats:
+                                if ov_m:
+                                    obj.data.materials.append(ov_m)
+
+                    try:
+                        chan_prefix = os.path.join(temp_dir, f"{chan_name}_")
+                        bake_scene.render.filepath = chan_prefix
+                        bake_scene.render.image_settings.file_format = "PNG"
+                        bake_scene.render.image_settings.color_mode = "RGBA"
+
+                        bpy.ops.render.render(animation=True, scene=bake_scene.name)
+
+                        tiles = []
+                        for frame_idx in range(1, total_frames + 1):
+                            col = (frame_idx - 1) % grid_size
+                            row = (frame_idx - 1) // grid_size
+                            frame_file = f"{chan_prefix}{frame_idx:04d}.png"
+                            if os.path.exists(frame_file):
+                                img = bpy.data.images.load(frame_file)
+                                w, h = img.size
+                                arr = np.empty(w * h * 4, dtype=np.float32)
+                                img.pixels.foreach_get(arr)
+                                bpy.data.images.remove(img, do_unlink=True)
+                                tile_u8 = (arr.reshape((h, w, 4)) * 255.0 + 0.5).clip(0, 255).astype(np.uint8)
+                                tiles.append((tile_u8, (col, row)))
+
+                        dil_iter = dilation_iterations if chan_name != "ORM" else 0
+                        atlas_u8 = cls.compose_atlas_array(
+                            tiles,
+                            grid_cols=grid_size,
+                            grid_rows=grid_size,
+                            tile_w=tile_res,
+                            tile_h=tile_res,
+                            dilation_iterations=dil_iter,
+                        )
+
+                        out_path = os.path.join(output_dir, out_fname)
+                        write_png_direct(out_path, atlas_u8)
+                        results[chan_name] = out_path
+                    finally:
+                        for obj, mats in orig_materials:
+                            if hasattr(obj, "data") and hasattr(obj.data, "materials"):
+                                obj.data.materials.clear()
+                                for m in mats:
+                                    obj.data.materials.append(m)
+
+        return results
+
+    @classmethod
     def bake_impostor_textures(
         cls,
         mesh_objs: list[Any],
         base_name: str,
         output_dir: str,
-        mode: str = "CROSS_QUADS",
+        mode: str = "14_PLANES",
         atlas_resolution: int = 2048,
         target_engine: str = "UE5",
         dilation_iterations: int = 4,
+        impostor_obj: Optional[Any] = None,
     ) -> dict[str, str]:
+        """
+        Bakes BaseColor, Tangent Normal, and ORM (AO/Roughness/Metallic) maps using Cycles Selected-to-Active
+        or 64-frame animation timeline rendering for Octahedral Impostors.
+        """
         if not bpy or not mesh_objs:
             return {}
+
+        if mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+            return cls.bake_octahedral_animation_atlas(
+                mesh_objs=mesh_objs,
+                base_name=base_name,
+                output_dir=output_dir,
+                atlas_resolution=atlas_resolution,
+                target_engine=target_engine,
+                dilation_iterations=dilation_iterations,
+                grid_size=8,
+            )
 
         os.makedirs(output_dir, exist_ok=True)
         results: dict[str, str] = {}
 
-        grid_cols, grid_rows = cls.get_grid_dimensions(mode)
-        tile_w = atlas_resolution // grid_cols
-        tile_h = atlas_resolution // grid_rows
-        view_angles = cls.get_view_angles_for_mode(mode)
+        target_impostor = impostor_obj or bpy.data.objects.get(f"{base_name}_LOD_Impostor")
+        if not target_impostor:
+            logger.warning("No target impostor object found for baking '%s'", base_name)
+            return {}
 
+        # Calculate bounding dimensions to set ray cast distance
         all_coords = []
         for obj in mesh_objs:
             if hasattr(obj, "bound_box") and obj.bound_box:
@@ -394,111 +608,132 @@ class ImpostorAtlasBaker:
             elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
                 all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
 
-        center, radius, ortho_scale = ImpostorCameraRig.compute_rig_parameters(all_coords)
+        max_span = max((max(c[i] for c in all_coords) - min(c[i] for c in all_coords) for i in range(3)), default=4.0)
 
-        with EphemeralBakeSceneGuard() as bake_scene:
-            if not bake_scene:
-                return {}
+        scene = bpy.context.scene
+        orig_engine = scene.render.engine
+        scene.render.engine = "CYCLES"
 
-            for obj in mesh_objs:
-                bake_scene.collection.objects.link(obj)
+        # Automatically probe and configure best compute device (NVIDIA OptiX/CUDA, Apple Metal, AMD HIP, Intel oneAPI, or CPU)
+        cls.configure_cycles_compute_device(scene)
 
-            render = bake_scene.render
-            render.resolution_x = tile_w
-            render.resolution_y = tile_h
-            render.resolution_percentage = 100
+        scene.cycles.samples = 16
+        scene.cycles.use_denoising = True
+        scene.render.film_transparent = True
 
-            tmp_render_path = os.path.join(output_dir, f"__om_impostor_tmp_{base_name}.png")
+        # Ensure objects are visible in view layer
+        orig_vis: list[tuple[Any, bool]] = []
+        for o in mesh_objs + [target_impostor]:
+            if hasattr(o, "hide_viewport"):
+                orig_vis.append((o, o.hide_viewport))
+                o.hide_viewport = False
 
-            src_mat = None
-            for obj in mesh_objs:
-                if hasattr(obj, "data") and hasattr(obj.data, "materials") and obj.data.materials:
-                    src_mat = obj.data.materials[0]
-                    if src_mat:
-                        break
+        # Prepare selection
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in mesh_objs:
+            o.select_set(True)
+        target_impostor.select_set(True)
+        bpy.context.view_layer.objects.active = target_impostor
 
-            mat_base = ImpostorShaderHarness.create_unlit_override_material(
-                src_mat, channel_layer="BASE_COLOR", target_engine=target_engine
-            )
-            mat_norm = ImpostorShaderHarness.create_unlit_override_material(
-                src_mat, channel_layer="NORMAL", target_engine=target_engine
-            )
-            mat_orm = ImpostorShaderHarness.create_unlit_override_material(
-                src_mat, channel_layer="ORM", target_engine=target_engine
-            )
+        # Bake configuration
+        scene.render.bake.use_selected_to_active = True
+        scene.render.bake.max_ray_distance = max(4.0, max_span * 1.5)
+        scene.render.bake.margin = 4
+        scene.render.bake.target = "IMAGE_TEXTURES"
 
-            created_override_mats = [m for m in (mat_base, mat_norm, mat_orm) if m]
+        # Create temporary bake images
+        res = atlas_resolution
+        img_diff = bpy.data.images.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
+        img_diff.colorspace_settings.name = "sRGB"
+        img_diff.generated_color = (0.0, 0.0, 0.0, 0.0)
 
-            vl = bake_scene.view_layers[0] if (hasattr(bake_scene, "view_layers") and bake_scene.view_layers) else None
+        img_norm = bpy.data.images.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
+        img_norm.colorspace_settings.name = "Non-Color"
+        img_norm.generated_color = (0.5, 0.5, 1.0, 0.0)
 
-            def _render_channel_pass(
-                override_mat: Optional[Any],
-            ) -> list[tuple[np.ndarray, tuple[int, int]]]:
-                tiles: list[tuple[np.ndarray, tuple[int, int]]] = []
-                if vl:
-                    vl.material_override = override_mat
+        img_rough = bpy.data.images.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
+        img_rough.colorspace_settings.name = "Non-Color"
 
-                for azimuth, pitch, (c_col, c_row) in view_angles:
-                    ImpostorCameraRig.setup_camera(
-                        bake_scene, center, radius, ortho_scale, angle_rad=azimuth, pitch_rad=pitch
-                    )
-                    render.filepath = tmp_render_path
-                    try:
-                        bpy.ops.render.render(write_still=True, scene=bake_scene.name)
-                        if os.path.exists(tmp_render_path):
-                            tmp_img = bpy.data.images.load(tmp_render_path)
-                            raw_floats = np.empty(tile_h * tile_w * 4, dtype=np.float32)
-                            tmp_img.pixels.foreach_get(raw_floats)
-                            tile_pixels = raw_floats.reshape((tile_h, tile_w, 4))
-                            bpy.data.images.remove(tmp_img, do_unlink=True)
+        img_ao = bpy.data.images.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
+        img_ao.colorspace_settings.name = "Non-Color"
 
-                            uint8_tile = (np.clip(tile_pixels, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
-                            tiles.append((uint8_tile, (c_col, c_row)))
-                    except Exception as exc:
-                        logger.debug("Render pass exception on angle %.2f: %s", azimuth, exc)
-                return tiles
+        mat = (
+            target_impostor.data.materials[0]
+            if (hasattr(target_impostor.data, "materials") and target_impostor.data.materials)
+            else None
+        )
+        if not mat:
+            mat = bpy.data.materials.new(name=f"M_{base_name}_Impostor")
+            target_impostor.data.materials.append(mat)
 
-            try:
-                base_color_tiles = _render_channel_pass(mat_base)
-                normal_tiles = _render_channel_pass(mat_norm)
-                orm_tiles = _render_channel_pass(mat_orm)
-            finally:
-                if vl:
-                    vl.material_override = None
-                for m in created_override_mats:
-                    try:
-                        bpy.data.materials.remove(m, do_unlink=True)
-                    except Exception as exc:
-                        logger.debug("Failed unlinking temporary bake material: %s", exc)
-                if os.path.exists(tmp_render_path):
-                    try:
-                        os.remove(tmp_render_path)
-                    except OSError as exc:
-                        logger.debug("Failed removing temp render file: %s", exc)
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        bake_slot = nodes.new("ShaderNodeTexImage")
+        nodes.active = bake_slot
 
-        if base_color_tiles:
-            base_atlas = cls.compose_atlas_array(
-                base_color_tiles, grid_cols, grid_rows, tile_w, tile_h, dilation_iterations=dilation_iterations
-            )
+        try:
+            # 1. Bake BaseColor (Diffuse Color pass)
+            bake_slot.image = img_diff
+            scene.render.bake.use_pass_direct = False
+            scene.render.bake.use_pass_indirect = False
+            scene.render.bake.use_pass_color = True
+            bpy.ops.object.bake(type="DIFFUSE")
             base_path = os.path.join(output_dir, f"T_{base_name}_Impostor_BaseColor.png")
-            write_png_direct(base_path, base_atlas, bit_depth=8)
+            img_diff.filepath_raw = base_path
+            img_diff.file_format = "PNG"
+            img_diff.save()
             results["BaseColor"] = base_path
 
-        if normal_tiles:
-            norm_atlas = cls.compose_atlas_array(
-                normal_tiles, grid_cols, grid_rows, tile_w, tile_h, dilation_iterations=dilation_iterations
-            )
+            # 2. Bake Tangent Normal
+            bake_slot.image = img_norm
+            scene.render.bake.normal_space = "TANGENT"
+            bpy.ops.object.bake(type="NORMAL")
             norm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_Normal.png")
-            write_png_direct(norm_path, norm_atlas, bit_depth=8)
+            img_norm.filepath_raw = norm_path
+            img_norm.file_format = "PNG"
+            img_norm.save()
             results["Normal"] = norm_path
 
-        if orm_tiles:
-            orm_atlas = cls.compose_atlas_array(
-                orm_tiles, grid_cols, grid_rows, tile_w, tile_h, dilation_iterations=dilation_iterations
-            )
+            # 3. Bake Roughness
+            bake_slot.image = img_rough
+            bpy.ops.object.bake(type="ROUGHNESS")
+
+            # 4. Bake AO
+            bake_slot.image = img_ao
+            bpy.ops.object.bake(type="AO")
+
+            # 5. Pack ORM (AO=Red, Roughness=Green, Metallic=Blue, Alpha=Alpha)
+            base_pix, rough_pix, ao_pix = (np.empty(res * res * 4, dtype=np.float32) for _ in range(3))
+            img_diff.pixels.foreach_get(base_pix)
+            img_rough.pixels.foreach_get(rough_pix)
+            img_ao.pixels.foreach_get(ao_pix)
+
+            orm_pix = np.zeros((res, res, 4), dtype=np.float32)
+            orm_pix[:, :, 0] = ao_pix.reshape((res, res, 4))[:, :, 0]
+            orm_pix[:, :, 1] = rough_pix.reshape((res, res, 4))[:, :, 0]
+            orm_pix[:, :, 3] = base_pix.reshape((res, res, 4))[:, :, 3]
+
+            img_orm = bpy.data.images.new(f"__om_orm_{base_name}", width=res, height=res, alpha=True)
+            img_orm.colorspace_settings.name = "Non-Color"
+            img_orm.pixels.foreach_set(orm_pix.flatten())
             orm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_ORM.png")
-            write_png_direct(orm_path, orm_atlas, bit_depth=8)
+            img_orm.filepath_raw = orm_path
+            img_orm.file_format = "PNG"
+            img_orm.save()
             results["ORM"] = orm_path
+
+            bpy.data.images.remove(img_orm, do_unlink=True)
+        finally:
+            nodes.remove(bake_slot)
+            for temp_img in [img_diff, img_norm, img_rough, img_ao]:
+                try:
+                    bpy.data.images.remove(temp_img, do_unlink=True)
+                except Exception as exc:
+                    logger.debug("Failed removing temp image: %s", exc)
+            for o, vis in orig_vis:
+                if hasattr(o, "hide_viewport"):
+                    o.hide_viewport = vis
+            scene.render.engine = orig_engine
 
         return results
 

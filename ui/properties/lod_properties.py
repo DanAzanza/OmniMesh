@@ -267,7 +267,8 @@ def sync_preset_tiers_from_preset(props: Any, preset: dict[str, Any]) -> None:
             if hasattr(props, "enable_impostor_lod"):
                 props.enable_impostor_lod = bool(imp_cfg.get("enabled", False))
             if hasattr(props, "impostor_mode"):
-                props.impostor_mode = str(imp_cfg.get("mode", "CROSS_QUADS"))
+                mode_val = str(imp_cfg.get("mode", "STAR_4_PLANES"))
+                props.impostor_mode = "OCTAHEDRAL_HEMI" if "OCTA" in mode_val else "STAR_4_PLANES"
             if hasattr(props, "impostor_resolution"):
                 props.impostor_resolution = str(imp_cfg.get("resolution", "2048"))
             if hasattr(props, "impostor_replace_last_lod"):

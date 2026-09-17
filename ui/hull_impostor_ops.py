@@ -103,7 +103,7 @@ class LOD_OT_generate_impostor(Operator):
             export_dir = os.path.abspath(export_dir)
         tex_dir = os.path.join(export_dir, "Textures") if not export_dir.endswith("Textures") else export_dir
 
-        # Execute unlit multi-angle baking pass
+        # Execute Cycles GPU selected-to-active baking pass
         baked_maps = ImpostorAtlasBaker.bake_impostor_textures(
             mesh_objs,
             base_name,
@@ -112,6 +112,7 @@ class LOD_OT_generate_impostor(Operator):
             atlas_resolution=calc_res,
             target_engine=getattr(props, "target_engine", "UE5"),
             dilation_iterations=4,
+            impostor_obj=res,
         )
 
         if baked_maps and hasattr(res, "data") and res.data.materials:
@@ -127,6 +128,24 @@ class LOD_OT_generate_impostor(Operator):
             )
         else:
             props.last_impostor_status = f"Generated {props.impostor_mode} in '{target_coll_name}'"
+
+        # Automatically export engine companion shaders for octahedral impostors
+        if props.impostor_mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+            try:
+                from exporters.shaders import export_companion_shaders
+
+                target_eng = getattr(props, "target_engine", "ALL")
+                shader_res = export_companion_shaders(
+                    base_name=base_name,
+                    output_dir=tex_dir,
+                    target_engine=target_eng,
+                    grid_size=8,
+                    alpha_scissor=0.5,
+                )
+                if shader_res:
+                    props.last_impostor_status += f" (+{len(shader_res)} Shaders)"
+            except Exception as sh_err:
+                logger.debug("Failed exporting companion shaders: %s", sh_err)
 
         safe_report(self, {"INFO"}, props.last_impostor_status)
         return {"FINISHED"}

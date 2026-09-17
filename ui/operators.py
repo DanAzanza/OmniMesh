@@ -65,6 +65,7 @@ from .pbr_ops import (
     LOD_OT_reset_pbr_preset,
     LOD_OT_save_export_preset,
 )
+from .batch_modal_ops import LOD_OT_batch_generate_modal
 from .simulator_ops import LOD_OT_reset_virtual_distance, LOD_OT_toggle_simulator
 from .split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
 from .utils import (
@@ -94,6 +95,7 @@ OPERATOR_CLASSES = [
     *PRESET_OPERATOR_CLASSES,
     *CHUNK_OPERATOR_CLASSES,
     *EXPORT_OPS_CLASSES,
+    LOD_OT_batch_generate_modal,
     LOD_OT_toggle_simulator,
     LOD_OT_reset_virtual_distance,
     LOD_OT_toggle_split_preview,

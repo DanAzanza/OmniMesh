@@ -87,6 +87,7 @@ except ImportError:
             return Vector((self[0] / float(scalar), self[1] / float(scalar), self[2] / float(scalar)))
 
 
+from .metrics import compute_bounding_sphere
 from .sanitizer import MeshSanitizer
 
 
@@ -279,7 +280,7 @@ class HardenedOcclusionCuller:
             return {"culled_faces": 0, "culled_islands": 0}
 
         # 4. Compute Bounding Sphere
-        center, radius = cls._compute_bounding_sphere(bm)
+        center, radius = compute_bounding_sphere([v.co for v in bm.verts])
         if radius < 1e-6:
             return {"culled_faces": 0, "culled_islands": 0}
 

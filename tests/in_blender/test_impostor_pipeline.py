@@ -118,8 +118,8 @@ class TestImpostorPipeline(unittest.TestCase):
             imp_obj = target_coll.objects.get("SM_OctaTree_LOD_Impostor")
             self.assertIsNotNone(imp_obj)
             self.assertEqual(imp_obj.get("_impostor_mode", ""), "OCTAHEDRAL_HEMI")
-            self.assertEqual(len(imp_obj.data.vertices), 4, "Single quad card must have exactly 4 vertices.")
-            self.assertEqual(len(imp_obj.data.polygons), 1, "Single quad card must have exactly 1 polygon face.")
+            self.assertEqual(len(imp_obj.data.vertices), 8, "Cutout octagon card must have exactly 8 vertices.")
+            self.assertEqual(len(imp_obj.data.polygons), 1, "Cutout octagon card must have exactly 1 polygon face.")
 
     def test_impostor_material_engine_routing(self) -> None:
         """Verify engine-specific shader tree wiring (UE5 vs Unity 6 MaskMap inversion)."""
