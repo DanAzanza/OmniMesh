@@ -170,3 +170,32 @@
 * **UE5 LodGroup Multi-Mesh Invariant**: In Unreal Engine 5 FBX export, parenting multiple chunk meshes per tier directly under an `fbx_type="LodGroup"` empty causes UE5 to interpret every child mesh as a distinct sequential LOD level (creating dozens of single-chunk LODs). If any tier in `payload.lod_tiers` contains $> 1$ mesh, single `LodGroup` empty parenting must be bypassed.
 * **Normalized Stride-2 Recursive Reduction**: In recursive pairwise / quadtree downsampling, hierarchical clustering from tier $T-1$ to $T$ must apply normalized stride 2 relative to the previous level ($cx = ix // 2, cy = iy // 2$), preventing exponential over-stride bugs.
 * **Non-UI Depsgraph Voxel Remeshing**: In headless CI environments and background workers, invoking `REMESH` operators via `bpy.ops.object.modifier_apply` throws `RuntimeError: Operator poll() failed, context is incorrect`. Terminal voxel proxy wraps must evaluate modifiers through `depsgraph = context.evaluated_depsgraph_get()` and `bpy.data.meshes.new_from_object(eval_obj)` with voxel dimensions clamped to prevent Out-Of-Memory freezes.
+
+---
+
+## 5. Impostor Systems & Atlas Baking Pipeline Invariants
+
+### 5.1 Normal Baking: MikkTSpace Receiver Trap vs. Ephemeral Animation Timeline
+* **The MikkTSpace Tangent Discontinuity Trap**: Attempting to bake an octahedral atlas in a single Cycles pass by arranging tilted receiver quads on a hemisphere sphere fails mathematically. In Blender Cycles, `bpy.ops.object.bake(type="NORMAL", normal_space="TANGENT")` evaluates normals in the receiver's local MikkTSpace basis $(T, B, N)$. MikkTSpace derives tangents from local UV coordinates and vertex normals; on curved or tilted quads, microscopic numerical discrepancies introduce a rotational phase shift in the tangent frame, causing specular highlights to spin unnaturally when sampled by game engine companion shaders. Furthermore, Selected-to-Active raycasting lacks depth rasterization, leading to backface ray penetration through hollow or porous meshes, and suffers from uncontrollable cross-tile margin bleeding.
+* **Invariant (64-Frame Ephemeral Animation Render)**: Orbiting an orthographic camera across frames 1..64 in an isolated unlit `EphemeralBakeSceneGuard` (`bpy.ops.render.render(animation=True)`) guarantees mathematically pure camera-space tangent normals where surface-facing geometry is neutral $(0.5, 0.5, 1.0)$, enforces true depth occlusion without backface leakage, supports metallic channel extraction without material pollution, and enables vectorized per-tile morphological dilation (`morphological_dilate_rgb`) prior to atlas compositing.
+
+### 5.2 Cycles GPU Compute Device Detection Lifecycle (Blender 5.0+)
+* **`cpref.get_devices()` Refresh Requirement**: In Blender 5.0+ and 5.2 LTS, querying `cpref.get_device_types(bpy.context)` returns supported platform backends (`OPTIX`, `CUDA`, `HIP`, `ONEAPI`, `METAL`), but assigning `cpref.compute_device_type = backend` does NOT automatically refresh the device list in `cpref.devices`. Attempting to iterate `cpref.devices` immediately after assigning `compute_device_type` finds an empty or stale list.
+* **Invariant**: `cpref.get_devices()` MUST be explicitly invoked after setting `cpref.compute_device_type` to force Blender's C++ core to enumerate the physical GPU adapters before setting `d.use = True`.
+
+### 5.3 Octahedral Coordinate Singularity & Gimbal Lock
+* **Zenith Pole Singularity**: In upper-hemisphere octahedral mapping ($u=0.5, v=0.5$), the direction vector points directly at the zenith pole $D = (0, 0, 1)$. Using naive camera tracking (`dir.to_track_quat("-Z", "Y")` or $\vec{n} \times (0, 0, 1)$) collapses into a degenerate zero vector, causing severe gimbal lock and $180^\circ$ highlight flipping at the top of the asset.
+* **Invariant**: The camera coordinate basis must dynamically switch its reference up-vector:
+  $$\text{Forward} = -D$$
+  $$\text{Up}_{\text{ref}} = \begin{cases} (0, 0, 1) & \text{if } |\text{Forward}_z| < 0.999 \\ (0, 1, 0) & \text{if } |\text{Forward}_z| \ge 0.999 \end{cases}$$
+  $$\text{Right} = \text{normalize}(\text{Up}_{\text{ref}} \times (-\text{Forward}))$$
+  $$\text{Up} = \text{normalize}((-\text{Forward}) \times \text{Right})$$
+  This guarantees a continuous, orthonormal, singularity-free coordinate frame across the entire hemisphere.
+
+### 5.4 Single-Card Impostor UV Island Packing Hazard (`pack_islands`)
+* **Island Packing Destruction of Normalized $[0, 1]^2$ Bounds**: While `bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)` is mandatory for multi-plane mesh impostors (`STAR_4_PLANES`) to arrange the 8 plane faces into atlas quadrants, executing `pack_islands` on a single-card octahedral proxy mesh shrinks, scales, and displaces its UV island into an arbitrary sub-region of the texture.
+* **Invariant**: Single-card and octahedral proxy meshes MUST be explicitly excluded from automatic island packing (`if mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:`) to strictly preserve their $[0, 1]^2$ normalized UV bounds for engine shader grid lookups.
+
+### 5.5 Fillrate Overdraw: Bounding-Sphere Quads vs. 8-Vertex Cut-Out Octagons
+* **Bounding Sphere Transparency Waste**: Generating a single $2R \times 2R$ quad based on the bounding sphere diameter leaves over 80% of the quad as transparent pixels on slender or vertically elongated assets (e.g. trees, masts, streetlights, towers). In game engines, overlapping distant billboard impostors create severe GPU alpha-blend and alpha-scissor fillrate bottlenecks.
+* **Invariant**: Beveling the four corners of the bounding rectangle by 25% produces an 8-vertex convex cut-out polygon (`build_octahedral_cutout_polygon`) that eliminates 30–40% of transparent empty area for the negligible runtime cost of only 8 vertices (6 triangles).
