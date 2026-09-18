@@ -95,10 +95,12 @@ if __package__:
         lod_ops,
         lod_preset_ops,
         material_preset_ops,
+        msfs_attachment_ops,
         msfs_camera_ops,
         msfs_ground_ops,
         msfs_lighting_ops,
         msfs_migration_ops,
+        msfs_panel,
         msfs_spatial_ops,
         operators,
         panel,
@@ -180,10 +182,12 @@ else:
         lod_ops,
         lod_preset_ops,
         material_preset_ops,
+        msfs_attachment_ops,
         msfs_camera_ops,
         msfs_ground_ops,
         msfs_lighting_ops,
         msfs_migration_ops,
+        msfs_panel,
         msfs_spatial_ops,
         operators,
         panel,
@@ -294,6 +298,8 @@ if _OMNIMESH_RELOAD:
         msfs_lighting_ops,
         msfs_camera_ops,
         msfs_migration_ops,
+        msfs_attachment_ops,
+        msfs_panel,
     ):
         importlib.reload(mod)
 
@@ -312,6 +318,7 @@ def register():
     msfs_lighting_ops.register()
     msfs_camera_ops.register()
     msfs_migration_ops.register()
+    msfs_attachment_ops.register()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
     batch_panel.register_batch_ops()
@@ -328,6 +335,7 @@ def unregister():
         batch_panel.unregister_batch_ops,
         simulator_ops.unregister_simulator_ops,
         panel.unregister_panel,
+        msfs_attachment_ops.unregister,
         msfs_migration_ops.unregister,
         msfs_camera_ops.unregister,
         msfs_lighting_ops.unregister,

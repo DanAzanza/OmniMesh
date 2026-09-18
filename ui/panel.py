@@ -657,13 +657,23 @@ PANEL_CLASSES = PRIMARY_PANELS + SUBPANEL_CLASSES + POPOVER_CLASSES
 def register_panel() -> None:
     if not bpy:
         return
+    reg_panels = {
+        sub.__name__: sub
+        for sub in getattr(bpy.types.Panel, "__subclasses__", lambda: [])()
+        if getattr(sub, "is_registered", False)
+    }
     for cls in PANEL_CLASSES:
-        existing = getattr(bpy.types, cls.__name__, None)
-        if existing is not None:
+        existing = reg_panels.get(cls.__name__) or getattr(bpy.types, cls.__name__, None)
+        if existing is not None and getattr(existing, "is_registered", False):
             try:
                 bpy.utils.unregister_class(existing)
             except Exception as exc:
                 logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
+        if getattr(cls, "is_registered", False):
+            try:
+                bpy.utils.unregister_class(cls)
+            except Exception as exc:
+                logger.debug("Self unregister skipped %s: %s", cls.__name__, exc)
         try:
             bpy.utils.register_class(cls)
         except Exception as exc:
@@ -673,5 +683,20 @@ def register_panel() -> None:
 def unregister_panel() -> None:
     if not bpy:
         return
+    reg_panels = {
+        sub.__name__: sub
+        for sub in getattr(bpy.types.Panel, "__subclasses__", lambda: [])()
+        if getattr(sub, "is_registered", False)
+    }
     for cls in reversed(PANEL_CLASSES):
-        bpy.utils.unregister_class(cls)
+        existing = reg_panels.get(cls.__name__) or getattr(bpy.types, cls.__name__, None)
+        if existing is not None and getattr(existing, "is_registered", False):
+            try:
+                bpy.utils.unregister_class(existing)
+            except Exception as exc:
+                logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
+        if getattr(cls, "is_registered", False):
+            try:
+                bpy.utils.unregister_class(cls)
+            except Exception as exc:
+                logger.debug("Self unregister skipped %s: %s", cls.__name__, exc)

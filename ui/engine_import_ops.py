@@ -263,6 +263,18 @@ class OMNIMESH_OT_import_engine_project(Operator):
         asset_name = manifest.asset_name or "Asset"
         if props:
             props.export_base_name = asset_name
+            if hasattr(props, "target_engine"):
+                try:
+                    props.target_engine = "MSFS_2024"
+                except (AttributeError, TypeError, ValueError) as exc:
+                    logger.debug("Failed setting target_engine to MSFS_2024: %s", exc)
+            if hasattr(props, "asset_category") and (
+                "aircraft" in preset_id.lower() or "aircraft" in str(manifest.asset_name).lower()
+            ):
+                try:
+                    props.asset_category = "HERO_CHARACTER"
+                except (AttributeError, TypeError, ValueError) as exc:
+                    logger.debug("Failed setting asset_category to HERO_CHARACTER: %s", exc)
 
         # Determine feature toggles (settings override preset)
         do_geo = getattr(props, "engine_import_geometry", preset.get("import_geometry", True))

@@ -187,3 +187,100 @@ def test_atomic_serialize_and_update_with_backup():
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+def test_serialize_and_save_injects_missing_offset_and_pbh():
+    """Verify that sections omitting attach_offset/pbh receive them cleanly when updated."""
+    sample_with_missing_keys = """[VERSION]
+major = 1
+minor = 0
+
+[sim_attachment.0]
+attachment = "SimAttachments/Tablet.xml"
+attach_to_node = "ATTACH_POINT_EFB"
+; Notice attach_offset is omitted in this original block
+"""
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".cfg", delete=False) as f:
+        f.write(sample_with_missing_keys)
+        temp_path = f.name
+
+    try:
+        cfg = MSFSAttachmentsCST.parse_attachments_file(temp_path)
+        updated_pts = {"sim_attachment.0": (0.65, 1.64, 0.33)}
+        updated_rots = {"sim_attachment.0": (5.0, 0.0, 45.0)}
+
+        MSFSAttachmentsCST.serialize_and_save(
+            config=cfg,
+            updated_points=updated_pts,
+            updated_rotations=updated_rots,
+            target_path=temp_path,
+        )
+
+        with open(temp_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        assert "attach_offset = 0.65, 1.64, 0.33" in content
+        assert "attach_pbh = 5, 0, 45" in content
+        assert "; Notice attach_offset is omitted in this original block" in content
+
+        # Re-parse to verify structure
+        reparsed = MSFSAttachmentsCST.parse_attachments_file(temp_path)
+        assert len(reparsed.attachments) == 1
+        assert reparsed.attachments[0].attach_offset_ft == (0.65, 1.64, 0.33)
+        assert reparsed.attachments[0].attach_pbh_deg == (5.0, 0.0, 45.0)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def test_serialize_and_save_appends_new_attachments():
+    """Verify that newly synthesized attachment points not present in lines are appended."""
+    sample = """[VERSION]
+major = 1
+minor = 0
+
+[sim_attachment.0]
+attachment = "SimAttachments/Gauge.xml"
+attach_to_node = "ATTACH_POINT_Gauge"
+attach_offset = 0.0, 0.0, 0.0
+"""
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".cfg", delete=False) as f:
+        f.write(sample)
+        temp_path = f.name
+
+    try:
+        cfg = MSFSAttachmentsCST.parse_attachments_file(temp_path)
+        new_att = SimAttachmentPoint(
+            point_id="ATTACHMENTS:sim_attachment.1",
+            section="sim_attachment.1",
+            key="sim_attachment.1",
+            point_type="ATTACHMENT",
+            name_tag="ATTACH_POINT_CupHolder",
+            attachment_path="model/CupHolder.xml",
+            attach_to_model="Interior",
+            alias="CupHolder",
+            attach_offset_ft=(1.5, -2.0, 3.5),
+            attach_pbh_deg=(0.0, 0.0, 0.0),
+        )
+
+        MSFSAttachmentsCST.serialize_and_save(
+            config=cfg,
+            new_attachments=[new_att],
+            target_path=temp_path,
+        )
+
+        with open(temp_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        assert "[sim_attachment.1]" in content
+        assert 'attachment = "model/CupHolder.xml"' in content
+        assert 'alias = "CupHolder"' in content
+        assert "attach_offset = 1.5, -2, 3.5" in content
+
+        reparsed = MSFSAttachmentsCST.parse_attachments_file(temp_path)
+        assert len(reparsed.attachments) == 2
+        assert reparsed.attachments[1].alias == "CupHolder"
+        assert reparsed.attachments[1].attach_offset_ft == (1.5, -2.0, 3.5)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)

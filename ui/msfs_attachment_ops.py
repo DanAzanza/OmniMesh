@@ -260,7 +260,7 @@ class OMNIMESH_OT_export_msfs_attachments(Operator):
         props = getattr(context.scene, "lod_tool", None)
         msfs_cfg = getattr(props, "msfs_configs", None) if props else None
         p = getattr(msfs_cfg, "attached_objects_cfg_path", "")
-        return bool(p and os.path.isfile(p))
+        return bool(p and (os.path.isfile(p) or (p.endswith(".cfg") and os.path.isdir(os.path.dirname(p)))))
 
     def execute(self, context: Any) -> set[str]:
         if not bpy or not context:
@@ -293,6 +293,11 @@ class OMNIMESH_OT_export_msfs_attachments(Operator):
             self.report({"WARNING"}, "No attachment hotspot empties found in scene to synchronize.")
             return {"CANCELLED"}
 
+        if hasattr(context, "view_layer") and hasattr(context.view_layer, "update"):
+            try:
+                context.view_layer.update()
+            except Exception as exc:
+                logger.debug("View layer update skipped: %s", exc)
         depsgraph = context.evaluated_depsgraph_get()
         updated_points: dict[str, tuple[float, float, float]] = {}
         updated_rotations: dict[str, tuple[float, float, float]] = {}
@@ -353,11 +358,43 @@ class OMNIMESH_OT_export_msfs_attachments(Operator):
         else:
             config = MSFSAttachmentsCST.build_new_config(attachments=synthesized_attachments)
 
+        # Ensure new attachments without an existing integer index get sequential indices
+        existing_indices: set[int] = set()
+        for att in config.attachments:
+            sec = att.section or ""
+            if sec.startswith("sim_attachment."):
+                suffix = sec.split(".", 1)[1]
+                if suffix.isdigit():
+                    existing_indices.add(int(suffix))
+
+        next_idx = max(existing_indices) + 1 if existing_indices else 0
+        for att in synthesized_attachments:
+            sec = att.section or ""
+            if sec.startswith("sim_attachment."):
+                suffix = sec.split(".", 1)[1]
+                if not suffix.isdigit() and sec not in [a.section for a in config.attachments]:
+                    new_sec = f"sim_attachment.{next_idx}"
+                    next_idx += 1
+                    old_id = att.point_id
+                    old_sec = att.section
+                    att.section = new_sec
+                    att.key = new_sec
+                    att.point_id = f"ATTACHMENTS:{new_sec}"
+                    if old_id in updated_points:
+                        updated_points[att.point_id] = updated_points.pop(old_id)
+                    if old_sec in updated_points:
+                        updated_points[new_sec] = updated_points.pop(old_sec)
+                    if old_id in updated_rotations:
+                        updated_rotations[att.point_id] = updated_rotations.pop(old_id)
+                    if old_sec in updated_rotations:
+                        updated_rotations[new_sec] = updated_rotations.pop(old_sec)
+
         try:
             backup_file = MSFSAttachmentsCST.serialize_and_save(
                 config=config,
                 updated_points=updated_points,
                 updated_rotations=updated_rotations,
+                new_attachments=synthesized_attachments,
                 target_path=cfg_path,
             )
             msg = f"Synchronized {len(candidate_objs)} attachments to {os.path.basename(cfg_path)}"

@@ -280,9 +280,14 @@ class MSFSAttachmentsCST:
         config: AttachmentsConfigFile,
         updated_points: Optional[dict[str, tuple[float, float, float]]] = None,
         updated_rotations: Optional[dict[str, tuple[float, float, float]]] = None,
+        new_attachments: Optional[list[SimAttachmentPoint]] = None,
         target_path: Optional[str] = None,
     ) -> str:
-        """Serializes updated attachment offsets back to attached_objects.cfg atomically."""
+        """Serializes updated attachment offsets back to attached_objects.cfg atomically.
+
+        Preserves all comments and existing structure. Injects attach_offset/attach_pbh
+        for sections that omitted them, and appends newly synthesized attachments.
+        """
         dest_file = target_path or config.source_file
         if not dest_file:
             raise ValueError("Destination file path must be specified.")
@@ -319,7 +324,44 @@ class MSFSAttachmentsCST:
         serialized_lines: list[str] = []
         nl = config.line_ending
 
+        written_offsets: set[str] = set()
+        written_rotations: set[str] = set()
+        seen_sections: set[str] = set()
+
+        def _flush_section_missing_keys(sec_name: str) -> None:
+            """Injects attach_offset and/or attach_pbh if they were missing from the section."""
+            if not sec_name or not sec_name.lower().startswith("sim_attachment."):
+                return
+            sec_lower = sec_name.lower()
+            point_id_lower = f"attachments:{sec_lower}"
+
+            target_pt = pts_lower.get(point_id_lower) or pts_lower.get(sec_lower)
+            target_r = rots_lower.get(point_id_lower) or rots_lower.get(sec_lower)
+
+            if sec_lower not in written_offsets and target_pt is not None:
+                s_long = format_coordinate_float(target_pt[0])
+                s_lat = format_coordinate_float(target_pt[1])
+                s_vert = format_coordinate_float(target_pt[2])
+                serialized_lines.append(f"attach_offset = {s_long}, {s_lat}, {s_vert}{nl}")
+                written_offsets.add(sec_lower)
+
+            if sec_lower not in written_rotations and target_r is not None:
+                if any(abs(deg) > 1e-4 for deg in target_r):
+                    s_p = format_coordinate_float(target_r[0])
+                    s_b = format_coordinate_float(target_r[1])
+                    s_h = format_coordinate_float(target_r[2])
+                    serialized_lines.append(f"attach_pbh = {s_p}, {s_b}, {s_h}{nl}")
+                    written_rotations.add(sec_lower)
+
+        current_sec = ""
         for record in config.lines:
+            stripped = record.raw_line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                if current_sec:
+                    _flush_section_missing_keys(current_sec)
+                current_sec = record.section
+                seen_sections.add(current_sec.lower())
+
             k_lower = record.key.lower()
 
             point_id = f"ATTACHMENTS:{record.section}"
@@ -336,6 +378,7 @@ class MSFSAttachmentsCST:
                 comment_str = f" {record.inline_comment}" if record.inline_comment else ""
                 new_line = f"{record.indentation}{record.key} = {val_str}{comment_str}{nl}"
                 serialized_lines.append(new_line)
+                written_offsets.add(record.section.lower())
             elif k_lower == "attach_pbh" and target_rot is not None:
                 s_p = format_coordinate_float(target_rot[0])
                 s_b = format_coordinate_float(target_rot[1])
@@ -344,10 +387,47 @@ class MSFSAttachmentsCST:
                 comment_str = f" {record.inline_comment}" if record.inline_comment else ""
                 new_line = f"{record.indentation}{record.key} = {val_str}{comment_str}{nl}"
                 serialized_lines.append(new_line)
+                written_rotations.add(record.section.lower())
             else:
                 serialized_lines.append(record.raw_line)
 
-        # 3. Atomic write
+        if current_sec:
+            _flush_section_missing_keys(current_sec)
+
+        # 3. Append newly created attachments if not present in config.lines
+        all_candidate_atts = list(new_attachments or config.attachments or [])
+        for att in all_candidate_atts:
+            sec = att.section or ""
+            if sec and sec.lower() not in seen_sections:
+                seen_sections.add(sec.lower())
+                serialized_lines.append(f"[{sec}]{nl}")
+                if att.attachment_root:
+                    serialized_lines.append(f'attachment_root = "{att.attachment_root}"{nl}')
+                if att.attachment_path:
+                    serialized_lines.append(f'attachment = "{att.attachment_path}"{nl}')
+                if att.attach_to_model:
+                    serialized_lines.append(f'attach_to_model = "{att.attach_to_model}"{nl}')
+                if att.attach_to_node:
+                    serialized_lines.append(f'attach_to_node = "{att.attach_to_node}"{nl}')
+                if att.alias:
+                    serialized_lines.append(f'alias = "{att.alias}"{nl}')
+                if abs(att.attach_scale - 1.0) > 1e-4:
+                    serialized_lines.append(f"attach_scale = {format_coordinate_float(att.attach_scale)}{nl}")
+
+                pt = pts_lower.get(f"attachments:{sec}".lower()) or pts_lower.get(sec.lower()) or att.attach_offset_ft
+                s_long = format_coordinate_float(pt[0])
+                s_lat = format_coordinate_float(pt[1])
+                s_vert = format_coordinate_float(pt[2])
+                serialized_lines.append(f"attach_offset = {s_long}, {s_lat}, {s_vert}{nl}")
+
+                r = rots_lower.get(f"attachments:{sec}".lower()) or rots_lower.get(sec.lower()) or att.attach_pbh_deg
+                s_p = format_coordinate_float(r[0])
+                s_b = format_coordinate_float(r[1])
+                s_h = format_coordinate_float(r[2])
+                serialized_lines.append(f"attach_pbh = {s_p}, {s_b}, {s_h}{nl}")
+                serialized_lines.append(nl)
+
+        # 4. Atomic write
         temp_fd, temp_file_path = tempfile.mkstemp(dir=dest_dir, prefix="omnimesh_attach_", text=False)
         try:
             with open(temp_fd, "w", encoding=config.encoding, newline="") as f:

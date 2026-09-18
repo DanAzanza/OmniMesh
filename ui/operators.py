@@ -106,33 +106,56 @@ def register_operators() -> None:
     if not bpy:
         return
     registered = set()
+    reg_subclasses = {
+        sub.__name__: sub
+        for sub in getattr(bpy.types.Operator, "__subclasses__", lambda: [])()
+        if getattr(sub, "is_registered", False)
+    }
     for cls in OPERATOR_CLASSES:
         if cls in registered:
             continue
         registered.add(cls)
-        existing = getattr(bpy.types, cls.__name__, None)
-        if existing is not None:
+        existing = reg_subclasses.get(cls.__name__) or getattr(bpy.types, cls.__name__, None)
+        if existing is not None and getattr(existing, "is_registered", False):
             try:
                 bpy.utils.unregister_class(existing)
             except Exception as exc:
                 logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        bpy.utils.register_class(cls)
+        if getattr(cls, "is_registered", False):
+            try:
+                bpy.utils.unregister_class(cls)
+            except Exception as exc:
+                logger.debug("Self unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        try:
+            bpy.utils.register_class(cls)
+        except Exception as exc:
+            logger.warning("Could not register operator %s: %s", getattr(cls, "__name__", "cls"), exc)
 
 
 def unregister_operators() -> None:
     if not bpy:
         return
     unregistered = set()
+    reg_subclasses = {
+        sub.__name__: sub
+        for sub in getattr(bpy.types.Operator, "__subclasses__", lambda: [])()
+        if getattr(sub, "is_registered", False)
+    }
     for cls in reversed(OPERATOR_CLASSES):
         if cls in unregistered:
             continue
         unregistered.add(cls)
-        existing = getattr(bpy.types, cls.__name__, None)
-        if existing is not None:
+        existing = reg_subclasses.get(cls.__name__) or getattr(bpy.types, cls.__name__, None)
+        if existing is not None and getattr(existing, "is_registered", False):
             try:
                 bpy.utils.unregister_class(existing)
             except Exception as exc:
                 logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+        if getattr(cls, "is_registered", False):
+            try:
+                bpy.utils.unregister_class(cls)
+            except Exception as exc:
+                logger.debug("Self unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
 
 
 __all__ = [
