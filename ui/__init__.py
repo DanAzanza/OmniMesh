@@ -17,6 +17,7 @@ from .msfs_panel import register as register_msfs_panel, unregister as unregiste
 from .operators import register_operators, unregister_operators
 from .panel import register_panel, unregister_panel
 from .properties import register_properties, unregister_properties
+from .setup_ops import register as register_setup_ops, unregister as unregister_setup_ops
 from .simulator_ops import register_simulator_ops, unregister_simulator_ops
 from .split_preview import register_split_ops, unregister_split_ops
 
@@ -25,6 +26,7 @@ def register_ui() -> None:
     register_properties()
     register_lists()
     register_operators()
+    register_setup_ops()
     register_engine_import()
     register_msfs_spatial()
     register_msfs_ground()
@@ -54,6 +56,7 @@ def unregister_ui() -> None:
     unregister_msfs_spatial()
 
     unregister_engine_import()
+    unregister_setup_ops()
     unregister_operators()
     unregister_lists()
     unregister_properties()

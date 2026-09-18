@@ -171,7 +171,26 @@ class OMNIMESH_PT_modify(Panel):
         if not props:
             props = context.scene.lod_tool
 
-        # 0. Target Asset Selection + Add Helpers Collection Button
+        # 0. Asset & Scene Setup (One-Click Initialization & Viewport Inspection)
+        box_setup = layout.box()
+        box_setup.label(text="Asset & Scene Setup", icon="PRESET_NEW")
+
+        row_init = box_setup.row(align=True)
+        row_init.use_property_split = False
+        row_init.scale_y = 1.25
+        row_init.operator("omnimesh.initialize_asset", text="Initialize Asset from Selection", icon="COLLECTION_NEW")
+
+        row_toggles = box_setup.row(align=True)
+        row_toggles.use_property_split = False
+        row_toggles.operator("omnimesh.quick_scene_setup", text="Game Scene", icon="SCENE_DATA")
+        op_stats = row_toggles.operator("omnimesh.toggle_viewport_overlay", text="Stats", icon="VIEW_CAMERA")
+        op_stats.mode = "STATS"
+        op_cav = row_toggles.operator("omnimesh.toggle_viewport_overlay", text="Cavity", icon="SHADING_SOLID")
+        op_cav.mode = "CAVITY"
+        op_norm = row_toggles.operator("omnimesh.toggle_viewport_overlay", text="Normals", icon="NORMALS_FACE")
+        op_norm.mode = "FACE_ORIENTATION"
+
+        # 0b. Target Asset Selection + Add Helpers Collection Button
         row_asset = layout.row(align=True)
         row_asset.use_property_split = False
         row_asset.prop(props, "active_asset", text="Target Asset", icon="OUTLINER_COLLECTION")
