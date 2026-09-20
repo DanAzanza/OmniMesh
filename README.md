@@ -4,7 +4,7 @@
 [![Blender 5.0+ / 5.2 LTS](https://img.shields.io/badge/Blender-5.0%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-394%20passed%20%28100%25%29-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-424%20passed%20%28100%25%29-brightgreen.svg)]()
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5.4%2B%20%7C%20Unity%206%20%7C%20Godot%204.3%2B-purple.svg)]()
 

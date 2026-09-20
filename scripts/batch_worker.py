@@ -154,18 +154,19 @@ def run_worker() -> int:
             from core.textures import TexturePoolManager
 
             TexturePoolManager.compact_memory()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Worker texture memory compaction skipped: %s", exc)
         try:
             if hasattr(bpy.data, "orphans_purge"):
                 bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Worker orphan datablocks purge skipped: %s", exc)
         try:
             from core.batch import BatchProcessorEngine
 
             BatchProcessorEngine.force_garbage_collection()
-        except Exception:
+        except Exception as exc:
+            logger.debug("Worker garbage collection fallback: %s", exc)
             import gc
 
             gc.collect()

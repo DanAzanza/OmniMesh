@@ -214,8 +214,7 @@ class AssetMeshResolver:
                     o_name = getattr(obj, "name", "")
                     matches_asset = (
                         o_name == clean_name
-                        or o_name.startswith(f"{clean_name}_")
-                        or o_name.startswith(f"UCX_{clean_name}_")
+                        or o_name.startswith((f"{clean_name}_", f"UCX_{clean_name}_"))
                         or getattr(obj, "get", lambda *_: None)("_omnimesh_parent") == clean_name
                     )
                     if (is_col or o_name.startswith("UCX_")) and matches_asset:
@@ -288,13 +287,7 @@ class AssetMeshResolver:
             for col in candidate_cols:
                 for obj in getattr(col, "objects", []):
                     o_name = getattr(obj, "name", "").upper()
-                    if (
-                        o_name.startswith("ATTACH_")
-                        or o_name.startswith("FX_")
-                        or o_name.startswith("SOCKET_")
-                        or o_name.startswith("EYE_")
-                        or "ATTACH_POINT" in o_name
-                    ):
+                    if o_name.startswith(("ATTACH_", "FX_", "SOCKET_", "EYE_")) or "ATTACH_POINT" in o_name:
                         if getattr(obj, "type", "") == "EMPTY" and obj not in attachment_nodes:
                             attachment_nodes.append(obj)
 
@@ -430,9 +423,7 @@ class PreFlightValidator:
 
 def register_exporters() -> None:
     """Delegates exporter registration (operators are centrally registered in ui.operators)."""
-    pass
 
 
 def unregister_exporters() -> None:
     """Delegates exporter unregistration (operators are centrally unregistered in ui.operators)."""
-    pass

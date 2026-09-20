@@ -47,6 +47,7 @@ def bootstrap_addon() -> None:
         "sanitizer",
         "occlusion",
         "collision",
+        "impostor_math",
         "impostor",
         "decimator",
         "materials",

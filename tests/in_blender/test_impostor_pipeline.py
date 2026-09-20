@@ -1,10 +1,12 @@
 """
 In-Blender Integration Tests for Billboard Impostor Generation & Shader Wiring.
-Blender 4.2+ and 5.2 LTS Compatible.
+Blender 5.0+ and 5.2 LTS Compatible.
 """
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 import unittest
 
 import numpy as np
@@ -26,24 +28,38 @@ class TestImpostorPipeline(unittest.TestCase):
     def setUp(self) -> None:
         if not bpy:
             self.skipTest("Blender bpy runtime not available.")
+        self._temp_dirs: list[str] = []
 
-    def test_generate_impostor_cross_quads(self) -> None:
-        """Verify CROSS_QUADS billboard geometry (2 intersecting quads, 8 verts, 2 faces) and material setup."""
+    def tearDown(self) -> None:
+        for p in self._temp_dirs:
+            shutil.rmtree(p, ignore_errors=True)
+        self._temp_dirs.clear()
+
+    def _get_isolated_export_dir(self) -> str:
+        d = tempfile.mkdtemp(prefix="om_test_impostor_")
+        self._temp_dirs.append(d)
+        return d
+
+    def test_generate_impostor_ortho_3_axes(self) -> None:
+        """Verify ORTHO_3_AXES billboard geometry (3 orthogonal planes, 24 verts, 6 faces) and material setup."""
         with in_blender_sandbox() as scene:
-            mesh_objs = create_hierarchy_fixture("SM_CrossTree")
+            mesh_objs = create_hierarchy_fixture("SM_OrthoTree")
             for obj in mesh_objs:
                 obj.select_set(True)
             scene.view_layers[0].objects.active = mesh_objs[0]
 
             props = scene.lod_tool
-            props.export_base_name = "SM_CrossTree"
-            props.impostor_mode = "CROSS_QUADS"
+            props.export_base_name = "SM_OrthoTree"
+            props.impostor_mode = "ORTHO_3_AXES"
             props.target_engine = "UE5"
+            props.export_directory = self._get_isolated_export_dir()
+            props.auto_impostor_resolution = False
+            props.impostor_resolution = "512"
 
             res = bpy.ops.lod_tool.generate_impostor()
             self.assertEqual(res, {"FINISHED"})
 
-            coll_name = "SM_CrossTree_LOD_Impostor"
+            coll_name = "SM_OrthoTree_LOD_Impostor"
             target_coll = bpy.data.collections.get(coll_name)
             self.assertIsNotNone(target_coll, f"Collection '{coll_name}' must exist in scene.")
 
@@ -51,19 +67,19 @@ class TestImpostorPipeline(unittest.TestCase):
             self.assertEqual(len(impostor_objs), 1, "Exactly one impostor billboard object must be created.")
 
             imp_obj = impostor_objs[0]
-            self.assertEqual(imp_obj.name, "SM_CrossTree_LOD_Impostor")
+            self.assertEqual(imp_obj.name, "SM_OrthoTree_LOD_Impostor")
             self.assertTrue(imp_obj.get("_is_impostor", False), "Impostor tag _is_impostor must be True.")
-            self.assertEqual(imp_obj.get("_impostor_mode", ""), "CROSS_QUADS")
+            self.assertEqual(imp_obj.get("_impostor_mode", ""), "ORTHO_3_AXES")
 
-            # Verify geometry contract: Cross quads = 8 verts, 2 polygon faces (4 tris)
-            self.assertEqual(len(imp_obj.data.vertices), 8, "Cross quads must have exactly 8 vertices.")
-            self.assertEqual(len(imp_obj.data.polygons), 2, "Cross quads must have exactly 2 polygon faces.")
+            # Verify geometry contract: 3 Orthogonal Planes (XY, YZ, XZ) x 2 sides = 24 verts, 6 polygon faces
+            self.assertEqual(len(imp_obj.data.vertices), 24, "Ortho 3-Axes must have exactly 24 vertices.")
+            self.assertEqual(len(imp_obj.data.polygons), 6, "Ortho 3-Axes must have exactly 6 polygon faces.")
 
             # Verify PBR Impostor Material
             self.assertEqual(len(imp_obj.data.materials), 1, "Impostor must have 1 material assigned.")
             mat = imp_obj.data.materials[0]
             self.assertIsNotNone(mat)
-            self.assertEqual(mat.name, "M_SM_CrossTree_Impostor")
+            self.assertEqual(mat.name, "M_SM_OrthoTree_Impostor")
             self.assertTrue(mat.use_nodes)
 
             node_names = {node.name for node in mat.node_tree.nodes}
@@ -71,33 +87,8 @@ class TestImpostorPipeline(unittest.TestCase):
             self.assertIn("Tex_Normal", node_names)
             self.assertIn("Tex_ORM", node_names)
 
-    def test_generate_impostor_star_quads(self) -> None:
-        """Verify STAR_QUADS billboard geometry (3 quads at 60 deg, 12 verts, 3 faces)."""
-        with in_blender_sandbox() as scene:
-            mesh_objs = create_hierarchy_fixture("SM_StarTree")
-            for obj in mesh_objs:
-                obj.select_set(True)
-            scene.view_layers[0].objects.active = mesh_objs[0]
-
-            props = scene.lod_tool
-            props.export_base_name = "SM_StarTree"
-            props.impostor_mode = "STAR_QUADS"
-            props.target_engine = "UE5"
-
-            res = bpy.ops.lod_tool.generate_impostor()
-            self.assertEqual(res, {"FINISHED"})
-
-            target_coll = bpy.data.collections.get("SM_StarTree_LOD_Impostor")
-            self.assertIsNotNone(target_coll)
-
-            imp_obj = target_coll.objects.get("SM_StarTree_LOD_Impostor")
-            self.assertIsNotNone(imp_obj)
-            self.assertEqual(imp_obj.get("_impostor_mode", ""), "STAR_QUADS")
-            self.assertEqual(len(imp_obj.data.vertices), 12, "Star quads must have exactly 12 vertices.")
-            self.assertEqual(len(imp_obj.data.polygons), 3, "Star quads must have exactly 3 polygon faces.")
-
     def test_generate_impostor_octahedral(self) -> None:
-        """Verify OCTAHEDRAL_HEMI billboard geometry (single camera-facing quad, 4 verts, 1 face)."""
+        """Verify OCTAHEDRAL_HEMI billboard geometry (single camera-facing cutout octagon, 8 verts, 1 face)."""
         with in_blender_sandbox() as scene:
             mesh_objs = create_hierarchy_fixture("SM_OctaTree")
             for obj in mesh_objs:
@@ -108,6 +99,9 @@ class TestImpostorPipeline(unittest.TestCase):
             props.export_base_name = "SM_OctaTree"
             props.impostor_mode = "OCTAHEDRAL_HEMI"
             props.target_engine = "UE5"
+            props.export_directory = self._get_isolated_export_dir()
+            props.auto_impostor_resolution = False
+            props.impostor_resolution = "512"
 
             res = bpy.ops.lod_tool.generate_impostor()
             self.assertEqual(res, {"FINISHED"})
@@ -131,8 +125,11 @@ class TestImpostorPipeline(unittest.TestCase):
 
             props = scene.lod_tool
             props.export_base_name = "SM_ShaderAsset"
-            props.impostor_mode = "CROSS_QUADS"
+            props.impostor_mode = "ORTHO_3_AXES"
             props.target_engine = "UNITY_6"
+            props.export_directory = self._get_isolated_export_dir()
+            props.auto_impostor_resolution = False
+            props.impostor_resolution = "512"
 
             res = bpy.ops.lod_tool.generate_impostor()
             self.assertEqual(res, {"FINISHED"})
@@ -156,6 +153,10 @@ class TestImpostorPipeline(unittest.TestCase):
 
             props = scene.lod_tool
             props.export_base_name = "SM_PurgeTree"
+            props.impostor_mode = "ORTHO_3_AXES"
+            props.export_directory = self._get_isolated_export_dir()
+            props.auto_impostor_resolution = False
+            props.impostor_resolution = "512"
 
             bpy.ops.lod_tool.generate_impostor()
             target_coll = bpy.data.collections.get("SM_PurgeTree_LOD_Impostor")

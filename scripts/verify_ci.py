@@ -33,7 +33,8 @@ def check_dependency_parity() -> bool:
         project_deps = data.get("project", {}).get("dependencies", [])
         dev_deps = data.get("project", {}).get("optional-dependencies", {}).get("dev", [])
     else:
-        content = open(pyproject_path, "r", encoding="utf-8").read()
+        with open(pyproject_path, "r", encoding="utf-8") as f:
+            content = f.read()
         project_deps = re.findall(r'"([^"]+)"', content)
         dev_deps = []
 
@@ -96,6 +97,30 @@ def main() -> int:
     ]
     if not run_command(pytest_cmd, "Pytest Test Suite with Coverage"):
         return 1
+
+    # In-Blender integration test suite check
+    require_blender = "--require-blender" in sys.argv
+    skip_blender = "--skip-blender" in sys.argv
+
+    try:
+        try:
+            from run_blender_tests import find_blender_binary
+        except ImportError:
+            from scripts.run_blender_tests import find_blender_binary
+
+        blender_bin = find_blender_binary()
+    except Exception:
+        blender_bin = None
+
+    if blender_bin and not skip_blender:
+        blender_test_script = os.path.join(os.path.dirname(__file__), "run_blender_tests.py")
+        if not run_command([sys.executable, blender_test_script], "In-Blender Integration Test Suite"):
+            return 1
+    elif require_blender:
+        print("[FAIL] [BlenderGate] Blender binary required but not found!")
+        return 1
+    else:
+        print("\n[SKIP] Blender executable not detected. Skipping in-Blender integration tests.")
 
     print("\n" + "=" * 60)
     print("ALL GATES PASSED DETERMINISTICALLY! Ready for Commit & Push.")

@@ -108,7 +108,7 @@ def register_operators() -> None:
     registered = set()
     reg_subclasses = {
         sub.__name__: sub
-        for sub in getattr(bpy.types.Operator, "__subclasses__", lambda: [])()
+        for sub in getattr(bpy.types.Operator, "__subclasses__", list)()
         if getattr(sub, "is_registered", False)
     }
     for cls in OPERATOR_CLASSES:
@@ -138,7 +138,7 @@ def unregister_operators() -> None:
     unregistered = set()
     reg_subclasses = {
         sub.__name__: sub
-        for sub in getattr(bpy.types.Operator, "__subclasses__", lambda: [])()
+        for sub in getattr(bpy.types.Operator, "__subclasses__", list)()
         if getattr(sub, "is_registered", False)
     }
     for cls in reversed(OPERATOR_CLASSES):

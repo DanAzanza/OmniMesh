@@ -385,7 +385,7 @@ class MaterialOptimizer:
             except (ValueError, AttributeError, TypeError, ReferenceError):
                 area_scale = 1.0
 
-        areas: dict[int, float] = {i: 0.0 for i in range(num_slots)}
+        areas: dict[int, float] = dict.fromkeys(range(num_slots), 0.0)
         for poly in mesh.polygons:
             idx = getattr(poly, "material_index", 0)
             area = getattr(poly, "area", 0.0) * area_scale

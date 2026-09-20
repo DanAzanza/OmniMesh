@@ -6,10 +6,13 @@ Executes headless Blender with factory startup and streams results.
 from __future__ import annotations
 
 import glob
+import logging
 import os
 import shutil
 import subprocess
 import sys
+
+logger = logging.getLogger("om_test_runner")
 
 
 def find_blender_binary() -> str | None:
@@ -53,8 +56,8 @@ def find_blender_binary() -> str | None:
                     cand_direct = os.path.join(loc.strip(), "blender.exe")
                     if os.path.isfile(cand_direct):
                         return cand_direct
-        except Exception:
-            pass
+        except (subprocess.SubprocessError, OSError) as exc:
+            logger.debug("PowerShell AppX query skipped: %s", exc)
 
     # 4. macOS Default Locations
     elif sys.platform == "darwin":
@@ -92,6 +95,8 @@ def main() -> int:
         blender_bin,
         "-b",
         "--factory-startup",
+        "--python-exit-code",
+        "1",
         "--python",
         runner_script,
     ]

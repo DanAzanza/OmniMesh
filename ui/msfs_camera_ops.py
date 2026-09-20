@@ -98,14 +98,33 @@ def get_or_create_cameras_collection(
         from .utils import get_or_create_engine_import_collection
 
         return get_or_create_engine_import_collection(context, target_asset, "CAMERAS")
-    except Exception:
-        col_name = f"{target_asset}_Cameras"
-        col = bpy.data.collections.get(col_name)
-        if not col:
-            col = bpy.data.collections.new(col_name)
-            context.scene.collection.children.link(col)
-            col["_omnimesh_role"] = "CAMERAS"
-        return col
+    except Exception as exc:
+        logger.error("Failed creating cameras collection via hierarchy: %s", exc, exc_info=True)
+        # Fallback enforcing Variante A: {target_asset} -> {target_asset}_Config -> {target_asset}_Cameras
+        root_col = bpy.data.collections.get(target_asset)
+        if not root_col:
+            root_col = bpy.data.collections.new(target_asset)
+            context.scene.collection.children.link(root_col)
+
+        cfg_col = bpy.data.collections.get(f"{target_asset}_Config")
+        if not cfg_col:
+            cfg_col = bpy.data.collections.new(f"{target_asset}_Config")
+            cfg_col["_omnimesh_role"] = "CONFIG"
+            root_col.children.link(cfg_col)
+
+        cam_col = bpy.data.collections.get(f"{target_asset}_Cameras")
+        if not cam_col:
+            cam_col = bpy.data.collections.new(f"{target_asset}_Cameras")
+            cfg_col.children.link(cam_col)
+        elif cam_col.name not in cfg_col.children:
+            try:
+                cfg_col.children.link(cam_col)
+            except RuntimeError:
+                pass
+
+        cam_col["_omnimesh_role"] = "CAMERAS"
+        cam_col["_omnimesh_parent"] = target_asset
+        return cam_col
 
 
 class OMNIMESH_OT_import_msfs_cameras(Operator):

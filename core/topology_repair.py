@@ -309,7 +309,7 @@ class TopologyRepairEngine:
         if len(bm.faces) == 0:
             return 0
 
-        unvisited = set(f for f in bm.faces if getattr(f, "is_valid", False))
+        unvisited = {f for f in bm.faces if getattr(f, "is_valid", False)}
         islands = []
 
         while unvisited:
@@ -331,7 +331,7 @@ class TopologyRepairEngine:
 
         culled_faces = []
         for island in islands:
-            unique_verts = set(v for f in island for v in getattr(f, "verts", []))
+            unique_verts = {v for f in island for v in getattr(f, "verts", [])}
             if not unique_verts:
                 continue
 

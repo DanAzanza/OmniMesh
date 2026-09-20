@@ -5,7 +5,6 @@ Convex Collision Hull Decomposition and Billboard Impostor Operators.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,7 +18,7 @@ except ImportError:
 
 try:
     from ..core.collision import CollisionManager
-    from ..core.impostor import ImpostorManager
+    from ..core.impostor import ImpostorManager, resolve_impostor_export_dir
     from ..core.impostor_baker import ImpostorAtlasBaker
     from ..exporters.shaders import export_companion_shaders
     from .utils import (
@@ -32,7 +31,7 @@ try:
     )
 except (ImportError, ValueError):
     from core.collision import CollisionManager
-    from core.impostor import ImpostorManager
+    from core.impostor import ImpostorManager, resolve_impostor_export_dir
     from core.impostor_baker import ImpostorAtlasBaker
     from exporters.shaders import export_companion_shaders
     from ui.utils import (
@@ -98,12 +97,7 @@ class LOD_OT_generate_impostor(Operator):
             return {"CANCELLED"}
 
         # Determine output texture directory
-        export_dir = getattr(props, "export_directory", "") or "//Textures/"
-        if export_dir.startswith("//") and bpy and hasattr(bpy.data, "filepath") and bpy.data.filepath:
-            export_dir = bpy.path.abspath(export_dir)
-        elif not os.path.isabs(export_dir):
-            export_dir = os.path.abspath(export_dir)
-        tex_dir = os.path.join(export_dir, "Textures") if not export_dir.endswith("Textures") else export_dir
+        tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""))
 
         # Execute Cycles GPU selected-to-active baking pass
         baked_maps = ImpostorAtlasBaker.bake_impostor_textures(

@@ -45,7 +45,6 @@ def get_config_preset_items(self: Any, context: Any) -> list[tuple[str, str, str
 
 def on_config_preset_updated(self: Any, context: Any) -> None:
     """Invoked when user switches active config preset."""
-    pass
 
 
 class OMNIMESH_ConfigPresetSettings(PropertyGroup):

@@ -100,11 +100,33 @@ def get_or_create_lights_collection(context: Any, asset_name: str = "") -> Optio
         from .utils import get_or_create_engine_import_collection
 
         return get_or_create_engine_import_collection(context, target_asset, "LIGHTS")
-    except Exception:
-        col = bpy.data.collections.new(f"{target_asset}_Lights")
-        context.scene.collection.children.link(col)
-        col["_omnimesh_role"] = "LIGHTS"
-        return col
+    except Exception as exc:
+        logger.error("Failed creating lights collection via hierarchy: %s", exc, exc_info=True)
+        # Fallback enforcing Variante A: {target_asset} -> {target_asset}_Config -> {target_asset}_Lights
+        root_col = bpy.data.collections.get(target_asset)
+        if not root_col:
+            root_col = bpy.data.collections.new(target_asset)
+            context.scene.collection.children.link(root_col)
+
+        cfg_col = bpy.data.collections.get(f"{target_asset}_Config")
+        if not cfg_col:
+            cfg_col = bpy.data.collections.new(f"{target_asset}_Config")
+            cfg_col["_omnimesh_role"] = "CONFIG"
+            root_col.children.link(cfg_col)
+
+        li_col = bpy.data.collections.get(f"{target_asset}_Lights")
+        if not li_col:
+            li_col = bpy.data.collections.new(f"{target_asset}_Lights")
+            cfg_col.children.link(li_col)
+        elif li_col.name not in cfg_col.children:
+            try:
+                cfg_col.children.link(li_col)
+            except RuntimeError:
+                pass
+
+        li_col["_omnimesh_role"] = "LIGHTS"
+        li_col["_omnimesh_parent"] = target_asset
+        return li_col
 
 
 class OMNIMESH_OT_import_msfs_lights(Operator):

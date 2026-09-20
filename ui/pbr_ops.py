@@ -106,8 +106,8 @@ class LOD_OT_import_pbr_set(Operator):
                     for f in os.listdir(self.directory)
                     if os.path.splitext(f)[1].lower() in valid_exts
                 ]
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Failed reading texture directory '%s': %s", self.directory, exc)
         elif getattr(props, "pbr_import_directory", ""):
             abs_dir = bpy.path.abspath(props.pbr_import_directory)
             if os.path.isdir(abs_dir):
@@ -119,8 +119,8 @@ class LOD_OT_import_pbr_set(Operator):
                         if os.path.splitext(f)[1].lower() in valid_exts
                     ]
                     self.directory = abs_dir
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.debug("Failed reading texture directory '%s': %s", abs_dir, exc)
 
         if not file_paths:
             safe_report(self, {"WARNING"}, "No texture files found or selected.")

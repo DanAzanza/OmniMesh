@@ -197,7 +197,7 @@ class MSFSSpatialParsers:
     ) -> None:
         """Parses light definitions in both MSFS 2020 classic and MSFS 2024 tagged format."""
         key_lower = key.lower()
-        if not (key_lower.startswith("lightdef.") or key_lower.startswith("light.")):
+        if not key_lower.startswith(("lightdef.", "light.")):
             return
 
         if "#" in val_part:

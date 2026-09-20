@@ -265,8 +265,8 @@ class GodotLiveBridge(EngineBridgeBase):
                             try:
                                 with open(import_path, "w", encoding="utf-8", newline="\n") as f_imp:
                                     f_imp.write(cls.generate_asset_import_file(rel_path))
-                            except OSError:
-                                pass
+                            except OSError as exc:
+                                logger.warning("Failed writing Godot companion .import file for %s: %s", rel_path, exc)
         except (OSError, shutil.Error) as exc:
             return False, f"Failed copying asset files to Godot project: {exc}"
 

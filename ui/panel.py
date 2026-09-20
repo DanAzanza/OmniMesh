@@ -678,7 +678,7 @@ def register_panel() -> None:
         return
     reg_panels = {
         sub.__name__: sub
-        for sub in getattr(bpy.types.Panel, "__subclasses__", lambda: [])()
+        for sub in getattr(bpy.types.Panel, "__subclasses__", list)()
         if getattr(sub, "is_registered", False)
     }
     for cls in PANEL_CLASSES:
@@ -704,7 +704,7 @@ def unregister_panel() -> None:
         return
     reg_panels = {
         sub.__name__: sub
-        for sub in getattr(bpy.types.Panel, "__subclasses__", lambda: [])()
+        for sub in getattr(bpy.types.Panel, "__subclasses__", list)()
         if getattr(sub, "is_registered", False)
     }
     for cls in reversed(PANEL_CLASSES):

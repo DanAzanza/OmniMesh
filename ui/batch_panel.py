@@ -257,15 +257,26 @@ class OMNIMESH_OT_batch_process(Operator):
         return {"CANCELLED"}
 
     def cleanup_modal(self, context: Any) -> None:
-        if self._current_proc is not None and self._current_proc.poll() is None:
-            try:
-                self._current_proc.terminate()
-                self._current_proc.wait(timeout=1.0)
-            except (subprocess.TimeoutExpired, OSError):
+        if self._current_proc is not None:
+            if self._current_proc.poll() is None:
                 try:
-                    self._current_proc.kill()
-                except OSError:
-                    pass
+                    self._current_proc.terminate()
+                    self._current_proc.wait(timeout=1.0)
+                except (subprocess.TimeoutExpired, OSError):
+                    try:
+                        self._current_proc.kill()
+                        self._current_proc.wait(timeout=1.0)
+                    except (subprocess.TimeoutExpired, OSError):
+                        pass
+
+            # Close log file unconditionally regardless of poll() state
+            log_file = getattr(self._current_proc, "_om_log_file", None)
+            if log_file and hasattr(log_file, "close") and not getattr(log_file, "closed", False):
+                try:
+                    log_file.close()
+                except Exception as exc:
+                    logger.debug("Failed closing worker log file in cleanup_modal: %s", exc)
+
         self._current_proc = None
         type(self)._abort_requested = False
 

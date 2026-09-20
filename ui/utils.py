@@ -115,7 +115,7 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
             ):
                 continue
             root_c_name = c_name
-            for n in range(0, 11):
+            for n in range(11):
                 root_c_name = root_c_name.split(f"_LOD{n}")[0]
             root_c = None
             if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections"):
@@ -202,7 +202,7 @@ def resolve_asset_base_name(context: Any, mesh_objs: list[Any] | None = None) ->
             if "_Colliders" in c_name or "_Impostor" in c_name:
                 continue
             stem = c_name
-            for n in range(0, 11):
+            for n in range(11):
                 stem = stem.split(f"_LOD{n}")[0]
             if stem:
                 return stem
@@ -372,13 +372,13 @@ def get_available_asset_names(context: Any) -> list[str]:
                 )
                 asset_names.add(first_mesh.split("_LOD")[0])
 
-    return sorted(list(asset_names))
+    return sorted(asset_names)
 
 
 def _strip_collection_suffixes(name: str) -> str:
     """Safely strips known OmniMesh technical and LOD suffixes from a collection or object stem."""
     stem = name
-    for n in range(0, 11):
+    for n in range(11):
         if stem.endswith(f"_LOD{n}"):
             stem = stem[: -len(f"_LOD{n}")]
             break

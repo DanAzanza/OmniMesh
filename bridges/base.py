@@ -18,7 +18,6 @@ class EngineBridgeBase(abc.ABC):
     @abc.abstractmethod
     def get_engine_name(cls) -> str:
         """Returns human-readable name of the target engine."""
-        pass
 
     @classmethod
     @abc.abstractmethod
@@ -27,13 +26,11 @@ class EngineBridgeBase(abc.ABC):
 
         Returns (is_available, status_message).
         """
-        pass
 
     @classmethod
     @abc.abstractmethod
     def install_companion_scripts(cls, project_dir: str) -> Tuple[bool, str]:
         """Installs non-destructive post-processors or scripts into target project directory."""
-        pass
 
     @classmethod
     @abc.abstractmethod
@@ -48,7 +45,6 @@ class EngineBridgeBase(abc.ABC):
 
         Returns (success, result_message).
         """
-        pass
 
     @classmethod
     def sync_asset_headless(

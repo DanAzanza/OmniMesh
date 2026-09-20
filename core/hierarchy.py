@@ -511,8 +511,8 @@ def get_or_create_engine_import_collection(
     elif root_col.name not in scene.collection.children:
         try:
             scene.collection.children.link(root_col)
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            logger.debug("Root collection link skipped: %s", exc)
 
     if clean_asset.endswith("_Interior"):
         root_col["_omnimesh_role"] = "INTERIOR"
@@ -582,8 +582,8 @@ def get_or_create_engine_import_collection(
         elif config_col.name not in root_col.children:
             try:
                 root_col.children.link(config_col)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                logger.debug("Config collection link skipped: %s", exc)
         parent_col = config_col
 
         # Legacy migration: check if sub_col was previously linked under _LOD0
@@ -621,14 +621,14 @@ def get_or_create_engine_import_collection(
         if sub_col.name not in parent_col.children:
             try:
                 parent_col.children.link(sub_col)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                logger.debug("Subcollection link to parent skipped: %s", exc)
         # If misplaced directly under root_col (and not supposed to be), unlink
         if parent_col != root_col and sub_col.name in root_col.children:
             try:
                 root_col.children.unlink(sub_col)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                logger.debug("Subcollection unlink from root skipped: %s", exc)
 
     sub_col["_omnimesh_role"] = role_upper
     return sub_col

@@ -19,7 +19,7 @@ except ImportError:
 def _strip_collection_suffixes(name: str) -> str:
     """Safely strips known OmniMesh technical and LOD suffixes from a collection or object stem."""
     stem = name
-    for n in range(0, 11):
+    for n in range(11):
         if stem.endswith(f"_LOD{n}"):
             stem = stem[: -len(f"_LOD{n}")]
             break

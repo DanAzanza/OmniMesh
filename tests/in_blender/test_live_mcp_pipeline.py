@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import time
 from typing import Any
@@ -107,15 +108,15 @@ def run_live_mcp_pipeline_tests() -> str:
         return json.dumps(results, indent=2)
 
     # Step 3: Bake PBR Impostor Textures
+    tmp_dir = tempfile.mkdtemp(prefix="om_mcp_test_")
     try:
         from core.impostor_baker import ImpostorAtlasBaker
 
-        tmp_dir = tempfile.mkdtemp(prefix="om_mcp_test_")
         bake_results = ImpostorAtlasBaker.bake_impostor_textures(
             mesh_objs=[monkey],
             base_name="Suzanne",
             output_dir=tmp_dir,
-            mode="CROSS_QUADS",
+            mode="ORTHO_3_AXES",
             atlas_resolution=512,
             target_engine="UE5",
             dilation_iterations=2,
@@ -141,6 +142,8 @@ def run_live_mcp_pipeline_tests() -> str:
     except Exception as exc:
         results["tests"]["impostor_baking"] = {"status": "FAIL", "error": str(exc)}
         return json.dumps(results, indent=2)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     # Step 4: Distance Scrubber Visibility Evaluation
     try:

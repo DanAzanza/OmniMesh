@@ -176,15 +176,14 @@ def test_pack_orm_ue5():
         assert success is True
         assert os.path.exists(out_path)
 
-        img = Image.open(out_path)
-        assert img.size == (128, 128)
-        assert img.mode == "RGBA"
-        arr = np.asarray(img)
-        assert np.all(arr[:, :, 0] == 255)
-        assert np.allclose(arr[:, :, 1], 64, atol=1)
-        assert np.allclose(arr[:, :, 2], 191, atol=1)
-        assert np.all(arr[:, :, 3] == 255)
-        img.close()
+        with Image.open(out_path) as img:
+            assert img.size == (128, 128)
+            assert img.mode == "RGBA"
+            arr = np.asarray(img)
+            assert np.all(arr[:, :, 0] == 255)
+            assert np.allclose(arr[:, :, 1], 64, atol=1)
+            assert np.allclose(arr[:, :, 2], 191, atol=1)
+            assert np.all(arr[:, :, 3] == 255)
 
 
 def test_pack_maskmap_unity_smoothness():
@@ -195,13 +194,12 @@ def test_pack_maskmap_unity_smoothness():
         assert success is True
         assert os.path.exists(out_path)
 
-        img = Image.open(out_path)
-        arr = np.asarray(img)
-        assert np.allclose(arr[:, :, 0], 191, atol=1)
-        assert np.all(arr[:, :, 1] == 255)
-        assert np.all(arr[:, :, 2] == 0)
-        assert np.allclose(arr[:, :, 3], 191, atol=1)
-        img.close()
+        with Image.open(out_path) as img:
+            arr = np.asarray(img)
+            assert np.allclose(arr[:, :, 0], 191, atol=1)
+            assert np.all(arr[:, :, 1] == 255)
+            assert np.all(arr[:, :, 2] == 0)
+            assert np.allclose(arr[:, :, 3], 191, atol=1)
 
 
 def test_pack_comp_msfs_and_godot():
@@ -209,21 +207,19 @@ def test_pack_comp_msfs_and_godot():
     with tempfile.TemporaryDirectory() as tmpdir:
         out_path_msfs = os.path.join(tmpdir, "T_Test_COMP.png")
         assert TextureChannelPacker.pack_comp_msfs(mat, out_path_msfs, (64, 64)) is True
-        img1 = Image.open(out_path_msfs)
-        arr1 = np.asarray(img1)
-        assert np.all(arr1[:, :, 0] == 255)
-        assert np.allclose(arr1[:, :, 1], 64, atol=1)
-        assert np.allclose(arr1[:, :, 2], 191, atol=1)
-        img1.close()
+        with Image.open(out_path_msfs) as img1:
+            arr1 = np.asarray(img1)
+            assert np.all(arr1[:, :, 0] == 255)
+            assert np.allclose(arr1[:, :, 1], 64, atol=1)
+            assert np.allclose(arr1[:, :, 2], 191, atol=1)
 
         out_path_godot = os.path.join(tmpdir, "T_Test_Godot_ORM.png")
         assert TextureChannelPacker.pack_orm_godot(mat, out_path_godot, (64, 64)) is True
-        img2 = Image.open(out_path_godot)
-        arr2 = np.asarray(img2)
-        assert np.all(arr2[:, :, 0] == 255)
-        assert np.allclose(arr2[:, :, 1], 64, atol=1)
-        assert np.allclose(arr2[:, :, 2], 191, atol=1)
-        img2.close()
+        with Image.open(out_path_godot) as img2:
+            arr2 = np.asarray(img2)
+            assert np.all(arr2[:, :, 0] == 255)
+            assert np.allclose(arr2[:, :, 1], 64, atol=1)
+            assert np.allclose(arr2[:, :, 2], 191, atol=1)
 
 
 def test_convert_normal_directx():
@@ -256,13 +252,12 @@ def test_convert_normal_directx():
         assert success is True
         assert os.path.exists(out_path)
 
-        img = Image.open(out_path)
-        arr = np.asarray(img)
-        assert np.allclose(arr[:, :, 0], 128, atol=1)
-        assert np.allclose(arr[:, :, 1], 64, atol=1)
-        assert np.all(arr[:, :, 2] == 255)
-        assert np.all(arr[:, :, 3] == 255)
-        img.close()
+        with Image.open(out_path) as img:
+            arr = np.asarray(img)
+            assert np.allclose(arr[:, :, 0], 128, atol=1)
+            assert np.allclose(arr[:, :, 1], 64, atol=1)
+            assert np.all(arr[:, :, 2] == 255)
+            assert np.all(arr[:, :, 3] == 255)
 
     # Null / zero size image returns False
     assert TextureChannelPacker.convert_normal_directx(None, "dummy.png") is False
@@ -298,15 +293,14 @@ def test_convert_normal_directx_nan_inf_sanitization():
         assert success is True
         assert os.path.exists(out_path)
 
-        img = Image.open(out_path)
-        arr = np.asarray(img)
-        # NaN in Red -> 0.5 -> 128
-        assert np.allclose(arr[:, :, 0], 128, atol=1)
-        # Inf in Green -> 1.0 -> inverted for DirectX (255 - 255 = 0)
-        assert np.allclose(arr[:, :, 1], 0, atol=1)
-        # -Inf in Blue -> 0.0 -> 0
-        assert np.all(arr[:, :, 2] == 0)
-        img.close()
+        with Image.open(out_path) as img:
+            arr = np.asarray(img)
+            # NaN in Red -> 0.5 -> 128
+            assert np.allclose(arr[:, :, 0], 128, atol=1)
+            # Inf in Green -> 1.0 -> inverted for DirectX (255 - 255 = 0)
+            assert np.allclose(arr[:, :, 1], 0, atol=1)
+            # -Inf in Blue -> 0.0 -> 0
+            assert np.all(arr[:, :, 2] == 0)
 
 
 def test_save_array_to_disk_dimensions():
@@ -315,33 +309,29 @@ def test_save_array_to_disk_dimensions():
         arr_2d = np.full((32, 32), 100, dtype=np.uint8)
         p_2d = os.path.join(tmpdir, "test_2d.png")
         assert TextureChannelPacker._save_array_to_disk(arr_2d, p_2d) is True
-        img_2d = Image.open(p_2d)
-        assert img_2d.mode == "L"
-        img_2d.close()
+        with Image.open(p_2d) as img_2d:
+            assert img_2d.mode == "L"
 
         # 3D 1-channel
         arr_3d_1 = np.full((32, 32, 1), 150, dtype=np.uint8)
         p_3d_1 = os.path.join(tmpdir, "test_3d_1.png")
         assert TextureChannelPacker._save_array_to_disk(arr_3d_1, p_3d_1) is True
-        img_3d_1 = Image.open(p_3d_1)
-        assert img_3d_1.mode == "L"
-        img_3d_1.close()
+        with Image.open(p_3d_1) as img_3d_1:
+            assert img_3d_1.mode == "L"
 
         # 3D 3-channel RGB
         arr_rgb = np.full((32, 32, 3), 200, dtype=np.uint8)
         p_rgb = os.path.join(tmpdir, "test_rgb.png")
         assert TextureChannelPacker._save_array_to_disk(arr_rgb, p_rgb) is True
-        img_rgb = Image.open(p_rgb)
-        assert img_rgb.mode == "RGB"
-        img_rgb.close()
+        with Image.open(p_rgb) as img_rgb:
+            assert img_rgb.mode == "RGB"
 
         # 3D 4-channel RGBA
         arr_rgba = np.full((32, 32, 4), 255, dtype=np.uint8)
         p_rgba = os.path.join(tmpdir, "test_rgba.png")
         assert TextureChannelPacker._save_array_to_disk(arr_rgba, p_rgba) is True
-        img_rgba = Image.open(p_rgba)
-        assert img_rgba.mode == "RGBA"
-        img_rgba.close()
+        with Image.open(p_rgba) as img_rgba:
+            assert img_rgba.mode == "RGBA"
 
         # Invalid arrays
         assert TextureChannelPacker._save_array_to_disk(None, p_rgba) is False  # type: ignore

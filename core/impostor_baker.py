@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import tempfile
 from typing import Any, Optional
 
 import numpy as np
@@ -29,47 +30,18 @@ except ImportError:
     bpy = None
     mathutils = None
     Matrix = None  # type: ignore
-
-    class Vector(tuple):  # type: ignore
-        def __new__(cls, coords: Any) -> Vector:
-            return super().__new__(cls, tuple(float(x) for x in coords))
-
-        @property
-        def x(self) -> float:
-            return self[0]
-
-        @property
-        def y(self) -> float:
-            return self[1]
-
-        @property
-        def z(self) -> float:
-            return self[2]
-
-        def __add__(self, o: Any) -> Vector:
-            return Vector((self[0] + o[0], self[1] + o[1], self[2] + o[2]))
-
-        def __sub__(self, o: Any) -> Vector:
-            return Vector((self[0] - o[0], self[1] - o[1], self[2] - o[2]))
-
-        def __mul__(self, scalar: Any) -> Vector:
-            s = float(scalar)
-            return Vector((self[0] * s, self[1] * s, self[2] * s))
-
-        def __rmul__(self, scalar: Any) -> Vector:
-            s = float(scalar)
-            return Vector((self[0] * s, self[1] * s, self[2] * s))
-
-        def __neg__(self) -> Vector:
-            return Vector((-self[0], -self[1], -self[2]))
+    try:
+        from .impostor_math import Vector
+    except (ImportError, ValueError):
+        from core.impostor_math import Vector
 
 
 try:
-    from .impostor import ImpostorMath
+    from .impostor_math import ImpostorMath
     from .metrics import compute_bounding_sphere
     from .png_writer import write_png_direct
 except (ImportError, ValueError):
-    from core.impostor import ImpostorMath
+    from core.impostor_math import ImpostorMath
     from core.metrics import compute_bounding_sphere
     from core.png_writer import write_png_direct
 
@@ -438,9 +410,12 @@ class ImpostorAtlasBaker:
         if not bpy or not mesh_objs:
             return {}
 
-        import tempfile
+        try:
+            from .impostor import resolve_impostor_export_dir
+        except (ImportError, ValueError):
+            from core.impostor import resolve_impostor_export_dir
 
-        os.makedirs(output_dir, exist_ok=True)
+        output_dir = resolve_impostor_export_dir(output_dir)
         results: dict[str, str] = {}
 
         all_coords: list[Any] = []
@@ -592,7 +567,12 @@ class ImpostorAtlasBaker:
                 grid_size=8,
             )
 
-        os.makedirs(output_dir, exist_ok=True)
+        try:
+            from .impostor import resolve_impostor_export_dir
+        except (ImportError, ValueError):
+            from core.impostor import resolve_impostor_export_dir
+
+        output_dir = resolve_impostor_export_dir(output_dir)
         results: dict[str, str] = {}
 
         target_impostor = impostor_obj or bpy.data.objects.get(f"{base_name}_LOD_Impostor")

@@ -76,6 +76,7 @@
 * **Python Ternary Tuple Return Precedence**: `return a if cond else b, c` evaluates as `return a if cond else (b, c)`. Parentheses `return (a if cond else b), c` are mandatory to return a tuple in all branches.
 * **Linux `sys.path` Quirk**: Unlike Windows, `pytest` on Ubuntu runners does NOT include the root working directory in `sys.path`. Always configure `pythonpath = .` in `pytest.ini` and declare `PYTHONPATH: .` in GitHub Actions workflows.
 * **Dependency Parity Invariant**: Blender bundles `numpy` and `Pillow` internally, but standalone test suites in clean CI environments require them declared in `pyproject.toml` and installed via `pip install -e .[dev]`.
+* **Blender Headless `--python-exit-code 1` Invariant**: When running test suites in headless Blender (`blender -b --python script.py`), Blender exits with code `0` by default even when unhandled exceptions occur or unittests fail. Verification scripts and CI pipelines must explicitly supply `--python-exit-code 1` to guarantee test failures return a non-zero exit code.
 
 ---
 
@@ -199,3 +200,7 @@
 ### 5.5 Fillrate Overdraw: Bounding-Sphere Quads vs. 8-Vertex Cut-Out Octagons
 * **Bounding Sphere Transparency Waste**: Generating a single $2R \times 2R$ quad based on the bounding sphere diameter leaves over 80% of the quad as transparent pixels on slender or vertically elongated assets (e.g. trees, masts, streetlights, towers). In game engines, overlapping distant billboard impostors create severe GPU alpha-blend and alpha-scissor fillrate bottlenecks.
 * **Invariant**: Beveling the four corners of the bounding rectangle by 25% produces an 8-vertex convex cut-out polygon (`build_octahedral_cutout_polygon`) that eliminates 30–40% of transparent empty area for the negligible runtime cost of only 8 vertices (6 triangles).
+
+### 5.6 Windows UNC Network Path & NetBIOS Freeze Trap on Unsaved Scenes
+* **The `//` UNC Collision**: When Blender runs with an unsaved scene (`bpy.data.filepath == ""`), relative paths like `"//Textures/"` have leading double slashes. On Windows, `os.path.isabs("//Textures/")` evaluates to `True` because Windows treats leading double slashes as UNC network paths (`\\Textures`).
+* **Invariant**: Calling `os.makedirs("//Textures/...")` triggers a 30-second Windows SMB NetBIOS network timeout before failing with `FileNotFoundError: [WinError 53] The network path was not found`. In unsaved scenes, relative paths starting with `//` must be anchored to a safe temporary location (such as `tempfile.gettempdir() / "OmniMesh" / subfolder`) rather than falling back to `os.getcwd()` (which can point to write-protected `C:\Program Files\Blender Foundation\...` and raise `[WinError 5] Access is denied`). Genuine UNC network paths (`\\server\share` or `//server/share`) must be preserved.

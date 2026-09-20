@@ -50,7 +50,7 @@ def sanitize_asset_name(raw_name: str) -> str:
     name = re.sub(r"\.\d{3,}$", "", name)
 
     # 2. Strip known OmniMesh technical and LOD suffixes
-    for n in range(0, 11):
+    for n in range(11):
         if name.endswith(f"_LOD{n}"):
             name = name[: -len(f"_LOD{n}")]
             break
@@ -225,8 +225,8 @@ def setup_asset_collections(
     elif root_col.name not in scene.collection.children:
         try:
             scene.collection.children.link(root_col)
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            logger.debug("Root collection link skipped: %s", exc)
 
     root_col["_omnimesh_role"] = "MODEL_ROOT"
     if apply_color_tags and hasattr(root_col, "color_tag"):
@@ -244,14 +244,14 @@ def setup_asset_collections(
             if sub_col.name not in root_col.children:
                 try:
                     root_col.children.link(sub_col)
-                except RuntimeError:
-                    pass
+                except RuntimeError as exc:
+                    logger.debug("Subcollection link skipped: %s", exc)
             # Unlink from scene.collection if misplaced there directly
             if hasattr(scene.collection, "children") and sub_col.name in scene.collection.children:
                 try:
                     scene.collection.children.unlink(sub_col)
-                except RuntimeError:
-                    pass
+                except RuntimeError as exc:
+                    logger.debug("Subcollection unlink from scene skipped: %s", exc)
 
         sub_col["_omnimesh_role"] = role_key
         if apply_color_tags and hasattr(sub_col, "color_tag"):
@@ -351,7 +351,7 @@ def assign_objects_to_asset_hierarchy(
                 continue
 
         elif obj_type == "EMPTY":
-            is_socket = obj_name.startswith("SOCKET_") or obj_name.startswith("ATTACH_POINT_")
+            is_socket = obj_name.startswith(("SOCKET_", "ATTACH_POINT_"))
             if is_socket and lod0_col:
                 target_col = lod0_col
                 target_category = "moved_to_lod0"
@@ -384,15 +384,15 @@ def assign_objects_to_asset_hierarchy(
                     if col != target_col and hasattr(col, "objects") and obj_name in col.objects:
                         try:
                             col.objects.unlink(obj)
-                        except (RuntimeError, ReferenceError):
-                            pass
+                        except (RuntimeError, ReferenceError) as exc:
+                            logger.debug("Object unlink from collection skipped: %s", exc)
 
             if scene and hasattr(scene, "collection") and scene.collection != target_col:
                 if hasattr(scene.collection, "objects") and obj_name in scene.collection.objects:
                     try:
                         scene.collection.objects.unlink(obj)
-                    except (RuntimeError, ReferenceError):
-                        pass
+                    except (RuntimeError, ReferenceError) as exc:
+                        logger.debug("Object unlink from scene collection skipped: %s", exc)
 
         if target_category:
             summary[target_category].append(obj_name)
