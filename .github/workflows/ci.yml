@@ -90,7 +90,11 @@ jobs:
           chmod +x /opt/blender/blender
           /opt/blender/blender --version
 
+      - name: Build Extension Package
+        run: python scripts/build_extension.py
+
       - name: Run In-Blender Test Suite
         env:
           BLENDER_PATH: /opt/blender/blender
         run: python scripts/run_blender_tests.py
+

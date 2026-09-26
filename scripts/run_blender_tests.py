@@ -74,6 +74,36 @@ def find_blender_binary() -> str | None:
     return None
 
 
+def ensure_extension_zip(repo_root: str) -> str | None:
+    """Ensure a fresh extension ZIP exists on the host matching the current manifest version."""
+    configured_zip = os.environ.get("OMNIMESH_EXTENSION_ZIP")
+    if configured_zip and os.path.isfile(configured_zip):
+        return configured_zip
+
+    build_script = os.path.join(repo_root, "scripts", "build_extension.py")
+    if not os.path.isfile(build_script):
+        return None
+
+    try:
+        try:
+            from scripts.build_extension import build_package, get_version
+        except ImportError:
+            sys.path.insert(0, repo_root)
+            from scripts.build_extension import build_package, get_version
+
+        from pathlib import Path
+
+        version = get_version(Path(repo_root))
+        expected_zip = Path(repo_root) / "dist" / f"omnimesh-v{version}.zip"
+        if not expected_zip.is_file():
+            print(f"Extension package missing. Auto-building on host: {expected_zip.name}...")
+            return str(build_package(Path(repo_root)))
+        return str(expected_zip)
+    except Exception as exc:
+        logger.debug("Failed checking or building extension package: %s", exc)
+        return None
+
+
 def main() -> int:
     blender_bin = find_blender_binary()
     if not blender_bin:
@@ -91,6 +121,12 @@ def main() -> int:
         print(f"ERROR: Runner script not found at {runner_script}", file=sys.stderr)
         return 1
 
+    target_zip = ensure_extension_zip(repo_root)
+    env = os.environ.copy()
+    if target_zip:
+        env["OMNIMESH_EXTENSION_ZIP"] = target_zip
+        print(f"Using Extension ZIP: {target_zip}")
+
     cmd = [
         blender_bin,
         "-b",
@@ -102,7 +138,7 @@ def main() -> int:
     ]
 
     print(f"Executing: {' '.join(cmd)}")
-    proc = subprocess.run(cmd, cwd=repo_root)
+    proc = subprocess.run(cmd, cwd=repo_root, env=env)
     return proc.returncode
 
 

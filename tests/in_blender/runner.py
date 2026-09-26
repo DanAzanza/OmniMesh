@@ -5,6 +5,7 @@ Dual-Mode In-Blender Test Runner for OmniMesh (Blender MCP & Headless CLI).
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import io
 import logging
 import os
@@ -105,15 +106,29 @@ def run_extension_installation_smoke_test() -> None:
     if configured_zip:
         zip_path = Path(configured_zip)
     else:
-        candidates = sorted((repo_root / "dist").glob("omnimesh-v*.zip"))
-        zip_path = candidates[-1] if candidates else Path()
+        manifest_path = repo_root / "blender_manifest.toml"
+        version = None
+        if manifest_path.is_file():
+            import re
+
+            content = manifest_path.read_text(encoding="utf-8")
+            match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+            if match:
+                version = match.group(1)
+        if version:
+            zip_path = repo_root / "dist" / f"omnimesh-v{version}.zip"
+        else:
+            candidates = sorted((repo_root / "dist").glob("omnimesh-v*.zip"))
+            zip_path = candidates[-1] if candidates else Path()
+
     if not zip_path.is_file():
         raise FileNotFoundError(
-            "Built extension ZIP not found. Run scripts/build_extension.py or set OMNIMESH_EXTENSION_ZIP."
+            f"Built extension ZIP not found at '{zip_path}'. "
+            "Run 'python scripts/build_extension.py' or execute via 'python scripts/run_blender_tests.py'."
         )
 
     module_name = "bl_ext.user_default.omnimesh"
-    with tempfile.TemporaryDirectory(prefix="omnimesh-extension-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="omnimesh-extension-", ignore_cleanup_errors=True) as temp_dir:
         install_dir = Path(temp_dir) / "extensions" / "user_default" / "omnimesh"
         install_dir.mkdir(parents=True)
         with zipfile.ZipFile(zip_path) as archive:
