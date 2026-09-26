@@ -6,6 +6,7 @@ semantic missing texture fallback routing, and guarded micro-material consolidat
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 import logging
@@ -356,6 +357,20 @@ class SemanticTextureAuditor:
         return removed
 
 
+@dataclass(slots=True)
+class MaterialCleanOptions:
+    """Configuration options for the unified material optimization pipeline."""
+
+    purge_unused_slots: bool = True
+    deduplicate_slots: bool = True
+    merge_duplicate_datablocks: bool = True
+    remove_orphan_nodes: bool = True
+    enable_micro_consolidation: bool = False
+    micro_area_pct: float = 0.5
+    repair_missing_textures: bool = False
+    purge_orphans_blendfile: bool = False
+
+
 class MaterialOptimizer:
     """
     Unified Material Optimization, Cleanup and Consolidation Engine.
@@ -578,18 +593,12 @@ class MaterialOptimizer:
     def clean_materials_full(
         cls,
         mesh_objs: list[Any],
-        purge_unused_slots: bool = True,
-        deduplicate_slots: bool = True,
-        merge_duplicate_datablocks: bool = True,
-        remove_orphan_nodes: bool = True,
-        enable_micro_consolidation: bool = False,
-        micro_area_pct: float = 0.5,
-        repair_missing_textures: bool = False,
-        purge_orphans_blendfile: bool = False,
+        options: MaterialCleanOptions | None = None,
     ) -> dict[str, Any]:
         """
         Executes unified material cleanup pipeline across selected mesh objects.
         """
+        opts = options or MaterialCleanOptions()
         total_slots_removed = 0
         total_faces_remapped = 0
         total_consolidated_slots = 0
@@ -603,35 +612,35 @@ class MaterialOptimizer:
                 mat = slot.material
                 if mat and mat not in seen_materials:
                     seen_materials.add(mat)
-                    if repair_missing_textures:
+                    if opts.repair_missing_textures:
                         total_repaired_textures += SemanticTextureAuditor.repair_missing_textures_in_material(mat)
-                    if remove_orphan_nodes:
+                    if opts.remove_orphan_nodes:
                         total_orphan_nodes += SemanticTextureAuditor.remove_orphan_texture_nodes(mat)
 
         # Step 2: Micro-material consolidation (Critical Opt-In)
-        if enable_micro_consolidation:
+        if opts.enable_micro_consolidation:
             for obj in mesh_objs:
-                res = cls.consolidate_micro_materials(obj, area_threshold_pct=micro_area_pct)
+                res = cls.consolidate_micro_materials(obj, area_threshold_pct=opts.micro_area_pct)
                 total_consolidated_slots += res.get("consolidated_slots", 0)
 
         # Step 3: Headless Slot Compaction & Deduplication (Safe Default)
         for obj in mesh_objs:
             res = HeadlessSlotCompactor.compact_slots(
                 obj,
-                purge_empty=purge_unused_slots,
-                deduplicate_identical=deduplicate_slots,
+                purge_empty=opts.purge_unused_slots,
+                deduplicate_identical=opts.deduplicate_slots,
             )
             total_slots_removed += res.get("slots_removed", 0)
             total_faces_remapped += res.get("faces_remapped", 0)
 
         # Step 4: Scene-wide Duplicate Material Datablock Merge
         merged_datablocks = 0
-        if merge_duplicate_datablocks:
+        if opts.merge_duplicate_datablocks:
             merged_datablocks = cls.merge_duplicate_materials_scene()
 
         # Step 5: Purge Orphan Materials from .blend (Critical Opt-In)
         purged_orphans = 0
-        if purge_orphans_blendfile:
+        if opts.purge_orphans_blendfile:
             purged_orphans = cls.purge_orphan_materials()
 
         return {

@@ -28,6 +28,57 @@ from .transforms import (
 logger = logging.getLogger(__name__)
 
 
+def _parse_sim_attachment_key(
+    key: str,
+    val_clean: str,
+    current_attachment: SimAttachmentPoint,
+    record: CFGLineRecord,
+) -> None:
+    """Parses individual key-value pairs for a sim_attachment section."""
+    k_lower = key.lower()
+    if k_lower in ("attachment", "attachment_file"):
+        current_attachment.attachment_path = val_clean
+    elif k_lower == "attachment_root":
+        current_attachment.attachment_root = val_clean
+    elif k_lower == "attach_to_model":
+        current_attachment.attach_to_model = val_clean
+    elif k_lower == "attach_to_node":
+        current_attachment.attach_to_node = val_clean
+        current_attachment.name_tag = val_clean
+    elif k_lower == "alias":
+        current_attachment.alias = val_clean
+    elif k_lower == "attach_scale":
+        try:
+            current_attachment.attach_scale = float(val_clean)
+        except ValueError as exc:
+            logger.warning("Malformed attach_scale '%s': %s", val_clean, exc)
+    elif k_lower == "attach_offset":
+        tokens = [t.strip() for t in val_clean.split(",") if t.strip()]
+        if len(tokens) >= 3:
+            try:
+                coords = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
+                current_attachment.attach_offset_ft = coords
+                current_attachment.coords_msfs_rel_ft = coords
+                current_attachment.coords_blender_m = msfs_to_blender(*coords)
+                record.coordinates = coords
+                record.is_spatial = True
+            except ValueError as exc:
+                logger.warning("Malformed attach_offset coordinate '%s': %s", val_clean, exc)
+        else:
+            logger.debug("attach_offset has fewer than 3 tokens: %s", val_clean)
+    elif k_lower == "attach_pbh":
+        tokens = [t.strip() for t in val_clean.split(",") if t.strip()]
+        if len(tokens) >= 3:
+            try:
+                rot = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
+                current_attachment.attach_pbh_deg = rot
+                record.rotation = rot
+            except ValueError as exc:
+                logger.warning("Malformed attach_pbh rotation '%s': %s", val_clean, exc)
+        else:
+            logger.debug("attach_pbh has fewer than 3 tokens: %s", val_clean)
+
+
 class MSFSAttachmentsCST:
     """Lossless CST Parser & Serializer for MSFS 2024 attached_objects.cfg."""
 
@@ -98,69 +149,34 @@ class MSFSAttachmentsCST:
                     current_merge = {}
                 continue
 
-            # Key-Value pairs
-            if "=" in line_code:
-                key, val = line_code.split("=", 1)
-                key = key.strip()
-                val_clean = val.strip().strip('"')
-                record.key = key
-                record.raw_line = raw_line
+            if "=" not in line_code:
+                config.lines.append(record)
+                continue
 
-                sec_lower = current_section.lower()
-                if sec_lower == "version":
-                    if key.lower() == "major":
-                        try:
-                            config.version_major = int(val_clean)
-                        except ValueError:
-                            pass
-                    elif key.lower() == "minor":
-                        try:
-                            config.version_minor = int(val_clean)
-                        except ValueError:
-                            pass
+            key, val = line_code.split("=", 1)
+            key = key.strip()
+            val_clean = val.strip().strip('"')
+            record.key = key
+            record.raw_line = raw_line
 
-                elif sec_lower.startswith("merge_model.") and current_merge is not None:
-                    current_merge[key.lower()] = val_clean
+            sec_lower = current_section.lower()
+            if sec_lower == "version":
+                if key.lower() == "major":
+                    try:
+                        config.version_major = int(val_clean)
+                    except ValueError as exc:
+                        logger.warning("Malformed version major '%s': %s", val_clean, exc)
+                elif key.lower() == "minor":
+                    try:
+                        config.version_minor = int(val_clean)
+                    except ValueError as exc:
+                        logger.warning("Malformed version minor '%s': %s", val_clean, exc)
 
-                elif sec_lower.startswith("sim_attachment.") and current_attachment is not None:
-                    k_lower = key.lower()
-                    if k_lower in ("attachment", "attachment_file"):
-                        current_attachment.attachment_path = val_clean
-                    elif k_lower == "attachment_root":
-                        current_attachment.attachment_root = val_clean
-                    elif k_lower == "attach_to_model":
-                        current_attachment.attach_to_model = val_clean
-                    elif k_lower == "attach_to_node":
-                        current_attachment.attach_to_node = val_clean
-                        current_attachment.name_tag = val_clean
-                    elif k_lower == "alias":
-                        current_attachment.alias = val_clean
-                    elif k_lower == "attach_scale":
-                        try:
-                            current_attachment.attach_scale = float(val_clean)
-                        except ValueError:
-                            pass
-                    elif k_lower == "attach_offset":
-                        tokens = [t.strip() for t in val_clean.split(",") if t.strip()]
-                        if len(tokens) >= 3:
-                            try:
-                                coords = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
-                                current_attachment.attach_offset_ft = coords
-                                current_attachment.coords_msfs_rel_ft = coords
-                                current_attachment.coords_blender_m = msfs_to_blender(*coords)
-                                record.coordinates = coords
-                                record.is_spatial = True
-                            except ValueError:
-                                pass
-                    elif k_lower == "attach_pbh":
-                        tokens = [t.strip() for t in val_clean.split(",") if t.strip()]
-                        if len(tokens) >= 3:
-                            try:
-                                rot = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
-                                current_attachment.attach_pbh_deg = rot
-                                record.rotation = rot
-                            except ValueError:
-                                pass
+            elif sec_lower.startswith("merge_model.") and current_merge is not None:
+                current_merge[key.lower()] = val_clean
+
+            elif sec_lower.startswith("sim_attachment.") and current_attachment is not None:
+                _parse_sim_attachment_key(key, val_clean, current_attachment, record)
 
             config.lines.append(record)
 

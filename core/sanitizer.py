@@ -10,13 +10,31 @@ Provides 3-tiered architecture:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import math
 from typing import Any, Dict, List
 
-from .topology_repair import TopologyRepairEngine
+from .topology_repair import TopologyRepairEngine, TopologyRepairOptions
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class SanitizeOptions:
+    """Configuration options for full 3-tier mesh sanitation and repair pipeline."""
+
+    epsilon_merge: float = 1e-5
+    w_crit: float = 0.0
+    enable_weld: bool = False
+    enable_split_non_manifold: bool = True
+    enable_fill_holes: bool = False
+    hole_max_edges: int = 4
+    enable_triangulate_ngons: bool = False
+    enable_cull_micro_islands: bool = False
+    normal_recalc_policy: str = "MANIFOLD_ONLY"
+    world_matrix: Any = None
+
 
 try:
     import bmesh
@@ -448,16 +466,7 @@ class MeshSanitizer:
     def sanitize_mesh_full(
         cls,
         bm: Any,
-        epsilon_merge: float = 1e-5,
-        w_crit: float = 0.0,
-        enable_weld: bool = False,
-        enable_split_non_manifold: bool = True,
-        enable_fill_holes: bool = False,
-        hole_max_edges: int = 4,
-        enable_triangulate_ngons: bool = False,
-        enable_cull_micro_islands: bool = False,
-        normal_recalc_policy: str = "MANIFOLD_ONLY",
-        world_matrix: Any = None,
+        options: SanitizeOptions | None = None,
     ) -> Dict[str, Any]:
         """
         Coordinates full 3-tier mesh sanitation & repair pipeline.
@@ -466,36 +475,37 @@ class MeshSanitizer:
         if not bmesh or not bm:
             return {}
 
+        opts = options or SanitizeOptions()
         stats: Dict[str, Any] = {}
 
         # Tier 0: Pure Geometric Hygiene (Uncritical, Always Active)
         stats.update(cls.execute_tier0_pure_hygiene(bm))
 
         # Strictly respect explicit enable flags
-        actual_weld = bool(enable_weld and epsilon_merge > 1e-6)
-        actual_dist = epsilon_merge if (epsilon_merge > 1e-6) else 0.0005
-        actual_cull = bool(enable_cull_micro_islands and w_crit > 1e-5)
-        actual_crit = w_crit if (w_crit > 1e-5) else 0.005
+        actual_weld = bool(opts.enable_weld and opts.epsilon_merge > 1e-6)
+        actual_dist = opts.epsilon_merge if (opts.epsilon_merge > 1e-6) else 0.0005
+        actual_cull = bool(opts.enable_cull_micro_islands and opts.w_crit > 1e-5)
+        actual_crit = opts.w_crit if (opts.w_crit > 1e-5) else 0.005
 
         # Tier 1: Topological Repair (Critical / Opt-in)
-        tier1_stats = cls.execute_tier1_topological_repair(
-            bm,
+        repair_opts = TopologyRepairOptions(
             enable_weld=actual_weld,
             weld_dist=actual_dist,
-            enable_split_non_manifold=enable_split_non_manifold,
-            enable_fill_holes=enable_fill_holes,
-            hole_max_edges=hole_max_edges,
-            enable_triangulate_ngons=enable_triangulate_ngons,
+            enable_split_non_manifold=opts.enable_split_non_manifold,
+            enable_fill_holes=opts.enable_fill_holes,
+            hole_max_edges=opts.hole_max_edges,
+            enable_triangulate_ngons=opts.enable_triangulate_ngons,
             enable_cull_micro_islands=actual_cull,
             island_size_threshold=actual_crit,
-            world_matrix=world_matrix,
+            world_matrix=opts.world_matrix,
         )
+        tier1_stats = cls.execute_tier1_topological_repair(bm, options=repair_opts)
         stats.update(tier1_stats)
         stats["merged_doubles"] = tier1_stats.get("welded_verts", 0)
         stats["split_bowties"] = tier1_stats.get("split_bowties", 0)
 
         # Tier 2: Pipeline & Normal Guards
-        tier2_stats = cls.execute_tier2_pipeline_guards(bm, normal_recalc_policy=normal_recalc_policy)
+        tier2_stats = cls.execute_tier2_pipeline_guards(bm, normal_recalc_policy=opts.normal_recalc_policy)
         stats.update(tier2_stats)
 
         return stats

@@ -8,7 +8,8 @@ from typing import Any
 from unittest.mock import MagicMock
 import pytest
 
-from core.sanitizer import MeshSanitizer, Vector
+from core.sanitizer import MeshSanitizer, SanitizeOptions, Vector
+from core.topology_repair import TopologyRepairOptions
 
 
 class MockSanitizerVert:
@@ -105,11 +106,13 @@ def test_cull_subpixel_islands_null():
 def test_tier1_topological_repair_null():
     stats = MeshSanitizer.execute_tier1_topological_repair(
         None,
-        enable_weld=True,
-        enable_split_non_manifold=True,
-        enable_fill_holes=True,
-        enable_triangulate_ngons=True,
-        enable_cull_micro_islands=True,
+        options=TopologyRepairOptions(
+            enable_weld=True,
+            enable_split_non_manifold=True,
+            enable_fill_holes=True,
+            enable_triangulate_ngons=True,
+            enable_cull_micro_islands=True,
+        ),
     )
     assert stats == {
         "welded_verts": 0,
@@ -133,7 +136,7 @@ def test_tier2_pipeline_guards_null():
 
 
 def test_sanitize_mesh_full_null():
-    assert MeshSanitizer.sanitize_mesh_full(None, 1e-5, 0.01) == {}
+    assert MeshSanitizer.sanitize_mesh_full(None, options=SanitizeOptions(epsilon_merge=1e-5, w_crit=0.01)) == {}
 
 
 def test_fallback_vector_operations():

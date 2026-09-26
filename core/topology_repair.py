@@ -6,6 +6,7 @@ boundary hole sealing with beauty triangulation, and subpixel island culling.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import Any
 
@@ -17,6 +18,106 @@ try:
 except ImportError:
     bpy = None
     bmesh = None
+
+
+@dataclass(slots=True)
+class TopologyRepairOptions:
+    """Configuration options for Tier 1 topological mesh repair."""
+
+    enable_weld: bool = False
+    weld_dist: float = 0.0005
+    enable_split_non_manifold: bool = True
+    enable_fill_holes: bool = False
+    hole_max_edges: int = 4
+    enable_triangulate_ngons: bool = False
+    enable_cull_micro_islands: bool = False
+    island_size_threshold: float = 0.005
+    world_matrix: Any = None
+
+
+def _find_connected_face_fans(vert: Any) -> list[list[Any]]:
+    """Partitions the link_faces of a vertex into connected manifold face fans."""
+    face_set = set(vert.link_faces)
+    fans: list[list[Any]] = []
+
+    while face_set:
+        start_face = face_set.pop()
+        fan = [start_face]
+        queue = [start_face]
+
+        while queue:
+            curr_face = queue.pop(0)
+            for edge in getattr(curr_face, "edges", []):
+                if vert not in getattr(edge, "verts", []):
+                    continue
+                for nbr_face in getattr(edge, "link_faces", []):
+                    if nbr_face in face_set:
+                        face_set.remove(nbr_face)
+                        fan.append(nbr_face)
+                        queue.append(nbr_face)
+        fans.append(fan)
+
+    return fans
+
+
+def _remap_fan_to_new_vertex(
+    bm: Any,
+    fan: list[Any],
+    vert: Any,
+    new_vert: Any,
+    uv_layers: list[Any],
+) -> int:
+    """Remaps a single face fan from vert to new_vert, preserving UVs and materials."""
+    split_count = 0
+    for face in fan:
+        if not getattr(face, "is_valid", False):
+            continue
+        face_verts = list(face.verts)
+        if vert not in face_verts:
+            continue
+        idx = face_verts.index(vert)
+        face_verts[idx] = new_vert
+        mat_idx = getattr(face, "material_index", 0)
+        smooth = getattr(face, "smooth", True)
+
+        saved_uvs: dict[tuple[Any, int], Any] = {}
+        for lp_i, lp in enumerate(face.loops):
+            for uv_lay in uv_layers:
+                try:
+                    saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
+                except Exception as exc:
+                    logger.debug("Loop UV copy error: %s", exc)
+
+        orig_face_verts = list(face.verts)
+        bm.faces.remove(face)
+        try:
+            new_face = bm.faces.new(face_verts)
+            new_face.material_index = mat_idx
+            new_face.smooth = smooth
+
+            for lp_i, new_lp in enumerate(new_face.loops):
+                for uv_lay in uv_layers:
+                    if (uv_lay, lp_i) in saved_uvs:
+                        try:
+                            new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
+                        except Exception as exc:
+                            logger.debug("Reapply UV error: %s", exc)
+            split_count += 1
+        except ValueError as exc:
+            logger.debug("New face creation error: %s, restoring original face", exc)
+            try:
+                restored_f = bm.faces.new(orig_face_verts)
+                restored_f.material_index = mat_idx
+                restored_f.smooth = smooth
+            except Exception as rb_exc:
+                logger.debug("Restoring original face failed: %s", rb_exc)
+            if getattr(new_vert, "is_valid", False) and len(getattr(new_vert, "link_faces", [])) == 0:
+                try:
+                    bm.verts.remove(new_vert)
+                except Exception as rm_exc:
+                    logger.debug("Orphan vert removal failed: %s", rm_exc)
+
+    return split_count
 
 
 class TopologyRepairEngine:
@@ -53,92 +154,29 @@ class TopologyRepairEngine:
             if not getattr(vert, "is_valid", False) or len(getattr(vert, "link_faces", [])) <= 1:
                 continue
 
-            face_set = set(vert.link_faces)
-            fans = []
+            fans = _find_connected_face_fans(vert)
+            if len(fans) <= 1:
+                continue
 
-            while face_set:
-                start_face = face_set.pop()
-                fan = [start_face]
-                queue = [start_face]
+            orig_weights = {}
+            if dvert_lay:
+                try:
+                    if vert[dvert_lay]:
+                        orig_weights = dict(vert[dvert_lay])
+                except (KeyError, IndexError, AttributeError, TypeError, ReferenceError):
+                    orig_weights = {}
 
-                while queue:
-                    curr_face = queue.pop(0)
-                    for edge in getattr(curr_face, "edges", []):
-                        if vert not in getattr(edge, "verts", []):
-                            continue
-                        for nbr_face in getattr(edge, "link_faces", []):
-                            if nbr_face in face_set:
-                                face_set.remove(nbr_face)
-                                fan.append(nbr_face)
-                                queue.append(nbr_face)
-                fans.append(fan)
-
-            if len(fans) > 1:
-                orig_weights = {}
-                if dvert_lay:
+            for extra_fan in fans[1:]:
+                new_vert = bm.verts.new(vert.co)
+                if dvert_lay and orig_weights:
                     try:
-                        if vert[dvert_lay]:
-                            orig_weights = dict(vert[dvert_lay])
-                    except (KeyError, IndexError, AttributeError, TypeError, ReferenceError):
-                        orig_weights = {}
+                        dvert = new_vert[dvert_lay]
+                        for g_idx, w in orig_weights.items():
+                            dvert[g_idx] = w
+                    except Exception as exc:
+                        logger.debug("Deform weight assign error: %s", exc)
 
-                for extra_fan in fans[1:]:
-                    new_vert = bm.verts.new(vert.co)
-                    if dvert_lay and orig_weights:
-                        try:
-                            dvert = new_vert[dvert_lay]
-                            for g_idx, w in orig_weights.items():
-                                dvert[g_idx] = w
-                        except Exception as exc:
-                            logger.debug("Deform weight assign error: %s", exc)
-
-                    for face in extra_fan:
-                        if not getattr(face, "is_valid", False):
-                            continue
-                        face_verts = list(face.verts)
-                        if vert not in face_verts:
-                            continue
-                        idx = face_verts.index(vert)
-                        face_verts[idx] = new_vert
-                        mat_idx = getattr(face, "material_index", 0)
-                        smooth = getattr(face, "smooth", True)
-
-                        saved_uvs: dict[tuple[Any, int], Any] = {}
-                        for lp_i, lp in enumerate(face.loops):
-                            for uv_lay in uv_layers:
-                                try:
-                                    saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
-                                except Exception as exc:
-                                    logger.debug("Loop UV copy error: %s", exc)
-
-                        orig_face_verts = list(face.verts)
-                        bm.faces.remove(face)
-                        try:
-                            new_face = bm.faces.new(face_verts)
-                            new_face.material_index = mat_idx
-                            new_face.smooth = smooth
-
-                            for lp_i, new_lp in enumerate(new_face.loops):
-                                for uv_lay in uv_layers:
-                                    if (uv_lay, lp_i) in saved_uvs:
-                                        try:
-                                            new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
-                                        except Exception as exc:
-                                            logger.debug("Reapply UV error: %s", exc)
-                            split_count += 1
-                        except ValueError as exc:
-                            logger.debug("New face creation error: %s, restoring original face", exc)
-                            try:
-                                restored_f = bm.faces.new(orig_face_verts)
-                                restored_f.material_index = mat_idx
-                                restored_f.smooth = smooth
-                            except Exception as rb_exc:
-                                logger.debug("Restoring original face failed: %s", rb_exc)
-                            if getattr(new_vert, "is_valid", False) and len(getattr(new_vert, "link_faces", [])) == 0:
-                                try:
-                                    bm.verts.remove(new_vert)
-                                except Exception as rm_exc:
-                                    logger.debug("Orphan vert removal failed: %s", rm_exc)
+                split_count += _remap_fan_to_new_vertex(bm, extra_fan, vert, new_vert, uv_layers)
 
         if split_count > 0:
             try:
@@ -372,31 +410,13 @@ class TopologyRepairEngine:
     def execute_tier1_topological_repair(
         cls,
         bm: Any,
-        enable_weld: bool = False,
-        weld_dist: float = 0.0005,
-        enable_split_non_manifold: bool = True,
-        enable_fill_holes: bool = False,
-        hole_max_edges: int = 4,
-        enable_triangulate_ngons: bool = False,
-        enable_cull_micro_islands: bool = False,
-        island_size_threshold: float = 0.005,
-        world_matrix: Any = None,
+        options: TopologyRepairOptions | None = None,
     ) -> dict[str, int]:
         """
         Tier 1: Topological Repair (Opt-in with explicit user toggles).
         Ordering: Weld -> Split Bowties & Non-Manifold -> Fill Holes (+Triangulate) -> N-Gon Triangulate -> Cull Islands.
         """
-        if not bmesh or not bm:
-            return {
-                "welded_verts": 0,
-                "split_bowties": 0,
-                "split_non_manifold_edges": 0,
-                "filled_holes": 0,
-                "triangulated_ngons": 0,
-                "culled_islands": 0,
-            }
-
-        stats = {
+        empty_stats = {
             "welded_verts": 0,
             "split_bowties": 0,
             "split_non_manifold_edges": 0,
@@ -404,24 +424,29 @@ class TopologyRepairEngine:
             "triangulated_ngons": 0,
             "culled_islands": 0,
         }
+        if not bmesh or not bm:
+            return empty_stats
+
+        opts = options or TopologyRepairOptions()
+        stats = dict(empty_stats)
 
         # 1. Weld Coincident Vertices (Boundary Safe)
-        if enable_weld and weld_dist > 1e-6:
+        if opts.enable_weld and opts.weld_dist > 1e-6:
             from .sanitizer import MeshSanitizer
 
-            stats["welded_verts"] = MeshSanitizer.merge_doubles_boundary_safe(bm, dist=weld_dist)
+            stats["welded_verts"] = MeshSanitizer.merge_doubles_boundary_safe(bm, dist=opts.weld_dist)
 
         # 2. Split Non-Manifold Bowtie Vertices & Edges
-        if enable_split_non_manifold:
+        if opts.enable_split_non_manifold:
             stats["split_bowties"] = cls.split_bowtie_vertices(bm)
             stats["split_non_manifold_edges"] = cls.split_non_manifold_edges(bm)
 
         # 3. Fill Small Open Holes (with immediate local beauty triangulation)
-        if enable_fill_holes:
-            stats["filled_holes"] = cls.fill_small_boundary_holes(bm, max_edges=hole_max_edges)
+        if opts.enable_fill_holes:
+            stats["filled_holes"] = cls.fill_small_boundary_holes(bm, max_edges=opts.hole_max_edges)
 
         # 4. Triangulate Remaining N-Gons (>4 vertices) if requested
-        if enable_triangulate_ngons and hasattr(bm, "faces"):
+        if opts.enable_triangulate_ngons and hasattr(bm, "faces"):
             try:
                 bm.faces.ensure_lookup_table()
                 ngons = [f for f in bm.faces if getattr(f, "is_valid", False) and len(getattr(f, "verts", [])) > 4]
@@ -435,9 +460,9 @@ class TopologyRepairEngine:
                 logger.debug("N-gon triangulation error: %s", exc)
 
         # 5. Cull Subpixel / Micro Islands
-        if enable_cull_micro_islands and island_size_threshold > 1e-6:
+        if opts.enable_cull_micro_islands and opts.island_size_threshold > 1e-6:
             stats["culled_islands"] = cls.cull_subpixel_islands(
-                bm, w_crit=island_size_threshold, world_matrix=world_matrix
+                bm, w_crit=opts.island_size_threshold, world_matrix=opts.world_matrix
             )
 
         return stats

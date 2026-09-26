@@ -36,7 +36,7 @@ try:
     from .occlusion import HardenedOcclusionCuller
     from .pivot import PivotPreservationEngine
     from .rigging import KinematicBonePruner, WeightSanitizer
-    from .sanitizer import MeshSanitizer
+    from .sanitizer import MeshSanitizer, SanitizeOptions
     from .slender import SlenderFeatureCuller
 except (ImportError, ValueError):
     from core.decimator import MeshDecimator
@@ -53,7 +53,7 @@ except (ImportError, ValueError):
     from core.occlusion import HardenedOcclusionCuller
     from core.pivot import PivotPreservationEngine
     from core.rigging import KinematicBonePruner, WeightSanitizer
-    from core.sanitizer import MeshSanitizer
+    from core.sanitizer import MeshSanitizer, SanitizeOptions
     from core.slender import SlenderFeatureCuller
 
 
@@ -145,7 +145,13 @@ def _process_merged_tier(
     bm = bmesh.new()
     try:
         bm.from_mesh(tier_obj.data)
-        MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
+        MeshSanitizer.sanitize_mesh_full(
+            bm,
+            options=SanitizeOptions(
+                epsilon_merge=tolerances["epsilon_merge"],
+                w_crit=tolerances["w_crit"],
+            ),
+        )
 
         if props.enable_slender_culling:
             res_slender = SlenderFeatureCuller.cull_slender_features(
@@ -294,7 +300,13 @@ def _process_unmerged_tier(
         bm = bmesh.new()
         try:
             bm.from_mesh(lod_obj.data)
-            MeshSanitizer.sanitize_mesh_full(bm, tolerances["epsilon_merge"], tolerances["w_crit"])
+            MeshSanitizer.sanitize_mesh_full(
+                bm,
+                options=SanitizeOptions(
+                    epsilon_merge=tolerances["epsilon_merge"],
+                    w_crit=tolerances["w_crit"],
+                ),
+            )
 
             if props.enable_slender_culling:
                 res_slender = SlenderFeatureCuller.cull_slender_features(

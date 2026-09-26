@@ -11,6 +11,7 @@ Features:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import re
 from typing import Any, Optional
@@ -82,17 +83,35 @@ def sanitize_asset_name(raw_name: str) -> str:
     return cleaned or "Asset"
 
 
+@dataclass(slots=True)
+class SceneStandardOptions:
+    """Standard scene & viewport configuration settings."""
+
+    unit_scale: float = 1.0
+    length_unit: str = "METERS"
+    fps: int = 60
+    clip_start: float = 0.05
+    clip_end: float = 1000.0
+    enable_stats: bool = True
+    enable_cavity: bool = True
+    enable_backface_culling: bool = True
+
+
+@dataclass(slots=True)
+class AssetCollectionOptions:
+    """Options for standardized OmniMesh asset collection hierarchies."""
+
+    create_lod0: bool = True
+    create_colliders: bool = True
+    create_helpers: bool = True
+    create_config: bool = False
+    apply_color_tags: bool = True
+
+
 def configure_game_scene_settings(
     scene: Any,
+    options: SceneStandardOptions | None = None,
     *,
-    unit_scale: float = 1.0,
-    length_unit: str = "METERS",
-    fps: int = 60,
-    clip_start: float = 0.05,
-    clip_end: float = 1000.0,
-    enable_stats: bool = True,
-    enable_cavity: bool = True,
-    enable_backface_culling: bool = True,
     context: Any = None,
 ) -> dict[str, Any]:
     """
@@ -107,19 +126,21 @@ def configure_game_scene_settings(
     if not scene:
         return result
 
+    opts = options or SceneStandardOptions()
+
     # 1. Metric Unit Standards
     if hasattr(scene, "unit_settings"):
         try:
             scene.unit_settings.system = "METRIC"
-            scene.unit_settings.scale_length = float(unit_scale)
-            scene.unit_settings.length_unit = length_unit
+            scene.unit_settings.scale_length = float(opts.unit_scale)
+            scene.unit_settings.length_unit = opts.length_unit
         except (AttributeError, TypeError, ValueError) as exc:
             logger.debug("Could not set unit_settings: %s", exc)
 
     # 2. Game Frame Rate Standards (fps + fps_base)
     if hasattr(scene, "render"):
         try:
-            scene.render.fps = int(fps)
+            scene.render.fps = int(opts.fps)
             scene.render.fps_base = 1.0
         except (AttributeError, TypeError, ValueError) as exc:
             logger.debug("Could not set render.fps: %s", exc)
@@ -143,11 +164,11 @@ def configure_game_scene_settings(
                             if getattr(space, "type", "") == "VIEW_3D":
                                 _apply_viewport_space_settings(
                                     space,
-                                    clip_start=clip_start,
-                                    clip_end=clip_end,
-                                    enable_stats=enable_stats,
-                                    enable_cavity=enable_cavity,
-                                    enable_backface_culling=enable_backface_culling,
+                                    clip_start=opts.clip_start,
+                                    clip_end=opts.clip_end,
+                                    enable_stats=opts.enable_stats,
+                                    enable_cavity=opts.enable_cavity,
+                                    enable_backface_culling=opts.enable_backface_culling,
                                 )
                                 viewports_count += 1
         except Exception as exc:
@@ -189,12 +210,8 @@ def _apply_viewport_space_settings(
 def setup_asset_collections(
     context: Any,
     asset_name: str,
+    options: AssetCollectionOptions | None = None,
     *,
-    create_lod0: bool = True,
-    create_colliders: bool = True,
-    create_helpers: bool = True,
-    create_config: bool = False,
-    apply_color_tags: bool = True,
     bpy_module: Any = None,
 ) -> dict[str, Any]:
     """
@@ -214,6 +231,7 @@ def setup_asset_collections(
     if not scene or not hasattr(scene, "collection"):
         return {}
 
+    opts = options or AssetCollectionOptions()
     clean_asset = sanitize_asset_name(asset_name)
     collections: dict[str, Any] = {}
 
@@ -229,7 +247,7 @@ def setup_asset_collections(
             logger.debug("Root collection link skipped: %s", exc)
 
     root_col["_omnimesh_role"] = "MODEL_ROOT"
-    if apply_color_tags and hasattr(root_col, "color_tag"):
+    if opts.apply_color_tags and hasattr(root_col, "color_tag"):
         root_col.color_tag = COLLECTION_COLOR_TAGS.get("ROOT", "COLOR_08")
 
     collections["root"] = root_col
@@ -254,25 +272,25 @@ def setup_asset_collections(
                     logger.debug("Subcollection unlink from scene skipped: %s", exc)
 
         sub_col["_omnimesh_role"] = role_key
-        if apply_color_tags and hasattr(sub_col, "color_tag"):
+        if opts.apply_color_tags and hasattr(sub_col, "color_tag"):
             sub_col.color_tag = COLLECTION_COLOR_TAGS.get(role_key, "NONE")
         return sub_col
 
     # 2. LOD0 Collection
-    if create_lod0:
+    if opts.create_lod0:
         collections["lod0"] = _ensure_sub_collection("LOD0", f"{clean_asset}_LOD0")
 
     # 3. Colliders Collection
-    if create_colliders:
+    if opts.create_colliders:
         col_col = _ensure_sub_collection("COLLIDERS", f"{clean_asset}_Colliders")
         collections["colliders"] = col_col
 
     # 4. Helpers Collection
-    if create_helpers:
+    if opts.create_helpers:
         collections["helpers"] = _ensure_sub_collection("HELPERS", f"{clean_asset}_Helpers")
 
     # 5. Config Collection (Optional)
-    if create_config:
+    if opts.create_config:
         collections["config"] = _ensure_sub_collection("CONFIG", f"{clean_asset}_Config")
 
     return collections

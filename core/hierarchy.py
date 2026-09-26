@@ -402,6 +402,7 @@ class CollectionCloneDAG:
         cls,
         objects: list[Any],
         base_name: str,
+        scene: Any = None,
     ) -> tuple[Any, Any]:
         """
         Auto-wraps loose selected scene objects into a clean root Collection {base_name}
@@ -411,11 +412,13 @@ class CollectionCloneDAG:
         if not bpy or not objects:
             return None, None
 
+        sc = scene or getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if bpy and bpy.data.scenes else None)
+
         coll = bpy.data.collections.get(base_name)
         if not coll:
             coll = bpy.data.collections.new(base_name)
-            if bpy.context and bpy.context.scene:
-                bpy.context.scene.collection.children.link(coll)
+            if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
+                sc.collection.children.link(coll)
 
         coll["_is_lod_root"] = True
 
@@ -426,8 +429,13 @@ class CollectionCloneDAG:
             for c in list(getattr(obj, "users_collection", [])):
                 if c != coll:
                     c.objects.unlink(obj)
-            if bpy.context and bpy.context.scene and obj.name in bpy.context.scene.collection.objects:
-                bpy.context.scene.collection.objects.unlink(obj)
+            if (
+                sc
+                and hasattr(sc, "collection")
+                and hasattr(sc.collection, "objects")
+                and obj.name in sc.collection.objects
+            ):
+                sc.collection.objects.unlink(obj)
 
         # Check for existing Pivot
         pivot_src, _, _, _ = PivotPreservationEngine.identify_pivots_and_sockets(coll)
@@ -478,7 +486,7 @@ class CollectionCloneDAG:
 
 
 def get_or_create_engine_import_collection(
-    context: Any,
+    context_or_scene: Any,
     asset_name: str,
     role: str,
     use_lod0_suffix: bool = True,
@@ -497,11 +505,11 @@ def get_or_create_engine_import_collection(
        └── {AssetName}_LODN
     """
     _bpy = bpy_module if bpy_module is not None else bpy
-    if not _bpy or not context:
+    if not _bpy or not context_or_scene:
         return None
 
     clean_asset = asset_name.strip() or "Asset"
-    scene = context.scene
+    scene = getattr(context_or_scene, "scene", context_or_scene)
 
     # 1. Root Model Collection
     root_col = _bpy.data.collections.get(clean_asset)

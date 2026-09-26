@@ -33,6 +33,7 @@ except ImportError:
 
 try:
     from ..core.scene_setup import (
+        AssetCollectionOptions,
         assign_objects_to_asset_hierarchy,
         configure_game_scene_settings,
         sanitize_asset_name,
@@ -41,6 +42,7 @@ try:
     from .properties import project_preset_tiers
 except (ImportError, ValueError):
     from core.scene_setup import (
+        AssetCollectionOptions,
         assign_objects_to_asset_hierarchy,
         configure_game_scene_settings,
         sanitize_asset_name,
@@ -175,11 +177,13 @@ class OMNIMESH_OT_initialize_asset(Operator):
         colls = setup_asset_collections(
             context,
             clean_name,
-            create_lod0=True,
-            create_colliders=self.create_colliders,
-            create_helpers=self.create_helpers,
-            create_config=self.create_config,
-            apply_color_tags=self.apply_color_tags,
+            options=AssetCollectionOptions(
+                create_lod0=True,
+                create_colliders=self.create_colliders,
+                create_helpers=self.create_helpers,
+                create_config=self.create_config,
+                apply_color_tags=self.apply_color_tags,
+            ),
         )
 
         if not colls or "root" not in colls:

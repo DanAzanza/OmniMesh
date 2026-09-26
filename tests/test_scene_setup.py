@@ -8,6 +8,8 @@ from typing import Any
 
 from core.scene_setup import (
     COLLECTION_COLOR_TAGS,
+    AssetCollectionOptions,
+    SceneStandardOptions,
     assign_objects_to_asset_hierarchy,
     configure_game_scene_settings,
     sanitize_asset_name,
@@ -222,11 +224,13 @@ def test_configure_game_scene_settings_with_viewports():
 
     res = configure_game_scene_settings(
         scene,
-        clip_start=0.05,
-        clip_end=1000.0,
-        enable_stats=True,
-        enable_cavity=True,
-        enable_backface_culling=True,
+        options=SceneStandardOptions(
+            clip_start=0.05,
+            clip_end=1000.0,
+            enable_stats=True,
+            enable_cavity=True,
+            enable_backface_culling=True,
+        ),
         context=ctx,
     )
 
@@ -248,11 +252,13 @@ def test_setup_asset_collections_hierarchy():
     colls = setup_asset_collections(
         ctx,
         "SuperCar",
-        create_lod0=True,
-        create_colliders=True,
-        create_helpers=True,
-        create_config=True,
-        apply_color_tags=True,
+        options=AssetCollectionOptions(
+            create_lod0=True,
+            create_colliders=True,
+            create_helpers=True,
+            create_config=True,
+            apply_color_tags=True,
+        ),
         bpy_module=dummy_bpy,
     )
 
@@ -301,10 +307,12 @@ def test_assign_objects_to_asset_hierarchy():
     colls = setup_asset_collections(
         ctx,
         "Drone",
-        create_lod0=True,
-        create_colliders=True,
-        create_helpers=True,
-        create_config=True,
+        options=AssetCollectionOptions(
+            create_lod0=True,
+            create_colliders=True,
+            create_helpers=True,
+            create_config=True,
+        ),
         bpy_module=dummy_bpy,
     )
 

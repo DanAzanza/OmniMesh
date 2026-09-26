@@ -42,9 +42,12 @@ class CollisionManager:
         mode: str = "PER_OBJECT",
         target_collection_name: str = "",
         target_engine: str = "",
+        scene: Any = None,
     ) -> List[Any]:
         if not bpy or not mesh_objs:
             return []
+
+        sc = scene or getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if bpy and bpy.data.scenes else None)
 
         # Remove pre-existing colliders for clean regeneration first
         cls.remove_colliders_for_objects(mesh_objs, base_name)
@@ -71,28 +74,28 @@ class CollisionManager:
                     c_children.append(target_coll)
             # Unlink from scene root if nested under root_coll
             if (
-                hasattr(bpy.context, "scene")
-                and hasattr(bpy.context.scene, "collection")
-                and hasattr(bpy.context.scene.collection, "children")
-                and hasattr(bpy.context.scene.collection.children, "unlink")
+                sc
+                and hasattr(sc, "collection")
+                and hasattr(sc.collection, "children")
+                and hasattr(sc.collection.children, "unlink")
             ):
                 try:
-                    if target_coll.name in bpy.context.scene.collection.children:
-                        bpy.context.scene.collection.children.unlink(target_coll)
+                    if target_coll.name in sc.collection.children:
+                        sc.collection.children.unlink(target_coll)
                 except Exception as e:
                     logger.debug("Failed unlinking target collection from scene root: %s", e)
         elif (
-            hasattr(bpy.context, "scene")
-            and hasattr(bpy.context.scene, "collection")
-            and hasattr(bpy.context.scene.collection, "children")
-            and target_coll.name not in bpy.context.scene.collection.children
+            sc
+            and hasattr(sc, "collection")
+            and hasattr(sc.collection, "children")
+            and target_coll.name not in sc.collection.children
         ):
-            bpy.context.scene.collection.children.link(target_coll)
+            sc.collection.children.link(target_coll)
 
         # Resolve target engine for naming if not explicitly passed
         resolved_engine = target_engine
-        if not resolved_engine and hasattr(bpy.context, "scene"):
-            props = getattr(bpy.context.scene, "lod_tool", None)
+        if not resolved_engine and sc:
+            props = getattr(sc, "lod_tool", None)
             if props:
                 resolved_engine = getattr(props, "target_engine", "")
 

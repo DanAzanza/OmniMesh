@@ -10,6 +10,7 @@ import pytest
 from core.materials import (
     DeepMaterialHasher,
     HeadlessSlotCompactor,
+    MaterialCleanOptions,
     MaterialOptimizer,
     SemanticTextureAuditor,
 )
@@ -232,6 +233,15 @@ def test_clean_materials_full_null_and_summary():
     assert stats["orphan_nodes_removed"] == 0
     assert stats["merged_datablocks"] == 0
     assert stats["purged_orphans"] == 0
+
+    # With explicit MaterialCleanOptions
+    options = MaterialCleanOptions(
+        purge_unused_slots=True,
+        deduplicate_slots=True,
+        merge_duplicate_datablocks=False,
+    )
+    stats2 = MaterialOptimizer.clean_materials_full([], options=options)
+    assert stats2["slots_removed"] == 0
 
 
 def test_material_optimizer_purge_unused_materials():

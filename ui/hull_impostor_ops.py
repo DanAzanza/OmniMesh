@@ -90,6 +90,7 @@ class LOD_OT_generate_impostor(Operator):
             target_engine=getattr(props, "target_engine", "UE5"),
             target_collection_name=target_coll_name,
             atlas_resolution=calc_res,
+            scene=context.scene,
         )
 
         if not res:
@@ -217,6 +218,8 @@ class LOD_OT_generate_collision_hulls(Operator):
             max_verts_per_hull=props.collision_max_verts_per_hull,
             concavity_threshold=props.collision_concavity_threshold,
             target_collection_name=f"{base_name}_Colliders",
+            target_engine=getattr(props, "target_engine", "GENERIC"),
+            scene=context.scene,
         )
 
         props.last_generated_collider_count = len(created_hulls)

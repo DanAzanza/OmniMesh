@@ -22,7 +22,7 @@ try:
     from ..core.hierarchy import LayerCollectionGuard
     from ..core.materials import MaterialOptimizer
     from ..core.modifiers import ModifierManager
-    from ..core.sanitizer import MeshSanitizer
+    from ..core.sanitizer import MeshSanitizer, SanitizeOptions
     from .hud import LODViewportHUD
     from .utils import (
         get_lod0_mesh_objects,
@@ -36,7 +36,7 @@ except (ImportError, ValueError):
     from core.hierarchy import LayerCollectionGuard
     from core.materials import MaterialOptimizer
     from core.modifiers import ModifierManager
-    from core.sanitizer import MeshSanitizer
+    from core.sanitizer import MeshSanitizer, SanitizeOptions
     from ui.hud import LODViewportHUD
     from ui.utils import (
         get_lod0_mesh_objects,
@@ -195,15 +195,17 @@ class LOD_OT_clean_and_repair_mesh(Operator):
                 bm.from_mesh(obj.data)
                 res = MeshSanitizer.sanitize_mesh_full(
                     bm,
-                    epsilon_merge=weld_dist,
-                    w_crit=0.0,
-                    enable_weld=props.cleanup_enable_weld,
-                    enable_split_non_manifold=props.cleanup_enable_split_non_manifold,
-                    enable_fill_holes=props.cleanup_enable_fill_holes,
-                    hole_max_edges=props.cleanup_hole_max_edges,
-                    enable_triangulate_ngons=props.cleanup_enable_triangulate_ngons,
-                    enable_cull_micro_islands=False,
-                    normal_recalc_policy=props.cleanup_normal_policy,
+                    options=SanitizeOptions(
+                        epsilon_merge=weld_dist,
+                        w_crit=0.0,
+                        enable_weld=props.cleanup_enable_weld,
+                        enable_split_non_manifold=props.cleanup_enable_split_non_manifold,
+                        enable_fill_holes=props.cleanup_enable_fill_holes,
+                        hole_max_edges=props.cleanup_hole_max_edges,
+                        enable_triangulate_ngons=props.cleanup_enable_triangulate_ngons,
+                        enable_cull_micro_islands=False,
+                        normal_recalc_policy=props.cleanup_normal_policy,
+                    ),
                 )
                 total_loose += res.get("loose_verts_deleted", res.get("loose_verts", 0))
                 total_deg += res.get("degenerate_faces_deleted", res.get("zero_faces", 0))

@@ -204,3 +204,27 @@
 ### 5.6 Windows UNC Network Path & NetBIOS Freeze Trap on Unsaved Scenes
 * **The `//` UNC Collision**: When Blender runs with an unsaved scene (`bpy.data.filepath == ""`), relative paths like `"//Textures/"` have leading double slashes. On Windows, `os.path.isabs("//Textures/")` evaluates to `True` because Windows treats leading double slashes as UNC network paths (`\\Textures`).
 * **Invariant**: Calling `os.makedirs("//Textures/...")` triggers a 30-second Windows SMB NetBIOS network timeout before failing with `FileNotFoundError: [WinError 53] The network path was not found`. In unsaved scenes, relative paths starting with `//` must be anchored to a safe temporary location (such as `tempfile.gettempdir() / "OmniMesh" / subfolder`) rather than falling back to `os.getcwd()` (which can point to write-protected `C:\Program Files\Blender Foundation\...` and raise `[WinError 5] Access is denied`). Genuine UNC network paths (`\\server\share` or `//server/share`) must be preserved.
+
+### 5.7 Headless Impostor Bake Acceleration (Cycles CPU vs. EEVEE-Next llvmpipe Stall)
+* **The Software Mesa llvmpipe Trap**: On GPU-less cloud runners (e.g. GitHub Actions Linux VMs with 2 vCPUs), Blender defaults to `BLENDER_EEVEE_NEXT`. Because there is no hardware GPU, Mesa emulates modern OpenGL and Vulkan in software via `llvmpipe`. Rendering 192 octahedral atlas animation frames (64 views $\times$ 3 channels) through software rasterization with default 64 samples takes >25 minutes and can stall on shader compilation.
+* **Blender RNA Engine Attribute Location**: In Blender Python, `engine` is an enum property of `bpy.types.RenderSettings`, NOT `bpy.types.RenderEngine`. Querying `bpy.types.RenderEngine.bl_rna.properties["engine"]` raises `KeyError: 'engine'`. Never inspect RNA engine dictionaries; assign `scene.render.engine` directly inside a `try...except` block.
+* **Invariant**: Ephemeral background bake scenes (`bpy.app.background == True`) must prioritize native CPU `CYCLES` with `samples = 1`, `max_bounces = 0`, `diffuse_bounces = 0`, `glossy_bounces = 0`, and `device = "CPU"`. Cycles uses native C++ SIMD BVH ray-tracing that operates independently of OpenGL/Vulkan GPU drivers, rendering the entire 192-frame sequence in ~12 seconds. Selected-to-active bake passes must likewise use `samples = 1` and disable denoising (`use_denoising = not is_bg`).
+
+---
+
+## 6. Blender Add-on Architecture & UI/UX Standards
+
+### 6.1 Modern Extension Architecture & Packaging (Blender 4.2+)
+* **Dual Manifest Standard**: Always maintain both `bl_info` in `__init__.py` (for legacy add-on installation) and `blender_manifest.toml` (for Blender 4.2+ extension system). Both must share identical semantic version strings.
+* **Extension Directory**: For Blender 4.2+, user extensions reside in `%APPDATA%\Blender Foundation\Blender\<ver>\extensions\user_default\<addon_id>` and activate via `bpy.ops.preferences.addon_enable(module="bl_ext.user_default.<addon_id>")`.
+
+### 6.2 Live Iteration & Dynamic Reloading via Blender MCP
+* **Hot Reloading Sequence**: When modifying code during a live session, reload modules in strict dependency order using `importlib.reload()` (`core` -> `exporters` -> `bridges` -> `ui` -> `__init__`), unregister previous classes (`unregister()`), and re-register (`register()`).
+* **Orphan UI Cleanup**: Always dynamically unregister deprecated or renamed classes from `bpy.types` before registering to prevent ghost headers or duplicate tabs from persisting in Blender's UI memory.
+
+### 6.3 UI/UX & Viewport Standards
+* **Ergonomic N-Panel Layout**: Use consistent layout spacing, `layout.use_property_split = True`, and sub-panels with logical collapsible boxes. Never clutter panels with deep nesting.
+* **Non-Intrusive Viewport Display**: Auxiliary geometry (such as convex collision hulls) must default to wireframe display (`obj.display_type = 'WIRE'`, `obj.show_wire = True`) and reside in dedicated sibling collections (`{BaseName}_Colliders`).
+* **Draw Handler Purity**: Drawing callbacks registered with `bpy.types.SpaceView3D.draw_handler_add` must remain strictly read-only. Never mutate Blender DNA/RNA properties or trigger operator execution within a draw handler callback.
+* **Context Resolver Uniformity**: UI controls and operators must always resolve property context via `resolve_lod_context(context)` to support both object-level overrides and scene-level global defaults smoothly.
+

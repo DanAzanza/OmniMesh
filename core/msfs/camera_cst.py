@@ -51,6 +51,64 @@ def detect_file_format(file_path: str) -> tuple[str, bool, str]:
     return encoding, has_bom, newline_style
 
 
+def _parse_camera_property(
+    current_cam: CameraDefinition,
+    key: str,
+    val: str,
+    comment: str,
+) -> None:
+    """Parses individual key-value properties for a CameraDefinition."""
+    current_cam.properties[key] = val
+    current_cam.property_order.append(key)
+    if comment:
+        current_cam.property_comments[key] = comment.strip()
+
+    k_norm = re.sub(r"[\s_]+", "", key.lower())
+    if k_norm == "title":
+        current_cam.title = val.strip("\"'")
+    elif k_norm == "guid":
+        current_cam.guid = val.strip("\"'")
+    elif k_norm == "origin":
+        current_cam.origin = val.strip("\"'")
+    elif k_norm == "category":
+        current_cam.category = val.strip("\"'")
+    elif k_norm in ("subcategory", "subcategorytitle"):
+        current_cam.subcategory = val.strip("\"'")
+    elif k_norm == "subcategoryitem":
+        current_cam.subcategory_item = val.strip("\"'")
+    elif k_norm == "initialzoom":
+        try:
+            current_cam.initial_zoom = float(val)
+        except ValueError as exc:
+            logger.warning("Malformed initialzoom '%s' in camera %s: %s", val, current_cam.index, exc)
+    elif k_norm == "initialxyz":
+        tokens = [t.strip() for t in val.split(",") if t.strip()]
+        if len(tokens) >= 3:
+            try:
+                current_cam.initial_xyz_m = (
+                    float(tokens[0]),
+                    float(tokens[1]),
+                    float(tokens[2]),
+                )
+            except ValueError as exc:
+                logger.warning("Malformed initialxyz '%s' in camera %s: %s", val, current_cam.index, exc)
+        else:
+            logger.debug("initialxyz has fewer than 3 tokens: %s", val)
+    elif k_norm == "initialpbh":
+        tokens = [t.strip() for t in val.split(",") if t.strip()]
+        if len(tokens) >= 3:
+            try:
+                current_cam.initial_pbh_deg = (
+                    float(tokens[0]),
+                    float(tokens[1]),
+                    float(tokens[2]),
+                )
+            except ValueError as exc:
+                logger.warning("Malformed initialpbh '%s' in camera %s: %s", val, current_cam.index, exc)
+        else:
+            logger.debug("initialpbh has fewer than 3 tokens: %s", val)
+
+
 class MSFSCameraCST:
     """Concrete Syntax Tree parser and serializer for MSFS cameras.cfg files."""
 
@@ -98,7 +156,10 @@ class MSFSCameraCST:
                     if "." in header_content:
                         try:
                             idx = int(header_content.split(".", 1)[1])
-                        except ValueError:
+                        except ValueError as exc:
+                            logger.debug(
+                                "Non-integer camera header suffix '%s', using auto-index: %s", header_content, exc
+                            )
                             idx = len(config.cameras)
                     else:
                         idx = len(config.cameras)
@@ -133,8 +194,10 @@ class MSFSCameraCST:
                                     float(tokens[2]),
                                 )
                                 config.eyepoint_comment = comment.strip()
-                            except ValueError:
-                                pass
+                            except ValueError as exc:
+                                logger.warning("Malformed eyepoint coordinates '%s': %s", v_part, exc)
+                        else:
+                            logger.debug("eyepoint has fewer than 3 tokens: %s", v_part)
                 continue
 
             # Parsing properties inside a [CAMERADEFINITION.N] section
@@ -146,51 +209,7 @@ class MSFSCameraCST:
                     v_part, comment = v_part.split(";", 1)
                 val = v_part.strip()
 
-                current_cam.properties[key] = val
-                current_cam.property_order.append(key)
-                if comment:
-                    current_cam.property_comments[key] = comment.strip()
-
-                k_norm = re.sub(r"[\s_]+", "", key.lower())
-                if k_norm == "title":
-                    current_cam.title = val.strip("\"'")
-                elif k_norm == "guid":
-                    current_cam.guid = val.strip("\"'")
-                elif k_norm == "origin":
-                    current_cam.origin = val.strip("\"'")
-                elif k_norm == "category":
-                    current_cam.category = val.strip("\"'")
-                elif k_norm in ("subcategory", "subcategorytitle"):
-                    current_cam.subcategory = val.strip("\"'")
-                elif k_norm == "subcategoryitem":
-                    current_cam.subcategory_item = val.strip("\"'")
-                elif k_norm == "initialzoom":
-                    try:
-                        current_cam.initial_zoom = float(val)
-                    except ValueError:
-                        pass
-                elif k_norm == "initialxyz":
-                    tokens = [t.strip() for t in val.split(",") if t.strip()]
-                    if len(tokens) >= 3:
-                        try:
-                            current_cam.initial_xyz_m = (
-                                float(tokens[0]),
-                                float(tokens[1]),
-                                float(tokens[2]),
-                            )
-                        except ValueError:
-                            pass
-                elif k_norm == "initialpbh":
-                    tokens = [t.strip() for t in val.split(",") if t.strip()]
-                    if len(tokens) >= 3:
-                        try:
-                            current_cam.initial_pbh_deg = (
-                                float(tokens[0]),
-                                float(tokens[1]),
-                                float(tokens[2]),
-                            )
-                        except ValueError:
-                            pass
+                _parse_camera_property(current_cam, key, val, comment)
 
         if current_cam is not None:
             config.cameras.append(current_cam)

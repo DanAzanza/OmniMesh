@@ -395,6 +395,7 @@ class ImpostorManager:
         target_engine: str = "UE5",
         target_collection_name: str = "",
         atlas_resolution: int = 2048,
+        scene: Any = None,
     ) -> Any:
         """
         Constructs and links the Impostor billboard object in Blender.
@@ -403,11 +404,14 @@ class ImpostorManager:
         if not bpy or not mesh_objs:
             return None
 
+        sc = scene or getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if bpy and bpy.data.scenes else None)
+
         coll_name = target_collection_name or f"{base_name}_LOD_Impostor"
         target_coll = bpy.data.collections.get(coll_name)
         if not target_coll:
             target_coll = bpy.data.collections.new(coll_name)
-            bpy.context.scene.collection.children.link(target_coll)
+            if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
+                sc.collection.children.link(target_coll)
 
         # Calculate bounding dimensions across all selected meshes (using bound_box corners for O(1) efficiency)
         all_coords = []
@@ -474,11 +478,18 @@ class ImpostorManager:
 
             target_coll.objects.link(impostor_obj)
 
-            # Proportional UV Island Packing (only for intersecting star planes)
-            if mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+            # Proportional UV Island Packing (only for intersecting star planes in GUI mode)
+            is_bg = getattr(bpy.app, "background", False) if bpy else False
+            if (
+                mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}
+                and not is_bg
+                and hasattr(bpy.context, "window")
+                and hasattr(bpy.context, "view_layer")
+            ):
                 try:
-                    prev_active = bpy.context.view_layer.objects.active
-                    for o in bpy.context.scene.objects:
+                    prev_active = getattr(bpy.context.view_layer.objects, "active", None)
+                    scene_objs = getattr(sc, "objects", [])
+                    for o in scene_objs:
                         o.select_set(False)
                     bpy.context.view_layer.objects.active = impostor_obj
                     impostor_obj.select_set(True)
