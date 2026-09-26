@@ -76,14 +76,22 @@ class EphemeralBakeSceneGuard:
         except Exception as exc:
             logger.debug("Failed querying render engines: %s", exc)
 
-        for eng in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES"):
+        is_bg = getattr(bpy.app, "background", False) if bpy else False
+        preferred = (
+            ("CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")
+            if is_bg
+            else ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES")
+        )
+
+        for eng in preferred:
             if eng in avail_engines:
                 self.bake_scene.render.engine = eng
-                if hasattr(self.bake_scene, "eevee") and hasattr(self.bake_scene.eevee, "taa_render_samples"):
-                    self.bake_scene.eevee.taa_render_samples = 1
-                elif eng == "CYCLES" and hasattr(self.bake_scene, "cycles"):
+                if eng == "CYCLES" and hasattr(self.bake_scene, "cycles"):
                     self.bake_scene.cycles.samples = 1
                     self.bake_scene.cycles.max_bounces = 0
+                    self.bake_scene.cycles.device = "CPU"
+                elif hasattr(self.bake_scene, "eevee") and hasattr(self.bake_scene.eevee, "taa_render_samples"):
+                    self.bake_scene.eevee.taa_render_samples = 1
                 break
 
         # Black unlit world background
