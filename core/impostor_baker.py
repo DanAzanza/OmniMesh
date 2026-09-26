@@ -69,13 +69,7 @@ class EphemeralBakeSceneGuard:
         render.film_transparent = True
         render.dither_intensity = 0.0
 
-        # Prefer EEVEE (or EEVEE-Next in 4.2) or Cycles fallback
-        avail_engines = set()
-        try:
-            avail_engines = {e.identifier for e in bpy.types.RenderEngine.bl_rna.properties["engine"].enum_items}
-        except Exception as exc:
-            logger.debug("Failed querying render engines: %s", exc)
-
+        # Prefer Cycles for headless rendering to avoid Mesa llvmpipe overhead, or EEVEE in GUI
         is_bg = getattr(bpy.app, "background", False) if bpy else False
         preferred = (
             ("CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")
@@ -84,15 +78,20 @@ class EphemeralBakeSceneGuard:
         )
 
         for eng in preferred:
-            if eng in avail_engines:
+            try:
                 self.bake_scene.render.engine = eng
-                if eng == "CYCLES" and hasattr(self.bake_scene, "cycles"):
-                    self.bake_scene.cycles.samples = 1
-                    self.bake_scene.cycles.max_bounces = 0
-                    self.bake_scene.cycles.device = "CPU"
-                elif hasattr(self.bake_scene, "eevee") and hasattr(self.bake_scene.eevee, "taa_render_samples"):
-                    self.bake_scene.eevee.taa_render_samples = 1
-                break
+                if self.bake_scene.render.engine == eng:
+                    if eng == "CYCLES" and hasattr(self.bake_scene, "cycles"):
+                        self.bake_scene.cycles.samples = 1
+                        self.bake_scene.cycles.max_bounces = 0
+                        self.bake_scene.cycles.diffuse_bounces = 0
+                        self.bake_scene.cycles.glossy_bounces = 0
+                        self.bake_scene.cycles.device = "CPU"
+                    elif hasattr(self.bake_scene, "eevee") and hasattr(self.bake_scene.eevee, "taa_render_samples"):
+                        self.bake_scene.eevee.taa_render_samples = 1
+                    break
+            except Exception as eng_err:
+                logger.debug("Render engine %s not available: %s", eng, eng_err)
 
         # Black unlit world background
         world = bpy.data.worlds.new(f"{self.temp_scene_name}_World")
@@ -605,8 +604,9 @@ class ImpostorAtlasBaker:
         # Automatically probe and configure best compute device (NVIDIA OptiX/CUDA, Apple Metal, AMD HIP, Intel oneAPI, or CPU)
         cls.configure_cycles_compute_device(scene)
 
-        scene.cycles.samples = 16
-        scene.cycles.use_denoising = True
+        is_bg = getattr(bpy.app, "background", False) if bpy else False
+        scene.cycles.samples = 1 if is_bg else 16
+        scene.cycles.use_denoising = not is_bg
         scene.render.film_transparent = True
 
         # Ensure objects are visible in view layer
