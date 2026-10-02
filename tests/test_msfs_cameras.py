@@ -1,8 +1,10 @@
 """Unit tests for MSFS Cameras Pipeline (Phase 3)."""
 
+import math
 import os
 import pytest
 
+from core.msfs.camera_cst import MSFSCameraCST, detect_file_format
 from core.msfs.cst_parser import MSFSCSTParser
 from core.msfs.models import CameraDefinition
 from core.msfs.transforms import (
@@ -173,3 +175,81 @@ def test_parse_real_simpleaircraft_cameras():
     assert tail_cam is not None
     assert tail_cam.origin == "Center"
     assert tail_cam.category == "FixedOnPlane"
+
+
+def test_msfs_cst_parser_keys_with_spaces(tmp_path):
+    """Verify MSFSCSTParser parses keys containing embedded spaces."""
+    cfg_content = (
+        "[CAMERADEFINITION.0]\n"
+        'Title = "Pilot View"\n'
+        "Initial Zoom = 0.35\n"
+        'SubCategory Title = "Cockpit"\n'
+        "Initial Xyz = 0.0, 1.2, -0.5\n"
+    )
+    test_file = tmp_path / "cameras_test.cfg"
+    test_file.write_text(cfg_content, encoding="utf-8")
+
+    config = MSFSCSTParser.parse_file(str(test_file))
+    assert len(config.lines) >= 5
+
+    parsed_keys = [record.key for record in config.lines if record.key]
+    assert "Title" in parsed_keys
+    assert "Initial Zoom" in parsed_keys
+    assert "SubCategory Title" in parsed_keys
+    assert "Initial Xyz" in parsed_keys
+
+
+def test_camera_cst_key_normalization(tmp_path):
+    """Verify camera CST normalizes keys with spaces and underscores."""
+    cfg_content = (
+        "[CAMERADEFINITION.0]\n"
+        'Title = "Cockpit Center"\n'
+        "Initial Zoom = 0.45\n"
+        'SubCategory Title = "Quickview"\n'
+        "Initial Xyz = 0.1, 0.8, -0.2\n"
+        "Initial Pbh = 5.0, 0.0, 0.0\n"
+    )
+    test_file = tmp_path / "cameras_norm.cfg"
+    test_file.write_text(cfg_content, encoding="utf-8")
+
+    cam_config = MSFSCameraCST.parse_cameras_file(str(test_file))
+    assert len(cam_config.cameras) == 1
+    cam = cam_config.cameras[0]
+    assert cam.title == "Cockpit Center"
+    assert math.isclose(cam.initial_zoom, 0.45, rel_tol=1e-5)
+    assert cam.subcategory == "Quickview"
+    assert cam.initial_xyz_m == (0.1, 0.8, -0.2)
+    assert cam.initial_pbh_deg == (5.0, 0.0, 0.0)
+
+
+def test_detect_file_format_encodings(tmp_path):
+    """Verify detect_file_format handles UTF-8, UTF-8 BOM, UTF-16 LE, and CP1252."""
+    # 1. UTF-8 standard
+    f_utf8 = tmp_path / "utf8.txt"
+    f_utf8.write_bytes(b"sample content\n")
+    enc, bom, nl = detect_file_format(str(f_utf8))
+    assert enc == "utf-8"
+    assert bom is False
+    assert nl == "\n"
+
+    # 2. UTF-8 with BOM
+    f_utf8_bom = tmp_path / "utf8_bom.txt"
+    f_utf8_bom.write_bytes(b"\xef\xbb\xbfsample with bom\r\n")
+    enc, bom, nl = detect_file_format(str(f_utf8_bom))
+    assert enc == "utf-8-sig"
+    assert bom is True
+    assert nl == "\r\n"
+
+    # 3. UTF-16 LE with BOM
+    f_utf16 = tmp_path / "utf16_le.txt"
+    f_utf16.write_bytes(b"\xff\xfe" + "flight config".encode("utf-16-le"))
+    enc, bom, nl = detect_file_format(str(f_utf16))
+    assert enc == "utf-16-le"
+    assert bom is True
+
+    # 4. CP1252 (invalid UTF-8 bytes)
+    f_cp1252 = tmp_path / "cp1252.txt"
+    f_cp1252.write_bytes(b"Caf\xe9 au lait\n")
+    enc, bom, nl = detect_file_format(str(f_cp1252))
+    assert enc == "cp1252"
+    assert bom is False

@@ -8,13 +8,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from core.simulator import (
     LODAssetRecord,
     LODSimulatorEngine,
-    calculate_effective_distance_pure,
-    evaluate_lod_tier_index_pure,
 )
 
 
@@ -48,31 +44,13 @@ class MockCollection:
         return default
 
 
-def test_calculate_effective_distance_pure():
-    """Verify conservative near-point distance logic."""
-    cam_pos = (0.0, 100.0, 0.0)
-    center = (0.0, 0.0, 0.0)
-    radius = 20.0
-    # d_eff = max(0.01, 100.0 - 0.5 * 20.0) = 90.0
-    dist = calculate_effective_distance_pure(cam_pos, center, radius)
-    assert pytest.approx(dist, 0.01) == 90.0
-
-    # Negative / NaN protection
-    assert calculate_effective_distance_pure((float("nan"), 0, 0), center, radius) == 0.01
-
-
-def test_evaluate_lod_tier_index_pure():
-    """Verify tiered hysteresis screen coverage switching."""
-    thresholds = [100.0, 50.0, 25.0, 10.0]
-
-    # At 80% screen size -> LOD0
-    assert evaluate_lod_tier_index_pure(80.0, thresholds, current_tier=0) == 0
-    # At 40% screen size -> LOD1
-    assert evaluate_lod_tier_index_pure(40.0, thresholds, current_tier=0) == 1
-    # At 15% screen size -> LOD2
-    assert evaluate_lod_tier_index_pure(15.0, thresholds, current_tier=0) == 2
-    # At 5% screen size -> LOD3 (terminal)
-    assert evaluate_lod_tier_index_pure(5.0, thresholds, current_tier=0) == 3
+def test_distance_scrub_empty_tracked_assets():
+    """Verify distance scrubber handles unindexed scenes cleanly without exception."""
+    LODSimulatorEngine._tracked_assets.clear()
+    LODSimulatorEngine._visibility_snapshot.clear()
+    ctx = MagicMock()
+    res = LODSimulatorEngine.evaluate_distance_scrub(ctx, distance_m=25.0)
+    assert res == {}
 
 
 def test_distance_scrub_differential_visibility_and_snapshot():

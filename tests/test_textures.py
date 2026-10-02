@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image
 
 from core.pbr_presets import PBRImporterPresetManager
+from core.shader_tracer import ShaderTracer
 from core.textures import TextureChannelPacker, TexturePoolManager, write_png_direct
 
 
@@ -592,3 +593,85 @@ def test_pack_material_preset_dominant_resolution():
         with Image.open(orm_file) as img:
             # Dominant resolution rule: must match maximum linked texture size (128x128)
             assert img.size == (128, 128)
+
+
+def test_texture_pool_lifecycle():
+    """Verify TexturePoolManager singleton lifecycle and shutdown."""
+    executor = TexturePoolManager.get_executor()
+    assert executor is not None
+    executor2 = TexturePoolManager.get_executor()
+    assert executor is executor2
+
+    # Shutdown clears executor
+    TexturePoolManager.shutdown()
+    assert TexturePoolManager._executor is None
+
+    # Clean re-initialization
+    new_exec = TexturePoolManager.get_executor()
+    assert new_exec is not None
+    TexturePoolManager.shutdown()
+
+
+def test_texture_pool_high_throughput_and_stress():
+    """Verify TexturePoolManager handles high-concurrency tasks without deadlocks or thread pool leakage."""
+    TexturePoolManager.shutdown()
+
+    def dummy_task(val: int) -> bool:
+        return True
+
+    executor = TexturePoolManager.get_executor()
+    futures = [executor.submit(dummy_task, i) for i in range(50)]
+    assert len(futures) == 50
+    results = TexturePoolManager.wait_all(futures, timeout=10.0)
+    assert len(results) == 50
+    assert all(results)
+    TexturePoolManager.shutdown()
+
+
+def test_shader_tracer_methods():
+    """Verify ShaderTracer methods handle None/empty materials defensively."""
+    assert ShaderTracer.get_material_normal_image(None) is None
+    assert ShaderTracer.is_procedural_socket(None, "Base Color") is False
+    assert ShaderTracer.trace_upstream_channel(None, "Base Color") == (None, 0, False, None)
+
+
+def test_srgb_oetf_conversion_flag():
+    """Verify that _extract_from_image respects apply_srgb_oetf flag."""
+    from unittest.mock import MagicMock
+
+    img_mock = MagicMock()
+    img_mock.size = (2, 2)
+    # 4 pixels RGBA with linear mid-gray (0.18 linear ~ 0.458 sRGB)
+    raw = np.full(16, 0.18, dtype=np.float32)
+    img_mock.pixels.foreach_get = lambda buf: np.copyto(buf, raw)
+
+    fallback = np.zeros((2, 2), dtype=np.uint8)
+
+    # Linear extraction (default)
+    linear_out = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=False)
+    # 0.18 * 255 = ~46
+    assert abs(int(linear_out[0, 0]) - int(round(0.18 * 255))) <= 1
+
+    # sRGB OETF extraction
+    srgb_out = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=True)
+    # sRGB transfer function elevates 0.18 to ~117 (0.458 * 255)
+    assert int(srgb_out[0, 0]) > int(linear_out[0, 0]) + 50
+
+
+def test_shader_tracer_srgb_scalar_linearization_inversion():
+    """Verify _extract_from_image inverts sRGB OETF when scalar data is loaded from sRGB image."""
+    from unittest.mock import MagicMock
+
+    img_mock = MagicMock()
+    img_mock.size = (2, 2)
+    img_mock.colorspace_settings.name = "sRGB"
+    # Blender foreach_get delivers linearized float: 0.18 linear
+    raw = np.full(16, 0.18, dtype=np.float32)
+    img_mock.pixels.foreach_get = lambda buf: np.copyto(buf, raw)
+
+    fallback = np.zeros((2, 2), dtype=np.uint8)
+
+    # When extracting a scalar data channel (apply_srgb_oetf=False) from an sRGB-tagged image,
+    # it must re-encode / invert OETF to recover the original byte value (~117)
+    scalar_out = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=False)
+    assert int(scalar_out[0, 0]) >= 110

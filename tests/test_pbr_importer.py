@@ -214,3 +214,24 @@ def test_shader_graph_builder_bsdf_socket_query():
 
     res_none = ShaderGraphBuilder.get_bsdf_socket(mock_bsdf, ["NonExistent"])
     assert res_none is None
+
+
+def test_pbr_bsdf_v2_socket_resolution():
+    """Verify ShaderGraphBuilder canonical BSDF socket alias resolution."""
+    mock_bsdf = MagicMock()
+    # Mock inputs dictionary simulating Blender 4.x / 5.x Principled BSDF v2
+    v2_sockets = {
+        "Base Color": MagicMock(name="Base Color"),
+        "Specular IOR Level": MagicMock(name="Specular IOR Level"),
+        "Transmission Weight": MagicMock(name="Transmission Weight"),
+        "Coat Weight": MagicMock(name="Coat Weight"),
+        "Sheen Weight": MagicMock(name="Sheen Weight"),
+    }
+    mock_bsdf.inputs = v2_sockets
+
+    # Querying legacy targets should resolve to modern v2 sockets
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Specular") == v2_sockets["Specular IOR Level"]
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Transmission") == v2_sockets["Transmission Weight"]
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Clearcoat") == v2_sockets["Coat Weight"]
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Sheen") == v2_sockets["Sheen Weight"]
+    assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Base Color") == v2_sockets["Base Color"]

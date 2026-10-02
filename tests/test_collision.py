@@ -5,6 +5,7 @@ Unit tests for OmniMesh Multi-Convex Collision Hull Generator & Physics Decompos
 from __future__ import annotations
 
 import math
+from unittest.mock import MagicMock
 import numpy as np
 
 from core.collision import CollisionDecomposer, CollisionManager
@@ -305,3 +306,44 @@ def test_collision_collection_nested_under_root_asset(monkeypatch):
 
     root_coll.children.link.assert_called_once_with(target_coll)
     assert not mock_bpy.context.scene.collection.children.link.called
+
+
+def test_collision_svd_relative_eccentricity():
+    """Verify that SVD relative eccentricity is scale-invariant across millimeter and meter scale."""
+    rng = np.random.default_rng(42)
+
+    for scale in (0.001, 1.0, 100.0):
+        xy = rng.uniform(-1.0, 1.0, size=(50, 2)) * scale
+        z = rng.normal(0.0, 1e-7 * scale, size=(50, 1))  # Tiny out-of-plane perturbation
+        pts = np.hstack([xy, z])
+
+        centered = pts - np.mean(pts, axis=0)
+        _, s, _ = np.linalg.svd(centered, full_matrices=False)
+
+        # Scale-invariant check: s[2] / s[0] must be negligible regardless of scale factor
+        rel_s2 = float(s[2]) / max(1e-12, float(s[0]))
+        assert rel_s2 < 1e-3, f"Scale {scale} failed relative eccentricity check: rel_s2={rel_s2}"
+
+
+def test_collision_area_none_data_safeguard(monkeypatch):
+    """Verify CollisionManager.generate_colliders_for_objects safely handles objects with None data without crashing."""
+    import core.collision as collision_mod
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(collision_mod, "bpy", mock_bpy)
+
+    obj_valid = MagicMock()
+    obj_valid.name = "SM_Valid"
+    p1 = MagicMock()
+    p1.area = 5.0
+    obj_valid.data.polygons = [p1]
+
+    obj_invalid = MagicMock()
+    obj_invalid.name = "SM_Invalid"
+    obj_invalid.data = None
+
+    # Must safely calculate total area without raising AttributeError for obj_invalid.data
+    res = CollisionManager.generate_colliders_for_objects(
+        [obj_valid, obj_invalid], "SM_Test", mode="PER_OBJECT", hull_count=2
+    )
+    assert isinstance(res, list)

@@ -291,6 +291,32 @@ class AnimationRigSanitizer:
 
         return [points[0], points[-1]]
 
+    @staticmethod
+    def enforce_quaternion_continuity(rot: Any, prev_rot: Any) -> Any:
+        """
+        Enforces quaternion sign continuity (shortest arc on S^3) between successive frames.
+        Flips the quaternion sign if dot(rot, prev_rot) < 0, eliminating 360-degree spin flips.
+        """
+        if rot is None or prev_rot is None:
+            return rot
+        if hasattr(rot, "w") and hasattr(prev_rot, "w"):
+            dot = rot.w * prev_rot.w + rot.x * prev_rot.x + rot.y * prev_rot.y + rot.z * prev_rot.z
+            if dot < 0.0:
+                if Quaternion:
+                    return Quaternion((-rot.w, -rot.x, -rot.y, -rot.z))
+                elif hasattr(rot, "__iter__"):
+                    return type(rot)([-x for x in rot])
+        elif (
+            isinstance(rot, (tuple, list))
+            and isinstance(prev_rot, (tuple, list))
+            and len(rot) == 4
+            and len(prev_rot) == 4
+        ):
+            dot = rot[0] * prev_rot[0] + rot[1] * prev_rot[1] + rot[2] * prev_rot[2] + rot[3] * prev_rot[3]
+            if dot < 0.0:
+                return type(rot)([-x for x in rot])
+        return rot
+
     @classmethod
     def bake_deform_animation(
         cls,
@@ -405,17 +431,8 @@ class AnimationRigSanitizer:
                         rot.normalize()
 
                     # Enforce quaternion sign continuity (shortest arc on S^3)
-                    if hasattr(rot, "w"):
-                        if b_name in prev_rotations:
-                            pq = prev_rotations[b_name]
-                            if hasattr(pq, "w"):
-                                dot = rot.w * pq.w + rot.x * pq.x + rot.y * pq.y + rot.z * pq.z
-                                if dot < 0.0:
-                                    if Quaternion:
-                                        rot = Quaternion((-rot.w, -rot.x, -rot.y, -rot.z))
-                                    elif hasattr(rot, "__iter__"):
-                                        rot = type(rot)([-x for x in rot])
-                        prev_rotations[b_name] = rot.copy() if hasattr(rot, "copy") else rot
+                    rot = cls.enforce_quaternion_continuity(rot, prev_rotations.get(b_name))
+                    prev_rotations[b_name] = rot.copy() if hasattr(rot, "copy") else rot
 
                     # Sanitize location
                     safe_loc = [loc[i] if math.isfinite(loc[i]) else 0.0 for i in range(3)]

@@ -284,3 +284,51 @@ def test_bake_and_nla_guards():
     # Calling bake / nla with null arguments returns None / False gracefully
     assert AnimationRigSanitizer.bake_deform_animation(None, None, None) is None
     assert AnimationRigSanitizer.setup_clean_nla_export(None, None) is False
+
+
+def test_functional_rdp_reduce():
+    """Verify 1D functional RDP decimation preserves extrema and reduces collinear points."""
+    # Perfectly linear sequence: all internal points should be pruned
+    linear_pts = [(float(i), float(i * 2.0)) for i in range(10)]
+    reduced = AnimationRigSanitizer.functional_rdp_reduce(linear_pts, epsilon=0.01)
+    assert len(reduced) == 2
+    assert reduced[0] == (0.0, 0.0)
+    assert reduced[-1] == (9.0, 18.0)
+
+    # Triangle wave: 11 points with peak at i=5, linear ramps up and down
+    triangle_pts = [
+        (0.0, 0.0),
+        (1.0, 2.0),
+        (2.0, 4.0),
+        (3.0, 6.0),
+        (4.0, 8.0),
+        (5.0, 10.0),
+        (6.0, 8.0),
+        (7.0, 6.0),
+        (8.0, 4.0),
+        (9.0, 2.0),
+        (10.0, 0.0),
+    ]
+    reduced_triangle = AnimationRigSanitizer.functional_rdp_reduce(triangle_pts, epsilon=0.01)
+    assert len(reduced_triangle) == 3
+    assert reduced_triangle == [(0.0, 0.0), (5.0, 10.0), (10.0, 0.0)]
+
+
+def test_quaternion_sign_continuity():
+    """Verify quaternion sign continuity dot product logic eliminates 360-degree spin flips."""
+    # Two equivalent orientations represented by opposite quaternions q and -q
+    q1 = (1.0, 0.0, 0.0, 0.0)  # (w, x, y, z)
+    q2 = (-1.0, 0.0, 0.0, 0.0)
+
+    # enforce_quaternion_continuity should flip q2 to align with q1 (dot < 0)
+    q2_corrected = AnimationRigSanitizer.enforce_quaternion_continuity(q2, q1)
+    assert q2_corrected == q1
+
+    # When dot >= 0, orientation should remain unchanged
+    q3 = (1.0, 0.0, 0.0, 0.0)
+    q3_same = AnimationRigSanitizer.enforce_quaternion_continuity(q3, q1)
+    assert q3_same == q1
+
+    # Safe handling of None
+    assert AnimationRigSanitizer.enforce_quaternion_continuity(None, q1) is None
+    assert AnimationRigSanitizer.enforce_quaternion_continuity(q1, None) == q1

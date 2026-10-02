@@ -119,7 +119,7 @@ def test_ue5_web_remote_control_fallback():
 
         # Dispatch pointing TCP to non-existent port, but providing active HTTP port
         payload = "print('Web Remote Fallback')"
-        ok, msg = UnrealLiveBridge.dispatch_to_ue5(payload, port=9999, http_port=port)
+        ok, msg = UnrealLiveBridge.dispatch_to_ue5(payload, port=9999, http_port=port, tcp_timeout_sec=0.01)
         assert ok
         assert "Web Remote Control" in msg
     finally:

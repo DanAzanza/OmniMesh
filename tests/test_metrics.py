@@ -10,6 +10,7 @@ from core.metrics import (
     compute_bounding_sphere,
     compute_coupled_tolerances,
     compute_distance_from_screen_size,
+    compute_distance_hysteresis_interval,
     compute_screen_size_from_distance,
     compute_screen_space_error_bound,
     compute_vertical_fov,
@@ -164,3 +165,14 @@ def test_logarithmic_screen_tiers_edge_cases():
     tiers_high = generate_logarithmic_screen_tiers(3, 80.0)
     assert tiers_high[0] == 100.0
     assert tiers_high[-1] == 50.0
+
+
+def test_distance_hysteresis_interval():
+    """Verify compute_distance_hysteresis_interval produces valid deadbands."""
+    dist_in, dist_out = compute_distance_hysteresis_interval(100.0, hysteresis_ratio=0.05)
+    assert math.isclose(dist_in, 95.0, abs_tol=1e-5)
+    assert math.isclose(dist_out, 105.0, abs_tol=1e-5)
+
+    # Zero distance test
+    d0_in, d0_out = compute_distance_hysteresis_interval(0.0)
+    assert d0_in == 0.0 and d0_out == 0.0

@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 import numpy as np
 
-from core.impostor import ImpostorMath, ImpostorMeshBuilder, ImpostorManager
+from core.impostor import ImpostorMath, ImpostorMeshBuilder, ImpostorManager, Vector
 
 
 def test_hemi_octahedral_mapping_forward_inverse():
@@ -88,3 +88,68 @@ def test_impostor_mesh_builder_null_safety():
 def test_impostor_manager_null_safety():
     assert ImpostorManager.create_impostor_material("TestAsset") is None
     assert ImpostorManager.generate_impostor_for_objects([], "TestAsset") is None
+
+
+def test_morphological_dilate_no_toroidal_wrap():
+    """Verify that morphological dilation does not wrap colors across opposite image edges."""
+    # 4x4 RGBA image, only bottom row (y=3) has red color
+    img = np.zeros((4, 4, 4), dtype=np.float32)
+    img[3, :, 0] = 1.0  # Red channel
+    img[3, :, 3] = 1.0  # Alpha channel
+
+    dilated = ImpostorMath.morphological_dilate_rgb(img, iterations=1)
+    # y=2 should receive red bleed from y=3
+    assert dilated[2, 1, 0] == 1.0
+    # y=0 (top row) must NOT receive bleed from y=3 (proves no toroidal wrap)
+    assert dilated[0, 1, 0] == 0.0
+
+
+def test_morphological_dilate_rgb_in_place_performance():
+    """Verify in-place morphological dilation accumulates correctly without throwing exceptions."""
+    # 16x16 image with a central 2x2 solid green square
+    img = np.zeros((16, 16, 4), dtype=np.float32)
+    img[7:9, 7:9, :3] = [0.0, 1.0, 0.0]
+    img[7:9, 7:9, 3] = 1.0
+
+    dilated = ImpostorMath.morphological_dilate_rgb(img, iterations=3)
+    # Check that pixel immediately adjacent to green square has been filled
+    assert dilated[6, 7, 1] == 1.0
+    assert dilated[7, 6, 1] == 1.0
+    assert dilated[9, 8, 1] == 1.0
+    # Check that far corner remains empty
+    assert dilated[0, 0, 1] == 0.0
+
+
+def test_vector_to_full_octahedral_roundtrip():
+    """Verify forward and inverse full-octahedral directional mappings."""
+    directions = [
+        Vector((1.0, 0.0, 0.0)),
+        Vector((-1.0, 0.0, 0.0)),
+        Vector((0.0, 1.0, 0.0)),
+        Vector((0.0, -1.0, 0.0)),
+        Vector((0.0, 0.0, 1.0)),
+        Vector((0.0, 0.0, -1.0)),
+        Vector((0.5773, 0.5773, 0.5773)).normalized(),
+        Vector((-0.5773, -0.5773, -0.5773)).normalized(),
+    ]
+
+    for d in directions:
+        u, v = ImpostorMath.vector_to_full_octahedral(d)
+        assert 0.0 <= u <= 1.0
+        assert 0.0 <= v <= 1.0
+        reconstructed = ImpostorMath.full_octahedral_to_vector(u, v)
+        dot_val = d.dot(reconstructed)
+        assert dot_val >= 0.99, f"Failed roundtrip for {d}: dot={dot_val}"
+
+
+def test_hemi_octahedral_nadir_and_equator():
+    """Verify vector_to_hemi_octahedral handles nadir singularity and horizontal equator."""
+    # Equator directions (Z=0) must NOT collapse into nadir
+    east = Vector((1.0, 0.0, 0.0))
+    u_e, v_e = ImpostorMath.vector_to_hemi_octahedral(east)
+    assert abs(u_e - 1.0) < 1e-4 and abs(v_e - 1.0) < 1e-4
+
+    # Degenerate zero vector or nadir (< 1e-9) falls back to horizon (0.5, 0.0)
+    zero_vec = Vector((0.0, 0.0, 0.0))
+    u_z, v_z = ImpostorMath.vector_to_hemi_octahedral(zero_vec)
+    assert (u_z, v_z) == (0.5, 0.0)

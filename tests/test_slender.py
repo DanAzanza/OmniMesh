@@ -104,3 +104,27 @@ def test_small_compact_island_culling():
         tau_sse=1.0, screen_size_pct=25.0, resolution_y=1080, root_radius_m=2.0
     )
     assert 0.005 <= delta_world
+
+
+def test_slender_total_extinction_safeguard():
+    """Verify that slender culler never extinguishes 100% of a mesh."""
+    # Mock a mesh where all faces are micro-parts
+    f1 = MagicMock()
+    f1.calc_area.return_value = 0.001
+    f1.edges = []
+    f2 = MagicMock()
+    f2.calc_area.return_value = 0.005
+    f2.edges = []
+
+    bm = MagicMock()
+    bm.faces = [f1, f2]
+
+    # Run slender culling with screen_size_pct
+    res = SlenderFeatureCuller.cull_slender_features(
+        bm,
+        screen_size_pct=1.0,
+        resolution_y=1080,
+        root_radius_m=1.0,
+    )
+    # Extinction safeguard must preserve at least 1 island
+    assert res["culled_faces"] < len(bm.faces)

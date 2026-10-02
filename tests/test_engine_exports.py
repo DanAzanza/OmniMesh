@@ -114,7 +114,10 @@ def test_unreal_engine_ingest_payload_structure():
 
 
 def test_live_godot_headless_import():
-    """Live headless import into Godot 4 editor (skipped if godot executable is not found)."""
+    """Live headless import into Godot 4 editor (skipped unless RUN_LIVE_ENGINE_TESTS=1)."""
+    if not os.environ.get("RUN_LIVE_ENGINE_TESTS"):
+        pytest.skip("Live Godot engine process test skipped by default. Set RUN_LIVE_ENGINE_TESTS=1 to execute.")
+
     godot_cmd = os.environ.get("GODOT_PATH") or shutil.which("godot")
     if not godot_cmd and sys.platform == "win32":
         default_cmd = os.path.expanduser(r"~/.gemini/antigravity/bin/godot.cmd")
@@ -145,7 +148,10 @@ def test_live_godot_headless_import():
 
 
 def test_live_unity_cli_integration():
-    """Live check for Unity 6 CLI (skipped if unity executable is not found)."""
+    """Live check for Unity 6 CLI (skipped unless RUN_LIVE_ENGINE_TESTS=1)."""
+    if not os.environ.get("RUN_LIVE_ENGINE_TESTS"):
+        pytest.skip("Live Unity engine process test skipped by default. Set RUN_LIVE_ENGINE_TESTS=1 to execute.")
+
     unity_bin = shutil.which("unity")
     if not unity_bin and sys.platform == "win32":
         default_unity = os.path.expandvars(r"%LOCALAPPDATA%\Unity\bin\unity.exe")

@@ -42,9 +42,9 @@ def test_unreal_payload_generation_posix_paths():
 
 def test_unreal_ping_offline():
     # Pinging offline port should gracefully return False without exception
-    is_live = UnrealLiveBridge.ping_remote_execution(port=59999, timeout_sec=0.1)
+    is_live = UnrealLiveBridge.ping_remote_execution(port=59999, timeout_sec=0.01)
     assert is_live is False
-    status, msg = UnrealLiveBridge.ping_engine()
+    status, msg = UnrealLiveBridge.ping_engine(timeout_sec=0.01)
     assert isinstance(status, bool)
     assert isinstance(msg, str)
 

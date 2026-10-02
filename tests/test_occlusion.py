@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from unittest.mock import MagicMock
 import numpy as np
 
 from core.occlusion import HardenedOcclusionCuller, RobustTransparencyEvaluator, Vector
@@ -149,3 +150,12 @@ def test_stratified_hemisphere_dirs():
 def test_occlusion_culler_null_mesh_safety():
     res = HardenedOcclusionCuller.cull_interior_faces(None, None)
     assert res == {"culled_faces": 0, "culled_islands": 0}
+
+
+def test_occlusion_zero_vector_normal_safety():
+    """Verify occlusion culler guards against zero-vector face normals."""
+    zero_vec = MagicMock()
+    zero_vec.length_squared = 0.0
+
+    dirs = HardenedOcclusionCuller._stratified_hemisphere_dirs(zero_vec, 16)
+    assert dirs == []

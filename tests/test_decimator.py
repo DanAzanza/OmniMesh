@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from core.decimator import MeshDecimator
+from core.lod_generator import generate_all_lods
 
 
 class MockVert:
@@ -200,3 +201,56 @@ def test_prepare_and_clean_shape_keys():
     MeshDecimator.prepare_and_clean_shape_keys(mock_obj, purge=False)
     assert mock_kb1.value == 0.0
     assert mock_kb2.value == 0.0
+
+
+def test_lod_generator_graceful_handling(monkeypatch):
+    """Verify generate_all_lods handles None/empty context and objects defensively."""
+    success, msg = generate_all_lods(context=None, props=None, mesh_objs=[])
+    assert success is True  # Blender context not available in headless test mock
+    assert "not available" in msg.lower()
+
+    # Verify handling with empty mesh list when bpy is present
+    monkeypatch.setattr("core.lod_generator.bpy", MagicMock())
+    mock_ctx = MagicMock()
+    mock_props = MagicMock()
+    mock_props.lods = []
+    success, msg = generate_all_lods(context=mock_ctx, props=mock_props, mesh_objs=[])
+    assert success is False
+    assert "no mesh objects" in msg.lower()
+
+
+def test_lod_generator_exception_rollback_and_pose_restoration(monkeypatch):
+    """Verify generate_all_lods restores armature pose_position and returns failure cleanly on error."""
+    monkeypatch.setattr("core.lod_generator.bpy", MagicMock())
+    monkeypatch.setattr(
+        "core.lod_generator.CollectionCloneDAG.wrap_loose_objects_into_root_collection",
+        MagicMock(side_effect=RuntimeError("Simulated DAG failure")),
+    )
+
+    mock_ctx = MagicMock()
+    mock_ctx.collection = None
+    mock_props = MagicMock()
+    mock_tier = MagicMock()
+    mock_tier.screen_size_pct = 50.0
+    mock_props.lods = [mock_tier]
+
+    mock_armature = MagicMock()
+    mock_armature.type = "ARMATURE"
+    mock_armature.data.pose_position = "POSE"
+
+    broken_obj = MagicMock()
+    broken_obj.name = "SM_Broken"
+    broken_obj.type = "MESH"
+    broken_obj.data = None
+    broken_obj.users_collection = []
+
+    success, msg = generate_all_lods(
+        context=mock_ctx,
+        props=mock_props,
+        mesh_objs=[broken_obj],
+        armature_obj=mock_armature,
+    )
+    # Must fail safely without uncaught exception and restore pose_position
+    assert success is False
+    assert "simulated dag failure" in msg.lower()
+    assert mock_armature.data.pose_position == "POSE"

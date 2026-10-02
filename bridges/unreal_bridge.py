@@ -33,11 +33,11 @@ class UnrealLiveBridge(EngineBridgeBase):
         return "Unreal Engine 5"
 
     @classmethod
-    def ping_engine(cls, project_dir: str = "") -> Tuple[bool, str]:
+    def ping_engine(cls, project_dir: str = "", timeout_sec: float = 0.5) -> Tuple[bool, str]:
         """Verifies if UE5 Python Remote Execution or Web Remote Control is actively listening."""
-        if cls.ping_remote_execution():
+        if cls.ping_remote_execution(timeout_sec=timeout_sec):
             return True, "🟢 UE5 Active (Python Remote Execution Port 6776)"
-        if cls.ping_web_remote_control():
+        if cls.ping_web_remote_control(timeout_sec=timeout_sec):
             return True, "🟢 UE5 Active (Web Remote Control Port 30010)"
         return False, "⚪ UE5 Offline (Passive Watcher Mode active)"
 
@@ -219,10 +219,11 @@ class UnrealLiveBridge(EngineBridgeBase):
         host: str = "127.0.0.1",
         port: int = DEFAULT_TCP_PORT,
         http_port: int = DEFAULT_HTTP_PORT,
+        tcp_timeout_sec: float = 0.5,
     ) -> Tuple[bool, str]:
         """Dispatches Python payload via TCP Remote Execution or Web Remote Control HTTP fallback."""
         # 1. Check TCP Remote Execution
-        has_tcp = cls.ping_remote_execution(port=port)
+        has_tcp = cls.ping_remote_execution(port=port, timeout_sec=tcp_timeout_sec)
         if not has_tcp:
             # Try HTTP Web Remote Control
             if cls.ping_web_remote_control(port=http_port):

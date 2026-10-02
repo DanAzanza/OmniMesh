@@ -5,6 +5,7 @@ Unit tests for OmniMesh Material Optimization, Cleanup & Slot Consolidation Modu
 from __future__ import annotations
 
 from unittest.mock import MagicMock
+import numpy as np
 import pytest
 
 from core.materials import (
@@ -270,3 +271,71 @@ def test_material_optimizer_consolidate_micro_materials_null_and_area_crit():
     # BMesh not available in standalone mock, returns early safely
     res = MaterialOptimizer.consolidate_micro_materials(obj, area_crit=0.01)
     assert "consolidated_slots" in res
+
+
+def test_headless_slot_compactor_vectorized_and_in_place():
+    """Verify HeadlessSlotCompactor remaps polygon indices and preserves in-place slots."""
+    # Mock object with 3 slots: [MatA, None, MatA]
+    mat_a = MagicMock()
+    mat_a.name = "MatA"
+
+    slot0 = MagicMock(material=mat_a)
+    slot1 = MagicMock(material=None)
+    slot2 = MagicMock(material=mat_a)
+
+    obj = MagicMock()
+    obj.material_slots = [slot0, slot1, slot2]
+
+    # Mock mesh with 4 polygons referencing slots 0 and 2
+    mesh = MagicMock()
+    indices = np.array([0, 2, 0, 2], dtype=np.int32)
+    mesh.polygons = MagicMock()
+    mesh.polygons.__len__.return_value = 4
+    mesh.polygons.__iter__.return_value = iter([MagicMock(material_index=indices[i]) for i in range(4)])
+
+    def foreach_get(attr, buf):
+        if attr == "material_index":
+            np.copyto(buf, indices)
+
+    def foreach_set(attr, buf):
+        nonlocal indices
+        if attr == "material_index":
+            indices = np.copy(buf)
+
+    mesh.polygons.foreach_get = foreach_get
+    mesh.polygons.foreach_set = foreach_set
+
+    materials_list = [mat_a, None, mat_a]
+    mesh.materials = materials_list
+
+    obj.data = mesh
+
+    res = HeadlessSlotCompactor.compact_slots(obj, purge_empty=True, deduplicate_identical=True)
+    assert res["slots_removed"] == 2
+    assert res["faces_remapped"] == 2
+    # All polygons should now reference slot 0
+    assert np.all(indices == 0)
+
+
+def test_consolidate_micro_materials_all_protected_guard():
+    """Verify consolidate_micro_materials guards against empty candidate_areas when all materials are protected."""
+    mat_glass = MagicMock()
+    mat_glass.name = "Glass_Window"
+    mat_emissive = MagicMock()
+    mat_emissive.name = "Lamp_Emissive"
+
+    slot0 = MagicMock(material=mat_glass)
+    slot1 = MagicMock(material=mat_emissive)
+
+    obj = MagicMock()
+    obj.material_slots = [slot0, slot1]
+    mesh = MagicMock()
+    poly0 = MagicMock(material_index=0, area=10.0)
+    poly1 = MagicMock(material_index=1, area=0.01)
+    mesh.polygons = [poly0, poly1]
+    obj.data = mesh
+
+    # Must return without raising ValueError: max() arg is an empty sequence
+    res = MaterialOptimizer.consolidate_micro_materials(obj, area_threshold_pct=1.0, protect_semantic_materials=True)
+    assert res["consolidated_slots"] == 0
+    assert res["faces_reassigned"] == 0
