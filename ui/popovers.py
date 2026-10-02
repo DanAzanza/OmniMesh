@@ -411,6 +411,10 @@ class OMNIMESH_PT_popover_impostor(Panel):
         row_act.operator("lod_tool.generate_impostor", text="Generate", icon="IMAGE_PLANE")
         row_act.operator("lod_tool.remove_impostor", text="Remove", icon="X")
 
+        row_prev = layout.row(align=True)
+        row_prev.operator("lod_tool.setup_impostor_preview_rig", text="Preview Rig", icon="CAMERA_DATA")
+        row_prev.operator("lod_tool.remove_impostor_preview_rig", text="", icon="TRASH")
+
 
 # =========================================================================
 # 4. EXPORT POPOVERS: PACKAGE & BRIDGE

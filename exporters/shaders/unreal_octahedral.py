@@ -77,3 +77,71 @@ float4 col2 = BaseColorTex.Sample(TexSampler, uv2);
 return weights.x * col0 + weights.y * col1 + weights.z * col2;
 """
     return hlsl_code.strip()
+
+
+def generate_ue5_setup_guide(
+    base_name: str,
+    grid_size: int = 8,
+    sphere_radius: float = 1.0,
+    sphere_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> str:
+    """
+    Generates a setup guide (README_UE5_SETUP.txt) for Unreal Engine 5 integration.
+    Contains exact texture settings, Pixel Depth Offset formula, and wiring instructions.
+    """
+    diameter = sphere_radius * 2.0
+    guide = f"""================================================================================
+OmniMesh Octahedral Impostor - Unreal Engine 5 Setup Guide
+Asset: {base_name}
+Grid Size: {grid_size}x{grid_size} ({grid_size * grid_size} Angular Frames)
+Bounding Sphere Radius: {sphere_radius:.4f} Unreal Units (cm) / Blender Units (m)
+Bounding Sphere Center: ({sphere_center[0]:.4f}, {sphere_center[1]:.4f}, {sphere_center[2]:.4f})
+================================================================================
+
+1. TEXTURE IMPORT & COMPRESSION SETTINGS (CRITICAL!):
+--------------------------------------------------------------------------------
+- T_{base_name}_Impostor_BaseColor.png:
+    * Compression Settings: UserInterface2D (RGBA) or Default (TC_Default)
+    * sRGB: ENABLED (Checked)
+
+- T_{base_name}_Impostor_Normal.png:
+    * IMPORTANT: DO NOT USE "Normalmap (TC_Normalmap / BC5)"!
+      Unreal Engine's BC5 compressor automatically discards the Alpha channel.
+      OmniMesh stores normalized Depth in the Alpha channel for Pixel Depth Offset.
+    * Compression Settings: Default (TC_Default / BC7 / DXT5) or VectorDisplacementmap
+    * sRGB: DISABLED (Unchecked)
+
+- T_{base_name}_Impostor_ORM.png:
+    * Compression Settings: Masks (TC_Masks) or Default (TC_Default)
+    * sRGB: DISABLED (Unchecked)
+    * Channels: Red = Ambient Occlusion, Green = Roughness, Blue = Metallic
+
+2. PIXEL DEPTH OFFSET (PDO) FORMULA:
+--------------------------------------------------------------------------------
+In your UE5 Material:
+- Sample Normal Texture -> Alpha channel (Depth).
+- Pixel Depth Offset = Normal.A * {diameter:.4f}
+  (Or using center bias: (Normal.A - 0.5) * {diameter:.4f})
+- Connect this to the "Pixel Depth Offset" pin on the Material Output node.
+  This allows the 2D billboard to intersect cleanly with terrain, foliage,
+  and structures without harsh planar clipping.
+
+3. MATERIAL GRAPH WIRING:
+--------------------------------------------------------------------------------
+Option A: Using UE5's Built-in MF_OctahedralImpostor
+- Feed T_{base_name}_Impostor_BaseColor into BaseColorTex input.
+- Feed T_{base_name}_Impostor_Normal into NormalTex input.
+- Set Grid Size parameter to {grid_size}.
+
+Option B: Using OmniMesh Custom HLSL Node
+- Create a "Custom" node in the Material Editor.
+- Set Output Type to CMOT_Float4.
+- Paste the HLSL code from OmniMesh generated companion shader.
+- Add inputs: BaseColorTex, TexSampler, CardUV, LocalViewDir, GridSize.
+
+================================================================================
+"""
+    return guide.strip()
+
+
+__all__ = ["generate_unreal_octahedral_hlsl", "generate_ue5_setup_guide"]

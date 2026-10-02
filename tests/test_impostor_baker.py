@@ -96,3 +96,61 @@ def test_impostor_baker_null_safety():
 
     res = ImpostorAtlasBaker.bake_impostor_textures([], "TestAsset", "/tmp")
     assert res == {}
+
+
+def test_morphological_dilate_channels_preserves_zero_depth():
+    from core.impostor_math import ImpostorMath
+
+    # 8x8 image with 4 channels (Normal RGB + Depth A)
+    img = np.zeros((8, 8, 4), dtype=np.uint8)
+    # Put a 2x2 object in the center with Normals (128, 128, 255) and Depth 0
+    img[3:5, 3:5, 0] = 128
+    img[3:5, 3:5, 1] = 128
+    img[3:5, 3:5, 2] = 255
+    img[3:5, 3:5, 3] = 0  # Crucial: surface point at closest distance (Depth = 0)
+
+    # BaseColor opacity mask is True for this 2x2 square
+    mask = np.zeros((8, 8), dtype=bool)
+    mask[3:5, 3:5] = True
+
+    # Dilate 2 iterations
+    dilated = ImpostorMath.morphological_dilate_channels(img, mask, iterations=2)
+
+    # 1. The original center pixels MUST still be Depth = 0 (not erased!)
+    assert dilated[3, 3, 3] == 0
+    assert dilated[4, 4, 3] == 0
+    assert dilated[3, 3, 2] == 255
+
+    # 2. Adjacent pixels (e.g. [2, 3]) should now be filled with neighbor values
+    assert dilated[2, 3, 2] == 255
+    assert dilated[2, 3, 3] == 0
+
+
+def test_impostor_harness_depth_and_reexport():
+    from core.impostor_harness import ImpostorShaderHarness as HarnessDirect
+    from core.impostor_baker import ImpostorShaderHarness as HarnessReexport
+
+    # Confirm backward compatibility of re-export
+    assert HarnessDirect is HarnessReexport
+
+    # Headless calls should return None safely
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="DEPTH") is None
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="NORMAL", target_engine="UE5") is None
+
+
+def test_ue5_setup_guide_generation():
+    from exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
+
+    guide = generate_ue5_setup_guide(
+        base_name="Sedan_Car",
+        grid_size=8,
+        sphere_radius=2.5,
+        sphere_center=(0.0, 0.0, 1.25),
+    )
+
+    assert "Asset: Sedan_Car" in guide
+    assert "Grid Size: 8x8" in guide
+    assert "Bounding Sphere Radius: 2.5000" in guide
+    assert "Pixel Depth Offset = Normal.A * 5.0000" in guide
+    assert "TC_Default" in guide
+    assert "Normalmap (TC_Normalmap / BC5)" in guide

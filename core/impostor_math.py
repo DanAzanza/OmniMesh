@@ -260,5 +260,53 @@ class ImpostorMath:
         result[:, :, :3] = rgb
         return result
 
+    @staticmethod
+    def morphological_dilate_channels(
+        image_data: np.ndarray,
+        valid_mask: np.ndarray,
+        iterations: int = 4,
+    ) -> np.ndarray:
+        """
+        Vectorized push-pull morphological dilation for arbitrary N-channel arrays based on an explicit mask.
+        Dilates all channels outward into invalid (mask=False) pixels.
+        Ensures 4-channel Normal+Depth data dilates correctly using BaseColor opacity mask.
+        """
+        if image_data.ndim != 3:
+            return image_data
+
+        result = image_data.copy()
+        mask = valid_mask.copy()
+        h, w = mask.shape[:2]
+
+        for _ in range(iterations):
+            invalid_mask = ~mask
+            if not np.any(invalid_mask):
+                break
+
+            shifted_sum = np.zeros_like(result, dtype=np.float32)
+            shifted_count = np.zeros((h, w), dtype=np.float32)
+
+            for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                src_y = slice(max(0, -dy), min(h, h - dy))
+                dst_y = slice(max(0, dy), min(h, h + dy))
+                src_x = slice(max(0, -dx), min(w, w - dx))
+                dst_x = slice(max(0, dx), min(w, w + dx))
+
+                sub_valid = mask[src_y, src_x]
+                if not np.any(sub_valid):
+                    continue
+
+                shifted_sum[dst_y, dst_x] += result[src_y, src_x].astype(np.float32) * sub_valid[..., None]
+                shifted_count[dst_y, dst_x] += sub_valid.astype(np.float32)
+
+            fill_mask = invalid_mask & (shifted_count > 0)
+            if not np.any(fill_mask):
+                break
+
+            result[fill_mask] = shifted_sum[fill_mask] / shifted_count[fill_mask, None]
+            mask = mask | fill_mask
+
+        return result
+
 
 __all__ = ["ImpostorMath", "Vector"]

@@ -37,10 +37,12 @@ except ImportError:
 
 
 try:
+    from .impostor_harness import ImpostorShaderHarness
     from .impostor_math import ImpostorMath
     from .metrics import compute_bounding_sphere
     from .png_writer import write_png_direct
 except (ImportError, ValueError):
+    from core.impostor_harness import ImpostorShaderHarness
     from core.impostor_math import ImpostorMath
     from core.metrics import compute_bounding_sphere
     from core.png_writer import write_png_direct
@@ -180,106 +182,7 @@ class ImpostorCameraRig:
         return cam_obj
 
 
-class ImpostorShaderHarness:
-    """
-    Constructs unlit emission shader overrides for the three required PBR passes:
-    - BaseColor (with Alpha Mask & Cutout)
-    - Camera-Space Tangent Normal (neutral-blue background cleared)
-    - ORM / MaskMap (R=AO, G=Roughness, B=Metallic)
-    """
-
-    @classmethod
-    def create_unlit_override_material(
-        cls,
-        source_mat: Optional[Any],
-        channel_layer: str = "BASE_COLOR",
-        target_engine: str = "UE5",
-    ) -> Optional[Any]:
-        if not bpy:
-            return None
-
-        mat = bpy.data.materials.new(f"OM_Bake_{channel_layer}")
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        links = mat.node_tree.links
-        nodes.clear()
-
-        out_node = nodes.new(type="ShaderNodeOutputMaterial")
-        out_node.location = (400, 0)
-        emit_node = nodes.new(type="ShaderNodeEmission")
-        emit_node.location = (150, 0)
-        links.new(emit_node.outputs["Emission"], out_node.inputs["Surface"])
-
-        src_bsdf = None
-        if source_mat and getattr(source_mat, "use_nodes", False) and source_mat.node_tree:
-            src_bsdf = next(
-                (n for n in source_mat.node_tree.nodes if getattr(n, "type", "") == "BSDF_PRINCIPLED"), None
-            )
-
-        if channel_layer == "BASE_COLOR":
-            if src_bsdf and "Base Color" in src_bsdf.inputs and src_bsdf.inputs["Base Color"].is_linked:
-                src_link = src_bsdf.inputs["Base Color"].links[0]
-                cls._duplicate_link_to_target(source_mat, src_link, nodes, links, emit_node.inputs["Color"])
-            elif src_bsdf and "Base Color" in src_bsdf.inputs:
-                emit_node.inputs["Color"].default_value = src_bsdf.inputs["Base Color"].default_value
-            else:
-                emit_node.inputs["Color"].default_value = (0.8, 0.8, 0.8, 1.0)
-
-        elif channel_layer == "NORMAL":
-            geom_node = nodes.new(type="ShaderNodeNewGeometry")
-            geom_node.location = (-300, 0)
-            vec_trans = nodes.new(type="ShaderNodeVectorTransform")
-            vec_trans.vector_type = "NORMAL"
-            vec_trans.convert_from = "WORLD"
-            vec_trans.convert_to = "CAMERA"
-            vec_trans.location = (-150, 0)
-            links.new(geom_node.outputs["Normal"], vec_trans.inputs["Vector"])
-
-            vec_math = nodes.new(type="ShaderNodeVectorMath")
-            vec_math.operation = "MULTIPLY_ADD"
-            vec_math.location = (0, 0)
-            vec_math.inputs[1].default_value = (0.5, 0.5, 0.5)
-            vec_math.inputs[2].default_value = (0.5, 0.5, 0.5)
-            links.new(vec_trans.outputs["Vector"], vec_math.inputs[0])
-            links.new(vec_math.outputs["Vector"], emit_node.inputs["Color"])
-
-        elif channel_layer == "ORM":
-            comb_node = nodes.new(type="ShaderNodeCombineColor")
-            comb_node.location = (-50, 0)
-
-            rough_val = 0.5
-            metal_val = 0.0
-            if src_bsdf:
-                if "Roughness" in src_bsdf.inputs and not src_bsdf.inputs["Roughness"].is_linked:
-                    rough_val = float(src_bsdf.inputs["Roughness"].default_value)
-                if "Metallic" in src_bsdf.inputs and not src_bsdf.inputs["Metallic"].is_linked:
-                    metal_val = float(src_bsdf.inputs["Metallic"].default_value)
-
-            if target_engine == "UNITY":
-                # Unity standard MaskMap: R=Metallic, G=AO (1.0), B=Detail Mask (0.0), A=Smoothness (1-Roughness)
-                comb_node.inputs["Red"].default_value = metal_val
-                comb_node.inputs["Green"].default_value = 1.0
-                comb_node.inputs["Blue"].default_value = 1.0 - rough_val
-            else:
-                # UE5, MSFS 2024, Godot: R=AO, G=Roughness, B=Metallic
-                comb_node.inputs["Red"].default_value = 1.0
-                comb_node.inputs["Green"].default_value = rough_val
-                comb_node.inputs["Blue"].default_value = metal_val
-
-            links.new(comb_node.outputs["Color"], emit_node.inputs["Color"])
-
-        return mat
-
-    @staticmethod
-    def _duplicate_link_to_target(
-        source_mat: Any, link: Any, target_nodes: Any, target_links: Any, target_socket: Any
-    ) -> None:
-        from_node = link.from_node
-        if getattr(from_node, "type", "") == "TEX_IMAGE" and getattr(from_node, "image", None):
-            tex = target_nodes.new(type="ShaderNodeTexImage")
-            tex.image = from_node.image
-            tex.location = (-250, 0)
-            target_links.new(tex.outputs["Color"], target_socket)
+# ImpostorShaderHarness is imported from core.impostor_harness for clean modularization
 
 
 class ImpostorAtlasBaker:
@@ -404,15 +307,18 @@ class ImpostorAtlasBaker:
         mesh_objs: list[Any],
         base_name: str,
         output_dir: str,
+        mode: str = "OCTAHEDRAL_HEMI",
         atlas_resolution: int = 2048,
         target_engine: str = "UE5",
         dilation_iterations: int = 4,
         grid_size: int = 8,
     ) -> dict[str, str]:
         """
-        Bakes an 8x8 (64-view) Octahedral Impostor atlas using an ephemeral animation timeline render.
-        Camera orbits across frames 1..64 capturing BaseColor, Tangent Normal, and ORM passes.
-        Applies tile-local morphological dilation and composites into final atlas textures.
+        Bakes an NxN Octahedral Impostor atlas using an ephemeral animation timeline render.
+        Executes 4 unlit passes: BaseColor, Normal, Depth, and ORM.
+        Packs normalized planar Z-depth into Normal.Alpha for UE5 Pixel Depth Offset (PDO).
+        Applies BaseColor-mask-driven morphological dilation across all channels.
+        Exports companion UE5 integration guide (README_UE5_SETUP.txt).
         """
         if not bpy or not mesh_objs:
             return {}
@@ -438,6 +344,13 @@ class ImpostorAtlasBaker:
         center, radius, ortho_scale = ImpostorCameraRig.compute_rig_parameters(all_coords)
         tile_res = max(32, atlas_resolution // grid_size)
         total_frames = grid_size * grid_size
+        dist = radius * 2.5
+
+        fn_vec = (
+            ImpostorMath.hemi_octahedral_to_vector
+            if mode == "OCTAHEDRAL_HEMI"
+            else ImpostorMath.full_octahedral_to_vector
+        )
 
         with EphemeralBakeSceneGuard() as bake_scene:
             if not bake_scene:
@@ -458,8 +371,7 @@ class ImpostorAtlasBaker:
                 u = (col + 0.5) / float(grid_size)
                 v = (row + 0.5) / float(grid_size)
 
-                dir_vec = ImpostorMath.hemi_octahedral_to_vector(u, v)
-                dist = radius * 2.5
+                dir_vec = fn_vec(u, v)
                 cam_pos = Vector(center) + Vector(dir_vec) * dist
                 cam_obj.location = cam_pos
 
@@ -476,14 +388,18 @@ class ImpostorAtlasBaker:
             bake_scene.frame_start = 1
             bake_scene.frame_end = total_frames
 
-            channels = [
-                ("BaseColor", "BASE_COLOR", f"T_{base_name}_Impostor_BaseColor.png"),
-                ("Normal", "NORMAL", f"T_{base_name}_Impostor_Normal.png"),
-                ("ORM", "ORM", f"T_{base_name}_Impostor_ORM.png"),
+            # 4 Unlit passes: BaseColor, Normal, Depth, ORM
+            passes = [
+                ("BaseColor", "BASE_COLOR"),
+                ("Normal", "NORMAL"),
+                ("Depth", "DEPTH"),
+                ("ORM", "ORM"),
             ]
 
+            raw_tiles: dict[str, dict[tuple[int, int], np.ndarray]] = {pname: {} for pname, _ in passes}
+
             with tempfile.TemporaryDirectory() as temp_dir:
-                for chan_name, harness_layer, out_fname in channels:
+                for chan_name, harness_layer in passes:
                     orig_materials: list[tuple[Any, list[Any]]] = []
                     for obj in mesh_objs:
                         if hasattr(obj, "data") and hasattr(obj.data, "materials"):
@@ -491,7 +407,11 @@ class ImpostorAtlasBaker:
                             orig_materials.append((obj, mats))
                             override_mats = [
                                 ImpostorShaderHarness.create_unlit_override_material(
-                                    m, channel_layer=harness_layer, target_engine=target_engine
+                                    m,
+                                    channel_layer=harness_layer,
+                                    target_engine=target_engine,
+                                    radius=radius,
+                                    cam_distance=dist,
                                 )
                                 for m in mats
                             ]
@@ -508,7 +428,6 @@ class ImpostorAtlasBaker:
 
                         bpy.ops.render.render(animation=True, scene=bake_scene.name)
 
-                        tiles = []
                         for frame_idx in range(1, total_frames + 1):
                             col = (frame_idx - 1) % grid_size
                             row = (frame_idx - 1) // grid_size
@@ -520,21 +439,7 @@ class ImpostorAtlasBaker:
                                 img.pixels.foreach_get(arr)
                                 bpy.data.images.remove(img, do_unlink=True)
                                 tile_u8 = (arr.reshape((h, w, 4)) * 255.0 + 0.5).clip(0, 255).astype(np.uint8)
-                                tiles.append((tile_u8, (col, row)))
-
-                        dil_iter = dilation_iterations if chan_name != "ORM" else 0
-                        atlas_u8 = cls.compose_atlas_array(
-                            tiles,
-                            grid_cols=grid_size,
-                            grid_rows=grid_size,
-                            tile_w=tile_res,
-                            tile_h=tile_res,
-                            dilation_iterations=dil_iter,
-                        )
-
-                        out_path = os.path.join(output_dir, out_fname)
-                        write_png_direct(out_path, atlas_u8)
-                        results[chan_name] = out_path
+                                raw_tiles[chan_name][(col, row)] = tile_u8
                     finally:
                         for obj, mats in orig_materials:
                             if hasattr(obj, "data") and hasattr(obj.data, "materials"):
@@ -542,6 +447,101 @@ class ImpostorAtlasBaker:
                                 for m in mats:
                                     obj.data.materials.append(m)
 
+                # Process, merge Depth into Normal.A, dilate using BaseColor opacity mask
+                composed_tiles: dict[str, list[tuple[np.ndarray, tuple[int, int]]]] = {
+                    "BaseColor": [],
+                    "Normal": [],
+                    "ORM": [],
+                }
+
+                for frame_idx in range(1, total_frames + 1):
+                    col = (frame_idx - 1) % grid_size
+                    row = (frame_idx - 1) // grid_size
+                    coord = (col, row)
+
+                    base_tile = raw_tiles["BaseColor"].get(coord)
+                    norm_tile = raw_tiles["Normal"].get(coord)
+                    depth_tile = raw_tiles["Depth"].get(coord)
+                    orm_tile = raw_tiles["ORM"].get(coord)
+
+                    if base_tile is None or norm_tile is None:
+                        continue
+
+                    # Mask derived strictly from BaseColor cutout alpha
+                    opacity_mask = base_tile[:, :, 3] > 12
+
+                    # Pack Normal (RGB) + Depth (A)
+                    if depth_tile is not None:
+                        depth_ch = depth_tile[:, :, 0]
+                        norm_depth = np.dstack([norm_tile[:, :, :3], depth_ch])
+                        # Far boundary fallback for empty background
+                        norm_depth[~opacity_mask, 3] = 255
+                    else:
+                        norm_depth = norm_tile
+
+                    if dilation_iterations > 0:
+                        base_proc = ImpostorMath.morphological_dilate_channels(
+                            base_tile, opacity_mask, iterations=dilation_iterations
+                        )
+                        norm_proc = ImpostorMath.morphological_dilate_channels(
+                            norm_depth, opacity_mask, iterations=dilation_iterations
+                        )
+                        orm_proc = (
+                            ImpostorMath.morphological_dilate_channels(
+                                orm_tile, opacity_mask, iterations=dilation_iterations
+                            )
+                            if orm_tile is not None
+                            else np.zeros_like(base_tile)
+                        )
+                    else:
+                        base_proc = base_tile
+                        norm_proc = norm_depth
+                        orm_proc = orm_tile if orm_tile is not None else np.zeros_like(base_tile)
+
+                    composed_tiles["BaseColor"].append((base_proc, coord))
+                    composed_tiles["Normal"].append((norm_proc, coord))
+                    composed_tiles["ORM"].append((orm_proc, coord))
+
+                output_maps = [
+                    ("BaseColor", f"T_{base_name}_Impostor_BaseColor.png"),
+                    ("Normal", f"T_{base_name}_Impostor_Normal.png"),
+                    ("ORM", f"T_{base_name}_Impostor_ORM.png"),
+                ]
+
+                for chan_key, out_fname in output_maps:
+                    tiles = composed_tiles[chan_key]
+                    atlas_u8 = cls.compose_atlas_array(
+                        tiles,
+                        grid_cols=grid_size,
+                        grid_rows=grid_size,
+                        tile_w=tile_res,
+                        tile_h=tile_res,
+                        dilation_iterations=0,
+                    )
+                    out_path = os.path.join(output_dir, out_fname)
+                    write_png_direct(out_path, atlas_u8)
+                    results[chan_key] = out_path
+
+        # Export companion Unreal Engine 5 setup guide
+        try:
+            from exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
+
+            center_tup = (float(center.x), float(center.y), float(center.z))
+            guide_text = generate_ue5_setup_guide(
+                base_name=base_name,
+                grid_size=grid_size,
+                sphere_radius=float(radius),
+                sphere_center=center_tup,
+            )
+            guide_path = os.path.join(output_dir, f"README_{base_name}_UE5_SETUP.txt")
+            with open(guide_path, "w", encoding="utf-8") as gf:
+                gf.write(guide_text)
+            results["UE5_Guide"] = guide_path
+        except Exception as e:
+            logger.warning("Could not generate UE5 setup guide: %s", e)
+
+        results["sphere_radius"] = str(radius)
+        results["sphere_center"] = f"{center.x:.4f},{center.y:.4f},{center.z:.4f}"
         return results
 
     @classmethod
@@ -568,6 +568,7 @@ class ImpostorAtlasBaker:
                 mesh_objs=mesh_objs,
                 base_name=base_name,
                 output_dir=output_dir,
+                mode=mode,
                 atlas_resolution=atlas_resolution,
                 target_engine=target_engine,
                 dilation_iterations=dilation_iterations,
