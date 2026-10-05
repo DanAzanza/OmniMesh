@@ -1,230 +1,118 @@
 # OmniMesh Domain & Runtime Knowledge Base
 
-> **Rule**: This repository knowledge base serves strictly as persistent memory for **non-obvious runtime quirks, hardware/model constraints, and hidden system behaviors** that cannot be inferred from reading source code, function signatures, or docstrings alone. Do NOT document standard component mappings, obvious file listings, or generic code patterns here.
+> **Rule**: Persistent memory strictly for **non-obvious runtime quirks, hardware/model constraints, and hidden system behaviors** that cannot be inferred from reading source code, function signatures, or docstrings alone.
+
+---
+
+## 0. Repository Gates & Workflow Contracts
+
+### 0.1 Central Pre-Commit Verification Gate
+The central verification script required by `AGENTS.md` Section 7:
+```bash
+python scripts/verify_ci.py
+```
+*(Deterministically runs dependency validation, Ruff linter & formatter check, Pyright static type checker across core and test modules, and the full test suite).*
+
+### 0.2 Git Commit Scope Mapping
+Repository-specific component scopes required by `AGENTS.md` Section 6:
+* `[Core]`: Core LOD decimation engine, modifier pipeline, impostor baking, property groups (`core/`).
+* `[Exporters]`: Target engine exporters (MSFS 2024, Unreal Engine 5, Unity 6, Godot 4) (`exporters/`).
+* `[Bridges]`: External tool bridges, IPC socket servers, subprocess execution (`bridges/`).
+* `[UI]`: 3D Viewport N-Panels, custom UILists, modal operators, popovers (`ui/`).
+* `[Tests]`: Test suite, test fixtures, headless Blender test runners (`tests/`, `scripts/test_engine_exports.py`).
+* `[CI]`: Quality gate scripts, GitHub Actions workflows (`scripts/`, `.github/`).
+
+### 0.3 Autonomous Subagent & Large Binary Conventions
+* **Subagent Workflow Roles**:
+  * Architecture sparring & critique gate: `plan_critic`
+  * Pre-commit adversarial audit gate: `pre_commit_auditor`
+* **Large 3D Binary Asset Limit**:
+  * Model files (`.blend`, `.fbx`, `.gltf`, `.bin`, `.dds`) and raw textures must not exceed **50 MB** in Git tracking. Ensure temporary bake scratch files and `.coverage` artifacts remain strictly `.gitignore`d.
 
 ---
 
 ## 1. Blender 5.0+ & 5.2 LTS API Quirks & Runtime Invariants
 
-### 1.0 Runtime Baseline & Target Engine Specifications (2026 Standard)
-* **Blender 5.0+ Runtime Baseline**: OmniMesh requires Blender 5.0+ (`blender_version_min = "5.0.0"`). Blender 4.x legacy code paths (such as `mat.shadow_method` or legacy `mat.blend_method = 'CLIP'`) are strictly purged. In Blender 5.x EEVEE Next, transparency for cutout textures and impostors strictly requires `mat.surface_render_method = 'DITHERED'` (or `'BLENDED'`).
-* **Explicit Game Engine Target Standards**:
-  * **Microsoft Flight Simulator 2024**: Exclusively MSFS 2024 is targeted for exports and SDK builds (`fspackagetool.exe`). For `.blend` files saved in prior versions where `msfs_target_version == "2020"`, `restore_preset_state_on_load` automatically migrates the property to `"2024"`. In `spatial_parsers.py`, ingestion maintains non-destructive backward compatibility with legacy comma-separated syntax in `.cfg` files, but all exports generate official tagged MSFS 2024 syntax.
-  * **Unreal Engine 5 (5.4 - 5.5+)**: Standard FBX export with `UCX_` collision naming and `LODGroup` empty hierarchy.
-  * **Unity 6 (6000.x LTS)**: Automatic `OmniMeshUnityPostprocessor.cs` generation and `LODGroup` setup.
-  * **Godot 4 (4.3 - 4.4+)**: Visibility range metadata and `-convcolonly` collision hulls in standard glTF 2.0.
-
-### 1.1 Collection & Object RNA Lifecycle
-* **RNA Pointer Invalidation on Collection Purge**: Storing a collection reference (`target = bpy.data.collections.get(...)`) before executing a cleanup/purge routine that unlinks or removes collections invalidates the C struct pointer (`ReferenceError: StructRNA of type Collection has been removed`). Purges and deletions must strictly precede retrieving or creating target collections.
-* **View Layer Collection Exclusion (`LayerCollectionGuard`)**: Evaluating modifiers, depsgraphs, or transferring normals fails or outputs empty meshes when the target collection is excluded (`layer_collection.exclude = True`). All multi-collection processing must be wrapped in `LayerCollectionGuard` to temporarily un-exclude collections and restore view layer state in `finally`.
-
-### 1.2 Shading, Enums & EEVEE Next Compatibility
-* **EEVEE Next `surface_render_method`**: In Blender 5.0+ and 5.2 LTS, `material.shadow_method` does not exist and `mat.blend_method = 'CLIP'` is dead code. Transparency requires setting `mat.surface_render_method = 'DITHERED'` (or `'BLENDED'`). Always guard: `if hasattr(mat, "surface_render_method"): mat.surface_render_method = 'DITHERED'`.
+### 1.1 Shading, Enums & EEVEE Next
+* **EEVEE Next Shading**: `material.shadow_method` does not exist and `mat.blend_method = 'CLIP'` is dead code. Transparency for cutouts/impostors strictly requires `mat.surface_render_method = 'DITHERED'` (or `'BLENDED'`).
 * **glTF 2.0 Export Format**: Use `export_format='GLTF_SEPARATE'` for `.gltf` + `.bin` export in Blender 5.2 LTS (`GLTF_EMBEDDED` was deprecated).
-* **`DATA_TRANSFER` Loop Mapping**: `dt_mod.loop_mapping = 'POLYINTERP_LNORPROJ'` is the only valid enum in Blender 5.2 LTS (`POLYINTERP_NEAREST_CORNER` was deprecated/removed).
-* **Native `mathutils.geometry.delaunay_2d_cdt` Return Length**: Unlike standard 2D triangulation routines that return `(verts, edges, faces)`, Blender's native `delaunay_2d_cdt` returns a 6-item tuple: `(verts, edges, faces, orig_verts, orig_edges, orig_faces)`. Unpacking fewer items raises `ValueError`.
+* **`DATA_TRANSFER` Loop Mapping**: `dt_mod.loop_mapping = 'POLYINTERP_LNORPROJ'` is the only valid enum in Blender 5.2 LTS (`POLYINTERP_NEAREST_CORNER` was removed).
+* **Native `mathutils.geometry.delaunay_2d_cdt` Return Length**: Unlike standard 2D triangulation routines returning 3 items, Blender's native C-routine returns a 6-item tuple: `(verts, edges, faces, orig_verts, orig_edges, orig_faces)`.
 
-### 1.3 Skeletal Mesh Rigging & Transform Invariants
-* **Rest-Pose Coordinate Inversion**: Transforming bone-parented static props into rest-pose local space before joining into a skinned character prevents "pose explosion" (where animated rotations are permanently baked into the rest mesh).
+### 1.2 Collection & Object RNA Lifecycle
+* **RNA Pointer Invalidation on Collection Purge**: Storing a collection reference before unlinking/removing collections invalidates the C struct pointer (`ReferenceError: StructRNA of type Collection has been removed`). Purges and deletions must strictly precede retrieving or creating target collections.
+* **View Layer Collection Exclusion (`LayerCollectionGuard`)**: Evaluating modifiers, depsgraphs, or transferring normals fails or outputs empty meshes when the target collection is excluded (`layer_collection.exclude = True`). All multi-collection processing must be wrapped in `LayerCollectionGuard`.
+* **Modifier Execution Context under `temp_override`**: In Blender 5.2+, applying modifiers on objects inside collections without `temp_override(active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj])` fails or causes view layer selection lockups.
+
+### 1.3 Viewport Simulator Performance & C-API Memory
+* **Draw Callback Restriction**: Writing to Blender RNA/DNA properties inside `draw_handler_add` raises `RuntimeError: Operator or data manipulation during draw callback is forbidden`. Draw handlers must remain strictly read-only.
+* **Zero Undo Pollution**: Modal simulation loops must omit `{'UNDO'}` from `bl_options` to keep user `Ctrl+Z` history clean.
+* **Differential Visibility Sets**: Only call `obj.hide_set()` if `obj.hide_get()` differs from the target state to avoid rebuilding the depsgraph every frame.
+* **Blender Native Image Buffer Deallocation (`buffers_free`)**: `img.pixels.foreach_get(buf)` caches native unmanaged memory in C++. Free explicitly via `if hasattr(img, "buffers_free"): img.buffers_free()` inside `finally` blocks.
+* **Global Undo & Memory Leaks in Batch Runs**: Multi-asset batch processing retains undo modifier history in RAM. Wrap in `use_global_undo = False` and invoke `bpy.data.orphans_purge(...)` + `gc.collect()` + OS heap compaction (`ctypes.cdll.msvcrt._heapmin()` on Win32 / `malloc_trim(0)` on Linux).
+* **Async Texture Worker Safety**: Blender's Python `bpy` C-API is not thread-safe. Worker threads in `ThreadPoolExecutor` must receive pre-quantized NumPy arrays / PIL images and file paths only (zero `bpy` calls on workers). Enforce a synchronous join barrier (`wait_all()`) before package export.
+
+---
+
+## 2. Blender RNA, UI & Extension Traps
+
+* **Extension Directory Invariant (Blender 4.2+)**: User extensions reside strictly in `%APPDATA%\Blender Foundation\Blender\<ver>\extensions\user_default\<addon_id>` (`bl_ext.user_default.<addon_id>`). Copying files to legacy `scripts/addons/<addon_id>` will NOT update the live extension.
+* **Dynamic UI Class Unregistration & RNA Ghosting**: Hot-reloading modules fails if stale class references persist in Blender's C++/RNA registry. Clean unregistration must dynamically inspect `existing = getattr(bpy.types, cls.__name__, None)` and unregister `existing` before registering the reloaded class definition.
+* **UIList Duplicate Registration & Zero-Height Collision Trap**: Failing to dynamically unregister reloaded `UIList` classes causes duplicate classes in `bpy.types.UIList.__subclasses__()`, rendering template lists with zero vertical height.
+* **Ghost "Misc" Sidebar Tab Trap**: Any `Panel` declared with `bl_region_type = 'UI'` without an explicit `bl_category` defaults to `"Misc"`. Popovers must use `bl_region_type = 'HEADER'`. Collapsible subpanels (`bl_parent_id`) must explicitly declare `bl_category = "OmniMesh"`.
+* **Popover Horizontal Space Starvation**: In narrow N-Panels, pairing multiple text operator buttons alongside a popover button in an aligned row silently clips the gear icon off-screen. Action rows paired with a popover must hold at most ONE primary operator button.
+* **RNA Mutation Ban in `Panel.draw()` (Runaway Redraw Loop)**: Never mutate RNA properties or sync data inside `draw()`. Writing to RNA triggers layout invalidation, forcing an infinite 60fps+ redraw loop at 100% CPU thread load. All sync logic belongs in `update` callbacks, operators, or `load_post` handlers.
+* **`from __future__ import annotations` in Operators**: Writing `prop: Any = bpy.props.StringProperty(...)` stores the literal string `'Any'` in annotations, causing Blender to silently skip RNA registration and raise `TypeError: keyword unrecognized`. Use `prop: bpy.props.StringProperty(...)` directly.
+* **Dynamic `EnumProperty` Item Invalidation (§1.7)**: When deleting a custom item (such as a JSON preset), reassign active dynamic enum properties to a guaranteed fallback (e.g. `DEFAULT_PRESET_ID`) *before* disk deletion to prevent `bpy.rna WARNING current value matches no enum`.
+* **RNA Property Leading Underscore Ban**: Properties on `bpy.types.PropertyGroup` MUST NOT start with an underscore (`_`), or registration of all subsequent properties in the class halts silently.
+* **Operator Subclassing Invariant**: Never subclass a registered `bpy.types.Operator` class. Subclassing corrupts Blender's C++ RNA class table. Inherit directly from `bpy.types.Operator` and delegate via `bpy.ops`.
+* **Blender C-RNA Dynamic Enum Assignment in Operators**: Assigning a dynamically added enum item immediately inside `execute()` can fail if the enum items tuple was cached at invocation. Wrap the assignment in a deferred timer (`bpy.app.timers.register(..., first_interval=0.005)`).
+* **BMesh `bm.verts.index_update()` Requirement**: Newly created or bisected vertices keep `v.index == -1`. Attempting to populate vertex groups using `vg.add([v.index for v in ...])` without calling `bm.verts.index_update()` silently adds 0 vertices.
+
+---
+
+## 3. Skeletal Rigging, Transforms & BMesh Invariants
+
+* **Rest-Pose Coordinate Inversion**: Transform bone-parented props into rest-pose local space before joining into a skinned character to prevent pose explosion.
 * **Armature Rest-Pose Lock**: During decimation and normal data transfers, `armature.data.pose_position` MUST be set to `'REST'`, and restored afterwards.
-* **Vertex Group Index Shifting**: In Blender, removing a vertex group via `obj.vertex_groups.remove(vg)` shifts the indices of all subsequent groups. Always collect used group *names* first and purge by name to avoid data corruption.
-* **GPU Weight Singularity Guard**: Stripping micro-weights ($< 0.01$) must never leave a vertex with $\sum w = 0.0$. Fall back to the anchor bone (`1.0`) if all weights drop below epsilon, preventing GPU division-by-zero NaN shader crashes.
-* **`bpy.types.VertexGroup.add()` Parameter Quirk**: `vg.add(index, weight, type)` accepts a list of vertex indices, but `weight` MUST be a single float (passing a list/array of weights raises `TypeError`).
-
-### 1.4 Viewport Simulator Performance & Undo Hygiene
-* **Draw Callback Restriction**: Writing to Blender RNA/DNA properties inside `draw_handler_add` raises `RuntimeError: Operator or data manipulation during draw callback is forbidden`.
-* **Zero Undo Pollution**: The modal simulation loop must omit `{'UNDO'}` from `bl_options` to keep the user's `Ctrl+Z` history clean.
-* **Differential Visibility Sets**: Only call `obj.hide_set()` if `obj.hide_get()` differs from the target state. This avoids rebuilding the dependency graph on frames where the camera moves within the same LOD zone.
-
-### 1.5 Batch Processing, Memory & Threading
-* **Global Undo & Orphan Datablock Purge**: Batch processing multi-asset folders without disabling global undo retains the modifier/import history of every asset in RAM. Operators must wrap execution in `use_global_undo = False` and call `bpy.data.orphans_purge(...)` + `gc.collect()` + OS heap compaction (`ctypes.cdll.msvcrt._heapmin()` on Win32 / `libc.so.6.malloc_trim(0)` on Linux) to prevent multi-gigabyte memory leaks.
-* **Async Texture Worker Safety**: Blender's Python `bpy` C-API is not thread-safe. Worker threads in `ThreadPoolExecutor` must receive pre-quantized `uint8` NumPy arrays / PIL images and file paths only (zero `bpy` calls on workers). Enforce a synchronous join barrier (`wait_all()`) before exporting packages.
-* **Dominant Resolution Packing Rule**: When assembling channel-packed texture maps (e.g. ORM, MaskMap, COMP) from separate source textures with mismatched resolutions (e.g. 4K Roughness and 2K AO), `np.stack` raises `ValueError: all input arrays must have the same shape`. All channels must be resampled to the dominant resolution ($\max(w_i), \max(h_i)$) of the linked input images before stacking.
-* **Modifier Execution under `temp_override`**: In Blender 5.2+, applying modifiers on objects inside collections without `temp_override(active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj])` can fail or cause view layer selection lockups if the object is not active in the current window context.
-
-### 1.6 UI Drawing & Dynamic Hot-Reloading
-* **Invalid Icon RNA Fatal Draw Abort**: Passing an invalid `icon` string (e.g. `"DIAGNOSTIC"`) to `layout.label()` or `layout.operator()` raises a fatal Python `TypeError` inside Blender's C++ UI draw loop, instantly aborting panel rendering for that frame and leaving the panel header un-expandable or blank without viewport errors. Always verify icon strings against valid Blender RNA enum items.
-* **Dynamic UI Class Unregistration & RNA Registry Ghosting**: When hot-reloading add-on modules during live development or MCP sessions, unregistering classes via module class objects (`bpy.utils.unregister_class(cls)`) fails if old class references were already replaced in `sys.modules`. In Blender's underlying C++/RNA registry, orphaned panel definitions (`OMNIMESH_PT_*`) persist in `bpy.types` and cause registration collisions. Clean unregistration must dynamically inspect `existing = getattr(bpy.types, cls.__name__, None)` and unregister `existing` before registering the new class definition.
-* **UIList Duplicate Registration & Zero-Height Collision Trap**: For `bpy.types.UIList` subclasses, failing to unregister the old class instance from `bpy.types` before registering a reloaded class causes duplicate classes to accumulate in `bpy.types.UIList.__subclasses__()`. When `layout.template_list("LOD_UL_tier_list", ...)` executes, Blender's C dispatch collides with stale RNA structs, rendering the list with zero vertical height or visually overlapping sibling subpanels. Always use `existing = getattr(bpy.types, cls.__name__, None)` unregistration in `register_lists()`.
-* **Ghost "Misc" Sidebar Tab Trap (`bl_region_type = 'HEADER'`)**: In Blender 4.2+ and 5.2 LTS, any `bpy.types.Panel` declared with `bl_space_type = 'VIEW_3D'` and `bl_region_type = 'UI'` without an explicit `bl_category` automatically defaults to `bl_category = 'Misc'`, creating an unwanted, cluttered `"Misc"` tab in the 3D Viewport sidebar. Popover panels invoked via `layout.popover(panel="...", icon="PREFERENCES")` must declare `bl_region_type = 'HEADER'`. Header panels are completely excluded from sidebar categorization while remaining 100% addressable by `layout.popover()`. Furthermore, all collapsible subpanels (`bl_parent_id = "..."`) MUST explicitly declare `bl_category = "OmniMesh"`, as Blender does not reliably inherit category from parent panels.
-* **Popover Horizontal Space Starvation in N-Panels**: In narrow N-Panels (~200–300px), placing multiple text-labeled operator buttons alongside a popover button in an aligned row (`layout.row(align=True)`) causes Blender's layout solver to starve the popover button of space, silently clipping the gear icon off the right edge of the screen without errors or warnings. An action row paired with a popover should hold at most ONE primary action operator button and the popover button; secondary helper operators must occupy their own dedicated row.
-* **RNA Mutation Ban in `Panel.draw()` (Runaway Redraw Loop)**: Never mutate RNA properties or call data-sync logic inside `Panel.draw()` (e.g. `sync_preset_tiers_from_preset` or assigning defaults). Any RNA write inside `draw()` triggers layout invalidation, forcing Blender into an infinite 60fps+ redraw loop at 100% CPU thread load and logging `Writing to ID classes in draw() is not permitted`. All sync logic must run in property `update` callbacks, operator `execute()`, or `load_post` handlers.
-
-### 1.7 Operator Property Annotations & Dynamic EnumProperty Invalidation
-* **`from __future__ import annotations` in Operators**: When `from __future__ import annotations` is present, writing `prop: Any = bpy.props.StringProperty(...)` stores the literal string `'Any'` in `__annotations__`. Blender's RNA registration inspects `__annotations__` and expects either a deferred property object or a string starting with `bpy.props.`. Annotations evaluated as `'Any'` cause Blender to silently skip RNA property registration, leading to `TypeError: Converting py args to operator properties:: keyword unrecognized` when invoked with keyword arguments. Use `prop: bpy.props.StringProperty(...) if bpy else ""` directly.
-* **Dynamic `EnumProperty` Item Invalidation on File Deletion**: When deleting a custom item (such as a JSON preset) that is referenced by an active `EnumProperty` with a dynamic callback, Blender evaluates the current value against the newly reduced enum list immediately upon cache reload. If the property still holds the deleted item's ID, Blender logs `bpy.rna WARNING current value matches no enum`. Reassign the property to a guaranteed fallback (e.g. `DEFAULT_PRESET_ID`) *before* removing the file from disk and triggering cache reloads.
-* **Blender RNA Property Naming**: RNA properties defined on `bpy.types.PropertyGroup` MUST NOT start with an underscore (`_`). Defining e.g. `_state_restored: BoolProperty(...)` raises `ValueError/RuntimeError: ... BoolProperty could not register because it starts with an '_'` and silently halts registration of all subsequent properties in the class.
-* **Operator Subclassing / Aliases Invariant**: In Blender RNA, never directly subclass a registered `bpy.types.Operator` class to create an alias operator (e.g. `class OpAlias(OriginalOp):`). Doing so corrupts Blender's C++ RNA class table, causing `bpy.rna | WARNING unable to get Python class for RNA struct ...` and silently breaking execution of the parent operator. Operator aliases must inherit directly from `bpy.types.Operator` and delegate to the primary operator via `bpy.ops` inside `execute()`.
-* **Extension Sibling Relative Imports**: In Blender 4.2+ extensions, top-level imports (e.g. `from ui.properties import ...`) can bind to stale `sys.modules` instances loaded during initial add-on boot. Sibling relative imports (`from .properties import ...`) must always be prioritized to ensure shared module state (like singleton registries and cache dictionaries) remains unified.
-* **Blender C-RNA Dynamic Enum Assignment in Operators**: When an operator dynamically adds an item to a custom enum collection and immediately assigns `props.my_enum = new_id` inside `execute()`, Blender's C-RNA operator transaction validation may reject the assignment with `TypeError: ... enum "<id>" not found in (...)` if the enum items tuple was cached at operator invocation. Wrapping the assignment in a short deferred timer (`bpy.app.timers.register(..., first_interval=0.005)`) allows Blender to refresh its RNA enum cache on the next event tick and safely apply the value.
-
-### 1.8 BMesh Vertex Indexing & Modifier Interaction
-* **`bm.verts.index_update()` Requirement for Vertex Group Index Mapping**: `bm.verts.ensure_lookup_table()` enables indexing via `bm.verts[i]`, but newly created or bisected vertices keep `v.index == -1` until `bm.verts.index_update()` is explicitly called. Attempting to populate vertex groups using `vg.add([v.index for v in ...])` from BMesh geometry without calling `index_update()` results in passing `[-1]`, silently adding 0 vertices to the vertex group.
-* **`DATA_TRANSFER` Normal Modifier Overwrite on Vertex Groups**: Applying a `DATA_TRANSFER` modifier via `bpy.ops.object.modifier_apply` generates an evaluated mesh datablock that can wipe vertex weights if vertex groups were assigned before the modifier was applied. Assign custom vertex groups (such as `OMNIMESH_SEAM_LOCKED`) *after* applying normal reprojection and pivot recentering on the final mesh data-block.
-* **Spatial Bisect Seam Pinning vs. Natural Mesh Openings**: When protecting boundaries after spatial chunking/bisection, tagging edges with `edge.is_boundary` mistakenly locks all open edges, including natural openings (e.g. eye sockets, open sleeves, vehicle undercarriages), preventing decimation and wasting triangles. True seam locking must test vertex world coordinates against the explicit mathematical bisect plane ($|wco \cdot \vec{n} - d| < \epsilon$, e.g. 1mm proximity) so only artificially generated cut vertices are tagged.
-
-### 1.9 Context Resolution, C-API Memory & Engine Collision Standards
-* **`resolve_lod_context(context)` Return Unpacking**: `resolve_lod_context(context)` always returns a 3-tuple `(props, master_target, is_derivative_lod)`. Directly assigning `props = resolve_lod_context(context)` causes downstream `AttributeError: 'tuple' object has no attribute 'lods'` when accessing property fields. Operators and panels must unpack: `props, _, _ = resolve_lod_context(context)`.
-* **Blender Native Image Buffer Deallocation (`buffers_free`)**: Reading pixel buffers using `img.pixels.foreach_get(buf)` caches native unmanaged pixel buffers in Blender's C-memory. In batch processing and iterative baking pipelines, Python garbage collection (`del buf`) fails to free these native allocations. Operators must explicitly invoke `if hasattr(img, "buffers_free"): img.buffers_free()` inside `finally` blocks to release memory.
-* **Godot 4.x Collision Node glTF Naming Standard**: In Godot 4.x glTF standard import, `-convcol` creates a visible StaticBody3D collision shape by default. Pure collision hulls that should not be visible in the scene tree must use the `-convcolonly` suffix.
+* **Vertex Group Index Shifting**: `obj.vertex_groups.remove(vg)` shifts indices of subsequent groups. Collect used group names first and purge by name.
+* **GPU Weight Singularity Guard**: Stripping micro-weights ($< 0.01$) must never leave $\sum w = 0.0$ (causing GPU division-by-zero NaN shader crashes). Fall back to anchor bone (`1.0`).
+* **`bpy.types.VertexGroup.add()` Parameter Quirk**: `vg.add(index, weight, type)` accepts a list of indices, but `weight` MUST be a single float (passing a list/array raises `TypeError`).
+* **Copy-on-Write (CoW) Mesh Datablock Safety**: Applying modifiers or `transform_apply` on objects whose mesh datablock has multiple users (`obj.data.users > 1`, e.g. `Alt+D` duplicates) mutates shared geometry across all variants simultaneously. Always isolate: `if obj.data.users > 1: obj.data = obj.data.copy()`.
+* **Shape Keys & Modifier Application**: `bpy.ops.object.modifier_apply` throws `RuntimeError: Modifier cannot be applied to a mesh with shape keys`. Clean or purge shape keys on LOD derivative meshes before modifier baking.
+* **BMesh Dissolve & Boundary Pinning Index Invariance**: `bmesh.ops.dissolve_limit` mutates vertex indices. Planar limited dissolve must always run *before* boundary and UV seam tagging on the post-dissolve topology.
+* **Spatial Bisect Seam Pinning vs. Natural Mesh Openings**: Tagging edges with `edge.is_boundary` mistakenly locks natural openings (eyes, sleeves). Seam locking must test vertex world coordinates against the explicit mathematical bisect plane ($|wco \cdot \vec{n} - d| < \epsilon$).
+* **AABB Extent Bounding Sphere vs Centroid Bias**: Computing bounding sphere centers via point centroid $\frac{1}{N}\sum \mathbf{p}$ biases centers toward dense vertex clusters (cockpit controls, bevels), artificially inflating radius $r$ and decimation error. Centers must strictly derive from symmetric AABB extents $\frac{\min + \max}{2}$.
+* **Blender RNA `ReferenceError` on Removed Objects**: Accessing attributes on an unlinked/removed RNA struct raises `ReferenceError: StructRNA of type Object has been removed`. Viewport draw handlers must guard with `(ReferenceError, AttributeError)`.
 
 ---
 
-## 2. Headless CI, Python & Testing Quirks
+## 4. Multi-Engine Export Pipelines & Testing
 
-* **`MagicMock` Boolean Evaluation Trap**: In headless tests with mock objects, `getattr(mock_obj, "prop", False)` returns a truthy `MagicMock` when unset. Code that runs under test mocks must explicitly check `bool(getattr(obj, "prop", False) is True)`.
-* **Python Ternary Tuple Return Precedence**: `return a if cond else b, c` evaluates as `return a if cond else (b, c)`. Parentheses `return (a if cond else b), c` are mandatory to return a tuple in all branches.
-* **Linux `sys.path` Quirk**: Unlike Windows, `pytest` on Ubuntu runners does NOT include the root working directory in `sys.path`. Always configure `pythonpath = .` in `pytest.ini` and declare `PYTHONPATH: .` in GitHub Actions workflows.
-* **Dependency Parity Invariant**: Blender bundles `numpy` and `Pillow` internally, but standalone test suites in clean CI environments require them declared in `pyproject.toml` and installed via `pip install -e .[dev]`.
-* **Blender Headless `--python-exit-code 1` Invariant**: When running test suites in headless Blender (`blender -b --python script.py`), Blender exits with code `0` by default even when unhandled exceptions occur or unittests fail. Verification scripts and CI pipelines must explicitly supply `--python-exit-code 1` to guarantee test failures return a non-zero exit code.
+### 4.1 Headless Testing & CLI Commands
+* **Blender Headless `--python-exit-code 1`**: Blender headless (`blender -b`) exits with code `0` even when unhandled exceptions occur or unittests fail. CI pipelines and verification scripts must explicitly supply `--python-exit-code 1`.
+* **Unified Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 4 engine export pipelines.
+* **Engine Headless CLI Execution**:
+  * **Godot 4**: `godot --headless --path <project_dir> --editor --quit` (requires `Godot_*_mono_win64_console.exe`, GUI exe drops pipes). Colliders: `-convcolonly` for invisible hulls (`-convcol` creates visible shapes). Custom impostor suffixes bypass regex; map explicitly to max distance tier (`visibility_range_begin = max_tier_distance`).
+  * **Unity 6**: `unity run <project_dir> --editor-version <installed_ver> -- -nographics`. Never pass `-quit` or `-batchmode` after `--`.
+  * **Unreal Engine 5**: `UnrealEditor-Cmd.exe <Project.uproject> -run=pythonscript -script="<script>.py" -nullrhi -nosound -unattended`. Colliders: `UCX_{Asset}_{Index}`.
+  * **MSFS 2024**: `fspackagetool.exe <Project.xml> -forcesteam -nopause` with `stdin=subprocess.DEVNULL`. Steam installs require `fspackagetool_overrideExePath.txt`. All interior references in `model.cfg` must use POSIX forward slashes (`interior=../model/{Interior}.xml`).
 
----
-
-## 3. Autonomous Multi-Engine Export Testing Guide
-
-### 3.1 Headless Data & Pipeline Execution
-* **Unified Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 4 engine export pipelines in one shot.
-* **Godot 4 Headless Import**: Test glTF and GDScript post-imports using `godot --headless --path <project_dir> --editor --quit`. Requires `Godot_*_mono_win64_console.exe` (not the GUI `.exe`, which drops pipe handles).
-* **Unity 6 CLI Execution**: Use `unity run <project_dir> --editor-version <installed_ver> -- -nographics`. Never pass `-quit` or `-batchmode` after `--` (managed natively by Unity CLI; causes fatal argument collision).
-* **Unreal Engine 5 Headless Ingestion**: Run `UnrealEditor-Cmd.exe <Project.uproject> -run=pythonscript -script="<script>.py" -nullrhi -nosound -unattended` for 100% headless asset and collision testing without GUI overhead.
-* **MSFS 2024 Validation**: For Steam installs, `fspackagetool.exe` requires `C:\MSFS 2024 SDK\Tools\bin\fspackagetool_overrideExePath.txt` pointing to `FlightSimulator2024.exe` (`C:\Program Files (x86)\Steam\steamapps\common\MSFS2024\FlightSimulator2024.exe`). Execute package builds with `fspackagetool.exe <Project.xml> -forcesteam -nopause` and `stdin=subprocess.DEVNULL` to prevent interactive console deadlocks. Without live MSFS, validate via XML schema (`ModelInfo.xml` with GUID `{[...]}`, strictly descending `minSize`, ending at `0`) and glTF integrity.
-* **Multi-LOD Pivot & Origin Parity on Impostors**: Game engine LOD parsers (UE5 LODGroup, MSFS, Godot 4) strictly require all LOD tiers to share the exact same pivot translation (`(obj.matrix_world.translation - lod0_pivot).length <= 1e-4`). When generating billboards or impostors centered on an asset's bounding box, do NOT set `impostor.location = bbox_center`. Keep `impostor.location = lod0_pivot.copy()` and offset the billboard vertices in local BMesh space (`v.co += (bbox_center - lod0_pivot)`).
-* **Godot 4 Visibility Range Inversion on Custom Suffixes**: Godot 4's visibility range calculation relies on regex matching `_LOD(\d+)` to order tiers. Impostors named `{asset}_LOD_Impostor` bypass this regex and default to index `0`, causing the billboard to appear at 0.0–10.0m directly over LOD0. Custom LOD names must be explicitly mapped to the maximum distance tier (`visibility_range_begin = max_tier_distance`).
-
-### 3.2 Optical & Visual Review Protocol (`view_file`)
-* **Engine Capture Commands**:
-  * *Blender*: `bpy.ops.screen.screenshot(filepath=filepath)` or `blender-mcp.get_viewport_screenshot` or `bpy.ops.render.opengl(write_still=True)`. *Blender 5.2 Quirk*: The `full=True` keyword was removed from `bpy.ops.screen.screenshot`; passing `full` raises `TypeError: keyword "full" unrecognized`.
-  * *Blender MCP Server Protocol Invariant*: Campbell Barton's official extension (`bl_ext.blender_org.mcp`) communicates via stdio/custom websockets, whereas the `blender-mcp` MCP toolserver requires Siddharth Ahuja's TCP JSON socket server on `127.0.0.1:9876` (`blender_mcp.py`). If the official extension is active, port 9876 will not respond, leading to `Connection refused`. Always verify the matching standalone socket companion add-on is loaded.
-  * *Godot 4*: `viewport.get_texture().get_image().save_png("render.png")` in EditorScript/Scene.
-  * *Unity 6*: Offscreen `Camera.Render()` to `RenderTexture` -> `Texture2D.EncodeToPNG()`.
-  * *Unreal 5*: `unreal.AutomationLibrary.take_high_res_screenshot(1920, 1080, "render.png")`.
-  * *MSFS 2024 glTF*: Re-import exported glTF into Blender (`bpy.ops.import_scene.gltf`) or render via `chrome-devtools-mcp` (`<model-viewer>`); in-game live check uses MSFS DevMode `Debug > Model LODs`.
-
-* **Visual Inspection Checklist** (Load rendered `.png` via `view_file`):
-  1. *Silhouette Collapse & Popping*: Compare LOD0 vs. LOD1..k contours; flag missing thin geometry (antennas, railings) or sudden silhouette jumps.
-  2. *Normal Shading Inversion*: Verify lighting on relief/creases (DirectX in UE5 has inverted green channel vs. OpenGL in Godot/Blender; inverted normals appear as inverted cavities/bumps).
-  3. *Impostor Alpha Fringing*: Inspect billboard borders against light/dark backgrounds for dark borders caused by non-dilated alpha cutouts.
-  4. *UV & Texture Stretching*: Check mapped textures (grids/bricks) across decimated regions for skewed UV seams.
-  5. *Collider Snugness*: Overlay wireframe collision hulls (`display_type='WIRE'`) over visual mesh; verify zero geometry clipping or excessive exterior empty volume.
+### 4.2 Exporter Hierarchy, Rollback & Sockets
+* **Transactional Scene-Graph Rollback (`try...finally`)**: Single-mesh engine exporters mutate names (`UCX_`, `-convcol`) and parent meshes to temporary `LODGroup` empties. Exporters must record original state in dictionaries, run export in `try`, and restore original hierarchy and names in `finally`.
+* **Multi-LOD Pivot & Origin Parity on Impostors**: All engine LOD parsers require all tiers to share the exact same pivot translation (`(obj.matrix_world.translation - lod0_pivot).length <= 1e-4`). Center impostors in local BMesh space rather than offsetting object location.
+* **MSFS XML minSize Lower-Bound Invariance**: In MSFS XML, `<LOD minSize="X">` is the lower-bound exit threshold, whereas OmniMesh `tier.screen_size_pct` is the upper-bound entry threshold. LOD0 is always 100%, and LOD $i$ receives `lod_infos[i - 1].min_size`.
+* **MSFS 2024 Modular Attachments (`attached_objects.cfg`)**: `attach_offset` coordinates in `[sim_attachment.N]` are strictly relative to the mounting socket empty (`attach_to_node`), never aircraft datum. Socket markers (`ATTACH_POINT_*`) in LOD0 must be exported in glTF, but attachment instances reside in `{AssetName}_Config` and are excluded from glTF.
+* **Blender MCP Socket Server (Port 9876)**: The `blender-mcp` toolserver requires Siddharth Ahuja's TCP JSON socket server on `127.0.0.1:9876` (`blender_mcp.py`). Campbell Barton's official extension (`bl_ext.blender_org.mcp`) uses stdio and will reject port 9876 connections.
 
 ---
 
-## 4. Multi-Model Packages, Geometry Variants & Ingestion Runtime Invariants
+## 5. Impostor Systems & Atlas Baking Invariants
 
-### 4.1 Blender 4.2+ Extension Path vs. Legacy Add-on Mirroring
-* **Extension Directory Invariant**: In Blender 4.2+ and 5.2 LTS, user extensions reside strictly in `%APPDATA%\Blender Foundation\Blender\<ver>\extensions\user_default\<addon_id>` and load into `sys.modules` under the namespace `bl_ext.user_default.<addon_id>`.
-* **The Legacy Folder Trap**: Copying or syncing files to `%APPDATA%\...\scripts\addons\<addon_id>` will NOT update the live extension if Blender loaded it from `extensions\user_default`. Any live MCP reload will execute stale code from the extension path unless mirrored directly to `extensions\user_default\<addon_id>`.
-
-### 4.2 Copy-on-Write (CoW) Mesh Datablock Safety
-* **Linked Duplicate Mutation Bug**: In multi-variant packages, geometry is frequently shared between variants or models (e.g. wings, engine cowlings, landing gear doors, or linked object duplicates created via `Alt+D`). In Blender's Python API, applying modifiers or `bpy.ops.object.transform_apply()` on an object whose mesh datablock has multiple users (`obj.data.users > 1`) directly mutates the underlying source geometry across all instances simultaneously.
-* **Invariant**: Always isolate mesh datablocks before applying decimation or transforms:
-  ```python
-  if hasattr(obj, "data") and getattr(obj.data, "users", 1) > 1:
-      obj.data = obj.data.copy()
-  ```
-
-### 4.3 Outliner Hierarchy Standard (Variante A)
-* **Zero 3rd Wrapper Hierarchy**: Sibling top-level collections reside directly under `Scene Collection` (`{AssetName}`, `{AssetName}_Interior`, `{AssetName}_{Variant}`). A 3rd outer package wrapper is strictly forbidden as it unnecessarily deepens Outliner nesting.
-* **LOD0 Nesting Rule**: Technical sub-collections (`Spatial`, `Lights`, `Cameras`) must be nested strictly under `{AssetName}_LOD0` (or `{AssetName}_Interior_LOD0`). This keeps sibling LOD tiers (`_LOD1..N`) completely clean and allows users to collapse or hide the entire package hierarchy via Blender's native `Shift+Click` on the collection eye icon.
-
-### 4.4 Origin-Aware Aerospace Camera Hierarchies
-* **Reference Frames in `cameras.cfg`**:
-  * `Origin = "Virtual Cockpit"`: Coordinates in `InitialXyz` are defined relative to `[VIEWS] eyepoint` (which is in feet relative to Datum).
-  * External views (`Origin != "Virtual Cockpit"`, e.g. `FixedOnPlane` or `Center`): Coordinates are defined relative to `Datum` or the aircraft model center.
-* **Blender Parenting Protocol**: Routing `Virtual Cockpit` cameras to `{AssetName}_Interior_Cameras` (parented to the `Eyepoint` empty) and airframe cameras to `{AssetName}_Cameras` (parented to the `Datum` empty) ensures exact visual orientation in Blender and enables lossless bi-directional export back to `cameras.cfg`.
-
-### 4.5 Per-Asset Non-Destructive LOD State Caching
-* **Scene-Level Property Group Hazard**: In Blender Python, `scene.lod_tool.lods` is a single shared `CollectionProperty` across the scene. When switching between multiple models (e.g. Exterior vs Cockpit) in an EnumProperty dropdown, updating the list wipes out user-tuned screen sizes and triangle targets unless cached in an in-memory dictionary (`_ASSET_LOD_STATE_CACHE`).
-* **Safe Transition Sequence**: Always call `serialize_asset_lod_state(props, outgoing_asset)` before switching `active_asset`, and `deserialize_asset_lod_state(props, incoming_asset)` afterwards to guarantee non-destructive state retention.
-
-### 4.6 Exporter Collection-First Rules & Transactional Rollback (Variante A)
-* **Dedicated Configuration Sibling Container (`{AssetName}_Config`)**: Technical configuration collections (`{AssetName}_Spatial`, `{AssetName}_Lights`, `{AssetName}_Cameras`) reside strictly inside a dedicated sibling container `{AssetName}_Config` directly under `{AssetName}`, completely separating auxiliary engine metadata from pure render geometry (`{AssetName}_LOD0..N`).
-* **Non-Export Helpers Container (`{AssetName}_Helpers`)**: Reference blueprints, booleans, high-poly cages, and construction guides reside in `{AssetName}_Helpers` (`_omnimesh_role = "HELPERS"`). Exporters, modify operators, and LOD decimation pipelines must 100% ignore objects inside `{AssetName}_Helpers`, guaranteeing zero leakage of development scratch meshes into game packages.
-* **Variant Discovery Poisoning Guard**: Exporters discovering child variants via prefix matching (`c_name.startswith(f"{clean_base}_")`) must strictly blacklist `"_Config"` and `"_Helpers"` along with `"_LOD0".."_LOD10"`, `"_Colliders"`, and `"_Interior"`. Omitting `"_Config"` or `"_Helpers"` causes MSFS package exporters to interpret them as model variants and generate corrupted `model.config` / `model.helpers` directories that fail `fspackagetool.exe` compilation.
-* **Technical Sub-Collection Isolation (`coll.objects` vs `coll.all_objects`)**: Even with `{AssetName}_Config` and `{AssetName}_Helpers` placed beside `{AssetName}_LOD0`, exporters and modify operators must inspect immediate `coll.objects` rather than recursive `coll.all_objects`, and verify `obj.users_collection` does not belong to any auxiliary technical collection (`_omnimesh_role in ("SPATIAL", "LIGHTS", "CAMERAS", "CONFIG", "HELPERS")`).
-* **Transactional Scene-Graph Rollback (`try...finally`) in Single-Mesh Engine Exporters**:
-  * In Unreal Engine 5 FBX export, LOD meshes must be parented to an ephemeral `LODGroup` empty and colliders renamed to `UCX_{Asset}_{Index}`.
-  * In Godot 4 glTF export, custom properties (`visibility_range_begin`, `visibility_range_end`) are written to mesh datablocks, and colliders renamed to `-convcol`.
-  * Invariant: Never leave user scene objects mutated after export. Exporters must record original parents and object names in dictionary structures before mutating, perform the engine export inside a `try` block, and restore original names and parents inside a `finally` block (while removing the temporary `LODGroup` empty via `bpy.data.objects.remove(created_empty, do_unlink=True)`).
-* **MSFS Multi-Model Aircraft Package Export & Relative POSIX Paths**:
-  * When exporting full aircraft packages for MSFS, the base aircraft and interior are placed in `model/` with `model.cfg` declaring `normal={Base}.xml` and `interior={Base}_Interior.xml`.
-  * Variants reside in sibling folders `model.<variant>/` (e.g. `model.floats/`).
-  * Invariant: MSFS `model.cfg` files must strictly reference the shared interior using POSIX forward slashes (`interior=../model/{Interior}.xml`). Windows backslashes (`..\model\`) trigger escape sequence corruption in glTF parsers and crash MSFS build tools on Linux/Mac cross-compilation environments.
-
-### 4.7 Multi-Pipeline Invariants & Sparring Hardening Notes
-* **Shape Keys & Modifier Application Ordering**: In Blender Python, `bpy.ops.object.modifier_apply` throws `RuntimeError: Modifier cannot be applied to a mesh with shape keys`. Whenever baking procedural modifiers on LOD derivative meshes, shape keys must be cleaned or purged (`MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)`) *before* invoking `ModifierManager.apply_all_modifiers_in_place()`.
-* **BMesh Dissolve & Boundary Pinning Index Invariance**: `bmesh.ops.dissolve_limit()` deletes coplanar edges/vertices and executes `bm.verts.index_update()`. Tagging boundaries and UV seams (`tag_boundaries_and_uv_seams`) *before* planar limited dissolve invalidates vertex indices in `pinned_verts`, causing arbitrary flat interior vertices to receive pinning weights. Planar limited dissolve must always run *first*, followed immediately by boundary tagging on the post-dissolve BMesh topology.
-* **MSFS XML minSize Lower-Bound vs OmniMesh Upper-Bound Entry Invariance**: In MSFS ModelInfo XML, `<LOD minSize="X">` defines the lower-bound distance threshold before switching to the next tier. OmniMesh `tier.screen_size_pct` defines the upper-bound entry threshold (LOD0 = 100%, LOD1 enters at LOD0's minSize, etc.). Ingesting `lod_infos[i].min_size` directly into `tier[i].screen_size_pct` causes a 1-tier downward shift on every re-export cycle. Invariant: LOD0 must always be 100%, and LOD `i` receives `lod_infos[i - 1].min_size`, with terminal tier bound to `cull_screen_size_pct`.
-* **Master Rig Retargeting & Armature Datablock Clean**: In glTF multi-LOD ingestion, unlinking duplicate armatures leaves child skinned meshes unparented unless `obj.parent = master_armature` is explicitly set before removing the duplicate armature object. Furthermore, Blender does not free underlying `arm_obj.data` (`bpy.types.Armature`) when unlinking an `Object`; orphaned armature datablocks (`users == 0`) must be purged via `bpy.data.armatures.remove()`.
-* **AABB Extent Bounding Sphere vs Centroid Bias**: Computing bounding sphere centers via point centroid $\frac{1}{N}\sum \mathbf{p}$ biases the center toward dense vertex clusters (e.g. cockpit controls, high-poly bevels), artificially doubling radius $r$ and quadrupling critical decimation area $\text{Area}_{\text{crit}} = \frac{\pi}{4}\delta_{\text{world}}^2$. Center coordinates must strictly be derived from symmetric AABB extents $\frac{\min + \max}{2}$.
-* **Blender RNA `ReferenceError` on Removed Objects**: `hasattr(obj, "prop")` in Python catches only `AttributeError`, but accessing attributes on an unlinked/removed Blender RNA struct raises `ReferenceError: StructRNA of type Object has been removed`. Viewport draw handlers and context resolvers MUST use an explicit `(ReferenceError, AttributeError)` guard (`is_object_valid(obj)`) before inspecting RNA properties.
-* **ACD Bisection Degenerate Slice Queue Isolation**: During hierarchical Approximate Convex Decomposition (ACD), if a candidate cluster's PCA bisection slice degenerates into $< 4$ vertices on one child, terminating the loop (`break`) causes premature truncation of the entire decomposition queue. Non-splittable clusters must be parked in a `completed_clusters` list so the algorithm continues bisecting other candidate clusters in the queue up to `k_target`.
-* **Total Mesh Extinction Guard in Geometry Culling**: In aggressive sub-pixel or slender feature culling (e.g. `cull_slender_features`), if 100% of the mesh faces qualify for culling, `bmesh.ops.delete` leaves 0 polygons, which fails PreFlight export validation and blocks engine packaging. The culler must preserve at least the primary/largest island by surface area or max dimension.
-
-### 4.8 MSFS 2024 Modular Attachments & Sockets (`attached_objects.cfg`)
-* **Local Node Kinematics vs Aircraft Datum**: In MSFS 2024, `attach_offset` coordinates in `[sim_attachment.N]` are strictly relative to the mounting socket empty (`attach_to_node`). Never use aircraft datum coordinates for modular attachments; doing so doubles the offset translation in the MSFS simulation engine.
-* **Socket vs Attachment Instance glTF Export Invariant**: Socket markers (`ATTACH_POINT_*`) in LOD0 or `_Helpers` MUST be exported in the LOD0 glTF file so the MSFS runtime engine can discover attachment target nodes. In contrast, attachment instances (`[sim_attachment.N]`) reside in `{AssetName}_Config -> {AssetName}_Attachments` and MUST be excluded from glTF exports (the engine mounts them dynamically via `attached_objects.cfg`).
-* **Aerospace PBH vs Blender Camera Optical Basis**: Unlike aviation spotlights and cameras which require a $+90^\circ$ optical camera basis offset, MSFS `attach_pbh` orientation on empty attachments uses intrinsic aerospace Tait-Bryan $Z \to X \to Y$ Euler matrix math ($R_z(-h) \cdot R_x(-p) \cdot R_y(b)$) without camera pitch basis offsets.
-
-### 4.9 Hierarchical Quadtree/Octree HLOD Invariants
-* **Stationary Composite Pivot Centering**: Merging adjacent chunks via `HLODClusterMerger` must never anchor the object origin to the corner of Chunk `[0,0]`. The composite cluster's pivot must be stationary-recalculated to its combined world AABB centroid (`HLODClusterMerger._recenter_pivot_stationary`) to prevent culling and bounding-sphere drift in downstream game engines.
-* **UE5 LodGroup Multi-Mesh Invariant**: In Unreal Engine 5 FBX export, parenting multiple chunk meshes per tier directly under an `fbx_type="LodGroup"` empty causes UE5 to interpret every child mesh as a distinct sequential LOD level (creating dozens of single-chunk LODs). If any tier in `payload.lod_tiers` contains $> 1$ mesh, single `LodGroup` empty parenting must be bypassed.
-* **Normalized Stride-2 Recursive Reduction**: In recursive pairwise / quadtree downsampling, hierarchical clustering from tier $T-1$ to $T$ must apply normalized stride 2 relative to the previous level ($cx = ix // 2, cy = iy // 2$), preventing exponential over-stride bugs.
-* **Non-UI Depsgraph Voxel Remeshing**: In headless CI environments and background workers, invoking `REMESH` operators via `bpy.ops.object.modifier_apply` throws `RuntimeError: Operator poll() failed, context is incorrect`. Terminal voxel proxy wraps must evaluate modifiers through `depsgraph = context.evaluated_depsgraph_get()` and `bpy.data.meshes.new_from_object(eval_obj)` with voxel dimensions clamped to prevent Out-Of-Memory freezes.
-
----
-
-## 5. Impostor Systems & Atlas Baking Pipeline Invariants
-
-### 5.1 Normal Baking: MikkTSpace Receiver Trap vs. Ephemeral Animation Timeline
-* **The MikkTSpace Tangent Discontinuity Trap**: Attempting to bake an octahedral atlas in a single Cycles pass by arranging tilted receiver quads on a hemisphere sphere fails mathematically. In Blender Cycles, `bpy.ops.object.bake(type="NORMAL", normal_space="TANGENT")` evaluates normals in the receiver's local MikkTSpace basis $(T, B, N)$. MikkTSpace derives tangents from local UV coordinates and vertex normals; on curved or tilted quads, microscopic numerical discrepancies introduce a rotational phase shift in the tangent frame, causing specular highlights to spin unnaturally when sampled by game engine companion shaders. Furthermore, Selected-to-Active raycasting lacks depth rasterization, leading to backface ray penetration through hollow or porous meshes, and suffers from uncontrollable cross-tile margin bleeding.
-* **Invariant (64-Frame Ephemeral Animation Render)**: Orbiting an orthographic camera across frames 1..64 in an isolated unlit `EphemeralBakeSceneGuard` (`bpy.ops.render.render(animation=True)`) guarantees mathematically pure camera-space tangent normals where surface-facing geometry is neutral $(0.5, 0.5, 1.0)$, enforces true depth occlusion without backface leakage, supports metallic channel extraction without material pollution, and enables vectorized per-tile morphological dilation (`morphological_dilate_rgb`) prior to atlas compositing.
-
-### 5.2 Cycles GPU Compute Device Detection Lifecycle (Blender 5.0+)
-* **`cpref.get_devices()` Refresh Requirement**: In Blender 5.0+ and 5.2 LTS, querying `cpref.get_device_types(bpy.context)` returns supported platform backends (`OPTIX`, `CUDA`, `HIP`, `ONEAPI`, `METAL`), but assigning `cpref.compute_device_type = backend` does NOT automatically refresh the device list in `cpref.devices`. Attempting to iterate `cpref.devices` immediately after assigning `compute_device_type` finds an empty or stale list.
-* **Invariant**: `cpref.get_devices()` MUST be explicitly invoked after setting `cpref.compute_device_type` to force Blender's C++ core to enumerate the physical GPU adapters before setting `d.use = True`.
-
-### 5.3 Octahedral Coordinate Singularity & Gimbal Lock
-* **Zenith Pole Singularity**: In upper-hemisphere octahedral mapping ($u=0.5, v=0.5$), the direction vector points directly at the zenith pole $D = (0, 0, 1)$. Using naive camera tracking (`dir.to_track_quat("-Z", "Y")` or $\vec{n} \times (0, 0, 1)$) collapses into a degenerate zero vector, causing severe gimbal lock and $180^\circ$ highlight flipping at the top of the asset.
-* **Invariant**: The camera coordinate basis must dynamically switch its reference up-vector:
-  $$\text{Forward} = -D$$
-  $$\text{Up}_{\text{ref}} = \begin{cases} (0, 0, 1) & \text{if } |\text{Forward}_z| < 0.999 \\ (0, 1, 0) & \text{if } |\text{Forward}_z| \ge 0.999 \end{cases}$$
-  $$\text{Right} = \text{normalize}(\text{Up}_{\text{ref}} \times (-\text{Forward}))$$
-  $$\text{Up} = \text{normalize}((-\text{Forward}) \times \text{Right})$$
-  This guarantees a continuous, orthonormal, singularity-free coordinate frame across the entire hemisphere.
-
-### 5.4 Single-Card Impostor UV Island Packing Hazard (`pack_islands`)
-* **Island Packing Destruction of Normalized $[0, 1]^2$ Bounds**: While `bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)` is mandatory for multi-plane mesh impostors (`STAR_4_PLANES`) to arrange the 8 plane faces into atlas quadrants, executing `pack_islands` on a single-card octahedral proxy mesh shrinks, scales, and displaces its UV island into an arbitrary sub-region of the texture.
-* **Invariant**: Single-card and octahedral proxy meshes MUST be explicitly excluded from automatic island packing (`if mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:`) to strictly preserve their $[0, 1]^2$ normalized UV bounds for engine shader grid lookups.
-
-### 5.5 Fillrate Overdraw: Bounding-Sphere Quads vs. 8-Vertex Cut-Out Octagons
-* **Bounding Sphere Transparency Waste**: Generating a single $2R \times 2R$ quad based on the bounding sphere diameter leaves over 80% of the quad as transparent pixels on slender or vertically elongated assets (e.g. trees, masts, streetlights, towers). In game engines, overlapping distant billboard impostors create severe GPU alpha-blend and alpha-scissor fillrate bottlenecks.
-* **Invariant**: Beveling the four corners of the bounding rectangle by 25% produces an 8-vertex convex cut-out polygon (`build_octahedral_cutout_polygon`) that eliminates 30–40% of transparent empty area for the negligible runtime cost of only 8 vertices (6 triangles).
-
-### 5.6 Windows UNC Network Path & NetBIOS Freeze Trap on Unsaved Scenes
-* **The `//` UNC Collision**: When Blender runs with an unsaved scene (`bpy.data.filepath == ""`), relative paths like `"//Textures/"` have leading double slashes. On Windows, `os.path.isabs("//Textures/")` evaluates to `True` because Windows treats leading double slashes as UNC network paths (`\\Textures`).
-* **Invariant**: Calling `os.makedirs("//Textures/...")` triggers a 30-second Windows SMB NetBIOS network timeout before failing with `FileNotFoundError: [WinError 53] The network path was not found`. In unsaved scenes, relative paths starting with `//` must be anchored to a safe temporary location (such as `tempfile.gettempdir() / "OmniMesh" / subfolder`) rather than falling back to `os.getcwd()` (which can point to write-protected `C:\Program Files\Blender Foundation\...` and raise `[WinError 5] Access is denied`). Genuine UNC network paths (`\\server\share` or `//server/share`) must be preserved.
-
-### 5.7 Headless Impostor Bake Acceleration (Cycles CPU vs. EEVEE-Next llvmpipe Stall)
-* **The Software Mesa llvmpipe Trap**: On GPU-less cloud runners (e.g. GitHub Actions Linux VMs with 2 vCPUs), Blender defaults to `BLENDER_EEVEE_NEXT`. Because there is no hardware GPU, Mesa emulates modern OpenGL and Vulkan in software via `llvmpipe`. Rendering 192 octahedral atlas animation frames (64 views $\times$ 3 channels) through software rasterization with default 64 samples takes >25 minutes and can stall on shader compilation.
-* **Blender RNA Engine Attribute Location**: In Blender Python, `engine` is an enum property of `bpy.types.RenderSettings`, NOT `bpy.types.RenderEngine`. Querying `bpy.types.RenderEngine.bl_rna.properties["engine"]` raises `KeyError: 'engine'`. Never inspect RNA engine dictionaries; assign `scene.render.engine` directly inside a `try...except` block.
-* **Invariant**: Ephemeral background bake scenes (`bpy.app.background == True`) must prioritize native CPU `CYCLES` with `samples = 1`, `max_bounces = 0`, `diffuse_bounces = 0`, `glossy_bounces = 0`, and `device = "CPU"`. Cycles uses native C++ SIMD BVH ray-tracing that operates independently of OpenGL/Vulkan GPU drivers, rendering the entire 192-frame sequence in ~12 seconds. Selected-to-active bake passes must likewise use `samples = 1` and disable denoising (`use_denoising = not is_bg`).
-
----
-
-## 6. Blender Add-on Architecture & UI/UX Standards
-
-### 6.1 Modern Extension Architecture & Packaging (Blender 4.2+)
-* **Dual Manifest Standard**: Always maintain both `bl_info` in `__init__.py` (for legacy add-on installation) and `blender_manifest.toml` (for Blender 4.2+ extension system). Both must share identical semantic version strings.
-* **Extension Directory**: For Blender 4.2+, user extensions reside in `%APPDATA%\Blender Foundation\Blender\<ver>\extensions\user_default\<addon_id>` and activate via `bpy.ops.preferences.addon_enable(module="bl_ext.user_default.<addon_id>")`.
-
-### 6.2 Live Iteration & Dynamic Reloading via Blender MCP
-* **Hot Reloading Sequence**: When modifying code during a live session, reload modules in strict dependency order using `importlib.reload()` (`core` -> `exporters` -> `bridges` -> `ui` -> `__init__`), unregister previous classes (`unregister()`), and re-register (`register()`).
-* **Orphan UI Cleanup**: Always dynamically unregister deprecated or renamed classes from `bpy.types` before registering to prevent ghost headers or duplicate tabs from persisting in Blender's UI memory.
-
-### 6.3 UI/UX & Viewport Standards
-* **Ergonomic N-Panel Layout**: Use consistent layout spacing, `layout.use_property_split = True`, and sub-panels with logical collapsible boxes. Never clutter panels with deep nesting.
-* **Non-Intrusive Viewport Display**: Auxiliary geometry (such as convex collision hulls) must default to wireframe display (`obj.display_type = 'WIRE'`, `obj.show_wire = True`) and reside in dedicated sibling collections (`{BaseName}_Colliders`).
-* **Draw Handler Purity**: Drawing callbacks registered with `bpy.types.SpaceView3D.draw_handler_add` must remain strictly read-only. Never mutate Blender DNA/RNA properties or trigger operator execution within a draw handler callback.
-* **Context Resolver Uniformity**: UI controls and operators must always resolve property context via `resolve_lod_context(context)` to support both object-level overrides and scene-level global defaults smoothly.
-
+* **Octahedral Normal Baking Invariant**: Octahedral atlas normals must be rendered via camera-orbit animation frames (1..64) in an isolated unlit scene (`bpy.ops.render.render(animation=True)`). Neutral surface-facing normal is $(0.5, 0.5, 1.0)$.
+* **Cycles GPU Device Detection (Blender 5.0+)**: Assigning `cpref.compute_device_type = backend` does NOT automatically refresh `cpref.devices`. Calling `cpref.get_devices()` is mandatory before iterating devices or setting `d.use = True`.
+* **Headless Impostor Bake Acceleration**: Software OpenGL/Vulkan via Mesa `llvmpipe` on CPU cloud runners stalls on shader compilation (>25 min for 192 views). Headless bake scenes (`bpy.app.background == True`) must prioritize CPU `CYCLES` with `samples = 1` and SIMD BVH ray-tracing (~12s).
+* **Zenith Pole Singularity & Dynamic Up-Vector**: At zenith $(0, 0, 1)$, naive camera tracking collapses into a zero vector and causes $180^\circ$ highlight flipping. The camera coordinate basis must dynamically switch its reference up-vector from $(0, 0, 1)$ to $(0, 1, 0)$ when $|\text{Forward}_z| \ge 0.999$.
+* **Single-Card Impostor UV Island Packing Hazard**: `bpy.ops.uv.pack_islands()` displaces normalized $[0, 1]^2$ UV bounds on single-card octahedral proxy meshes. Single-card and octahedral meshes must be strictly excluded from automatic island packing.
+* **Fillrate Overdraw Cutout Octagons**: Bounding sphere quads leave $> 80\%$ transparent pixels on slender assets. Beveling quad corners by $25\%$ yields an 8-vertex convex polygon that cuts transparent fillrate overdraw by $30\text{--}40\%$.
+* **Windows UNC `//` NetBIOS Freeze Trap on Unsaved Scenes**: In unsaved scenes (`filepath == ""`), relative paths starting with `"//"` evaluate as Windows UNC network paths (`\\Textures`), triggering a 30-second NetBIOS timeout before `[WinError 53]`. Unsaved relative paths must anchor to `tempfile.gettempdir()`.
