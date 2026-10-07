@@ -11,11 +11,12 @@ logger = logging.getLogger(__name__)
 
 try:
     import bpy
-    from bpy.props import EnumProperty, IntProperty
+    from bpy.props import BoolProperty, EnumProperty, IntProperty
     from bpy.types import Operator
 except ImportError:
     bpy = None
     Operator = object
+    BoolProperty = None  # type: ignore
     EnumProperty = None  # type: ignore
     IntProperty = None  # type: ignore
 
@@ -209,6 +210,12 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
         max=360,
     )
 
+    create_turntable: BoolProperty(  # type: ignore
+        name="Create Turntable Animation",
+        description="Keyframe cyclic 360-degree pedestal turntable for timeline playback",
+        default=False,
+    )
+
     @classmethod
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_selected_mesh_objects(context) or get_lod0_mesh_objects(context)))
@@ -242,6 +249,7 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
             mode=self.mode,
             num_frames=self.num_frames,
             target_engine=target_engine,
+            create_turntable=self.create_turntable,
         )
 
         if not rig_info:
@@ -252,11 +260,12 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
             )
             return {"CANCELLED"}
 
-        safe_report(
-            self,
-            {"INFO"},
-            f"Preview rig created in collection '{rig_info.get('collection')}' (Press Space to play turntable).",
-        )
+        msg = f"Preview rig created in collection '{rig_info.get('collection')}'."
+        if self.create_turntable:
+            msg += " (Press Space to play turntable)."
+        else:
+            msg += " (Real-time Viewport Tracking active)."
+        safe_report(self, {"INFO"}, msg)
         return {"FINISHED"}
 
 

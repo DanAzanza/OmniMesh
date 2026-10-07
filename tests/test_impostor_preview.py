@@ -28,6 +28,16 @@ def test_preview_rig_headless_safety():
     assert setup_impostor_preview_rig(None, [], "Test", "/tmp") == {}
     assert teardown_impostor_preview_rig(None, "Test") is False
 
+    from ui.impostor_viewport_ops import (
+        is_impostor_viewport_timer_running,
+        start_impostor_viewport_timer,
+        stop_impostor_viewport_timer,
+    )
+
+    assert start_impostor_viewport_timer("Test") is False
+    assert stop_impostor_viewport_timer("Test") is False
+    assert is_impostor_viewport_timer_running("Test") is False
+
 
 def test_octahedral_preview_math_ground_truth():
     """
@@ -87,45 +97,13 @@ def test_mock_preview_material_construction(monkeypatch):
 
     created_nodes = {}
 
+    from collections import defaultdict
+
     def mock_node_new(type=None):
         node = MagicMock()
         node.type = type
-        node.inputs = {
-            "Surface": MagicMock(),
-            "Base Color": MagicMock(),
-            "Alpha": MagicMock(),
-            "Normal": MagicMock(),
-            "Roughness": MagicMock(),
-            "Metallic": MagicMock(),
-            "Vector": MagicMock(),
-            "Color": MagicMock(),
-            "Red": MagicMock(),
-            "Green": MagicMock(),
-            "Blue": MagicMock(),
-            "X": MagicMock(),
-            "Y": MagicMock(),
-            "Z": MagicMock(),
-            "Value": MagicMock(),
-            0: MagicMock(),
-            1: MagicMock(),
-            2: MagicMock(),
-        }
-        node.outputs = {
-            "BSDF": MagicMock(),
-            "Incoming": MagicMock(),
-            "Vector": MagicMock(),
-            "Color": MagicMock(),
-            "Alpha": MagicMock(),
-            "Normal": MagicMock(),
-            "Red": MagicMock(),
-            "Green": MagicMock(),
-            "Blue": MagicMock(),
-            "X": MagicMock(),
-            "Y": MagicMock(),
-            "Z": MagicMock(),
-            "Value": MagicMock(),
-            "UV": MagicMock(),
-        }
+        node.inputs = defaultdict(MagicMock)
+        node.outputs = defaultdict(MagicMock)
         created_nodes[type] = created_nodes.get(type, 0) + 1
         return node
 
@@ -150,6 +128,6 @@ def test_mock_preview_material_construction(monkeypatch):
     assert mat is not None
     assert created_nodes.get("ShaderNodeOutputMaterial") == 1
     assert created_nodes.get("ShaderNodeBsdfPrincipled") == 1
-    assert created_nodes.get("ShaderNodeNewGeometry") == 1
+    assert created_nodes.get("ShaderNodeVectorTransform") == 2
     assert created_nodes.get("ShaderNodeCombineXYZ") == 1
     assert mock_links.new.called

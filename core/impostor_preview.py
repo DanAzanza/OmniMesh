@@ -111,19 +111,39 @@ def create_octahedral_preview_material(
     bsdf.location = (1100, 0)
     links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
 
-    # 2. View Direction Vector: D = -Incoming
-    geom = nodes.new(type="ShaderNodeNewGeometry")
-    geom.location = (-1200, 200)
+    # 2. Uniform View Direction Vector (CamWorldPos - ObjWorldPos)
+    # Using uniform vector eliminates perspective fanning across the billboard quad
+    cam_trans = nodes.new(type="ShaderNodeVectorTransform")
+    cam_trans.name = "CamWorldPos"
+    cam_trans.vector_type = "POINT"
+    cam_trans.convert_from = "CAMERA"
+    cam_trans.convert_to = "WORLD"
+    cam_trans.inputs["Vector"].default_value = (0.0, 0.0, 0.0)
+    cam_trans.location = (-1200, 280)
 
-    neg_v = nodes.new(type="ShaderNodeVectorMath")
-    neg_v.operation = "MULTIPLY"
-    neg_v.inputs[1].default_value = (-1.0, -1.0, -1.0)
-    neg_v.location = (-1000, 200)
-    links.new(geom.outputs["Incoming"], neg_v.inputs[0])
+    obj_trans = nodes.new(type="ShaderNodeVectorTransform")
+    obj_trans.name = "ObjWorldPos"
+    obj_trans.vector_type = "POINT"
+    obj_trans.convert_from = "OBJECT"
+    obj_trans.convert_to = "WORLD"
+    obj_trans.inputs["Vector"].default_value = (0.0, 0.0, 0.0)
+    obj_trans.location = (-1200, 120)
+
+    sub_vec = nodes.new(type="ShaderNodeVectorMath")
+    sub_vec.operation = "SUBTRACT"
+    sub_vec.location = (-1000, 200)
+    links.new(cam_trans.outputs["Vector"], sub_vec.inputs[0])
+    links.new(obj_trans.outputs["Vector"], sub_vec.inputs[1])
+
+    # Normalize view vector
+    v_norm = nodes.new(type="ShaderNodeVectorMath")
+    v_norm.operation = "NORMALIZE"
+    v_norm.location = (-820, 200)
+    links.new(sub_vec.outputs["Vector"], v_norm.inputs[0])
 
     sep_v = nodes.new(type="ShaderNodeSeparateXYZ")
-    sep_v.location = (-800, 200)
-    links.new(neg_v.outputs["Vector"], sep_v.inputs["Vector"])
+    sep_v.location = (-640, 200)
+    links.new(v_norm.outputs["Vector"], sep_v.inputs["Vector"])
 
     # 3. Hemi-Octahedral Projection Math
     # denom = abs(X) + abs(Y) + max(Z, 0.001)
@@ -226,18 +246,30 @@ def create_octahedral_preview_material(
     row_blender.location = (-220, -250)
     links.new(row.outputs["Value"], row_blender.inputs[1])
 
-    # 5. Local Quad UVs
+    # 5. Local Quad UVs with border bleed prevention
     tex_coord = nodes.new(type="ShaderNodeTexCoord")
     tex_coord.location = (-600, -400)
     sep_uv = nodes.new(type="ShaderNodeSeparateXYZ")
     sep_uv.location = (-400, -400)
     links.new(tex_coord.outputs["UV"], sep_uv.inputs["Vector"])
 
+    clamp_u_sub = nodes.new(type="ShaderNodeClamp")
+    clamp_u_sub.inputs["Min"].default_value = 0.002
+    clamp_u_sub.inputs["Max"].default_value = 0.998
+    clamp_u_sub.location = (-220, -400)
+    links.new(sep_uv.outputs["X"], clamp_u_sub.inputs["Value"])
+
+    clamp_v_sub = nodes.new(type="ShaderNodeClamp")
+    clamp_v_sub.inputs["Min"].default_value = 0.002
+    clamp_v_sub.inputs["Max"].default_value = 0.998
+    clamp_v_sub.location = (-220, -550)
+    links.new(sep_uv.outputs["Y"], clamp_v_sub.inputs["Value"])
+
     # final_u = (uv.x + col) / grid_size
     add_u = nodes.new(type="ShaderNodeMath")
     add_u.operation = "ADD"
     add_u.location = (-40, -100)
-    links.new(sep_uv.outputs["X"], add_u.inputs[0])
+    links.new(clamp_u_sub.outputs["Result"], add_u.inputs[0])
     links.new(col.outputs["Value"], add_u.inputs[1])
 
     final_u = nodes.new(type="ShaderNodeMath")
@@ -250,7 +282,7 @@ def create_octahedral_preview_material(
     add_v = nodes.new(type="ShaderNodeMath")
     add_v.operation = "ADD"
     add_v.location = (-40, -250)
-    links.new(sep_uv.outputs["Y"], add_v.inputs[0])
+    links.new(clamp_v_sub.outputs["Result"], add_v.inputs[0])
     links.new(row_blender.outputs["Value"], add_v.inputs[1])
 
     final_v = nodes.new(type="ShaderNodeMath")
@@ -417,6 +449,7 @@ def setup_impostor_preview_rig(
     mode: str = "SIDE_BY_SIDE",
     num_frames: int = 72,
     target_engine: str = "UE5",
+    create_turntable: bool = False,
 ) -> dict[str, Any]:
     """
     Constructs an isolated, complete In-Blender preview test rig for Octahedral Impostors.
@@ -526,8 +559,18 @@ def setup_impostor_preview_rig(
     dir_cam = aim_target - cam_obj.location
     cam_obj.rotation_euler = dir_cam.to_track_quat("-Z", "Y").to_euler()
 
-    # Track constraint on proxy
-    setup_impostor_tracking(proxy_obj, cam_obj)
+    # Create Tracker Target Empty to decouple billboard orientation from camera animation
+    target_name = f"{base_name}_Preview_Tracker_Target"
+    target_empty = bpy.data.objects.get(target_name)
+    if not target_empty:
+        target_empty = bpy.data.objects.new(target_name, None)
+        target_empty.empty_display_type = "PLAIN_AXES"
+        target_empty.empty_display_size = 0.2
+        rig_coll.objects.link(target_empty)
+    target_empty.location = cam_obj.location.copy()
+
+    # Track constraint on proxy targets the Empty
+    setup_impostor_tracking(proxy_obj, target_empty)
 
     # 7. Setup preview sun light for normal map lighting validation
     sun_name = f"{base_name}_Preview_Sun"
@@ -540,19 +583,31 @@ def setup_impostor_preview_rig(
         sun_obj.location = Vector((center.x + 5.0, center.y - 5.0, center.z + 10.0))
         sun_obj.rotation_euler = (0.7, 0.2, 0.5)
 
-    # 8. Setup elevated camera turntable animation
-    aim_target = Vector((cam_x, center.y, center.z))
-    elev_height = radius * 2.2
-    setup_preview_turntable(
-        cam_obj=cam_obj,
-        target_center=aim_target,
-        radius=cam_dist,
-        height=elev_height,
-        num_frames=num_frames,
-    )
+    # 8. Setup elevated camera turntable animation (only if explicitly requested)
+    if create_turntable:
+        elev_height = radius * 2.2
+        setup_preview_turntable(
+            cam_obj=cam_obj,
+            target_center=aim_target,
+            radius=cam_dist,
+            height=elev_height,
+            num_frames=num_frames,
+        )
 
     # Set active camera
     scene.camera = cam_obj
+
+    # 9. Start live viewport tracking timer (automatically tracks free viewport navigation)
+    try:
+        from ..ui.impostor_viewport_ops import start_impostor_viewport_timer
+    except (ImportError, ValueError):
+        try:
+            from ui.impostor_viewport_ops import start_impostor_viewport_timer
+        except (ImportError, ValueError):
+            start_impostor_viewport_timer = None
+
+    if start_impostor_viewport_timer:
+        start_impostor_viewport_timer(base_name)
 
     # 9. Safely switch active 3D Viewport to Camera View
     if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
@@ -562,6 +617,8 @@ def setup_impostor_preview_rig(
                     if getattr(space, "type", "") == "VIEW_3D":
                         try:
                             space.region_3d.view_perspective = "CAMERA"
+                            if hasattr(space, "lock_camera"):
+                                space.lock_camera = True
                             if hasattr(space, "shading"):
                                 space.shading.type = "MATERIAL"
                         except Exception as vp_err:
@@ -583,6 +640,18 @@ def teardown_impostor_preview_rig(context: Any, base_name: str) -> bool:
     if not bpy:
         return False
 
+    # Stop viewport tracker timer
+    try:
+        from ..ui.impostor_viewport_ops import stop_impostor_viewport_timer
+    except (ImportError, ValueError):
+        try:
+            from ui.impostor_viewport_ops import stop_impostor_viewport_timer
+        except (ImportError, ValueError):
+            stop_impostor_viewport_timer = None
+
+    if stop_impostor_viewport_timer:
+        stop_impostor_viewport_timer(base_name)
+
     rig_coll_name = f"{base_name}_Preview_Rig"
     rig_coll = bpy.data.collections.get(rig_coll_name)
     if not rig_coll:
@@ -602,6 +671,14 @@ def teardown_impostor_preview_rig(context: Any, base_name: str) -> bool:
     mat = bpy.data.materials.get(mat_name)
     if mat:
         bpy.data.materials.remove(mat)
+
+    # Restore viewport lock_camera
+    if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
+        for area in getattr(context.screen, "areas", []):
+            if getattr(area, "type", "") == "VIEW_3D":
+                for space in getattr(area, "spaces", []):
+                    if getattr(space, "type", "") == "VIEW_3D" and hasattr(space, "lock_camera"):
+                        space.lock_camera = False
 
     # Restore default active camera if possible
     scene = context.scene if context and hasattr(context, "scene") else bpy.context.scene

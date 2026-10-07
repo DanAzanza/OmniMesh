@@ -413,14 +413,13 @@ class OMNIMESH_PT_popover_impostor(Panel):
 
         row_prev = layout.row(align=True)
         row_prev.operator("lod_tool.setup_impostor_preview_rig", text="Preview Rig", icon="CAMERA_DATA")
+        row_prev.operator("lod_tool.impostor_viewport_tracker", text="Track View", icon="VIEW_CAMERA")
         row_prev.operator("lod_tool.remove_impostor_preview_rig", text="", icon="TRASH")
 
 
 # =========================================================================
 # 4. EXPORT POPOVERS: PACKAGE & BRIDGE
 # =========================================================================
-
-
 class OMNIMESH_PT_popover_export(Panel):
     """Popover for single asset export packaging, texture packing, and animation baking."""
 

@@ -88,11 +88,11 @@ class ImpostorShaderHarness:
             vec_math.location = (0, 0)
 
             if target_engine == "UE5":
-                # DirectX normal convention: Invert Green channel (-Y)
-                vec_math.inputs[1].default_value = (0.5, -0.5, 0.5)
+                # DirectX normal convention: Invert Green channel (-Y), camera forward (-Z) -> tangent (+Z)
+                vec_math.inputs[1].default_value = (0.5, -0.5, -0.5)
             else:
-                # OpenGL standard: +Y is Up
-                vec_math.inputs[1].default_value = (0.5, 0.5, 0.5)
+                # OpenGL standard: +Y is Up, camera forward (-Z) -> tangent (+Z)
+                vec_math.inputs[1].default_value = (0.5, 0.5, -0.5)
 
             vec_math.inputs[2].default_value = (0.5, 0.5, 0.5)
             links.new(vec_trans.outputs["Vector"], vec_math.inputs[0])

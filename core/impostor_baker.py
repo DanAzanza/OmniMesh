@@ -405,6 +405,7 @@ class ImpostorAtlasBaker:
                         if hasattr(obj, "data") and hasattr(obj.data, "materials"):
                             mats = list(obj.data.materials)
                             orig_materials.append((obj, mats))
+                            bake_mats = mats if mats else [None]
                             override_mats = [
                                 ImpostorShaderHarness.create_unlit_override_material(
                                     m,
@@ -413,7 +414,7 @@ class ImpostorAtlasBaker:
                                     radius=radius,
                                     cam_distance=dist,
                                 )
-                                for m in mats
+                                for m in bake_mats
                             ]
                             obj.data.materials.clear()
                             for ov_m in override_mats:
@@ -425,6 +426,14 @@ class ImpostorAtlasBaker:
                         bake_scene.render.filepath = chan_prefix
                         bake_scene.render.image_settings.file_format = "PNG"
                         bake_scene.render.image_settings.color_mode = "RGBA"
+
+                        if hasattr(bake_scene, "view_settings"):
+                            try:
+                                bake_scene.view_settings.view_transform = (
+                                    "Standard" if chan_name == "BaseColor" else "Raw"
+                                )
+                            except Exception as exc:
+                                logger.debug("Failed setting view_transform on bake scene: %s", exc)
 
                         bpy.ops.render.render(animation=True, scene=bake_scene.name)
 
@@ -438,7 +447,9 @@ class ImpostorAtlasBaker:
                                 arr = np.empty(w * h * 4, dtype=np.float32)
                                 img.pixels.foreach_get(arr)
                                 bpy.data.images.remove(img, do_unlink=True)
-                                tile_u8 = (arr.reshape((h, w, 4)) * 255.0 + 0.5).clip(0, 255).astype(np.uint8)
+                                tile_u8 = np.ascontiguousarray(
+                                    (arr.reshape((h, w, 4))[::-1] * 255.0 + 0.5).clip(0, 255).astype(np.uint8)
+                                )
                                 raw_tiles[chan_name][(col, row)] = tile_u8
                     finally:
                         for obj, mats in orig_materials:
