@@ -104,14 +104,15 @@ class EphemeralBakeSceneGuard:
                 bg.inputs["Color"].default_value = (0.0, 0.0, 0.0, 1.0)
         self.bake_scene.world = world
 
-        bpy.context.window.scene = self.bake_scene
+        if getattr(bpy.context, "window", None):
+            bpy.context.window.scene = self.bake_scene
         return self.bake_scene
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if not bpy:
             return
         try:
-            if self.orig_scene and bpy.context.window:
+            if self.orig_scene and getattr(bpy.context, "window", None):
                 bpy.context.window.scene = self.orig_scene
             if self.bake_scene:
                 if self.bake_scene.camera:
@@ -435,7 +436,15 @@ class ImpostorAtlasBaker:
                             except Exception as exc:
                                 logger.debug("Failed setting view_transform on bake scene: %s", exc)
 
-                        bpy.ops.render.render(animation=True, scene=bake_scene.name)
+                        if getattr(bpy.context, "window", None) and hasattr(bpy.context, "temp_override"):
+                            try:
+                                with bpy.context.temp_override(scene=bake_scene, window=bpy.context.window):
+                                    bpy.ops.render.render(animation=True, scene=bake_scene.name)
+                            except Exception as exc:
+                                logger.debug("Render temp_override fallback: %s", exc)
+                                bpy.ops.render.render(animation=True, scene=bake_scene.name)
+                        else:
+                            bpy.ops.render.render(animation=True, scene=bake_scene.name)
 
                         for frame_idx in range(1, total_frames + 1):
                             col = (frame_idx - 1) % grid_size

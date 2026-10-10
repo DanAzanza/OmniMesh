@@ -92,10 +92,12 @@ class CollisionDecomposer:
     def measure_hull_concavity(bm_source: Any, bm_hull: Any) -> float:
         """
         Measures maximum surface deviation between source mesh geometry and its candidate convex hull.
+        Uses stratified sampling on large meshes to bound computation time while guaranteeing coverage.
         """
         if not bm_source or not bm_hull or not hasattr(bm_source, "faces") or not hasattr(bm_hull, "faces"):
             return 0.0
-        if len(bm_source.faces) == 0 or len(bm_hull.faces) == 0:
+        n_faces = len(bm_source.faces)
+        if n_faces == 0 or len(bm_hull.faces) == 0:
             return 0.0
         if not BVHTree:
             return 0.0
@@ -106,7 +108,22 @@ class CollisionDecomposer:
                 return 0.0
 
             max_dist = 0.0
-            for f in bm_source.faces:
+            if n_faces <= 500:
+                test_faces = bm_source.faces
+            else:
+                try:
+                    bm_source.faces.ensure_lookup_table()
+                except Exception as exc:
+                    logger.debug("Failed ensuring face lookup table: %s", exc)
+                step = max(1, n_faces // 450)
+                indices = set(range(0, n_faces, step))
+                indices.add(0)
+                indices.add(n_faces - 1)
+                test_faces = [
+                    bm_source.faces[i] for i in indices if i < n_faces and getattr(bm_source.faces[i], "is_valid", True)
+                ]
+
+            for f in test_faces:
                 center = f.calc_center_median()
                 _, _, _, dist = hull_bvh.find_nearest(center)
                 if dist and dist > max_dist:
@@ -316,32 +333,44 @@ class CollisionDecomposer:
         child_a = None
         child_b = None
 
+        concavity_cache: dict[int, float] = {}
+
+        def _get_concavity(cl: Any) -> float:
+            c_key = id(cl)
+            if c_key in concavity_cache:
+                return concavity_cache[c_key]
+            if len(cl.verts) < 8:
+                concavity_cache[c_key] = 0.0
+                return 0.0
+            bm_test = cl.copy()
+            try:
+                res_hull = bmesh.ops.convex_hull(bm_test, input=bm_test.verts[:], use_existing_faces=False)
+                to_del = res_hull.get("geom_unused", []) + res_hull.get("geom_interior", [])
+                if to_del:
+                    cls._purge_hull_interior_geom(bm_test, to_del)
+                bm_test.faces.ensure_lookup_table()
+                c_err = cls.measure_hull_concavity(cl, bm_test)
+                concavity_cache[c_key] = c_err
+                return c_err
+            finally:
+                bm_test.free()
+
         try:
             while (len(clusters) + len(completed_clusters)) < k_target:
                 worst_idx = -1
                 worst_concavity = -1.0
 
                 for idx, cluster in enumerate(clusters):
-                    if len(cluster.verts) < 8:
-                        continue
-                    bm_test = cluster.copy()
-                    try:
-                        res_hull = bmesh.ops.convex_hull(bm_test, input=bm_test.verts[:], use_existing_faces=False)
-                        to_del = res_hull.get("geom_unused", []) + res_hull.get("geom_interior", [])
-                        if to_del:
-                            cls._purge_hull_interior_geom(bm_test, to_del)
-                        bm_test.faces.ensure_lookup_table()
-                        c_err = cls.measure_hull_concavity(cluster, bm_test)
-                        if c_err > worst_concavity:
-                            worst_concavity = c_err
-                            worst_idx = idx
-                    finally:
-                        bm_test.free()
+                    c_err = _get_concavity(cluster)
+                    if c_err > worst_concavity:
+                        worst_concavity = c_err
+                        worst_idx = idx
 
                 if worst_idx == -1 or worst_concavity <= concavity_threshold:
                     break  # Sufficiently convex or no more splittable clusters
 
                 target_cluster = clusters.pop(worst_idx)
+                concavity_cache.pop(id(target_cluster), None)
                 coords = np.array([v.co for v in target_cluster.verts], dtype=np.float64)
                 split_origin, split_normal = cls.compute_pca_splitting_plane(coords)
 

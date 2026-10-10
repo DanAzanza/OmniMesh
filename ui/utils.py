@@ -573,7 +573,7 @@ def get_asset_enum_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
     names = get_available_asset_names(context)
     items = [("AUTO", "AUTO (Follow Outliner)", "Dynamically follows active collection in the Outliner")]
 
-    base_names = {n for n in names if not n.endswith("_Interior")}
+    sorted_base_names = sorted([n for n in names if not n.endswith("_Interior")], key=lambda x: (-len(x), x))
 
     for n in names:
         if n.endswith("_Interior"):
@@ -582,9 +582,8 @@ def get_asset_enum_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
             desc = f"Cockpit / flight deck model for '{parent_base}'"
         else:
             has_submodels = any(other != n and other.startswith(f"{n}_") for other in names)
-            is_variant = any(n != b and n.startswith(f"{b}_") for b in base_names)
-            if is_variant:
-                matching_base = next(b for b in base_names if n != b and n.startswith(f"{b}_"))
+            matching_base = next((b for b in sorted_base_names if n != b and n.startswith(f"{b}_")), None)
+            if matching_base:
                 variant_name = n[len(matching_base) + 1 :]
                 label = f"{n} [Variant: {variant_name}]"
                 desc = f"Geometry variant '{variant_name}' for '{matching_base}'"

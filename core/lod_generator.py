@@ -24,7 +24,7 @@ except ImportError:
 try:
     from .decimator import MeshDecimator
     from .hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
-    from .material_analyzer import MSFSMaterialAnalyzer
+    from .material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
     from .materials import MaterialOptimizer
     from .metrics import (
         compute_bounding_sphere,
@@ -41,7 +41,7 @@ try:
 except (ImportError, ValueError):
     from core.decimator import MeshDecimator
     from core.hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
-    from core.material_analyzer import MSFSMaterialAnalyzer
+    from core.material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
     from core.materials import MaterialOptimizer
     from core.metrics import (
         compute_bounding_sphere,
@@ -122,6 +122,8 @@ def _process_merged_tier(
     radius: float,
     fov_v: float,
     max_influences: int,
+    ref_merged_obj: Any = None,
+    context: Any = None,
 ) -> tuple[int, int, int, Any]:
     """Processes a merged LOD tier, combining meshes and applying decimation pipeline."""
     merged_name = f"{base_name}_LOD{tier_idx}"
@@ -178,16 +180,30 @@ def _process_merged_tier(
             pin_uv_seams=getattr(props, "pin_uv_seams", True),
             pin_material_borders=getattr(props, "pin_material_borders", True),
         )
+
+        # Decal vertex protection: pin vertices belonging to decal materials to protect planar fidelity
+        if getattr(props, "msfs_preserve_decals", True) and MSFSMaterialAnalyzer:
+            mat_slots = getattr(tier_obj, "material_slots", [])
+            for f in bm.faces:
+                mat_idx = getattr(f, "material_index", 0)
+                if 0 <= mat_idx < len(mat_slots):
+                    mat = getattr(mat_slots[mat_idx], "material", None)
+                    if mat and MSFSMaterialAnalyzer.classify_material(mat).kind == MSFSMaterialKind.DECAL:
+                        for v in f.verts:
+                            pinned_verts.add(v.index)
+
         MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
         bm.to_mesh(tier_obj.data)
     finally:
         bm.free()
 
     if props.purge_shape_keys and tier_idx >= 2:
-        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True)
+        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True, context=context)
 
     qem_ratio = tier.target_tris_pct / 100.0 if getattr(tier, "target_tris_pct", 0.0) > 0.0 else tolerances["qem_ratio"]
-    MeshDecimator.execute_decimate_qem(tier_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True)
+    MeshDecimator.execute_decimate_qem(
+        tier_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True, context=context
+    )
 
     tier_obj.data.update()
     MaterialOptimizer.consolidate_micro_materials(
@@ -197,22 +213,25 @@ def _process_merged_tier(
     )
 
     # Reproject custom split normals against consolidated source geometry
-    ref_merged_obj = None
+    target_ref = ref_merged_obj
+    owned_ref = False
     try:
-        ref_merged_name = f"__OM_Ref_Merged_LOD0_{tier_idx}__"
-        ref_merged_obj = MeshMergeEngine.consolidate_and_merge_meshes(
-            mesh_objs, ref_merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
-        )
-        NormalManager.reproject_custom_split_normals(tier_obj, ref_merged_obj, tolerances["delta_world"])
+        if not target_ref:
+            ref_merged_name = f"__OM_Ref_Merged_LOD0_{tier_idx}__"
+            target_ref = MeshMergeEngine.consolidate_and_merge_meshes(
+                mesh_objs, ref_merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
+            )
+            owned_ref = True
+        NormalManager.reproject_custom_split_normals(tier_obj, target_ref, tolerances["delta_world"])
     except Exception as exc:
         logger.debug("Merged custom split normal reprojection exception: %s", exc)
         if mesh_objs:
             NormalManager.reproject_custom_split_normals(tier_obj, mesh_objs[0], tolerances["delta_world"])
     finally:
-        if ref_merged_obj and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
-            ref_mesh = getattr(ref_merged_obj, "data", None)
+        if owned_ref and target_ref and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
+            ref_mesh = getattr(target_ref, "data", None)
             try:
-                bpy.data.objects.remove(ref_merged_obj, do_unlink=True)
+                bpy.data.objects.remove(target_ref, do_unlink=True)
                 if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
                     bpy.data.meshes.remove(ref_mesh)
             except Exception as exc:
@@ -256,6 +275,7 @@ def _process_unmerged_tier(
     radius: float,
     fov_v: float,
     max_influences: int,
+    context: Any = None,
 ) -> tuple[int, int, int, Any]:
     """Processes an unmerged multi-mesh LOD tier, decimating each object individually."""
     tier_tris = 0
@@ -282,7 +302,7 @@ def _process_unmerged_tier(
         tier_coll.objects.link(lod_obj)
 
         if props.purge_shape_keys and tier_idx >= 2:
-            MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True)
+            MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True, context=context)
 
         ModifierManager.apply_all_modifiers_in_place(lod_obj, preserve_armature=True)
 
@@ -351,7 +371,9 @@ def _process_unmerged_tier(
         if is_decal and getattr(props, "msfs_preserve_decals", True):
             qem_ratio = max(qem_ratio, 0.75 if tier_idx <= 2 else 0.5)
 
-        MeshDecimator.execute_decimate_qem(lod_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True)
+        MeshDecimator.execute_decimate_qem(
+            lod_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True, context=context
+        )
 
         MaterialOptimizer.consolidate_micro_materials(
             lod_obj,
@@ -424,6 +446,7 @@ def generate_all_lods(
         orig_pose_pos = armature_obj.data.pose_position
         armature_obj.data.pose_position = "REST"
 
+    shared_ref_merged_obj = None
     try:
         base_name = base_name.split("_LOD")[0]
 
@@ -511,6 +534,16 @@ def generate_all_lods(
                 )
 
                 if should_merge and len(mesh_objs) > 1:
+                    if shared_ref_merged_obj is None:
+                        try:
+                            shared_ref_merged_name = "__OM_Ref_Merged_LOD0_Shared__"
+                            shared_ref_merged_obj = MeshMergeEngine.consolidate_and_merge_meshes(
+                                mesh_objs, shared_ref_merged_name, armature_obj=armature_obj, pivot_obj=root_pivot
+                            )
+                        except Exception as exc:
+                            logger.debug("Failed creating shared ref_merged_obj: %s", exc)
+                            shared_ref_merged_obj = None
+
                     tris, mats, slender_cull, gen_obj = _process_merged_tier(
                         tier_coll=tier_coll,
                         tier=tier,
@@ -525,6 +558,8 @@ def generate_all_lods(
                         radius=radius,
                         fov_v=fov_v,
                         max_influences=max_influences,
+                        ref_merged_obj=shared_ref_merged_obj,
+                        context=context,
                     )
                 else:
                     tris, mats, slender_cull, gen_obj = _process_unmerged_tier(
@@ -542,6 +577,7 @@ def generate_all_lods(
                         radius=radius,
                         fov_v=fov_v,
                         max_influences=max_influences,
+                        context=context,
                     )
 
                 props.last_culled_slender_count += slender_cull
@@ -581,6 +617,15 @@ def generate_all_lods(
         return False, f"LOD generation failed: {exc}"
 
     finally:
+        if shared_ref_merged_obj and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
+            ref_mesh = getattr(shared_ref_merged_obj, "data", None)
+            try:
+                bpy.data.objects.remove(shared_ref_merged_obj, do_unlink=True)
+                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+                    bpy.data.meshes.remove(ref_mesh)
+            except Exception as exc:
+                logger.debug("Cleanup shared_ref_merged_obj exception: %s", exc)
+
         if armature_obj and orig_pose_pos and hasattr(armature_obj.data, "pose_position"):
             armature_obj.data.pose_position = orig_pose_pos
 

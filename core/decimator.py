@@ -344,6 +344,7 @@ class MeshDecimator:
         group_name: str = "OmniMesh_Protection",
         vertex_group_factor: float = 0.5,
         cleanup_group: bool = True,
+        context: Any = None,
     ):
         """
         Applies quadric error metric (QEM) edge collapse decimation to the target mesh object.
@@ -365,6 +366,7 @@ class MeshDecimator:
         if not hasattr(obj, "modifiers") or not bpy:
             return
 
+        ctx = context if context is not None else getattr(bpy, "context", None)
         dec_mod = obj.modifiers.new(name="OmniMesh_Decimate", type="DECIMATE")
         orig_armature_states: dict[Any, bool] = {}
         try:
@@ -386,16 +388,17 @@ class MeshDecimator:
 
                 if hasattr(bpy.ops.object, "modifier_move_to_index"):
                     try:
-                        with bpy.context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
-                            bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
+                        if ctx and hasattr(ctx, "temp_override"):
+                            with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                                bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
                     except (RuntimeError, ValueError, AttributeError) as exc:
                         logger.debug("Modifier move to index 0 skipped: %s", exc)
 
-            if hasattr(bpy.context, "temp_override"):
-                with bpy.context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+            if ctx and hasattr(ctx, "temp_override"):
+                with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
                     bpy.ops.object.modifier_apply(modifier=dec_mod.name)
-            elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
-                bpy.context.view_layer.objects.active = obj
+            elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
+                ctx.view_layer.objects.active = obj
                 bpy.ops.object.modifier_apply(modifier=dec_mod.name)
         except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("QEM Decimate modifier apply error: %s", exc)
@@ -416,7 +419,7 @@ class MeshDecimator:
                     obj.vertex_groups.remove(vg)
 
     @staticmethod
-    def prepare_and_clean_shape_keys(obj: Any, purge: bool = False):
+    def prepare_and_clean_shape_keys(obj: Any, purge: bool = False, context: Any = None):
         """
         Prepares shape keys by resetting evaluation values to 0.0 (Basis),
         and purges all shape keys if purge is True (for LOD >= 2).
@@ -434,14 +437,15 @@ class MeshDecimator:
 
         # 2. If purge requested (LOD >= 2), remove all shape keys cleanly
         if purge and bpy:
+            ctx = context if context is not None else getattr(bpy, "context", None)
             try:
-                if hasattr(bpy.context, "temp_override"):
-                    with bpy.context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                if ctx and hasattr(ctx, "temp_override"):
+                    with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
                         if hasattr(obj, "shape_key_clear"):
                             obj.shape_key_clear()
                         bpy.ops.object.shape_key_remove(all=True)
-                elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
-                    bpy.context.view_layer.objects.active = obj
+                elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
+                    ctx.view_layer.objects.active = obj
                     if hasattr(obj, "shape_key_clear"):
                         obj.shape_key_clear()
                     bpy.ops.object.shape_key_remove(all=True)

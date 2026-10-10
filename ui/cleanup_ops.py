@@ -159,14 +159,14 @@ class LOD_OT_clean_and_repair_mesh(Operator):
                     if s and hasattr(s, "x") and hasattr(s, "y") and hasattr(s, "z"):
                         try:
                             needs_scale = abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4
-                        except (TypeError, ValueError):
-                            pass
+                        except (TypeError, ValueError) as e:
+                            logger.debug("Failed checking scale threshold on %s: %s", getattr(obj, "name", ""), e)
                     needs_rot = False
                     if r and hasattr(r, "x") and hasattr(r, "y") and hasattr(r, "z"):
                         try:
                             needs_rot = abs(r.x) > 1e-4 or abs(r.y) > 1e-4 or abs(r.z) > 1e-4
-                        except (TypeError, ValueError):
-                            pass
+                        except (TypeError, ValueError) as e:
+                            logger.debug("Failed checking rotation threshold on %s: %s", getattr(obj, "name", ""), e)
 
                     if needs_scale or needs_rot:
                         try:
