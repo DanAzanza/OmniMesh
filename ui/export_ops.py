@@ -185,14 +185,47 @@ class LOD_OT_bake_rig_animation(Operator):
 
 import queue
 import threading
+import time
 
 _BRIDGE_SYNC_QUEUE: queue.Queue = queue.Queue()
 _TIMER_REGISTERED: bool = False
+_LAST_HEARTBEAT_TIME: float = 0.0
+_HEARTBEAT_IN_FLIGHT: bool = False
+
+
+def _ensure_bridge_timer() -> None:
+    global _TIMER_REGISTERED
+    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers") and not _TIMER_REGISTERED:
+        try:
+            bpy.app.timers.register(_poll_bridge_sync_queue, persistent=True)
+            _TIMER_REGISTERED = True
+        except Exception as exc:
+            logger.debug("Could not register bridge sync timer: %s", exc)
+
+
+def dispatch_async_bridge_ping(target_engine: str, proj_dir: str = "") -> None:
+    """Dispatches engine ping check on background daemon thread to prevent UI freezing."""
+    global _HEARTBEAT_IN_FLIGHT
+    _ensure_bridge_timer()
+
+    def _worker() -> None:
+        global _HEARTBEAT_IN_FLIGHT
+        try:
+            is_ready, msg = BridgeManager.ping_engine(target_engine, proj_dir)
+            _BRIDGE_SYNC_QUEUE.put((is_ready, msg, target_engine))
+        except Exception as exc:
+            _BRIDGE_SYNC_QUEUE.put((False, f"Ping error: {exc}", target_engine))
+        finally:
+            _HEARTBEAT_IN_FLIGHT = False
+
+    _HEARTBEAT_IN_FLIGHT = True
+    t = threading.Thread(target=_worker, name=f"OmniMesh_Ping_{target_engine}", daemon=True)
+    t.start()
 
 
 def _poll_bridge_sync_queue() -> Optional[float]:
-    """Timer callback on Blender main thread to process bridge worker results."""
-    global _TIMER_REGISTERED
+    """Timer callback on Blender main thread to process bridge worker results and trigger heartbeats."""
+    global _TIMER_REGISTERED, _LAST_HEARTBEAT_TIME, _HEARTBEAT_IN_FLIGHT
     try:
         while not _BRIDGE_SYNC_QUEUE.empty():
             ok, msg, target = _BRIDGE_SYNC_QUEUE.get_nowait()
@@ -211,6 +244,24 @@ def _poll_bridge_sync_queue() -> Optional[float]:
                             for area in getattr(screen, "areas", []):
                                 if area.type == "VIEW_3D":
                                     area.tag_redraw()
+
+        # Automatic Heartbeat: if live sync is active, ping engine periodically in background
+        now = time.time()
+        if (
+            bpy
+            and hasattr(bpy, "context")
+            and bpy.context
+            and hasattr(bpy.context, "scene")
+            and not _HEARTBEAT_IN_FLIGHT
+            and (now - _LAST_HEARTBEAT_TIME > 5.0)
+        ):
+            props = getattr(bpy.context.scene, "lod_tool", None)
+            if props and getattr(props, "enable_live_sync", False):
+                _LAST_HEARTBEAT_TIME = now
+                engine = getattr(props, "target_engine", "UE5")
+                p_dir = bpy.path.abspath(props.engine_project_path) if getattr(props, "engine_project_path", "") else ""
+                dispatch_async_bridge_ping(engine, p_dir)
+
     except Exception as exc:
         logger.debug("Bridge sync queue polling error: %s", exc)
 
@@ -219,13 +270,7 @@ def _poll_bridge_sync_queue() -> Optional[float]:
 
 def dispatch_async_bridge_sync(target_engine: str, export_dir: str, asset_name: str, proj_dir: str = "") -> None:
     """Dispatches headless bridge synchronization on a background daemon thread."""
-    global _TIMER_REGISTERED
-    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers") and not _TIMER_REGISTERED:
-        try:
-            bpy.app.timers.register(_poll_bridge_sync_queue, persistent=True)
-            _TIMER_REGISTERED = True
-        except Exception as exc:
-            logger.debug("Could not register bridge sync timer: %s", exc)
+    _ensure_bridge_timer()
 
     def _worker() -> None:
         try:
@@ -314,15 +359,9 @@ class LOD_OT_toggle_live_bridge(Operator):
             logger.debug("Project detection during toggle: %s", exc)
 
         proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
-        is_ready, msg = BridgeManager.ping_engine(engine, proj_dir)
-
-        props.bridge_connected = is_ready
-        props.bridge_status_text = msg if is_ready else f"Not Ready: {msg}"
-
-        if is_ready:
-            self.report({"INFO"}, f"[Live Link] Connected to {engine}: {msg}")
-        else:
-            self.report({"WARNING"}, f"[Live Link] {engine} Offline: {msg}")
+        props.bridge_status_text = f"Connecting to {engine}..."
+        dispatch_async_bridge_ping(engine, proj_dir)
+        self.report({"INFO"}, f"[Live Link] Connecting to {engine} in background...")
 
         return {"FINISHED"}
 

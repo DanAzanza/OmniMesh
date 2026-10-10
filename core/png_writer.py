@@ -10,6 +10,7 @@ import logging
 import os
 import struct
 import sys
+import time
 import zlib
 
 import numpy as np
@@ -64,16 +65,26 @@ def write_png_direct(filepath: str, arr: np.ndarray, bit_depth: int = 8) -> bool
         logger.error("Unsupported array ndim in write_png_direct: %s", arr.ndim)
         return False
 
+    target_dir = os.path.dirname(os.path.abspath(filepath))
+
     # For 8-bit images, Pillow is faster if available
     if not is_16 and Image:
         mode_map = {0: "L", 2: "RGB", 6: "RGBA"}
-        try:
-            pil_img = Image.fromarray(save_arr, mode=mode_map[color_type])
-            os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
-            pil_img.save(filepath, format="PNG", compress_level=4)
-            return True
-        except Exception as exc:
-            logger.debug("Pillow save fallback to raw PNG encoder: %s", exc)
+        for attempt in range(3):
+            try:
+                pil_img = Image.fromarray(save_arr, mode=mode_map[color_type])
+                os.makedirs(target_dir, exist_ok=True)
+                pil_img.save(filepath, format="PNG", compress_level=4)
+                return True
+            except (PermissionError, OSError) as exc:
+                if attempt < 2 and (isinstance(exc, PermissionError) or "WinError 32" in str(exc)):
+                    time.sleep(0.05 * (2**attempt))
+                    continue
+                logger.debug("Pillow save fallback to raw PNG encoder: %s", exc)
+                break
+            except Exception as exc:
+                logger.debug("Pillow save fallback to raw PNG encoder: %s", exc)
+                break
 
     # Convert to big-endian (network byte order) for PNG
     if is_16 and sys.byteorder == "little":
@@ -105,11 +116,17 @@ def write_png_direct(filepath: str, arr: np.ndarray, bit_depth: int = 8) -> bool
         + make_chunk(b"IEND", b"")
     )
 
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
-        with open(filepath, "wb") as f:
-            f.write(png_bytes)
-        return True
-    except OSError as exc:
-        logger.error("Failed to write PNG to '%s': %s", filepath, exc)
-        return False
+    for attempt in range(3):
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(png_bytes)
+            return True
+        except (PermissionError, OSError) as exc:
+            if attempt < 2 and (isinstance(exc, PermissionError) or "WinError 32" in str(exc)):
+                time.sleep(0.05 * (2**attempt))
+                continue
+            logger.error("Failed to write PNG to '%s': %s", filepath, exc)
+            return False
+
+    return False

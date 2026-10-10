@@ -29,6 +29,18 @@ class OMNIMESH_PT_export_msfs_spatial(Panel):
     bl_category = "OmniMesh"
     bl_options = {"DEFAULT_CLOSED"}
 
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        if not context:
+            return False
+        scene = getattr(context, "scene", None)
+        props = getattr(scene, "lod_tool", None)
+        if not props:
+            return False
+        target_engine = getattr(props, "target_engine", "")
+        cfg_path = getattr(props, "msfs_spatial_cfg_path", "")
+        return bool(target_engine == "MSFS_2024" or (cfg_path and str(cfg_path).strip()))
+
     def draw(self, context: Any) -> None:
         if not bpy or not context:
             return

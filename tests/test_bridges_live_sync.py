@@ -262,3 +262,22 @@ def test_bridge_manager_headless_routing(tmp_path: Path):
     ok, msg = BridgeManager.sync_asset_headless("GODOT_4", str(export_dir), "Asset")
     assert not ok
     assert "Target Godot project directory not configured" in msg
+
+
+def test_async_bridge_ping_dispatch():
+    """Verifies dispatch_async_bridge_ping runs on background thread and populates sync queue."""
+    from ui.export_ops import (
+        _BRIDGE_SYNC_QUEUE,
+        dispatch_async_bridge_ping,
+    )
+
+    with patch("bridges.manager.BridgeManager.ping_engine", return_value=(True, "Online")):
+        dispatch_async_bridge_ping("UE5")
+        # Allow thread to finish
+        time.sleep(0.1)
+
+    assert not _BRIDGE_SYNC_QUEUE.empty()
+    item = _BRIDGE_SYNC_QUEUE.get_nowait()
+    assert item[0] is True
+    assert "Online" in item[1]
+    assert item[2] == "UE5"

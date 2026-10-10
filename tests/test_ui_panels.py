@@ -836,3 +836,24 @@ def test_resolve_lod_context_reference_error_safeguard():
     assert props == ctx.scene.lod_tool
     assert master is None
     assert is_deriv is False
+
+
+def test_msfs_spatial_subpanel_poll():
+    """Verify OMNIMESH_PT_export_msfs_spatial polls True only for MSFS_2024 or with explicit config path."""
+    from ui.msfs_panel import OMNIMESH_PT_export_msfs_spatial
+
+    ctx = MagicMock()
+    ctx.scene.lod_tool.target_engine = "UE5"
+    ctx.scene.lod_tool.msfs_spatial_cfg_path = ""
+    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is False
+
+    ctx.scene.lod_tool.target_engine = "MSFS_2024"
+    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is True
+
+    ctx.scene.lod_tool.target_engine = "GODOT_4"
+    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is False
+
+    ctx.scene.lod_tool.msfs_spatial_cfg_path = "G:/aircraft/flight_model.cfg"
+    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is True
+
+    assert OMNIMESH_PT_export_msfs_spatial.poll(None) is False

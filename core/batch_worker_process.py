@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from typing import Any
 
 try:
@@ -108,7 +109,20 @@ class BatchWorkerProcessManager:
             os.makedirs(clean_export_dir, exist_ok=True)
             log_name = f"{asset_name or os.path.splitext(os.path.basename(blend_path))[0]}_export.log"
             log_path = os.path.join(clean_export_dir, log_name)
-            log_file = open(log_path, "w", encoding="utf-8")
+            for attempt in range(3):
+                try:
+                    log_file = open(log_path, "w", encoding="utf-8")
+                    break
+                except (PermissionError, OSError) as lock_exc:
+                    if attempt < 2 and (isinstance(lock_exc, PermissionError) or "WinError 32" in str(lock_exc)):
+                        time.sleep(0.05 * (2**attempt))
+                        continue
+                    unique_name = (
+                        f"{asset_name or os.path.splitext(os.path.basename(blend_path))[0]}_{os.getpid()}_export.log"
+                    )
+                    log_path = os.path.join(clean_export_dir, unique_name)
+                    log_file = open(log_path, "w", encoding="utf-8")
+                    break
             popen_kwargs["stdout"] = log_file
             popen_kwargs["stderr"] = subprocess.STDOUT
         except Exception as exc:
