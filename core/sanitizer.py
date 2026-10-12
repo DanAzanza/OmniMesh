@@ -325,11 +325,12 @@ class MeshSanitizer:
                 except (TypeError, ValueError) as e:
                     logger.debug("Failed checking unapplied scale on %s: %s", getattr(obj, "name", ""), e)
 
-            if hasattr(obj, "material_slots") and type(obj.material_slots).__name__ != "MagicMock":
+            slots = getattr(obj, "material_slots", None)
+            if slots is not None and hasattr(slots, "__len__"):
                 try:
-                    if len(obj.material_slots) == 0 or any(slot.material is None for slot in obj.material_slots):
+                    if len(slots) == 0 or any(getattr(slot, "material", None) is None for slot in slots):
                         missing_mats += 1
-                except (TypeError, ValueError) as e:
+                except (TypeError, ValueError, AttributeError) as e:
                     logger.debug("Failed checking material slots on %s: %s", getattr(obj, "name", ""), e)
 
             mesh_data = getattr(obj, "data", None)

@@ -224,9 +224,21 @@ def _process_merged_tier(
             owned_ref = True
         NormalManager.reproject_custom_split_normals(tier_obj, target_ref, tolerances["delta_world"])
     except Exception as exc:
-        logger.debug("Merged custom split normal reprojection exception: %s", exc)
+        logger.warning(
+            "Merged custom split normal reprojection failed for '%s' (LOD%d): %s; attempting single-mesh fallback",
+            getattr(tier_obj, "name", ""),
+            tier_idx,
+            exc,
+        )
         if mesh_objs:
-            NormalManager.reproject_custom_split_normals(tier_obj, mesh_objs[0], tolerances["delta_world"])
+            try:
+                NormalManager.reproject_custom_split_normals(tier_obj, mesh_objs[0], tolerances["delta_world"])
+            except Exception as fb_exc:
+                logger.warning(
+                    "Fallback single-mesh normal reprojection also failed for '%s': %s",
+                    getattr(tier_obj, "name", ""),
+                    fb_exc,
+                )
     finally:
         if owned_ref and target_ref and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
             ref_mesh = getattr(target_ref, "data", None)

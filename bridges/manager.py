@@ -13,6 +13,14 @@ from .msfs_bridge import MSFS2024LiveBridge
 from .unity_bridge import UnityLiveBridge
 from .unreal_bridge import UnrealLiveBridge
 
+try:
+    from ..core.exceptions import BridgeConnectionError
+except (ImportError, ValueError):
+    try:
+        from core.exceptions import BridgeConnectionError
+    except (ImportError, ValueError):
+        BridgeConnectionError = RuntimeError  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +68,11 @@ class BridgeManager:
         bridge = cls.get_bridge(target_engine)
         if not bridge:
             return False, f"Unknown target engine: {target_engine}"
-        return bridge.sync_asset(context, export_dir, asset_name, project_dir)
+        try:
+            return bridge.sync_asset(context, export_dir, asset_name, project_dir)
+        except BridgeConnectionError as exc:
+            logger.error("Bridge connection failed for %s (%s): %s", asset_name, target_engine, exc)
+            return False, str(exc)
 
     @classmethod
     def sync_asset_headless(
@@ -75,4 +87,8 @@ class BridgeManager:
         bridge = cls.get_bridge(target_engine)
         if not bridge:
             return False, f"Unknown target engine: {target_engine}"
-        return bridge.sync_asset_headless(export_dir, asset_name, project_dir, extra_options)
+        try:
+            return bridge.sync_asset_headless(export_dir, asset_name, project_dir, extra_options)
+        except BridgeConnectionError as exc:
+            logger.error("Bridge headless sync connection failed for %s (%s): %s", asset_name, target_engine, exc)
+            return False, str(exc)

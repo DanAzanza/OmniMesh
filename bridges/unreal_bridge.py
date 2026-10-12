@@ -16,6 +16,14 @@ from typing import Any, Dict, Optional, Tuple
 
 from .base import EngineBridgeBase
 
+try:
+    from ..core.exceptions import BridgeConnectionError
+except (ImportError, ValueError):
+    try:
+        from core.exceptions import BridgeConnectionError
+    except (ImportError, ValueError):
+        BridgeConnectionError = RuntimeError  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -284,7 +292,7 @@ class UnrealLiveBridge(EngineBridgeBase):
             # Fallback to Web Remote Control if TCP failed during transmission
             if cls.ping_web_remote_control(port=http_port):
                 return cls.dispatch_to_ue5_web_remote(payload, host=host, port=http_port)
-            return False, f"Socket transmission failed: {str(e)}"
+            raise BridgeConnectionError(f"Socket transmission failed: {str(e)}") from e
 
     @classmethod
     def sync_asset_headless(

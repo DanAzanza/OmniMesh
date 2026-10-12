@@ -281,3 +281,29 @@ def test_async_bridge_ping_dispatch():
     assert item[0] is True
     assert "Online" in item[1]
     assert item[2] == "UE5"
+
+
+def test_bridge_manager_catches_bridge_connection_error():
+    """Verifies BridgeManager catches BridgeConnectionError and returns (False, msg) gracefully."""
+    from core.exceptions import BridgeConnectionError
+
+    with patch.object(UnrealLiveBridge, "sync_asset_headless", side_effect=BridgeConnectionError("Socket dropped")):
+        ok, msg = BridgeManager.sync_asset_headless("UE5", "/tmp", "TestAsset")
+        assert ok is False
+        assert "Socket dropped" in msg
+
+
+def test_dispatch_async_bridge_sync_handles_bridge_connection_error():
+    """Verifies async worker catches BridgeConnectionError and puts failure tuple into queue."""
+    from core.exceptions import BridgeConnectionError
+    from ui.export_ops import _BRIDGE_SYNC_QUEUE, dispatch_async_bridge_sync
+
+    with patch.object(BridgeManager, "sync_asset_headless", side_effect=BridgeConnectionError("Timeout")):
+        dispatch_async_bridge_sync("UE5", "/tmp", "TestAsset")
+        time.sleep(0.1)
+
+    assert not _BRIDGE_SYNC_QUEUE.empty()
+    item = _BRIDGE_SYNC_QUEUE.get_nowait()
+    assert item[0] is False
+    assert "Connection error: Timeout" in item[1]
+    assert item[2] == "UE5"

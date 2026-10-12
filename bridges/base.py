@@ -8,6 +8,14 @@ import abc
 import logging
 from typing import Any, Tuple
 
+try:
+    from ..core.exceptions import BridgeConnectionError
+except (ImportError, ValueError):
+    try:
+        from core.exceptions import BridgeConnectionError
+    except (ImportError, ValueError):
+        BridgeConnectionError = RuntimeError  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 

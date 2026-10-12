@@ -21,6 +21,7 @@ except ImportError:
 try:
     from ..bridges.manager import BridgeManager
     from ..core.animations import AnimationRigSanitizer
+    from ..core.exceptions import BridgeConnectionError
     from ..core.pbr_presets import PBRExportPresetManager
     from ..core.textures import TextureChannelPacker, TexturePoolManager
     from ..exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
@@ -29,6 +30,7 @@ try:
 except (ImportError, ValueError):
     from bridges.manager import BridgeManager
     from core.animations import AnimationRigSanitizer
+    from core.exceptions import BridgeConnectionError
     from core.pbr_presets import PBRExportPresetManager
     from core.textures import TextureChannelPacker, TexturePoolManager
     from exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
@@ -276,6 +278,9 @@ def dispatch_async_bridge_sync(target_engine: str, export_dir: str, asset_name: 
         try:
             ok, msg = BridgeManager.sync_asset_headless(target_engine, export_dir, asset_name, proj_dir)
             _BRIDGE_SYNC_QUEUE.put((ok, msg, target_engine))
+        except BridgeConnectionError as exc:
+            logger.warning("Bridge live connection dropped during sync: %s", exc)
+            _BRIDGE_SYNC_QUEUE.put((False, f"Connection error: {exc}", target_engine))
         except Exception as exc:
             _BRIDGE_SYNC_QUEUE.put((False, f"Worker exception: {exc}", target_engine))
 

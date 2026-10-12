@@ -163,3 +163,18 @@ def test_live_unity_cli_integration():
 
     res = subprocess.run([unity_bin, "editors"], capture_output=True, text=True, timeout=15)
     assert res.returncode == 0
+
+
+def test_exporter_manager_catches_export_pipeline_error():
+    """Verifies ExporterManager catches ExportPipelineError and returns (False, error_str)."""
+    from unittest.mock import MagicMock, patch
+
+    from core.exceptions import ExportPipelineError
+    from exporters.manager import ExporterManager
+    from exporters.ue5_export import UE5Exporter
+
+    mock_context = MagicMock()
+    with patch.object(UE5Exporter, "export_asset", side_effect=ExportPipelineError("Geometry corrupted")):
+        ok, msg = ExporterManager.export_asset(mock_context, "UE5", "/tmp", "TestAsset")
+        assert ok is False
+        assert "Geometry corrupted" in msg

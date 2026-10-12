@@ -60,7 +60,7 @@ reportMissingModuleSource = false
 reportCallIssue = true
 reportAssignmentType = true
 reportArgumentType = true
-# Suppress Blender-specific RNA annotations and headless Optional[bpy] member lookups
+# Strict type validation rules enforced across core, ui, exporters, bridges, and tests
 reportInvalidTypeForm = true
 reportOptionalMemberAccess = true
 reportOptionalCall = true

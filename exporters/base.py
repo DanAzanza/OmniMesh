@@ -8,6 +8,14 @@ import abc
 import logging
 from typing import Any
 
+try:
+    from ..core.exceptions import ExportPipelineError
+except (ImportError, ValueError):
+    try:
+        from core.exceptions import ExportPipelineError
+    except (ImportError, ValueError):
+        ExportPipelineError = RuntimeError  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 

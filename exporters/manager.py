@@ -12,6 +12,14 @@ from .msfs_export import MSFSExporter
 from .ue5_export import UE5Exporter
 from .unity_export import UnityExporter
 
+try:
+    from ..core.exceptions import ExportPipelineError
+except (ImportError, ValueError):
+    try:
+        from core.exceptions import ExportPipelineError
+    except (ImportError, ValueError):
+        ExportPipelineError = RuntimeError  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,13 +52,17 @@ class ExporterManager:
         if not exporter:
             return False, f"Unknown target engine exporter: {target_engine}"
 
-        # Support full project package option for MSFS 2024
-        if (
-            target_engine == "MSFS_2024"
-            and kwargs.get("full_package", True)
-            and hasattr(exporter, "export_project_package")
-        ):
-            pkg_base = kwargs.get("package_name") or asset_name
-            return exporter.export_project_package(context, export_dir, pkg_base, **kwargs)
+        try:
+            # Support full project package option for MSFS 2024
+            if (
+                target_engine == "MSFS_2024"
+                and kwargs.get("full_package", True)
+                and hasattr(exporter, "export_project_package")
+            ):
+                pkg_base = kwargs.get("package_name") or asset_name
+                return exporter.export_project_package(context, export_dir, pkg_base, **kwargs)
 
-        return exporter.export_asset(context, export_dir, asset_name, **kwargs)
+            return exporter.export_asset(context, export_dir, asset_name, **kwargs)
+        except ExportPipelineError as exc:
+            logger.error("Export pipeline error for %s (%s): %s", asset_name, target_engine, exc)
+            return False, str(exc)
