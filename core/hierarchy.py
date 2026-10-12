@@ -271,9 +271,9 @@ class MeshMergeEngine:
                             for src_uv, tgt_uv in target_uv_layers:
                                 for l_old, l_new in zip(f.loops, new_f.loops, strict=False):
                                     l_new[tgt_uv].uv = l_old[src_uv].uv
-                        except ValueError:
+                        except ValueError as exc:
                             # Skip degenerate or duplicate faces
-                            pass
+                            logger.debug("Merged mesh face addition skipped: %s", exc)
 
                 finally:
                     temp_bm.free()

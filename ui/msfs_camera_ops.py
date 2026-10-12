@@ -119,8 +119,8 @@ def get_or_create_cameras_collection(
         elif cam_col.name not in cfg_col.children:
             try:
                 cfg_col.children.link(cam_col)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                logger.debug("Cameras collection already linked to cfg_col: %s", exc)
 
         cam_col["_omnimesh_role"] = "CAMERAS"
         cam_col["_omnimesh_parent"] = target_asset

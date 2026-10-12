@@ -188,8 +188,10 @@ class MSFSExporter(EngineExporterBase):
                         try:
                             att_node.hide_set(False, view_layer=context.view_layer)
                             att_node.hide_viewport = False
-                        except (RuntimeError, AttributeError):
-                            pass
+                        except (RuntimeError, AttributeError) as exc:
+                            logger.debug(
+                                "Could not unhide attachment node %s: %s", getattr(att_node, "name", "unknown"), exc
+                            )
                         att_node.select_set(True)
 
                 context.view_layer.objects.active = tier_objs[0]

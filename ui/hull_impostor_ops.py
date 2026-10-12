@@ -271,8 +271,8 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
                 from .impostor_viewport_ops import start_impostor_viewport_timer
 
                 start_impostor_viewport_timer(base_name)
-            except (ImportError, ValueError):
-                pass
+            except (ImportError, ValueError) as exc:
+                logger.debug("Impostor viewport ops timer not loaded: %s", exc)
 
         # Presentation logic: Switch active 3D Viewport to Camera View
         if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
@@ -325,8 +325,8 @@ class LOD_OT_remove_impostor_preview_rig(Operator):
             from .impostor_viewport_ops import stop_impostor_viewport_timer
 
             stop_impostor_viewport_timer(base_name)
-        except (ImportError, ValueError):
-            pass
+        except (ImportError, ValueError) as exc:
+            logger.debug("Impostor viewport ops timer not loaded: %s", exc)
 
         success = teardown_impostor_preview_rig(context, base_name)
 

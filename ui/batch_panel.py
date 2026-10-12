@@ -266,8 +266,8 @@ class OMNIMESH_OT_batch_process(Operator):
                     try:
                         self._current_proc.kill()
                         self._current_proc.wait(timeout=1.0)
-                    except (subprocess.TimeoutExpired, OSError):
-                        pass
+                    except (subprocess.TimeoutExpired, OSError) as exc:
+                        logger.debug("Failed forcing kill on worker process: %s", exc)
 
             # Close log file unconditionally regardless of poll() state
             log_file = getattr(self._current_proc, "_om_log_file", None)

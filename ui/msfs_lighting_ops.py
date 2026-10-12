@@ -121,8 +121,8 @@ def get_or_create_lights_collection(context: Any, asset_name: str = "") -> Optio
         elif li_col.name not in cfg_col.children:
             try:
                 cfg_col.children.link(li_col)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                logger.debug("Lights collection already linked to cfg_col: %s", exc)
 
         li_col["_omnimesh_role"] = "LIGHTS"
         li_col["_omnimesh_parent"] = target_asset

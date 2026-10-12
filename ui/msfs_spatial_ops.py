@@ -110,8 +110,8 @@ def get_or_create_spatial_collection(context: Any, asset_name: str = "") -> Opti
         elif sp_col.name not in cfg_col.children:
             try:
                 cfg_col.children.link(sp_col)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                logger.debug("Spatial collection already linked to cfg_col: %s", exc)
 
         sp_col["_omnimesh_role"] = "SPATIAL"
         sp_col["_omnimesh_parent"] = target_asset

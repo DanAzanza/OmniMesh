@@ -192,8 +192,8 @@ class LOD_OT_import_pbr_set(Operator):
                     if candidates:
                         self.directory = abs_dir
                         return self.execute(context)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.debug("Automatic texture directory inspection failed: %s", exc)
 
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
