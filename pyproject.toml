@@ -58,14 +58,14 @@ pythonVersion = "3.11"
 reportMissingImports = false
 reportMissingModuleSource = false
 reportCallIssue = true
-reportAssignmentType = false
-reportArgumentType = false
+reportAssignmentType = true
+reportArgumentType = true
 # Suppress Blender-specific RNA annotations and headless Optional[bpy] member lookups
-reportInvalidTypeForm = false
-reportOptionalMemberAccess = false
-reportOptionalCall = false
-reportAttributeAccessIssue = false
-reportGeneralTypeIssues = false
+reportInvalidTypeForm = true
+reportOptionalMemberAccess = true
+reportOptionalCall = true
+reportAttributeAccessIssue = true
+reportGeneralTypeIssues = true
 
 [tool.coverage.run]
 source = ["core", "exporters", "ui", "bridges"]

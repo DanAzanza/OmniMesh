@@ -47,7 +47,7 @@ class UnrealLiveBridge(EngineBridgeBase):
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=timeout_sec):
                 return True
-        except (socket.timeout, ConnectionRefusedError, OSError, Exception):
+        except (socket.timeout, ConnectionRefusedError, OSError):
             return False
 
     @classmethod
@@ -57,7 +57,7 @@ class UnrealLiveBridge(EngineBridgeBase):
             req = urllib.request.Request(f"http://127.0.0.1:{port}/remote/info", method="GET")
             with urllib.request.urlopen(req, timeout=timeout_sec) as resp:  # noqa: S310
                 return resp.status == 200
-        except (urllib.error.URLError, TimeoutError, OSError, Exception):
+        except (urllib.error.URLError, TimeoutError, OSError):
             return False
 
     @classmethod
@@ -278,7 +278,7 @@ class UnrealLiveBridge(EngineBridgeBase):
                     if resp_json.get("success", True):
                         return True, "Successfully executed in UE5 editor session."
                     return False, f"UE5 script error: {resp_json.get('result', 'Unknown error')}"
-                except Exception:
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     return True, "Successfully dispatched live sync command to active UE5 session."
         except (socket.timeout, ConnectionRefusedError, BrokenPipeError, ConnectionResetError, OSError) as e:
             # Fallback to Web Remote Control if TCP failed during transmission

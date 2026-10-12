@@ -79,14 +79,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/blender
-          key: ${{ runner.os }}-blender-5.0.0-linux-x64
+          key: ${{ runner.os }}-blender-5.0.0-linux-x64-v2
 
       - name: Download & Extract Blender 5.0 LTS
         if: steps.cache-blender.outputs.cache-hit != 'true'
         run: |
           sudo mkdir -p /opt/blender
           sudo chown -R $USER:$USER /opt/blender
-          curl -sSL "https://download.blender.org/release/Blender5.0/blender-5.0.0-linux-x64.tar.xz" -o /tmp/blender.tar.xz || curl -sSL "https://download.blender.org/release/Blender4.2/blender-4.2.3-linux-x64.tar.xz" -o /tmp/blender.tar.xz
+          curl -fSL --retry 3 --retry-delay 5 "https://download.blender.org/release/Blender5.0/blender-5.0.0-linux-x64.tar.xz" -o /tmp/blender.tar.xz
           tar -xJf /tmp/blender.tar.xz -C /opt/blender --strip-components=1
           rm -f /tmp/blender.tar.xz
 

@@ -4,9 +4,12 @@ Decimation and Simplification Engine for OmniMesh.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 from typing import Any
+
+from .exceptions import DecimationError
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,23 @@ except ImportError:
     Vector = None
 
 UV_SEAM_EPSILON: float = 1e-4
+
+
+@contextlib.contextmanager
+def temporary_vertex_group(obj: Any, group_name: str):
+    """
+    RAII context manager guaranteeing clean removal of temporary vertex groups upon completion or exception.
+    """
+    try:
+        yield
+    finally:
+        if obj and hasattr(obj, "vertex_groups"):
+            vg = obj.vertex_groups.get(group_name)
+            if vg:
+                try:
+                    obj.vertex_groups.remove(vg)
+                except Exception as exc:
+                    logger.debug("Failed cleaning up temporary vertex group '%s': %s", group_name, exc)
 
 
 class MeshDecimator:
@@ -180,20 +200,13 @@ class MeshDecimator:
             vg = obj.vertex_groups.new(name=group_name)
 
         try:
-            if hasattr(bm.verts, "index_update"):
-                bm.verts.index_update()
-            if hasattr(bm.edges, "index_update"):
-                bm.edges.index_update()
-            if hasattr(bm.faces, "index_update"):
-                bm.faces.index_update()
-            if hasattr(bm.verts, "ensure_lookup_table"):
-                bm.verts.ensure_lookup_table()
-            if hasattr(bm.edges, "ensure_lookup_table"):
-                bm.edges.ensure_lookup_table()
-            if hasattr(bm.faces, "ensure_lookup_table"):
-                bm.faces.ensure_lookup_table()
-            if hasattr(bm, "normal_update"):
-                bm.normal_update()
+            bm.verts.index_update()
+            bm.edges.index_update()
+            bm.faces.index_update()
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            bm.normal_update()
         except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("Lookup table init error in inject_curvature_weights: %s", exc)
             return
@@ -401,9 +414,13 @@ class MeshDecimator:
                 ctx.view_layer.objects.active = obj
                 bpy.ops.object.modifier_apply(modifier=dec_mod.name)
         except (RuntimeError, ValueError, AttributeError) as exc:
-            logger.debug("QEM Decimate modifier apply error: %s", exc)
+            obj_name = getattr(obj, "name", "Unnamed")
+            logger.error("QEM Decimate modifier apply failed on '%s' (ratio=%.4f): %s", obj_name, clamped_ratio, exc)
             if hasattr(obj, "modifiers") and dec_mod.name in obj.modifiers:
                 obj.modifiers.remove(dec_mod)
+            raise DecimationError(
+                f"Failed applying QEM decimate modifier on '{obj_name}' (target_ratio={clamped_ratio:.4f}): {exc}"
+            ) from exc
         finally:
             # Restore Armature modifier show_viewport states
             for m, orig_state in orig_armature_states.items():
@@ -419,15 +436,14 @@ class MeshDecimator:
                     obj.vertex_groups.remove(vg)
 
     @staticmethod
-    def prepare_and_clean_shape_keys(obj: Any, purge: bool = False, context: Any = None):
+    def reset_shape_keys_to_basis(obj: Any) -> None:
         """
-        Prepares shape keys by resetting evaluation values to 0.0 (Basis),
-        and purges all shape keys if purge is True (for LOD >= 2).
+        Resets all shape key evaluation values to 0.0 (neutral Basis pose).
+        Prevents deformed geometry during LOD decimation or normal reprojection.
         """
         if not obj or not hasattr(obj, "data") or not obj.data or not getattr(obj.data, "shape_keys", None):
             return
 
-        # 1. Reset all shape keys to 0.0 (Basis)
         key_blocks = getattr(obj.data.shape_keys, "key_blocks", [])
         for kb in key_blocks:
             try:
@@ -435,19 +451,42 @@ class MeshDecimator:
             except Exception as exc:
                 logger.debug("Failed resetting shape key value: %s", exc)
 
-        # 2. If purge requested (LOD >= 2), remove all shape keys cleanly
-        if purge and bpy:
-            ctx = context if context is not None else getattr(bpy, "context", None)
-            try:
-                if ctx and hasattr(ctx, "temp_override"):
-                    with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
-                        if hasattr(obj, "shape_key_clear"):
-                            obj.shape_key_clear()
-                        bpy.ops.object.shape_key_remove(all=True)
-                elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
-                    ctx.view_layer.objects.active = obj
+    @classmethod
+    def purge_all_shape_keys(cls, obj: Any, context: Any = None) -> None:
+        """
+        Purges all shape keys from the target mesh datablock.
+        Strictly guarantees key blocks are reset to 0.0 before removal (KNOWLEDGE.md §3).
+        """
+        if not obj or not hasattr(obj, "data") or not obj.data or not getattr(obj.data, "shape_keys", None):
+            return
+        if not bpy:
+            return
+
+        # 1. Reset all shape keys to 0.0 (Basis) first
+        cls.reset_shape_keys_to_basis(obj)
+
+        # 2. Remove all shape keys cleanly
+        ctx = context if context is not None else getattr(bpy, "context", None)
+        try:
+            if ctx and hasattr(ctx, "temp_override"):
+                with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
                     if hasattr(obj, "shape_key_clear"):
                         obj.shape_key_clear()
                     bpy.ops.object.shape_key_remove(all=True)
-            except (RuntimeError, AttributeError, TypeError) as exc:
-                logger.debug("Shape key purge bypassed: %s", exc)
+            elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
+                ctx.view_layer.objects.active = obj
+                if hasattr(obj, "shape_key_clear"):
+                    obj.shape_key_clear()
+                bpy.ops.object.shape_key_remove(all=True)
+        except (RuntimeError, AttributeError, TypeError) as exc:
+            logger.debug("Shape key purge bypassed: %s", exc)
+
+    @classmethod
+    def prepare_and_clean_shape_keys(cls, obj: Any, purge: bool = False, context: Any = None) -> None:
+        """
+        Backward-compatible dispatcher: resets shape keys to Basis, or purges completely if purge is True.
+        """
+        if purge:
+            cls.purge_all_shape_keys(obj, context=context)
+        else:
+            cls.reset_shape_keys_to_basis(obj)

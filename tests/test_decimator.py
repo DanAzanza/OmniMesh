@@ -85,6 +85,7 @@ class MockBMesh:
         self.loops = MagicMock()
         self.loops.layers = MagicMock()
         self.loops.layers.uv = {0: 0}
+        self.normal_update = MagicMock()
 
 
 def test_tag_boundaries_and_uv_seams_null():
@@ -203,6 +204,43 @@ def test_prepare_and_clean_shape_keys():
     assert mock_kb2.value == 0.0
 
 
+def test_reset_shape_keys_and_purge_single_responsibility():
+    # Null guard
+    MeshDecimator.reset_shape_keys_to_basis(None)
+    MeshDecimator.purge_all_shape_keys(None)
+
+    mock_obj = MagicMock()
+    mock_kb = MagicMock()
+    mock_kb.value = 0.8
+    mock_obj.data.shape_keys.key_blocks = [mock_kb]
+
+    MeshDecimator.reset_shape_keys_to_basis(mock_obj)
+    assert mock_kb.value == 0.0
+
+
+def test_temporary_vertex_group_context_manager():
+    from core.decimator import temporary_vertex_group
+
+    mock_obj = MagicMock()
+    mock_vg = MagicMock()
+    mock_obj.vertex_groups.get.return_value = mock_vg
+
+    with temporary_vertex_group(mock_obj, "TestGroup"):
+        pass
+
+    mock_obj.vertex_groups.remove.assert_called_once_with(mock_vg)
+
+    # Test exception safety
+    mock_obj.vertex_groups.reset_mock()
+    try:
+        with temporary_vertex_group(mock_obj, "TestGroup"):
+            raise ValueError("Test error inside context")
+    except ValueError:
+        pass
+
+    mock_obj.vertex_groups.remove.assert_called_once_with(mock_vg)
+
+
 def test_lod_generator_graceful_handling(monkeypatch):
     """Verify generate_all_lods handles None/empty context and objects defensively."""
     success, msg = generate_all_lods(context=None, props=None, mesh_objs=[])
@@ -254,3 +292,33 @@ def test_lod_generator_exception_rollback_and_pose_restoration(monkeypatch):
     assert success is False
     assert "simulated dag failure" in msg.lower()
     assert mock_armature.data.pose_position == "POSE"
+
+
+def test_execute_decimate_qem_raises_decimation_error_on_apply_failure(monkeypatch):
+    """Verify execute_decimate_qem fails fast and raises DecimationError when modifier apply fails."""
+    import pytest
+    from core.exceptions import DecimationError
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr("core.decimator.bpy", mock_bpy)
+
+    mock_obj = MagicMock()
+    mock_obj.name = "SM_Hero"
+    mock_obj.type = "MESH"
+    mock_mod = MagicMock()
+    mock_mod.name = "OmniMesh_Decimate"
+    mock_modifiers = MagicMock()
+    mock_modifiers.new.return_value = mock_mod
+    mock_modifiers.__contains__.return_value = True
+    mock_obj.modifiers = mock_modifiers
+
+    # Simulate Blender modifier apply raising RuntimeError
+    mock_bpy.ops.object.modifier_apply.side_effect = RuntimeError("Context incorrect for modifier apply")
+
+    with pytest.raises(DecimationError) as exc_info:
+        MeshDecimator.execute_decimate_qem(mock_obj, 0.5)
+
+    assert "Context incorrect for modifier apply" in str(exc_info.value)
+    assert "SM_Hero" in str(exc_info.value)
+    # Ensure broken modifier was removed
+    mock_obj.modifiers.remove.assert_called_with(mock_mod)

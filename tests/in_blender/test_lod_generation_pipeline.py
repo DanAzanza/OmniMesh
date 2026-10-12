@@ -114,7 +114,18 @@ class TestLODGenerationPipeline(unittest.TestCase):
                 influences = [g for g in v.groups if g.weight > 1e-4]
                 self.assertLessEqual(len(influences), 4, "Vertex influence must not exceed max_influences (4).")
 
-            # Verify shape keys purged
+            # Verify shape keys preserved on LOD0 source asset
+            has_shape_keys_lod0 = bool(mesh_obj.data.shape_keys and len(mesh_obj.data.shape_keys.key_blocks) > 0)
+            self.assertTrue(has_shape_keys_lod0, "LOD0 source mesh must preserve its shape keys.")
+
+            # Verify shape keys purged on LOD1 and LOD2 derivative tiers
+            lod1_coll = bpy.data.collections.get("SM_SkinnedChar_LOD1")
+            self.assertIsNotNone(lod1_coll)
+            lod1_obj = next((o for o in lod1_coll.objects if o.type == "MESH"), None)
+            self.assertIsNotNone(lod1_obj)
+            has_shape_keys_lod1 = bool(lod1_obj.data.shape_keys and len(lod1_obj.data.shape_keys.key_blocks) > 0)
+            self.assertFalse(has_shape_keys_lod1, "Shape keys must be purged at LOD1 when purge_shape_keys is True.")
+
             has_shape_keys = bool(lod2_obj.data.shape_keys and len(lod2_obj.data.shape_keys.key_blocks) > 0)
             self.assertFalse(has_shape_keys, "Shape keys must be purged at LOD2 when purge_shape_keys is True.")
 

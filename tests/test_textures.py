@@ -675,3 +675,64 @@ def test_shader_tracer_srgb_scalar_linearization_inversion():
     # it must re-encode / invert OETF to recover the original byte value (~117)
     scalar_out = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=False)
     assert int(scalar_out[0, 0]) >= 110
+
+
+def test_pure_numpy_bilinear_resampler_accuracy():
+    """Verify resample_channel_bilinear_numpy accurately downsamples and upsamples with pixel-center alignment."""
+    # Create test ramp: 4x4 array
+    src = np.array(
+        [
+            [0, 32, 64, 96],
+            [32, 64, 96, 128],
+            [64, 96, 128, 160],
+            [96, 128, 160, 192],
+        ],
+        dtype=np.uint8,
+    )
+
+    # 1. Exact integer downsampling (4x4 -> 2x2 box average)
+    down = ShaderTracer.resample_channel_bilinear_numpy(src, 2, 2, bit_depth=8)
+    assert down.shape == (2, 2)
+    # Top-left block average: (0 + 32 + 32 + 64) / 4 = 32
+    assert down[0, 0] == 32
+
+    # 2. General bilinear upsampling (4x4 -> 8x8)
+    up = ShaderTracer.resample_channel_bilinear_numpy(src, 8, 8, bit_depth=8)
+    assert up.shape == (8, 8)
+    assert up.dtype == np.uint8
+    # Center monotonicity
+    assert up[0, 0] <= up[0, 7]
+    assert up[0, 0] <= up[7, 0]
+
+    # 3. 16-bit support
+    src_16 = src.astype(np.uint16) * 257
+    res_16 = ShaderTracer.resample_channel_bilinear_numpy(src_16, 2, 2, bit_depth=16)
+    assert res_16.dtype == np.uint16
+    assert abs(int(res_16[0, 0]) - 32 * 257) <= 1
+
+
+def test_shader_tracer_pillow_absent_fallback_parity(monkeypatch):
+    """
+    Verify that when Pillow is absent (Image = None, as in standard Blender 5.x),
+    _extract_from_image executes the high-precision pure-NumPy bilinear resampler smoothly.
+    """
+    from unittest.mock import MagicMock
+
+    img_mock = MagicMock()
+    img_mock.size = (4, 4)
+    # 4x4 image with gradient
+    ramp = np.linspace(0.0, 1.0, 16, dtype=np.float32)
+    raw = np.zeros(64, dtype=np.float32)
+    raw[0::4] = ramp  # Red channel
+    img_mock.pixels.foreach_get = lambda buf: np.copyto(buf, raw)
+
+    fallback = np.zeros((2, 2), dtype=np.uint8)
+
+    # Force Pillow to None (simulating native Blender environment)
+    monkeypatch.setattr("core.shader_tracer.Image", None)
+
+    out_numpy = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=False)
+    assert out_numpy.shape == (2, 2)
+    assert out_numpy.dtype == np.uint8
+    # Should be smooth gradient, not unhandled or corrupted
+    assert out_numpy[0, 0] < out_numpy[1, 1]

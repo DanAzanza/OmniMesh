@@ -4,7 +4,7 @@
 [![Blender 5.0+ / 5.2 LTS](https://img.shields.io/badge/Blender-5.0%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-426%20passed%20%28100%25%29-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-466%20passed%20%28100%25%29-brightgreen.svg)]()
 [![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5.4%2B%20%7C%20Unity%206%20%7C%20Godot%204.3%2B-purple.svg)]()
 
@@ -27,7 +27,7 @@ Optimizing 3D assets for modern real-time engines usually means choosing between
 | **Selection Model** | Manual viewport selection (misses submeshes) | Manual per-mesh selection | **Collection-First: Zero selection required** |
 | **Multi-Part & Multi-Model Packages** | Manual per-object decimation | Manual hierarchy setup | **Multi-Model Packages (Exterior + Interior + Variants)** |
 | **Hard-Surface & Normal Integrity** | ❌ Destroys custom normals (black gouges) | ✔️ Good | **✔️ High-Precision Split Normal Reprojection** |
-| **Skinned Rigs & Armatures** | ❌ Breaks vertex weights & tears meshes | ✔️ Good | **✔️ GPU Weight Clamping & Leaf-Bone Pruning** |
+| **Skinned Rigs & Armatures** | ❌ Breaks vertex weights & tears meshes | ✔️ Good | **✔️ Bone Influence Clamping for GPU Skinning (Max 4/8) & Leaf Pruning** |
 | **Physics Collision Hulls** | ❌ None | ⚠️ Limited / Separate steps | **✔️ Auto Convex Decomposition (ACD / UCX)** |
 | **Billboard Impostors** | ❌ None | ✔️ Expensive module | **✔️ 8-Way & Octahedral with Gutter Dilation** |
 | **Massive Open-World Assets** | ❌ Manual slicing | ✔️ Expensive HLOD module | **✔️ Spatial Grid Chunking & Seam-Locking** |
@@ -163,27 +163,27 @@ $$\mathbf{M}_{S \to M_{\text{rest}}} = \mathbf{M}_{M_{\text{rest\_world}}}^{-1} 
 
 ---
 
-## 📊 Benchmark & Empirical Validation
+## 📊 Quality Guarantees & Architectural Verification
 
-Tested across **100 photogrammetry and hero game assets** from Epic Games FabLibrary (*Medieval Banquet, Bazaar, Roadside Construction, Saloon Interior, Warehouse*):
+OmniMesh is developed strictly **test-first** with deterministic verification across all modules:
 
-| Metric | Result |
+| Verification Scope | Methodology & Guarantees |
 | :--- | :--- |
-| **Total Models Tested** | **100 / 100** |
-| **Success / Pass Rate** | **100.0%** (0 unhandled exceptions) |
-| **Average Polygon Reduction** | **95.66%** across LOD stages |
-| **Average Processing Time** | **4.60 seconds** per asset |
-| **PBR Normal & Shading Integrity** | **100% Intact** (Custom Split Normals preserved) |
+| **In-Blender Headless Suite** | Automated test suite running inside headless Blender 5.0+ & 5.2 LTS via `--python-exit-code 1` |
+| **Normal & Shading Integrity** | High-precision custom split normal reprojection via `DATA_TRANSFER` and KDTree spatial fallback |
+| **Perceptual Error Metric** | Screen-Space Error Bound (SSE) pixel-accuracy projection based on distance, FOV, and AABB radius |
+| **Skeletal Rig Safety** | Normalized bone weight clamping (4 for mobile/glTF, 8 for UE5/Unity) and anchor bone singularity guards |
+| **Multi-Engine Pipeline Parity** | Automated roundtrip verification for Unreal Engine 5, Unity 6, Godot 4, and MSFS 2024 packages |
 
 ---
 
 ## 📥 Installation
 
 ### Method A: Blender 5.0+ / 5.2 LTS Extension (Recommended)
-1. Download a Zip of the Code. When the plugin reaches a finished state, there will be a release. at [Releases](https://github.com/DanAzanza/OmniMesh/releases).
+1. Download a Zip of the Code. When the plugin reaches a finished state, there will be a release at [Releases](https://github.com/DanAzanza/OmniMesh/releases).
 2. In Blender, navigate to `Edit` > `Preferences` > `Get Extensions` (or `Add-ons`).
 3. Click the **Repositories** / gear icon (top right) > **Install from Disk...**
-4. Select th Zip-File. OmniMesh will install and enable automatically.
+4. Select the Zip file. OmniMesh will install and enable automatically.
 
 ### Method B: Manual Installation
 Clone or copy the repository into your Blender scripts folder:
@@ -207,7 +207,7 @@ Clone or copy the repository into your Blender scripts folder:
 
 ## 🛠️ Automated Testing & Quality Gate
 
-OmniMesh maintains a deterministic, strict CI quality gate with **416 unit & In-Blender integration tests**:
+OmniMesh maintains a deterministic, strict CI quality gate with **466+ automated unit & In-Blender integration tests** (433 unit tests + 33 headless in-Blender integration tests):
 
 ```bash
 # Run CI verification (dependencies, linter, formatter, type checker, unit tests with coverage)

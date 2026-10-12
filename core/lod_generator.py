@@ -197,8 +197,8 @@ def _process_merged_tier(
     finally:
         bm.free()
 
-    if props.purge_shape_keys and tier_idx >= 2:
-        MeshDecimator.prepare_and_clean_shape_keys(tier_obj, purge=True, context=context)
+    if props.purge_shape_keys and tier_idx >= 1:
+        MeshDecimator.purge_all_shape_keys(tier_obj, context=context)
 
     qem_ratio = tier.target_tris_pct / 100.0 if getattr(tier, "target_tris_pct", 0.0) > 0.0 else tolerances["qem_ratio"]
     MeshDecimator.execute_decimate_qem(
@@ -301,8 +301,8 @@ def _process_unmerged_tier(
         lod_obj.data.name = f"{sub_name}_Mesh"
         tier_coll.objects.link(lod_obj)
 
-        if props.purge_shape_keys and tier_idx >= 2:
-            MeshDecimator.prepare_and_clean_shape_keys(lod_obj, purge=True, context=context)
+        if props.purge_shape_keys and tier_idx >= 1:
+            MeshDecimator.purge_all_shape_keys(lod_obj, context=context)
 
         ModifierManager.apply_all_modifiers_in_place(lod_obj, preserve_armature=True)
 

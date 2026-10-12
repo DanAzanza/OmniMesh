@@ -359,11 +359,68 @@ class ShaderTracer:
                 finally:
                     pil_img.close()
             else:
-                x_idx = (np.linspace(0, src_w - 1, target_w)).astype(np.int32)
-                y_idx = (np.linspace(0, src_h - 1, target_h)).astype(np.int32)
-                extracted = extracted[np.ix_(y_idx, x_idx)]
+                extracted = cls.resample_channel_bilinear_numpy(extracted, target_w, target_h, bit_depth=bit_depth)
 
         return extracted
+
+    @staticmethod
+    def resample_channel_bilinear_numpy(
+        arr: np.ndarray, target_w: int, target_h: int, bit_depth: int = 8
+    ) -> np.ndarray:
+        """
+        High-precision vectorized pure-NumPy bilinear resampler with pixel-center alignment.
+        Guarantees zero external dependency (Pillow-free) and bit-accurate 8-bit / 16-bit interpolation.
+        """
+        src_h, src_w = arr.shape[:2]
+        if (src_w, src_h) == (target_w, target_h):
+            return arr
+
+        dtype = np.uint16 if bit_depth == 16 else np.uint8
+        max_val = 65535.0 if bit_depth == 16 else 255.0
+
+        # Fast-path for exact integer downsampling (box filter / area average, eliminates moiré)
+        if src_w % target_w == 0 and src_h % target_h == 0 and src_w > target_w and src_h > target_h:
+            kx = src_w // target_w
+            ky = src_h // target_h
+            if kx == ky:
+                k = kx
+                block_view = arr.reshape(target_h, k, target_w, k)
+                avg = block_view.mean(axis=(1, 3), dtype=np.float32)
+                return (np.clip(avg, 0.0, max_val) + 0.5).astype(dtype)
+
+        # General vectorized bilinear interpolation with pixel-center alignment
+        x_dst = np.arange(target_w, dtype=np.float32)
+        y_dst = np.arange(target_h, dtype=np.float32)
+
+        x_src = (x_dst + 0.5) * (float(src_w) / float(target_w)) - 0.5
+        y_src = (y_dst + 0.5) * (float(src_h) / float(target_h)) - 0.5
+
+        x_src = np.clip(x_src, 0.0, float(src_w - 1))
+        y_src = np.clip(y_src, 0.0, float(src_h - 1))
+
+        x0 = np.floor(x_src).astype(np.int32)
+        x1 = np.minimum(x0 + 1, src_w - 1)
+        y0 = np.floor(y_src).astype(np.int32)
+        y1 = np.minimum(y0 + 1, src_h - 1)
+
+        dx = x_src - x0.astype(np.float32)
+        dy = y_src - y0.astype(np.float32)
+
+        # Cast input array to float32 for interpolation to prevent uint8/uint16 overflow
+        f_arr = arr.astype(np.float32)
+
+        i00 = f_arr[y0[:, None], x0[None, :]]
+        i10 = f_arr[y0[:, None], x1[None, :]]
+        i01 = f_arr[y1[:, None], x0[None, :]]
+        i11 = f_arr[y1[:, None], x1[None, :]]
+
+        w00 = (1.0 - dx[None, :]) * (1.0 - dy[:, None])
+        w10 = dx[None, :] * (1.0 - dy[:, None])
+        w01 = (1.0 - dx[None, :]) * dy[:, None]
+        w11 = dx[None, :] * dy[:, None]
+
+        interpolated = w00 * i00 + w10 * i10 + w01 * i01 + w11 * i11
+        return (np.clip(interpolated, 0.0, max_val) + 0.5).astype(dtype)
 
     @classmethod
     def is_procedural_socket(cls, material: Any, socket_name: str) -> bool:

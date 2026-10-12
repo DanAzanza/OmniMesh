@@ -597,33 +597,6 @@ def setup_impostor_preview_rig(
     # Set active camera
     scene.camera = cam_obj
 
-    # 9. Start live viewport tracking timer (automatically tracks free viewport navigation)
-    try:
-        from ..ui.impostor_viewport_ops import start_impostor_viewport_timer
-    except (ImportError, ValueError):
-        try:
-            from ui.impostor_viewport_ops import start_impostor_viewport_timer
-        except (ImportError, ValueError):
-            start_impostor_viewport_timer = None
-
-    if start_impostor_viewport_timer:
-        start_impostor_viewport_timer(base_name)
-
-    # 9. Safely switch active 3D Viewport to Camera View
-    if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
-        for area in getattr(context.screen, "areas", []):
-            if getattr(area, "type", "") == "VIEW_3D":
-                for space in getattr(area, "spaces", []):
-                    if getattr(space, "type", "") == "VIEW_3D":
-                        try:
-                            space.region_3d.view_perspective = "CAMERA"
-                            if hasattr(space, "lock_camera"):
-                                space.lock_camera = True
-                            if hasattr(space, "shading"):
-                                space.shading.type = "MATERIAL"
-                        except Exception as vp_err:
-                            logger.debug("Could not switch viewport to camera: %s", vp_err)
-
     return {
         "collection": rig_coll_name,
         "proxy_object": proxy_name,
@@ -639,18 +612,6 @@ def teardown_impostor_preview_rig(context: Any, base_name: str) -> bool:
     """
     if not bpy:
         return False
-
-    # Stop viewport tracker timer
-    try:
-        from ..ui.impostor_viewport_ops import stop_impostor_viewport_timer
-    except (ImportError, ValueError):
-        try:
-            from ui.impostor_viewport_ops import stop_impostor_viewport_timer
-        except (ImportError, ValueError):
-            stop_impostor_viewport_timer = None
-
-    if stop_impostor_viewport_timer:
-        stop_impostor_viewport_timer(base_name)
 
     rig_coll_name = f"{base_name}_Preview_Rig"
     rig_coll = bpy.data.collections.get(rig_coll_name)
@@ -671,14 +632,6 @@ def teardown_impostor_preview_rig(context: Any, base_name: str) -> bool:
     mat = bpy.data.materials.get(mat_name)
     if mat:
         bpy.data.materials.remove(mat)
-
-    # Restore viewport lock_camera
-    if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
-        for area in getattr(context.screen, "areas", []):
-            if getattr(area, "type", "") == "VIEW_3D":
-                for space in getattr(area, "spaces", []):
-                    if getattr(space, "type", "") == "VIEW_3D" and hasattr(space, "lock_camera"):
-                        space.lock_camera = False
 
     # Restore default active camera if possible
     scene = context.scene if context and hasattr(context, "scene") else bpy.context.scene

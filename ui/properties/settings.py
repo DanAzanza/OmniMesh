@@ -439,7 +439,7 @@ class LODToolSettings(PropertyGroup):
     purge_shape_keys: BoolProperty(
         name="Purge Shape Keys on Distance LODs",
         default=True,
-        description="Strip facial blendshapes / shape keys on LOD >= 2",
+        description="Strip facial blendshapes / shape keys on derivative LODs (LOD >= 1)",
     )
     prune_micro_weights: BoolProperty(
         name="Prune Micro-Weights (< 0.01)",

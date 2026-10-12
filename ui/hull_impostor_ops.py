@@ -260,6 +260,29 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
             )
             return {"CANCELLED"}
 
+        if not self.create_turntable:
+            try:
+                from .impostor_viewport_ops import start_impostor_viewport_timer
+
+                start_impostor_viewport_timer(base_name)
+            except (ImportError, ValueError):
+                pass
+
+        # Presentation logic: Switch active 3D Viewport to Camera View
+        if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
+            for area in getattr(context.screen, "areas", []):
+                if getattr(area, "type", "") == "VIEW_3D":
+                    for space in getattr(area, "spaces", []):
+                        if getattr(space, "type", "") == "VIEW_3D":
+                            try:
+                                space.region_3d.view_perspective = "CAMERA"
+                                if hasattr(space, "lock_camera"):
+                                    space.lock_camera = True
+                                if hasattr(space, "shading"):
+                                    space.shading.type = "MATERIAL"
+                            except Exception as vp_err:
+                                logger.debug("Could not switch viewport to camera: %s", vp_err)
+
         msg = f"Preview rig created in collection '{rig_info.get('collection')}'."
         if self.create_turntable:
             msg += " (Press Space to play turntable)."
@@ -292,7 +315,22 @@ class LOD_OT_remove_impostor_preview_rig(Operator):
         if not base_name or base_name in {"AUTO", "NONE"}:
             base_name = resolve_asset_base_name(context, mesh_objs) if mesh_objs else "Asset"
 
+        try:
+            from .impostor_viewport_ops import stop_impostor_viewport_timer
+
+            stop_impostor_viewport_timer(base_name)
+        except (ImportError, ValueError):
+            pass
+
         success = teardown_impostor_preview_rig(context, base_name)
+
+        if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
+            for area in getattr(context.screen, "areas", []):
+                if getattr(area, "type", "") == "VIEW_3D":
+                    for space in getattr(area, "spaces", []):
+                        if getattr(space, "type", "") == "VIEW_3D" and hasattr(space, "lock_camera"):
+                            space.lock_camera = False
+
         if success:
             safe_report(self, {"INFO"}, f"Removed preview rig for '{base_name}'.")
         else:
