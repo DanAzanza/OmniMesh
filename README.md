@@ -163,9 +163,20 @@ $$\mathbf{M}_{S \to M_{\text{rest}}} = \mathbf{M}_{M_{\text{rest\_world}}}^{-1} 
 
 ---
 
-## 📊 Quality Guarantees & Architectural Verification
+## 📊 Empirical Benchmarks & Architectural Verification
 
-OmniMesh is developed strictly **test-first** with deterministic verification across all modules:
+OmniMesh provides a reproducible headless benchmark harness (`scripts/run_benchmarks.py`) profiling decimation, planar dissolve, bone weight clamping, and normal reprojection across multi-feature procedural meshes in headless Blender:
+
+### Reproducible Performance Metrics (Blender 5.2 LTS, Windows x64)
+
+| Poly Tier | Input Triangles | Planar Dissolve | Bone Weight Clamping | QEM LOD1 (50%) | QEM LOD3 (10%) | Split Normal Reprojection |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **10k** | 10,200 | 11.1 ms | 91.5 ms | 61.1 ms | 68.9 ms | 622.9 ms |
+| **100k** | 101,108 | 415.4 ms | 1,270.6 ms | 914.9 ms | 1,127.3 ms | 14,768.8 ms |
+
+> *Reproducible via `python scripts/run_benchmarks.py --quick` (or `--full` for 500k poly tier). Raw JSON metrics stored in `benchmark_results.json`.*
+
+### Architectural Verification Matrix
 
 | Verification Scope | Methodology & Guarantees |
 | :--- | :--- |
@@ -215,6 +226,9 @@ python scripts/verify_ci.py
 
 # Run headless In-Blender integration tests (Blender 5.0+ & 5.2 LTS)
 python scripts/run_blender_tests.py
+
+# Run reproducible performance benchmarks
+python scripts/run_benchmarks.py --quick
 
 # Run pytest directly
 python -m pytest -v

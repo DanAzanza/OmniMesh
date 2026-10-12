@@ -25,8 +25,14 @@
   * Quality gate configurations (static type checkers, linters, compiler warnings, CI workflow triggers) must NEVER be disabled, de-escalated, or circumvented to force failing code to pass.
   * If a static check or gate fails, fix the underlying code, typing annotations, or architectural interfaces directly. Never lower the bar to claim a cosmetic green badge.
 * **Truth-in-Advertising & Evidentiary Documentation**:
-  * Every claim in documentation, README files, or release notes—including performance benchmarks, hardware execution models, and test counts—must be backed by reproducible scripts, benchmark harnesses, or automated test fixtures in the repository.
-  * Speculative metrics, unbacked benchmarks, and misleading technical branding (e.g., claiming GPU execution for CPU routines) are strictly prohibited.
+  * Every claim in documentation, README files, or release notes—including performance benchmarks, hardware execution models, test counts, and compliance assertions—must be backed by reproducible scripts, benchmark harnesses, or automated test fixtures in the repository.
+  * Speculative metrics, unbacked accuracy percentages (e.g. claiming benchmark figures without an in-repo evaluation dataset and evaluation script), and misleading technical branding are strictly prohibited.
+  * Badges, type-checker modes, and linter levels advertised in documentation must strictly match active configuration files (`pyproject.toml`, `pyrightconfig.json`, CI workflows).
+* **Mandatory Negative & Boundary Testing**:
+  * Test suites must never assert happy paths alone. Every newly introduced feature or hardened boundary must test explicit failure modes:
+    * Negative security assertions (unauthorized requests return 401/403, missing or invalid tokens fail, path traversal is rejected).
+    * Invariance & isolation boundaries (e.g. cross-directory or cross-session state leaks, non-identical tokens rejecting clustering).
+    * Robustness to malformed, empty, or malicious inputs.
 * **No Mock-Induced Production Smells ("Test the Real Thing")**:
   * Production code must NEVER be contorted with defensive duck-typing checks (e.g. ad-hoc `hasattr`, `getattr` with fallback defaults) merely to appease incomplete mock test objects. Mocks must satisfy production contracts, not vice versa.
   * Separate pure domain algorithms from host framework bindings so they can be tested without mocking framework state. Where host framework APIs are required, test against real headless runtime instances rather than synthetic mocks.
@@ -61,6 +67,8 @@
 * **Centralized Configuration**:
   * Never embed magic constants, fixed paths, or unmanaged environment queries inside nested components.
   * Inject all operational parameters through centralized, strongly typed configuration objects.
+* **Rule of Three Refactoring**:
+  * Avoid premature abstraction, but never tolerate unmanaged copy-paste drift: when a pattern, path sanitation routine, or defensive validation check appears for the third time ($N \ge 3$), immediately extract and consolidate it into a unified, thoroughly tested shared utility.
 * **Pragmatic File Size Limits**:
   * Target files between **100 and 750 lines** as a practical guideline for cohesion.
   * Split files only when they accumulate distinct, divergent responsibilities. Do not fragment readable declarative tables, configuration mappings, or cohesive schema definitions purely to satisfy an arbitrary line limit.
@@ -133,5 +141,12 @@ When formulating Git commit messages, adhere strictly to the following standards
 
 ## 8. Security, Data Privacy & Repository Hygiene
 * **Zero Secret & Privacy Leakage**: Never commit real credentials, access tokens, API keys, private certificates, or confidential data. All test cases must use synthetic, procedurally generated mock data.
+* **Fail-Closed Security Defaults & Untrusted Boundary**:
+  * All authentication, authorization, and validation controls must fail closed (`raise` or deny by default if tokens, configs, or states are missing, corrupted, or unspecified).
+  * Never introduce bypass headers, testing backdoors, or debug overrides into production request handlers.
+  * Localhost endpoints cannot be assumed trusted or single-user; multi-user environments (terminal servers, containers, shared hosts) expose local ports to all users on the host.
+  * Never interpolate untrusted or document-extracted strings into shell command lines. Pass parameters strictly via environment variables, files, or structured argument vectors.
+* **PII & Data Minimization in Telemetry**:
+  * Logs at `INFO` or higher must never print raw personally identifiable information (PII), customer/patient names, or full payload bodies. Use structural summaries or restrict payload dumps strictly to local `DEBUG` logging.
 * **Binary & Artifact Hygiene**: Never track heavy binaries, serialized weight files, build caches, or temporary runtime artifacts in version control.
 * **Clean Working Tree**: Verify working tree hygiene prior to staging; ensure zero stray scratch files, logs, or untracked temporary assets remain.

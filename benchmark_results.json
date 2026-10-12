@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "blender_version": "5.2.1",
+    "python_version": "3.13.13",
+    "os": "Windows",
+    "os_release": "11",
+    "architecture": "AMD64",
+    "processor": "AMD64 Family 25 Model 33 Stepping 2, AuthenticAMD",
+    "tier_mode": "QUICK",
+    "timestamp": "2026-10-12T16:20:52Z"
+  },
+  "tiers": {
+    "10k": {
+      "tier": "10k",
+      "input_triangles": 10200,
+      "input_vertices": 5102,
+      "mesh_generation_ms": 15.62,
+      "planar_dissolve": {
+        "before_faces": 10200,
+        "after_faces": 4530,
+        "faces_collapsed": 5670,
+        "elapsed_ms": 11.12,
+        "throughput_faces_per_sec": 917579
+      },
+      "bone_weight_clamping": {
+        "vertices_processed": 5102,
+        "max_influences_enforced": 4,
+        "singularities_fixed": 0,
+        "purged_groups": 0,
+        "elapsed_ms": 91.46,
+        "throughput_verts_per_sec": 55781
+      },
+      "qem_decimate_50": {
+        "before_triangles": 10200,
+        "after_triangles": 5100,
+        "ratio_achieved": 0.5,
+        "elapsed_ms": 61.14,
+        "throughput_tris_per_sec": 166817
+      },
+      "normal_reprojection": {
+        "source_triangles": 10200,
+        "target_triangles": 5100,
+        "success": true,
+        "elapsed_ms": 622.9,
+        "throughput_tris_per_sec": 8187
+      },
+      "qem_decimate_10": {
+        "before_triangles": 10200,
+        "after_triangles": 1020,
+        "ratio_achieved": 0.1,
+        "elapsed_ms": 68.92,
+        "throughput_tris_per_sec": 147997
+      }
+    },
+    "100k": {
+      "tier": "100k",
+      "input_triangles": 101108,
+      "input_vertices": 50556,
+      "mesh_generation_ms": 194.75,
+      "planar_dissolve": {
+        "before_faces": 101108,
+        "after_faces": 7799,
+        "faces_collapsed": 93309,
+        "elapsed_ms": 415.38,
+        "throughput_faces_per_sec": 243410
+      },
+      "bone_weight_clamping": {
+        "vertices_processed": 50556,
+        "max_influences_enforced": 4,
+        "singularities_fixed": 0,
+        "purged_groups": 0,
+        "elapsed_ms": 1270.57,
+        "throughput_verts_per_sec": 39790
+      },
+      "qem_decimate_50": {
+        "before_triangles": 101108,
+        "after_triangles": 50554,
+        "ratio_achieved": 0.5,
+        "elapsed_ms": 914.94,
+        "throughput_tris_per_sec": 110507
+      },
+      "normal_reprojection": {
+        "source_triangles": 101108,
+        "target_triangles": 50554,
+        "success": true,
+        "elapsed_ms": 14768.75,
+        "throughput_tris_per_sec": 3423
+      },
+      "qem_decimate_10": {
+        "before_triangles": 101108,
+        "after_triangles": 10110,
+        "ratio_achieved": 0.1,
+        "elapsed_ms": 1127.33,
+        "throughput_tris_per_sec": 89688
+      }
+    }
+  }
+}

@@ -117,3 +117,33 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * **Single-Card Impostor UV Island Packing Hazard**: `bpy.ops.uv.pack_islands()` displaces normalized $[0, 1]^2$ UV bounds on single-card octahedral proxy meshes. Single-card and octahedral meshes must be strictly excluded from automatic island packing.
 * **Fillrate Overdraw Cutout Octagons**: Bounding sphere quads leave $> 80\%$ transparent pixels on slender assets. Beveling quad corners by $25\%$ yields an 8-vertex convex polygon that cuts transparent fillrate overdraw by $30\text{--}40\%$.
 * **Windows UNC `//` NetBIOS Freeze Trap on Unsaved Scenes**: In unsaved scenes (`filepath == ""`), relative paths starting with `"//"` evaluate as Windows UNC network paths (`\\Textures`), triggering a 30-second NetBIOS timeout before `[WinError 53]`. Unsaved relative paths must anchor to `tempfile.gettempdir()`.
+
+---
+
+## 6. Universal Vehicle & Interactive Asset Configuration Architecture
+
+### 6.1 Strategic Context & Architecture Vision
+The technical submodules historically organized around MSFS 2024 (`core/msfs/`, `ui/msfs_*`) represent the initial reference implementation of a broader **Universal Vehicle & Interactive Asset Configuration System**. Rather than treating complex vehicle setups (aircraft, ground vehicles, watercraft, mechanical props) as engine-locked monolithic assets, OmniMesh structures them as a platform-agnostic Semantic Intermediate Representation (IR) modeled directly in Blender.
+
+Only the file-format importers and exporters are engine-specific. The underlying configuration metadata (spatial reference frames, photometric lighting, camera views, and interactive bounding volumes) is designed to cross-compile into target engine actors, prefabs, and scene scripts across all supported game engines.
+
+### 6.2 The Unified Scene Data Model (`{AssetName}_Config`)
+Configuration data is decoupled from render geometry and stored in sibling Outliner collections alongside `{AssetName}_LOD0`:
+* **`Spatial` Subcollection**:
+  * Empties representing Datum Origin, Center of Gravity (CG), aerodynamic reference points, ground contact points (gear/wheels), scrape points, and fuel tank centroids.
+* **`Lights` Subcollection**:
+  * Photometric light empties with custom RNA parameters: color temperature (K), lumen intensity, beam angle, attenuation radius, and animated flash timing profiles (nav, beacon, strobe, taxi, landing, cabin).
+* **`Cameras` Subcollection**:
+  * Camera empties defining pilot/driver first-person eyepoints, instrument inspection zooms, exterior orbit pivots, and chase camera anchor points.
+* **`Interaction` Subcollection**:
+  * Bounding box and hull empties defining VR/mouse click trigger volumes, grab handles, and switch articulation limits.
+
+### 6.3 Target Engine Compiler Pipeline
+* **MSFS 2024 Compiler (`[STATUS: PRODUCTION]`)**:
+  * Serializes `{AssetName}_Config` into modular XML and CFG specifications (`systems.xml`, `cameras.xml`, `flight_model.cfg`, `attached_objects.cfg`).
+* **Unreal Engine 5 Compiler (`[STATUS: PHASE 2 ROADMAP]`)**:
+  * Generates Blueprint Actor (`AActor` / `APawn`) definitions containing `UCameraComponent`, `USpotLightComponent`, `UPointLightComponent`, and socket attachments.
+* **Unity 6 Compiler (`[STATUS: PHASE 2 ROADMAP]`)**:
+  * Generates Unity Prefabs with `Light`, `Camera`, `BoxCollider`, and ScriptableObject parameter payloads.
+* **Godot 4 Compiler (`[STATUS: PHASE 2 ROADMAP]`)**:
+  * Generates `.tscn` text scene trees assembling `Camera3D`, `OmniLight3D`, `SpotLight3D`, and `Area3D` interaction node hierarchies.
