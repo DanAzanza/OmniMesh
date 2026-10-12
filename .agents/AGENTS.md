@@ -21,6 +21,15 @@
 * **Incremental & Complete Deliverables**: Propose changes in cohesive, logical steps. Never output placeholder comments, partial snippets, or truncated blocks. Every delivered file or functional block must be complete and syntactically valid.
 * **Defensive Dependency Hygiene**: Rely on runtime standard libraries and established project utilities first. Never introduce external third-party dependencies without explicit architectural justification and user approval.
 * **Non-Blocking Execution**: When initiating long-running processes or asynchronous tasks, yield execution cleanly rather than polling in tight loops.
+* **Zero Gate De-Escalation (Goodhart's Law Ban)**:
+  * Quality gate configurations (static type checkers, linters, compiler warnings, CI workflow triggers) must NEVER be disabled, de-escalated, or circumvented to force failing code to pass.
+  * If a static check or gate fails, fix the underlying code, typing annotations, or architectural interfaces directly. Never lower the bar to claim a cosmetic green badge.
+* **Truth-in-Advertising & Evidentiary Documentation**:
+  * Every claim in documentation, README files, or release notes—including performance benchmarks, hardware execution models, and test counts—must be backed by reproducible scripts, benchmark harnesses, or automated test fixtures in the repository.
+  * Speculative metrics, unbacked benchmarks, and misleading technical branding (e.g., claiming GPU execution for CPU routines) are strictly prohibited.
+* **No Mock-Induced Production Smells ("Test the Real Thing")**:
+  * Production code must NEVER be contorted with defensive duck-typing checks (e.g. ad-hoc `hasattr`, `getattr` with fallback defaults) merely to appease incomplete mock test objects. Mocks must satisfy production contracts, not vice versa.
+  * Separate pure domain algorithms from host framework bindings so they can be tested without mocking framework state. Where host framework APIs are required, test against real headless runtime instances rather than synthetic mocks.
 * **Fast Intermediate Verification Gate**:
   * Run targeted automated tests solely against components modified by the immediate task. Skip test suites entirely for changes confined to documentation, markdown, or static configs.
   * Run local static type checks restricted to modified files to catch interface mismatches early.
@@ -48,6 +57,7 @@
 * **Immutability & Fail-Fast Defaults**:
   * Prefer immutable data structures for domain models and data transfer contracts to prevent unexpected in-place side effects.
   * Prohibit synthetic fallback values that conceal missing or malformed data. Fail fast with explicit, typed exceptions when required preconditions are violated.
+  * **Strict Exception Boundary**: Core domain routines must raise strongly typed domain exceptions rather than catching and swallowing errors via generic handlers (`except Exception: pass` or silent debug logging). Generic exception catching and user-facing error reporting belongs strictly at presentation/UI boundaries (e.g., CLI entry points or UI operator execution).
 * **Centralized Configuration**:
   * Never embed magic constants, fixed paths, or unmanaged environment queries inside nested components.
   * Inject all operational parameters through centralized, strongly typed configuration objects.
