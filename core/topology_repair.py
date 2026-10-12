@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
+from .exceptions import TopologyError
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -18,6 +20,9 @@ try:
 except ImportError:
     bpy = None
     bmesh = None
+
+BMESH_INSPECTION_ERRORS = (AttributeError, KeyError, IndexError, ValueError, TypeError, ReferenceError)
+BMESH_OP_ERRORS = (RuntimeError, ValueError, IndexError, ReferenceError)
 
 
 @dataclass(slots=True)
@@ -85,7 +90,7 @@ def _remap_fan_to_new_vertex(
             for uv_lay in uv_layers:
                 try:
                     saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
-                except Exception as exc:
+                except BMESH_INSPECTION_ERRORS as exc:
                     logger.debug("Loop UV copy error: %s", exc)
 
         orig_face_verts = list(face.verts)
@@ -100,21 +105,24 @@ def _remap_fan_to_new_vertex(
                     if (uv_lay, lp_i) in saved_uvs:
                         try:
                             new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
-                        except Exception as exc:
+                        except BMESH_INSPECTION_ERRORS as exc:
                             logger.debug("Reapply UV error: %s", exc)
             split_count += 1
-        except ValueError as exc:
-            logger.debug("New face creation error: %s, restoring original face", exc)
+        except (ValueError, RuntimeError) as exc:
+            logger.warning("Fan remapping face creation failed (%s), attempting topological rollback", exc)
             try:
                 restored_f = bm.faces.new(orig_face_verts)
                 restored_f.material_index = mat_idx
                 restored_f.smooth = smooth
-            except Exception as rb_exc:
-                logger.debug("Restoring original face failed: %s", rb_exc)
+            except (ValueError, RuntimeError) as rb_exc:
+                raise TopologyError(
+                    f"Catastrophic topology corruption in {bm}: face deletion occurred during fan remapping, "
+                    f"and rollback restoration of original face failed: {rb_exc}"
+                ) from rb_exc
             if getattr(new_vert, "is_valid", False) and len(getattr(new_vert, "link_faces", [])) == 0:
                 try:
                     bm.verts.remove(new_vert)
-                except Exception as rm_exc:
+                except BMESH_OP_ERRORS as rm_exc:
                     logger.debug("Orphan vert removal failed: %s", rm_exc)
 
     return split_count
@@ -242,7 +250,7 @@ class TopologyRepairEngine:
                             dvert2 = nv2[dvert_lay]
                             for g_idx, w in dict(v2[dvert_lay]).items():
                                 dvert2[g_idx] = w
-                    except Exception as exc:
+                    except BMESH_INSPECTION_ERRORS as exc:
                         logger.debug("Deform weight copy error in split_non_manifold_edges: %s", exc)
 
                 face_verts = [nv1 if v == v1 else (nv2 if v == v2 else v) for v in face.verts]
@@ -254,7 +262,7 @@ class TopologyRepairEngine:
                     for uv_lay in uv_layers:
                         try:
                             saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
-                        except Exception as exc:
+                        except BMESH_INSPECTION_ERRORS as exc:
                             logger.debug("Loop UV copy error: %s", exc)
 
                 orig_face_verts = list(face.verts)
@@ -269,20 +277,26 @@ class TopologyRepairEngine:
                             if (uv_lay, lp_i) in saved_uvs:
                                 try:
                                     new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
-                                except Exception as exc:
+                                except BMESH_INSPECTION_ERRORS as exc:
                                     logger.debug("Loop UV restoration failed: %s", exc)
                     split_count += 1
-                except ValueError as exc:
-                    logger.debug("Face creation failed: %s, restoring original face", exc)
+                except (ValueError, RuntimeError) as exc:
+                    logger.warning("Edge split face creation failed (%s), attempting rollback", exc)
                     try:
                         restored_f = bm.faces.new(orig_face_verts)
                         restored_f.material_index = mat_idx
                         restored_f.smooth = smooth
-                    except Exception as rb_exc:
-                        logger.debug("Restoring original face failed: %s", rb_exc)
+                    except (ValueError, RuntimeError) as rb_exc:
+                        raise TopologyError(
+                            f"Catastrophic topology corruption in {bm}: face deletion occurred during edge split, "
+                            f"and rollback restoration of original face failed: {rb_exc}"
+                        ) from rb_exc
                     for nv in (nv1, nv2):
                         if getattr(nv, "is_valid", False) and len(getattr(nv, "link_faces", [])) == 0:
-                            bm.verts.remove(nv)
+                            try:
+                                bm.verts.remove(nv)
+                            except BMESH_OP_ERRORS as rm_exc:
+                                logger.debug("Orphan vert removal failed: %s", rm_exc)
 
         if split_count > 0:
             try:
@@ -290,7 +304,7 @@ class TopologyRepairEngine:
                 bm.edges.ensure_lookup_table()
                 bm.faces.ensure_lookup_table()
                 bm.verts.index_update()
-            except Exception as exc:
+            except BMESH_OP_ERRORS as exc:
                 logger.debug("Lookup table update failed: %s", exc)
 
         return split_count
@@ -305,7 +319,7 @@ class TopologyRepairEngine:
             return 0
         try:
             bm.edges.ensure_lookup_table()
-        except Exception as exc:
+        except BMESH_OP_ERRORS as exc:
             logger.debug("Lookup table init error in fill_small_boundary_holes: %s", exc)
             return 0
 
@@ -325,7 +339,7 @@ class TopologyRepairEngine:
                 bm.edges.index_update()
                 bm.faces.index_update()
                 return len(new_faces)
-        except Exception as exc:
+        except BMESH_OP_ERRORS as exc:
             logger.debug("Hole filling error: %s", exc)
 
         return 0
@@ -340,7 +354,7 @@ class TopologyRepairEngine:
             return 0
         try:
             bm.faces.ensure_lookup_table()
-        except Exception as exc:
+        except BMESH_OP_ERRORS as exc:
             logger.debug("Lookup table init error in cull_subpixel_islands: %s", exc)
             return 0
 
@@ -390,7 +404,7 @@ class TopologyRepairEngine:
 
                 if diag < w_crit:
                     culled_faces.extend(island)
-            except Exception as exc:
+            except BMESH_INSPECTION_ERRORS as exc:
                 logger.debug("Island bounding box calculation error: %s", exc)
 
         if culled_faces and len(culled_faces) < len(bm.faces):
@@ -401,7 +415,7 @@ class TopologyRepairEngine:
 
                 MeshSanitizer.execute_tier0_pure_hygiene(bm)
                 return culled_count
-            except Exception as exc:
+            except BMESH_OP_ERRORS as exc:
                 logger.debug("Delete island faces error: %s", exc)
 
         return 0
@@ -456,7 +470,7 @@ class TopologyRepairEngine:
                     bm.edges.ensure_lookup_table()
                     bm.verts.ensure_lookup_table()
                     stats["triangulated_ngons"] = len(ngons)
-            except Exception as exc:
+            except BMESH_OP_ERRORS as exc:
                 logger.debug("N-gon triangulation error: %s", exc)
 
         # 5. Cull Subpixel / Micro Islands

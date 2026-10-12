@@ -11,6 +11,7 @@ from .exceptions import (
     CollectionHierarchyError,
     DecimationError,
     ExportPipelineError,
+    ImpostorBakeError,
     OmniMeshError,
     TopologyError,
 )
@@ -22,4 +23,5 @@ __all__ = [
     "CollectionHierarchyError",
     "BridgeConnectionError",
     "ExportPipelineError",
+    "ImpostorBakeError",
 ]

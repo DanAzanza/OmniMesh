@@ -77,6 +77,10 @@ except ImportError:
             return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
 
 
+BMESH_INSPECTION_ERRORS = (AttributeError, KeyError, IndexError, ValueError, TypeError, ReferenceError)
+BMESH_OP_ERRORS = (RuntimeError, ValueError, IndexError, ReferenceError, ZeroDivisionError)
+
+
 class MeshSanitizer:
     """
     Production-grade mesh sanitization and topology repair engine.
@@ -95,7 +99,7 @@ class MeshSanitizer:
 
         try:
             bm.faces.ensure_lookup_table()
-        except Exception as exc:
+        except BMESH_OP_ERRORS as exc:
             logger.debug("Lookup table init error: %s", exc)
             return 0
 
@@ -133,7 +137,7 @@ class MeshSanitizer:
                             if n_dot > 0.999:  # Exact duplicate coplanar face
                                 is_duplicate = True
                                 break
-                    except Exception as exc:
+                    except (AttributeError, TypeError, ValueError, ReferenceError) as exc:
                         logger.debug("Duplicate face normal check error: %s", exc)
 
                 if is_duplicate:
@@ -148,7 +152,7 @@ class MeshSanitizer:
                 bm.edges.ensure_lookup_table()
                 bm.verts.ensure_lookup_table()
                 return len(faces_to_delete)
-            except Exception as exc:
+            except BMESH_OP_ERRORS as exc:
                 logger.debug("Delete duplicate faces error: %s", exc)
 
         return 0
@@ -168,7 +172,7 @@ class MeshSanitizer:
             bm.verts.ensure_lookup_table()
             bm.edges.ensure_lookup_table()
             bm.faces.ensure_lookup_table()
-        except Exception as exc:
+        except BMESH_OP_ERRORS as exc:
             logger.debug("Lookup table init error in tier0: %s", exc)
             return {"zero_faces": 0, "zero_edges": 0, "wire_edges": 0, "loose_verts": 0, "duplicate_faces": 0}
 
@@ -205,7 +209,7 @@ class MeshSanitizer:
                     bm.faces.ensure_lookup_table()
                     bm.edges.ensure_lookup_table()
                     bm.verts.ensure_lookup_table()
-                except Exception as exc:
+                except BMESH_OP_ERRORS as exc:
                     logger.debug("Delete zero faces error: %s", exc)
 
             # Step B: Zero-length edges
@@ -229,7 +233,7 @@ class MeshSanitizer:
                     bm.verts.ensure_lookup_table()
                     bm.edges.ensure_lookup_table()
                     bm.faces.ensure_lookup_table()
-                except Exception as exc:
+                except BMESH_OP_ERRORS as exc:
                     logger.debug("Lookup table ensure error: %s", exc)
 
             # Step C: Wire edges (no linked faces)
@@ -241,7 +245,7 @@ class MeshSanitizer:
                     bmesh.ops.delete(bm, geom=wire_edges, context="EDGES")
                     bm.edges.ensure_lookup_table()
                     bm.verts.ensure_lookup_table()
-                except Exception as exc:
+                except BMESH_OP_ERRORS as exc:
                     logger.debug("Delete wire edges error: %s", exc)
 
             # Step D: Isolated loose vertices (no linked edges)
@@ -252,7 +256,7 @@ class MeshSanitizer:
                 try:
                     bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
                     bm.verts.ensure_lookup_table()
-                except Exception as exc:
+                except BMESH_OP_ERRORS as exc:
                     logger.debug("Delete loose verts error: %s", exc)
 
             if pass_culled == 0:
@@ -260,7 +264,7 @@ class MeshSanitizer:
 
         try:
             bm.verts.index_update()
-        except Exception as exc:
+        except BMESH_OP_ERRORS as exc:
             logger.debug("Index update error: %s", exc)
         return total_stats
 
@@ -286,8 +290,8 @@ class MeshSanitizer:
             bm.faces.ensure_lookup_table()
             bm.verts.index_update()
             return max(0, initial_verts - len(bm.verts))
-        except Exception as exc:
-            logger.debug("Merge doubles error: %s", exc)
+        except BMESH_OP_ERRORS as exc:
+            logger.warning("Merge doubles error: %s", exc)
             return 0
 
     split_bowtie_vertices = staticmethod(TopologyRepairEngine.split_bowtie_vertices)
@@ -351,8 +355,8 @@ class MeshSanitizer:
                             total_degenerate_tris += 1
                 finally:
                     bm.free()
-            except Exception as exc:
-                logger.debug("Failed during mesh inspection: %s", exc)
+            except (AttributeError, RuntimeError, ReferenceError, ValueError, TypeError) as exc:
+                logger.warning("Failed during mesh inspection: %s", exc)
 
         props.preflight_inspected = True
         props.preflight_loose_verts = total_loose_verts
@@ -415,8 +419,8 @@ class MeshSanitizer:
         try:
             bm.faces.ensure_lookup_table()
             bm.edges.ensure_lookup_table()
-        except Exception as exc:
-            logger.debug("Lookup table init error in tier2: %s", exc)
+        except BMESH_OP_ERRORS as exc:
+            logger.warning("Lookup table init error in tier2: %s", exc)
             return {"recalculated_normals": False}
 
         if normal_recalc_policy == "MANIFOLD_ONLY":
@@ -451,14 +455,14 @@ class MeshSanitizer:
                 try:
                     bmesh.ops.recalc_face_normals(bm, faces=all_closed_faces)
                     return {"recalculated_normals": True, "manifold_faces_aligned": len(all_closed_faces)}
-                except Exception as exc:
-                    logger.debug("Manifold normal recalc fallback: %s", exc)
+                except BMESH_OP_ERRORS as exc:
+                    logger.warning("Manifold normal recalc fallback: %s", exc)
         elif normal_recalc_policy == "FORCE_ALL":
             try:
                 bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
                 return {"recalculated_normals": True, "forced_all_aligned": len(bm.faces)}
-            except Exception as exc:
-                logger.debug("Forced normal recalc fallback: %s", exc)
+            except BMESH_OP_ERRORS as exc:
+                logger.warning("Forced normal recalc fallback: %s", exc)
 
         return {"recalculated_normals": False}
 

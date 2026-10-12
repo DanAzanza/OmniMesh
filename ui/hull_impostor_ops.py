@@ -22,6 +22,7 @@ except ImportError:
 
 try:
     from ..core.collision import CollisionManager
+    from ..core.exceptions import ImpostorBakeError, OmniMeshError
     from ..core.impostor import ImpostorManager, resolve_impostor_export_dir
     from ..core.impostor_baker import ImpostorAtlasBaker
     from ..core.impostor_preview import setup_impostor_preview_rig, teardown_impostor_preview_rig
@@ -36,6 +37,7 @@ try:
     )
 except (ImportError, ValueError):
     from core.collision import CollisionManager
+    from core.exceptions import ImpostorBakeError, OmniMeshError
     from core.impostor import ImpostorManager, resolve_impostor_export_dir
     from core.impostor_baker import ImpostorAtlasBaker
     from core.impostor_preview import setup_impostor_preview_rig, teardown_impostor_preview_rig
@@ -107,16 +109,20 @@ class LOD_OT_generate_impostor(Operator):
         tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""))
 
         # Execute Cycles GPU selected-to-active baking pass
-        baked_maps = ImpostorAtlasBaker.bake_impostor_textures(
-            mesh_objs,
-            base_name,
-            output_dir=tex_dir,
-            mode=props.impostor_mode,
-            atlas_resolution=calc_res,
-            target_engine=getattr(props, "target_engine", "UE5"),
-            dilation_iterations=4,
-            impostor_obj=res,
-        )
+        try:
+            baked_maps = ImpostorAtlasBaker.bake_impostor_textures(
+                mesh_objs,
+                base_name,
+                output_dir=tex_dir,
+                mode=props.impostor_mode,
+                atlas_resolution=calc_res,
+                target_engine=getattr(props, "target_engine", "UE5"),
+                dilation_iterations=4,
+                impostor_obj=res,
+            )
+        except (ImpostorBakeError, OmniMeshError) as bake_err:
+            safe_report(self, {"ERROR"}, f"Impostor baking failed: {bake_err}")
+            return {"CANCELLED"}
 
         if baked_maps and hasattr(res, "data") and res.data.materials:
             imp_mat = res.data.materials[0]

@@ -37,11 +37,13 @@ except ImportError:
 
 
 try:
+    from .exceptions import ImpostorBakeError
     from .impostor_harness import ImpostorShaderHarness
     from .impostor_math import ImpostorMath
     from .metrics import compute_bounding_sphere
     from .png_writer import write_png_direct
 except (ImportError, ValueError):
+    from core.exceptions import ImpostorBakeError
     from core.impostor_harness import ImpostorShaderHarness
     from core.impostor_math import ImpostorMath
     from core.metrics import compute_bounding_sphere
@@ -92,7 +94,7 @@ class EphemeralBakeSceneGuard:
                     elif hasattr(self.bake_scene, "eevee") and hasattr(self.bake_scene.eevee, "taa_render_samples"):
                         self.bake_scene.eevee.taa_render_samples = 1
                     break
-            except Exception as eng_err:
+            except (TypeError, ValueError, AttributeError) as eng_err:
                 logger.debug("Render engine %s not available: %s", eng, eng_err)
 
         # Black unlit world background
@@ -126,7 +128,7 @@ class EphemeralBakeSceneGuard:
                     self.bake_scene.world = None
                     bpy.data.worlds.remove(w, do_unlink=True)
                 bpy.data.scenes.remove(self.bake_scene, do_unlink=True)
-        except Exception as exc:
+        except (RuntimeError, ReferenceError, AttributeError) as exc:
             logger.debug("Failed cleaning ephemeral bake scene: %s", exc)
 
 
@@ -291,11 +293,11 @@ class ImpostorAtlasBaker:
                                 dev_names = [getattr(d, "name", backend) for d in active_devs]
                                 logger.info("Configured Cycles GPU baking: %s (%s)", backend, ", ".join(dev_names))
                                 return backend, dev_names
-                        except Exception as b_err:
+                        except (RuntimeError, AttributeError, TypeError, ValueError) as b_err:
                             logger.debug("Cycles backend %s failed: %s", backend, b_err)
                 if hasattr(cpref, "compute_device_type"):
                     cpref.compute_device_type = "NONE"
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
             logger.debug("Failed configuring Cycles compute device: %s", exc)
 
         if hasattr(scene, "cycles"):
@@ -433,18 +435,23 @@ class ImpostorAtlasBaker:
                                 bake_scene.view_settings.view_transform = (
                                     "Standard" if chan_name == "BaseColor" else "Raw"
                                 )
-                            except Exception as exc:
+                            except (TypeError, ValueError, AttributeError) as exc:
                                 logger.debug("Failed setting view_transform on bake scene: %s", exc)
 
-                        if getattr(bpy.context, "window", None) and hasattr(bpy.context, "temp_override"):
-                            try:
-                                with bpy.context.temp_override(scene=bake_scene, window=bpy.context.window):
+                        try:
+                            if getattr(bpy.context, "window", None) and hasattr(bpy.context, "temp_override"):
+                                try:
+                                    with bpy.context.temp_override(scene=bake_scene, window=bpy.context.window):
+                                        bpy.ops.render.render(animation=True, scene=bake_scene.name)
+                                except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+                                    logger.debug("Render temp_override fallback: %s", exc)
                                     bpy.ops.render.render(animation=True, scene=bake_scene.name)
-                            except Exception as exc:
-                                logger.debug("Render temp_override fallback: %s", exc)
+                            else:
                                 bpy.ops.render.render(animation=True, scene=bake_scene.name)
-                        else:
-                            bpy.ops.render.render(animation=True, scene=bake_scene.name)
+                        except (RuntimeError, ValueError) as render_exc:
+                            raise ImpostorBakeError(
+                                f"Octahedral animation render failed for pass '{chan_name}': {render_exc}"
+                            ) from render_exc
 
                         for frame_idx in range(1, total_frames + 1):
                             col = (frame_idx - 1) % grid_size
@@ -557,7 +564,7 @@ class ImpostorAtlasBaker:
             with open(guide_path, "w", encoding="utf-8") as gf:
                 gf.write(guide_text)
             results["UE5_Guide"] = guide_path
-        except Exception as e:
+        except (OSError, UnicodeError) as e:
             logger.warning("Could not generate UE5 setup guide: %s", e)
 
         results["sphere_radius"] = str(radius)
@@ -733,12 +740,14 @@ class ImpostorAtlasBaker:
             results["ORM"] = orm_path
 
             bpy.data.images.remove(img_orm, do_unlink=True)
+        except (RuntimeError, ValueError, OSError) as b_err:
+            raise ImpostorBakeError(f"Selected-to-active impostor bake failed for '{base_name}': {b_err}") from b_err
         finally:
             nodes.remove(bake_slot)
             for temp_img in [img_diff, img_norm, img_rough, img_ao]:
                 try:
                     bpy.data.images.remove(temp_img, do_unlink=True)
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed removing temp image: %s", exc)
             for o, vis in orig_vis:
                 if hasattr(o, "hide_viewport"):

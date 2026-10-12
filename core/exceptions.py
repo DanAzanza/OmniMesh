@@ -31,6 +31,10 @@ class ExportPipelineError(OmniMeshError):
     """Raised when engine export generation, packing, or file writing fails."""
 
 
+class ImpostorBakeError(OmniMeshError):
+    """Raised when billboard impostor rendering, camera rig setup, or texture atlas baking fails."""
+
+
 __all__ = [
     "OmniMeshError",
     "DecimationError",
@@ -38,4 +42,5 @@ __all__ = [
     "CollectionHierarchyError",
     "BridgeConnectionError",
     "ExportPipelineError",
+    "ImpostorBakeError",
 ]

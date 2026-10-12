@@ -19,6 +19,7 @@ except ImportError:
     Operator = object
 
 try:
+    from ..core.exceptions import OmniMeshError, TopologyError
     from ..core.hierarchy import LayerCollectionGuard
     from ..core.materials import MaterialOptimizer
     from ..core.modifiers import ModifierManager
@@ -33,6 +34,7 @@ try:
         safe_report,
     )
 except (ImportError, ValueError):
+    from core.exceptions import OmniMeshError, TopologyError
     from core.hierarchy import LayerCollectionGuard
     from core.materials import MaterialOptimizer
     from core.modifiers import ModifierManager
@@ -215,6 +217,9 @@ class LOD_OT_clean_and_repair_mesh(Operator):
                 total_holes += res.get("filled_holes", 0)
                 total_ngons += res.get("triangulated_ngons", 0)
                 bm.to_mesh(obj.data)
+            except (TopologyError, OmniMeshError) as err:
+                safe_report(self, {"ERROR"}, f"Topology repair failed on {getattr(obj, 'name', 'mesh')}: {err}")
+                return {"CANCELLED"}
             finally:
                 bm.free()
             obj.data.update()
