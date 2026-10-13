@@ -64,7 +64,7 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * **Popover Horizontal Space Starvation**: In narrow N-Panels, pairing multiple text operator buttons alongside a popover button in an aligned row silently clips the gear icon off-screen. Action rows paired with a popover must hold at most ONE primary operator button.
 * **RNA Mutation Ban in `Panel.draw()` (Runaway Redraw Loop)**: Never mutate RNA properties or sync data inside `draw()`. Writing to RNA triggers layout invalidation, forcing an infinite 60fps+ redraw loop at 100% CPU thread load. All sync logic belongs in `update` callbacks, operators, or `load_post` handlers.
 * **`from __future__ import annotations` in Operators**: Writing `prop: Any = bpy.props.StringProperty(...)` stores the literal string `'Any'` in annotations, causing Blender to silently skip RNA registration and raise `TypeError: keyword unrecognized`. Use `prop: bpy.props.StringProperty(...)` directly.
-* **Dynamic `EnumProperty` Item Invalidation (§1.7)**: When deleting a custom item (such as a JSON preset), reassign active dynamic enum properties to a guaranteed fallback (e.g. `DEFAULT_PRESET_ID`) *before* disk deletion to prevent `bpy.rna WARNING current value matches no enum`.
+* **Dynamic `EnumProperty` Item Invalidation**: When deleting a custom item (such as a JSON preset), reassign active dynamic enum properties to a guaranteed fallback (e.g. `DEFAULT_PRESET_ID`) *before* disk deletion to prevent `bpy.rna WARNING current value matches no enum`.
 * **RNA Property Leading Underscore Ban**: Properties on `bpy.types.PropertyGroup` MUST NOT start with an underscore (`_`), or registration of all subsequent properties in the class halts silently.
 * **Operator Subclassing Invariant**: Never subclass a registered `bpy.types.Operator` class. Subclassing corrupts Blender's C++ RNA class table. Inherit directly from `bpy.types.Operator` and delegate via `bpy.ops`.
 * **Blender C-RNA Dynamic Enum Assignment in Operators**: Assigning a dynamically added enum item immediately inside `execute()` can fail if the enum items tuple was cached at invocation. Wrap the assignment in a deferred timer (`bpy.app.timers.register(..., first_interval=0.005)`).
@@ -95,9 +95,9 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * **Blender Headless `--python-exit-code 1`**: Blender headless (`blender -b`) exits with code `0` even when unhandled exceptions occur or unittests fail. CI pipelines and verification scripts must explicitly supply `--python-exit-code 1`.
 * **Headless `bpy` Mocking Boundary**: When executing pure unit tests via Pytest outside Blender, `bpy` is `None`. Defensive guards (`if not bpy or not context: return True, ...`) bypass execution early. To test transactional rollbacks, pose restorations, and failure branches in headless mode, tests must explicitly mock `bpy` using `monkeypatch.setattr("core.lod_generator.bpy", MagicMock())`.
 * **Live Engine Subprocess Gating (`RUN_LIVE_ENGINE_TESTS`)**: Spawning external game engine executables (such as `godot --headless`) introduces ~4–5 seconds of startup latency per test run. Headless unit test suites must gate live editor subprocesses behind `RUN_LIVE_ENGINE_TESTS` to keep regular test runs sub-5s while preserving end-to-end integration capability.
-* **Unified Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 4 engine export pipelines.
+* **Multi-Engine Export Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 4 engine export pipelines (distinct from the central pre-commit gate `scripts/verify_ci.py`).
 * **Engine Headless CLI Execution**:
-  * **Godot 4**: `godot --headless --path <project_dir> --editor --quit` (requires `Godot_*_mono_win64_console.exe`, GUI exe drops pipes). Colliders: `-convcolonly` for invisible hulls (`-convcol` creates visible shapes). Custom impostor suffixes bypass regex; map explicitly to max distance tier (`visibility_range_begin = max_tier_distance`).
+  * **Godot 4**: `godot --headless --path <project_dir> --editor --quit` (requires `Godot_*_win64_console.exe`, GUI exe drops stdout/stderr pipes). Colliders: `-convcolonly` for invisible hulls (`-convcol` creates visible shapes). Custom impostor suffixes bypass regex; map explicitly to max distance tier (`visibility_range_begin = max_tier_distance`).
   * **Unity 6**: `unity run <project_dir> --editor-version <installed_ver> -- -nographics`. Never pass `-quit` or `-batchmode` after `--`.
   * **Unreal Engine 5**: `UnrealEditor-Cmd.exe <Project.uproject> -run=pythonscript -script="<script>.py" -nullrhi -nosound -unattended`. Colliders: `UCX_{Asset}_{Index}`.
   * **MSFS 2024**: `fspackagetool.exe <Project.xml> -forcesteam -nopause` with `stdin=subprocess.DEVNULL`. Steam installs require `fspackagetool_overrideExePath.txt`. All interior references in `model.cfg` must use POSIX forward slashes (`interior=../model/{Interior}.xml`).
@@ -125,18 +125,18 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * **Single-Card Impostor UV Island Packing Hazard**: `bpy.ops.uv.pack_islands()` displaces normalized $[0, 1]^2$ UV bounds on single-card octahedral proxy meshes. Single-card and octahedral meshes must be strictly excluded from automatic island packing.
 * **Fillrate Overdraw Cutout Octagons**: Bounding sphere quads leave $> 80\%$ transparent pixels on slender assets. Beveling quad corners by $25\%$ yields an 8-vertex convex polygon that cuts transparent fillrate overdraw by $30\text{--}40\%$.
 * **Windows UNC `//` NetBIOS Freeze Trap on Unsaved Scenes**: In unsaved scenes (`filepath == ""`), relative paths starting with `"//"` evaluate as Windows UNC network paths (`\\Textures`), triggering a 30-second NetBIOS timeout before `[WinError 53]`. Unsaved relative paths must anchor to `tempfile.gettempdir()`.
+* **Blender C-API `img.pixels` Scanline Inversion**: `img.pixels.foreach_get` orders scanlines bottom-up ($Y=0$ at bottom). Standard PNG encoders write top-down ($Y=0$ at top). Without vertical array reversal (`np.ascontiguousarray(arr.reshape((h, w, 4))[::-1]...)`), baked octahedral tiles are inverted, corrupting octahedral UV sampling.
+* **Camera-Space Normal Mapping Z-Sign Invariant**: Blender camera forward is $-Z$ in camera space ($Z_{\text{cam}} = -1.0$ for camera-facing surfaces). To map to tangent space $+Z$ (flat blue $(0.5, 0.5, 1.0)$), the Z scale factor in the unlit emission override must be $-0.5$ (`(0.5, -0.5, -0.5)` for UE5 DirectX, `(0.5, 0.5, -0.5)` for OpenGL). Using $+0.5$ produces $Z \le 0.0$ (pitch black normals).
+* **AgX / Filmic Color Management on Data Passes**: In Blender 5.0+, the default `AgX` view transform tone-maps linear vectors into non-linear sRGB (crushing normal blue channels from $1.0$ down to $\sim 0.3$). Ephemeral bake scenes must set `bake_scene.view_settings.view_transform = "Raw"` for data passes (Normal, Depth, ORM) and `"Standard"` for BaseColor.
+* **Billboard Perspective Fanning vs Uniform View Vector**: Per-fragment `Geometry.Incoming` on billboard proxy quads causes perspective fanning across large quads at close distance, crossing octahedral tile thresholds and causing seams across the asset face. Shaders must compute a uniform view vector: `normalize(CamWorldPos - ObjWorldPos)` via `ShaderNodeVectorTransform(POINT, CAMERA/OBJECT -> WORLD)`.
+* **Decoupled Billboard Tracking Target vs F-Curve Animation Overwrite**: Billboard `TRACK_TO` targeting a camera with turntable keyframes causes depsgraph F-curve evaluation to clobber camera position updates during interactive navigation. The billboard constraint must target an Empty (`Preview_Tracker_Target`) driven by an epsilon-gated background timer (`bpy.app.timers`) at $10^{-4}$ threshold.
 
 ---
 
-## 6. Universal Vehicle & Interactive Asset Configuration Architecture
+## 6. Vehicle & Interactive Asset Scene-Graph Invariants
 
-### 6.1 Strategic Context & Architecture Vision
-The technical submodules historically organized around MSFS 2024 (`core/msfs/`, `ui/msfs_*`) represent the initial reference implementation of a broader **Universal Vehicle & Interactive Asset Configuration System**. Rather than treating complex vehicle setups (aircraft, ground vehicles, watercraft, mechanical props) as engine-locked monolithic assets, OmniMesh structures them as a platform-agnostic Semantic Intermediate Representation (IR) modeled directly in Blender.
-
-Only the file-format importers and exporters are engine-specific. The underlying configuration metadata (spatial reference frames, photometric lighting, camera views, and interactive bounding volumes) is designed to cross-compile into target engine actors, prefabs, and scene scripts across all supported game engines.
-
-### 6.2 The Unified Scene Data Model (`{AssetName}_Config`)
-Configuration data is decoupled from render geometry and stored in sibling Outliner collections alongside `{AssetName}_LOD0`:
+### 6.1 Unified Scene Data Model (`{AssetName}_Config`)
+Configuration metadata is strictly decoupled from render geometry and stored in dedicated sibling Outliner collections alongside `{AssetName}_LOD0`. Decimation engines, mesh mergers, and render LOD generators must never mutate, decimate, or ingest objects in `{AssetName}_Config`:
 * **`Spatial` Subcollection**:
   * Empties representing Datum Origin, Center of Gravity (CG), aerodynamic reference points, ground contact points (gear/wheels), scrape points, and fuel tank centroids.
 * **`Lights` Subcollection**:
@@ -146,12 +146,6 @@ Configuration data is decoupled from render geometry and stored in sibling Outli
 * **`Interaction` Subcollection**:
   * Bounding box and hull empties defining VR/mouse click trigger volumes, grab handles, and switch articulation limits.
 
-### 6.3 Target Engine Compiler Pipeline
-* **MSFS 2024 Compiler (`[STATUS: PRODUCTION]`)**:
-  * Serializes `{AssetName}_Config` into modular XML and CFG specifications (`systems.xml`, `cameras.xml`, `flight_model.cfg`, `attached_objects.cfg`).
-* **Unreal Engine 5 Compiler (`[STATUS: PHASE 2 ROADMAP]`)**:
-  * Generates Blueprint Actor (`AActor` / `APawn`) definitions containing `UCameraComponent`, `USpotLightComponent`, `UPointLightComponent`, and socket attachments.
-* **Unity 6 Compiler (`[STATUS: PHASE 2 ROADMAP]`)**:
-  * Generates Unity Prefabs with `Light`, `Camera`, `BoxCollider`, and ScriptableObject parameter payloads.
-* **Godot 4 Compiler (`[STATUS: PHASE 2 ROADMAP]`)**:
-  * Generates `.tscn` text scene trees assembling `Camera3D`, `OmniLight3D`, `SpotLight3D`, and `Area3D` interaction node hierarchies.
+### 6.2 Serialization & Geometry Isolation Boundaries
+* **MSFS 2024 Serialization**: Serializes `{AssetName}_Config` into modular XML and CFG specifications (`systems.xml`, `cameras.xml`, `flight_model.cfg`, `attached_objects.cfg`).
+* **Geometry Export Isolation**: Configuration metadata Empties must remain strictly separate from exported glTF meshes. Mounting sockets (`ATTACH_POINT_*`) in LOD0 are preserved for attachment rigging, but config Empties reside in `{AssetName}_Config` and are filtered during mesh export.
