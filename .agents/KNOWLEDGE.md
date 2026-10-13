@@ -76,6 +76,7 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 
 * **Rest-Pose Coordinate Inversion**: Transform bone-parented props into rest-pose local space before joining into a skinned character to prevent pose explosion.
 * **Armature Rest-Pose Lock**: During decimation and normal data transfers, `armature.data.pose_position` MUST be set to `'REST'`, and restored afterwards.
+* **Quaternion Sign Continuity Invariant ($\mathbf{q}_t \cdot \mathbf{q}_{t-1} < 0$)**: In 4D hyperspace, $\mathbf{q}$ and $-\mathbf{q}$ represent the identical spatial orientation ($360^\circ$ equivalence). If consecutive keyframes flip signs ($\mathbf{q}_t \cdot \mathbf{q}_{t-1} < 0$), spherical or linear interpolation (SLERP/LERP) traverses the long path around the hypersphere, causing visible $360^\circ$ spin flips. `AnimationRigSanitizer.enforce_quaternion_continuity` must negate $\mathbf{q}$ to $-\mathbf{q}$ when the dot product is negative prior to baking deform animations.
 * **Vertex Group Index Shifting**: `obj.vertex_groups.remove(vg)` shifts indices of subsequent groups. Collect used group names first and purge by name.
 * **GPU Weight Singularity Guard**: Stripping micro-weights ($< 0.01$) must never leave $\sum w = 0.0$ (causing GPU division-by-zero NaN shader crashes). Fall back to anchor bone (`1.0`).
 * **`bpy.types.VertexGroup.add()` Parameter Quirk**: `vg.add(index, weight, type)` accepts a list of indices, but `weight` MUST be a single float (passing a list/array raises `TypeError`).
@@ -92,6 +93,8 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 
 ### 4.1 Headless Testing & CLI Commands
 * **Blender Headless `--python-exit-code 1`**: Blender headless (`blender -b`) exits with code `0` even when unhandled exceptions occur or unittests fail. CI pipelines and verification scripts must explicitly supply `--python-exit-code 1`.
+* **Headless `bpy` Mocking Boundary**: When executing pure unit tests via Pytest outside Blender, `bpy` is `None`. Defensive guards (`if not bpy or not context: return True, ...`) bypass execution early. To test transactional rollbacks, pose restorations, and failure branches in headless mode, tests must explicitly mock `bpy` using `monkeypatch.setattr("core.lod_generator.bpy", MagicMock())`.
+* **Live Engine Subprocess Gating (`RUN_LIVE_ENGINE_TESTS`)**: Spawning external game engine executables (such as `godot --headless`) introduces ~4–5 seconds of startup latency per test run. Headless unit test suites must gate live editor subprocesses behind `RUN_LIVE_ENGINE_TESTS` to keep regular test runs sub-5s while preserving end-to-end integration capability.
 * **Unified Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 4 engine export pipelines.
 * **Engine Headless CLI Execution**:
   * **Godot 4**: `godot --headless --path <project_dir> --editor --quit` (requires `Godot_*_mono_win64_console.exe`, GUI exe drops pipes). Colliders: `-convcolonly` for invisible hulls (`-convcol` creates visible shapes). Custom impostor suffixes bypass regex; map explicitly to max distance tier (`visibility_range_begin = max_tier_distance`).
@@ -108,6 +111,7 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 
 ### 4.3 Engine Bridge CQS & Domain Exception Contracts
 * **Bridge Probe vs Command Invariance (CQS)**: Routine background UI heartbeat timers (`ping_engine`) are query probes and must NEVER raise `BridgeConnectionError` when target engine editors are closed or offline; they must return `(False, msg)`. Strongly typed `BridgeConnectionError` exceptions are strictly reserved for active payload transmissions (`sync_asset`, `sync_asset_headless`) on broken sockets, truncated frames, or network drops.
+* **Bridge Probe Timeout Isolation**: Heartbeat queries and unit tests against offline engine ports (e.g. Unreal Engine on port 30010) must never block on default OS TCP connection timeouts (1+ second delay). Always supply `timeout_sec <= 0.08` or mock `ConnectionRefusedError` to maintain non-blocking UI cycles and sub-millisecond unit test execution.
 * **Transactional Exporter Facade Contract**: Exporter implementations mutate active scene graphs (colliders, temporary LODGroup empties). Deep export failures must raise `ExportPipelineError` within the `try:` block so `finally:` rollback executes deterministically. The public facade (`ExporterManager.export_asset`) catches `ExportPipelineError`, logs structured context, and returns `(False, str(e))` to preserve the caller contract across UI operators and batch runners.
 
 ---
