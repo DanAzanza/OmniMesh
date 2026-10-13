@@ -134,8 +134,12 @@ def test_impostor_harness_depth_and_reexport():
     assert HarnessDirect is HarnessReexport
 
     # Headless calls should return None safely
-    assert HarnessDirect.create_unlit_override_material(None, channel_layer="DEPTH") is None
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="BASE_COLOR") is None
     assert HarnessDirect.create_unlit_override_material(None, channel_layer="NORMAL", target_engine="UE5") is None
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="NORMAL", target_engine="UNITY") is None
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="DEPTH") is None
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="ORM", target_engine="UE5") is None
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="ORM", target_engine="UNITY") is None
 
 
 def test_ue5_setup_guide_generation():

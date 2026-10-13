@@ -143,6 +143,26 @@ class TestImpostorPipeline(unittest.TestCase):
                 len(invert_nodes), 0, "Unity 6 Impostor material must include Invert node for roughness."
             )
 
+    def test_impostor_shader_harness_unlit_override_passes(self) -> None:
+        """Verify ImpostorShaderHarness builds emission shaders for BASE_COLOR, NORMAL, DEPTH, and ORM passes."""
+        from core.impostor_harness import ImpostorShaderHarness
+
+        with in_blender_sandbox():
+            src_mat = bpy.data.materials.new("M_SourceTest")
+            src_mat.use_nodes = True
+
+            for pass_name in ("BASE_COLOR", "NORMAL", "DEPTH", "ORM"):
+                unlit_mat = ImpostorShaderHarness.create_unlit_override_material(
+                    source_mat=src_mat,
+                    channel_layer=pass_name,
+                    target_engine="UE5",
+                )
+                self.assertIsNotNone(unlit_mat, f"Unlit material for pass {pass_name} must not be None.")
+                self.assertTrue(unlit_mat.use_nodes)
+                node_types = {n.type for n in unlit_mat.node_tree.nodes}
+                self.assertIn("EMISSION", node_types)
+                self.assertIn("OUTPUT_MATERIAL", node_types)
+
     def test_remove_impostor(self) -> None:
         """Verify remove_impostor operator completely cleans up objects and sibling collection."""
         with in_blender_sandbox() as scene:
