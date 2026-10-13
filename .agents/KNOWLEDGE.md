@@ -106,6 +106,10 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * **MSFS 2024 Modular Attachments (`attached_objects.cfg`)**: `attach_offset` coordinates in `[sim_attachment.N]` are strictly relative to the mounting socket empty (`attach_to_node`), never aircraft datum. Socket markers (`ATTACH_POINT_*`) in LOD0 must be exported in glTF, but attachment instances reside in `{AssetName}_Config` and are excluded from glTF.
 * **Blender MCP Socket Server (Port 9876)**: The `blender-mcp` toolserver requires Siddharth Ahuja's TCP JSON socket server on `127.0.0.1:9876` (`blender_mcp.py`). Campbell Barton's official extension (`bl_ext.blender_org.mcp`) uses stdio and will reject port 9876 connections.
 
+### 4.3 Engine Bridge CQS & Domain Exception Contracts
+* **Bridge Probe vs Command Invariance (CQS)**: Routine background UI heartbeat timers (`ping_engine`) are query probes and must NEVER raise `BridgeConnectionError` when target engine editors are closed or offline; they must return `(False, msg)`. Strongly typed `BridgeConnectionError` exceptions are strictly reserved for active payload transmissions (`sync_asset`, `sync_asset_headless`) on broken sockets, truncated frames, or network drops.
+* **Transactional Exporter Facade Contract**: Exporter implementations mutate active scene graphs (colliders, temporary LODGroup empties). Deep export failures must raise `ExportPipelineError` within the `try:` block so `finally:` rollback executes deterministically. The public facade (`ExporterManager.export_asset`) catches `ExportPipelineError`, logs structured context, and returns `(False, str(e))` to preserve the caller contract across UI operators and batch runners.
+
 ---
 
 ## 5. Impostor Systems & Atlas Baking Invariants
