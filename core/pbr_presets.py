@@ -111,7 +111,7 @@ class BasePresetManager:
             try:
                 with open(sf, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except Exception as exc:
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
                 logger.debug("Failed reading pipeline state from '%s': %s", sf, exc)
         return {}
 
@@ -142,7 +142,7 @@ class BasePresetManager:
                         if attempt == len(backoff) - 1:
                             raise
                         time.sleep(delay)
-            except Exception as exc:
+            except (OSError, TypeError, ValueError) as exc:
                 logger.debug("Failed saving pipeline setting '%s' to '%s': %s", key, sf, exc)
                 if os.path.exists(tmp_path):
                     try:
@@ -272,7 +272,7 @@ class BasePresetManager:
                             val["_filepath"] = str(p)
                             loaded[pid] = val
                             builtin_ids.add(pid)
-                    except Exception as exc:
+                    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
                         logger.warning("Failed loading built-in %s preset '%s': %s", cls.CATEGORY, p, exc)
 
             # 2. Load user custom presets
@@ -290,7 +290,7 @@ class BasePresetManager:
                             val["_is_builtin"] = False
                             val["_filepath"] = str(p)
                             loaded[pid] = val
-                    except Exception as exc:
+                    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
                         logger.warning("Failed loading user %s preset '%s': %s", cls.CATEGORY, p, exc)
 
             cache.clear()

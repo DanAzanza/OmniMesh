@@ -102,7 +102,7 @@ class PivotPreservationEngine:
         pivot_world = pivot_obj.matrix_world
         try:
             return pivot_world.inverted() @ obj_world
-        except Exception as exc:
+        except (ValueError, AttributeError, RuntimeError) as exc:
             logger.debug("Matrix inversion failed, using object world matrix: %s", exc)
             return obj_world.copy() if hasattr(obj_world, "copy") else obj_world
 
@@ -183,7 +183,7 @@ class PivotPreservationEngine:
         if bpy and hasattr(bpy.context, "view_layer") and bpy.context.view_layer:
             try:
                 bpy.context.view_layer.update()
-            except Exception as exc:
+            except (RuntimeError, AttributeError) as exc:
                 logger.debug("View layer update skipped: %s", exc)
 
         cloned_sockets = []
@@ -209,7 +209,7 @@ class PivotPreservationEngine:
                 if hasattr(target_pivot, "matrix_world") and hasattr(target_pivot.matrix_world, "inverted"):
                     try:
                         sock_clone.matrix_parent_inverse = target_pivot.matrix_world.inverted()
-                    except Exception as exc:
+                    except (ValueError, AttributeError, RuntimeError) as exc:
                         logger.debug("Matrix inversion failed: %s", exc)
                 sock_clone.matrix_world = sock_world
 

@@ -150,7 +150,7 @@ def create_interaction_volume(
         if hasattr(parent_obj, "matrix_world") and Matrix:
             try:
                 obj.matrix_parent_inverse = parent_obj.matrix_world.inverted()
-            except Exception as exc:
+            except (ValueError, AttributeError, RuntimeError) as exc:
                 logger.debug("Could not invert parent matrix for interaction volume: %s", exc)
 
     logger.info("Created interaction volume '%s' (Role: %s, Shape: %s)", obj.name, role_upper, shape_upper)

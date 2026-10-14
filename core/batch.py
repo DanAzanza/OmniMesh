@@ -435,7 +435,7 @@ class BatchProcessorEngine:
 
             try:
                 preset = PBRImporterPresetManager.get_preset(preset_id)
-            except Exception as exc:
+            except (KeyError, ValueError, OSError, TypeError) as exc:
                 logger.warning("Could not load batch preset '%s': %s", preset_id, exc)
                 preset = PBRImporterPresetManager.get_preset("unreal_engine_5")
 
@@ -460,7 +460,7 @@ class BatchProcessorEngine:
                     )
                     if futs:
                         all_tex_futures.extend(futs)
-                except Exception as exc:
+                except (RuntimeError, ValueError, OSError, AttributeError, TypeError) as exc:
                     logger.warning(
                         "Preset-based texture packing failed for '%s', using fallback: %s",
                         getattr(mat, "name", "Mat"),
@@ -526,7 +526,7 @@ class BatchProcessorEngine:
             if coll and bpy:
                 try:
                     bpy.data.collections.remove(coll)
-                except (RuntimeError, ReferenceError, Exception) as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Collection cleanup failed: %s", exc)
 
             # Purge orphan datablocks
@@ -534,13 +534,13 @@ class BatchProcessorEngine:
                 try:
                     is_bg = bool(getattr(getattr(bpy, "app", None), "background", False))
                     bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=is_bg)
-                except (RuntimeError, ValueError, AttributeError, Exception) as exc:
+                except (RuntimeError, ValueError, AttributeError) as exc:
                     logger.debug("Orphan purge bypassed: %s", exc)
 
             gc.collect()
             try:
                 TextureChannelPacker.compact_memory()
-            except Exception as exc:
+            except (RuntimeError, AttributeError) as exc:
                 logger.debug("Texture packer memory compact bypassed: %s", exc)
 
         result["duration_sec"] = round(time.time() - start_time, 2)
@@ -559,13 +559,13 @@ class BatchProcessorEngine:
                 meshes_to_remove.add(obj.data)
             try:
                 bpy.data.objects.remove(obj, do_unlink=True)
-            except (RuntimeError, ReferenceError, Exception) as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Object remove error: %s", exc)
 
         for mesh in meshes_to_remove:
             try:
                 bpy.data.meshes.remove(mesh, do_unlink=True)
-            except (RuntimeError, ReferenceError, Exception) as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Mesh remove error: %s", exc)
 
     @classmethod
@@ -575,11 +575,11 @@ class BatchProcessorEngine:
         if sys.platform == "win32":
             try:
                 ctypes.windll.kernel32.SetProcessWorkingSetSize(-1, -1, -1)
-            except Exception as exc:
+            except (OSError, AttributeError) as exc:
                 logger.debug("Win32 SetProcessWorkingSetSize error: %s", exc)
             try:
                 ctypes.cdll.msvcrt._heapmin()
-            except Exception as exc:
+            except (OSError, AttributeError) as exc:
                 logger.debug("Win32 _heapmin error: %s", exc)
         elif sys.platform.startswith("linux"):
             try:
@@ -588,5 +588,5 @@ class BatchProcessorEngine:
                     libc = ctypes.CDLL(libc_name)
                     if hasattr(libc, "malloc_trim"):
                         libc.malloc_trim(0)
-            except Exception as exc:
+            except (OSError, AttributeError) as exc:
                 logger.debug("Linux malloc_trim error: %s", exc)

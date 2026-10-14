@@ -88,7 +88,7 @@ class DeepMaterialHasher:
                 if bpy and filepath:
                     try:
                         filepath = bpy.path.abspath(filepath)
-                    except Exception as exc:
+                    except (RuntimeError, ValueError, AttributeError) as exc:
                         logger.debug("Failed resolving abspath for image: %s", exc)
                 node_data["image_filepath"] = filepath or getattr(img, "name", "")
                 node_data["image_size"] = list(getattr(img, "size", [0, 0]))
@@ -560,7 +560,7 @@ class MaterialOptimizer:
         for dup_mat in mat_remap.keys():
             try:
                 bpy.data.materials.remove(dup_mat, do_unlink=True)
-            except Exception as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Duplicate material remove exception: %s", exc)
 
         return merged_count
@@ -574,7 +574,7 @@ class MaterialOptimizer:
         for m in orphans:
             try:
                 bpy.data.materials.remove(m, do_unlink=True)
-            except Exception as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Orphan material remove exception: %s", exc)
         return len(orphans)
 

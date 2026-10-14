@@ -134,7 +134,7 @@ def _process_merged_tier(
         if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
             try:
                 bpy.data.meshes.remove(old_mesh)
-            except Exception as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc)
 
     tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
@@ -223,7 +223,7 @@ def _process_merged_tier(
             )
             owned_ref = True
         NormalManager.reproject_custom_split_normals(tier_obj, target_ref, tolerances["delta_world"])
-    except Exception as exc:
+    except (RuntimeError, ValueError, AttributeError) as exc:
         logger.warning(
             "Merged custom split normal reprojection failed for '%s' (LOD%d): %s; attempting single-mesh fallback",
             getattr(tier_obj, "name", ""),
@@ -233,7 +233,7 @@ def _process_merged_tier(
         if mesh_objs:
             try:
                 NormalManager.reproject_custom_split_normals(tier_obj, mesh_objs[0], tolerances["delta_world"])
-            except Exception as fb_exc:
+            except (RuntimeError, ValueError, AttributeError) as fb_exc:
                 logger.warning(
                     "Fallback single-mesh normal reprojection also failed for '%s': %s",
                     getattr(tier_obj, "name", ""),
@@ -246,7 +246,7 @@ def _process_merged_tier(
                 bpy.data.objects.remove(target_ref, do_unlink=True)
                 if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
                     bpy.data.meshes.remove(ref_mesh)
-            except Exception as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Cleanup ref_merged_obj exception: %s", exc)
 
     if armature_obj and len(tier_obj.vertex_groups) > 0:
@@ -304,7 +304,7 @@ def _process_unmerged_tier(
             if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
                 try:
                     bpy.data.meshes.remove(old_mesh)
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc)
 
         lod_obj = source_obj.copy()
@@ -552,7 +552,7 @@ def generate_all_lods(
                             shared_ref_merged_obj = MeshMergeEngine.consolidate_and_merge_meshes(
                                 mesh_objs, shared_ref_merged_name, armature_obj=armature_obj, pivot_obj=root_pivot
                             )
-                        except Exception as exc:
+                        except (RuntimeError, ValueError, AttributeError) as exc:
                             logger.debug("Failed creating shared ref_merged_obj: %s", exc)
                             shared_ref_merged_obj = None
 
@@ -615,7 +615,7 @@ def generate_all_lods(
             try:
                 if hasattr(bpy.ops.lod_tool, "generate_impostor"):
                     bpy.ops.lod_tool.generate_impostor()
-            except Exception as exc:
+            except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.debug("Automatic impostor generation skipped: %s", exc)
 
         if only_out_of_sync:
@@ -635,7 +635,7 @@ def generate_all_lods(
                 bpy.data.objects.remove(shared_ref_merged_obj, do_unlink=True)
                 if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
                     bpy.data.meshes.remove(ref_mesh)
-            except Exception as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Cleanup shared_ref_merged_obj exception: %s", exc)
 
         if armature_obj and orig_pose_pos and hasattr(armature_obj.data, "pose_position"):

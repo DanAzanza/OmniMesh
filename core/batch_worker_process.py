@@ -125,7 +125,7 @@ class BatchWorkerProcessManager:
                     break
             popen_kwargs["stdout"] = log_file
             popen_kwargs["stderr"] = subprocess.STDOUT
-        except Exception as exc:
+        except (OSError, PermissionError) as exc:
             logger.debug("Failed opening worker log file, falling back to DEVNULL: %s", exc)
             popen_kwargs["stdout"] = subprocess.DEVNULL
             popen_kwargs["stderr"] = subprocess.DEVNULL
@@ -139,7 +139,7 @@ class BatchWorkerProcessManager:
             if log_file and not log_file.closed:
                 try:
                     log_file.close()
-                except Exception as exc:
+                except OSError as exc:
                     logger.debug("Failed closing worker log file on spawn error: %s", exc)
             raise
 

@@ -116,7 +116,7 @@ class BatchMeshIterator:
                 if (idx + 1) % 10 == 0:
                     try:
                         bpy.data.orphans_purge(do_recursive=True)
-                    except Exception as exc:
+                    except (RuntimeError, ValueError, AttributeError) as exc:
                         logger.debug("Orphans purge exception during batch: %s", exc)
                     gc.collect()
 

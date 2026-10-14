@@ -13,6 +13,7 @@ from .exceptions import (
     ExportPipelineError,
     ImpostorBakeError,
     OmniMeshError,
+    RiggingError,
     TopologyError,
 )
 
@@ -24,4 +25,5 @@ __all__ = [
     "BridgeConnectionError",
     "ExportPipelineError",
     "ImpostorBakeError",
+    "RiggingError",
 ]

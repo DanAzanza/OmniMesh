@@ -65,7 +65,7 @@ class CollisionManager:
                 already_in = (
                     target_coll.name in c_children if not isinstance(c_children, list) else target_coll in c_children
                 )
-            except Exception as e:
+            except (AttributeError, TypeError, ReferenceError) as e:
                 logger.debug("Failed checking target collection membership: %s", e)
             if not already_in:
                 if hasattr(c_children, "link"):
@@ -82,7 +82,7 @@ class CollisionManager:
                 try:
                     if target_coll.name in sc.collection.children:
                         sc.collection.children.unlink(target_coll)
-                except Exception as e:
+                except (RuntimeError, ReferenceError, AttributeError) as e:
                     logger.debug("Failed unlinking target collection from scene root: %s", e)
         elif (
             sc
@@ -156,7 +156,7 @@ class CollisionManager:
                 for bm_hull in hulls:
                     try:
                         bm_hull.free()
-                    except Exception as exc:
+                    except (RuntimeError, ReferenceError, AttributeError) as exc:
                         logger.debug("bm_hull.free() skipped: %s", exc)
         else:
             # PER_OBJECT Area-Weighted Decomposition
@@ -213,7 +213,7 @@ class CollisionManager:
                     for bm_hull in hulls:
                         try:
                             bm_hull.free()
-                        except Exception as exc:
+                        except (RuntimeError, ReferenceError, AttributeError) as exc:
                             logger.debug("bm_hull.free() skipped: %s", exc)
 
         logger.info("Generated %d collision hulls in collection '%s'", len(created_collider_objs), coll_name)

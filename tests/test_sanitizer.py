@@ -158,3 +158,84 @@ def test_purge_duplicate_faces_empty_and_null():
     mock_bm = MagicMock()
     mock_bm.faces = []
     assert MeshSanitizer._purge_duplicate_faces(mock_bm) == 0
+
+
+def test_split_non_manifold_edges_raises_topology_error_on_corrupted_rollback():
+    from core.exceptions import TopologyError
+    from core.topology_repair import TopologyRepairEngine
+
+    mock_bm = MagicMock()
+    mock_edge = MagicMock()
+    mock_edge.is_valid = True
+    v1, v2 = MagicMock(), MagicMock()
+    v1.co = Vector((0, 0, 0))
+    v2.co = Vector((1, 0, 0))
+    mock_edge.verts = (v1, v2)
+
+    face1, face2, face3 = MagicMock(), MagicMock(), MagicMock()
+    for f in (face1, face2, face3):
+        f.is_valid = True
+        f.verts = [v1, v2, MagicMock()]
+        f.loops = []
+        f.material_index = 0
+        f.smooth = True
+
+    mock_edge.link_faces = [face1, face2, face3]
+    mock_edges = MagicMock()
+    mock_edges.__iter__.return_value = [mock_edge]
+    mock_bm.edges = mock_edges
+
+    mock_bm.faces.new.side_effect = RuntimeError("BMesh internal failure")
+
+    with pytest.raises(TopologyError, match="Catastrophic topology corruption"):
+        TopologyRepairEngine.split_non_manifold_edges(mock_bm)
+
+
+def test_split_non_manifold_edges_rollback_recovery_succeeds():
+    from core.topology_repair import TopologyRepairEngine
+
+    mock_bm = MagicMock()
+    mock_edge = MagicMock()
+    mock_edge.is_valid = True
+    v1, v2 = MagicMock(), MagicMock()
+    v1.co = Vector((0, 0, 0))
+    v2.co = Vector((1, 0, 0))
+    mock_edge.verts = (v1, v2)
+
+    face1, face2, face3 = MagicMock(), MagicMock(), MagicMock()
+    for f in (face1, face2, face3):
+        f.is_valid = True
+        f.verts = [v1, v2, MagicMock()]
+        f.loops = []
+        f.material_index = 0
+        f.smooth = True
+
+    mock_edge.link_faces = [face1, face2, face3]
+    mock_edges = MagicMock()
+    mock_edges.__iter__.return_value = [mock_edge]
+    mock_bm.edges = mock_edges
+
+    restored_face = MagicMock()
+    mock_bm.faces.new.side_effect = [RuntimeError("New face failed"), restored_face]
+
+    splits = TopologyRepairEngine.split_non_manifold_edges(mock_bm)
+    assert splits == 0
+    assert mock_bm.faces.new.call_count == 2
+
+
+def test_remap_fan_raises_topology_error_on_corrupted_rollback():
+    from core.exceptions import TopologyError
+    from core.topology_repair import _remap_fan_to_new_vertex
+
+    mock_bm = MagicMock()
+    mock_face = MagicMock()
+    mock_face.is_valid = True
+    v_orig = MagicMock()
+    mock_face.verts = [v_orig, MagicMock(), MagicMock()]
+    mock_face.loops = []
+
+    v_new = MagicMock()
+    mock_bm.faces.new.side_effect = RuntimeError("BMesh geometry creation error")
+
+    with pytest.raises(TopologyError, match="Catastrophic topology corruption"):
+        _remap_fan_to_new_vertex(mock_bm, [mock_face], v_orig, v_new, [])

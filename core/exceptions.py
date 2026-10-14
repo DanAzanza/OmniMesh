@@ -35,6 +35,10 @@ class ImpostorBakeError(OmniMeshError):
     """Raised when billboard impostor rendering, camera rig setup, or texture atlas baking fails."""
 
 
+class RiggingError(OmniMeshError):
+    """Raised when skeletal bone weight normalization, clamping, or kinematic pruning fails."""
+
+
 __all__ = [
     "OmniMeshError",
     "DecimationError",
@@ -43,4 +47,5 @@ __all__ = [
     "BridgeConnectionError",
     "ExportPipelineError",
     "ImpostorBakeError",
+    "RiggingError",
 ]

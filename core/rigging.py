@@ -11,6 +11,8 @@ from typing import Any
 
 import numpy as np
 
+from .exceptions import RiggingError
+
 try:
     import bmesh
     import bpy
@@ -40,7 +42,7 @@ def _safe_invert_matrix(mat: Any) -> Any:
                         return type(mat)(np.eye(mat.arr.shape[0]))
                     return mat.copy() if hasattr(mat, "copy") else mat
             return mat.inverted()
-        except Exception as exc:
+        except (ValueError, AttributeError, RuntimeError) as exc:
             logger.warning("Matrix inversion failed (%s). Returning fallback identity.", exc)
             if Matrix is not None:
                 return Matrix.Identity(4)
@@ -150,7 +152,7 @@ def armature_rest_pose_context(armature_obj: Any):
             and hasattr(bpy.context.view_layer, "update")
         ):
             bpy.context.view_layer.update()
-    except Exception as exc:
+    except (RuntimeError, AttributeError, TypeError) as exc:
         logger.warning("Failed to set armature to REST pose: %s", exc)
 
     try:
@@ -166,7 +168,7 @@ def armature_rest_pose_context(armature_obj: Any):
                     and hasattr(bpy.context.view_layer, "update")
                 ):
                     bpy.context.view_layer.update()
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError) as exc:
             logger.debug("Failed to restore armature pose position: %s", exc)
 
 
@@ -187,7 +189,7 @@ def compute_rest_pose_inverted_matrix(
 
     try:
         rest_world = armature_world @ bone_rest_local @ prop_parent_inverse @ prop_basis
-    except Exception as exc:
+    except (ValueError, TypeError, AttributeError) as exc:
         logger.error("Matrix multiplication failed in compute_rest_pose_inverted_matrix: %s", exc)
         return target_mesh_rest_world or armature_world
 
@@ -196,7 +198,7 @@ def compute_rest_pose_inverted_matrix(
         if inverted_target is not None:
             try:
                 return inverted_target @ rest_world
-            except Exception as exc:
+            except (ValueError, TypeError, AttributeError) as exc:
                 logger.error("Failed to multiply inverted target mesh matrix: %s", exc)
                 return rest_world
         return rest_world
@@ -280,10 +282,14 @@ class WeightSanitizer:
 
             bm.to_mesh(mesh)
             mesh.update()
-        except Exception as exc:
+        except (RuntimeError, ValueError, IndexError, ReferenceError, TypeError) as exc:
             logger.error("Weight normalization failed on '%s': %s", getattr(obj, "name", "unknown"), exc)
+            raise RiggingError(f"Weight normalization failed on '{getattr(obj, 'name', 'unknown')}': {exc}") from exc
         finally:
-            bm.free()
+            try:
+                bm.free()
+            except (RuntimeError, ReferenceError, AttributeError) as free_exc:
+                logger.debug("Failed freeing BMesh in weight normalization: %s", free_exc)
 
         # Safely determine which vertex group names are actually used across all vertices (including loose/edges)
         used_vg_names: set[str] = set()
@@ -299,7 +305,7 @@ class WeightSanitizer:
         if hasattr(obj, "find_armature"):
             try:
                 armature = obj.find_armature()
-            except Exception as exc:
+            except (RuntimeError, AttributeError) as exc:
                 logger.debug("find_armature failed: %s", exc)
         if not armature and hasattr(obj, "modifiers"):
             for m in obj.modifiers:
@@ -318,7 +324,7 @@ class WeightSanitizer:
             try:
                 obj.vertex_groups.remove(vg)
                 purged_vg_count += 1
-            except Exception as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Failed to remove unused vertex group '%s': %s", getattr(vg, "name", "unknown"), exc)
 
         return {
@@ -463,7 +469,7 @@ class KinematicBonePruner:
         if not tgt_vg:
             try:
                 tgt_vg = obj.vertex_groups.new(name=target_name)
-            except Exception as exc:
+            except (RuntimeError, AttributeError, ValueError) as exc:
                 logger.error("Failed to create vertex group '%s': %s", target_name, exc)
                 return
 

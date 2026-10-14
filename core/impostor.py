@@ -269,19 +269,19 @@ class ImpostorManager:
         if hasattr(mat, "surface_render_method"):
             try:
                 mat.surface_render_method = "DITHERED"
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not set surface_render_method: %s", exc)
         if hasattr(mat, "use_transparent_shadow"):
             try:
                 mat.use_transparent_shadow = True
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not set use_transparent_shadow: %s", exc)
         if hasattr(mat, "use_backface_culling"):
             mat.use_backface_culling = True
         if hasattr(mat, "use_backface_culling_shadow"):
             try:
                 mat.use_backface_culling_shadow = True
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not set use_backface_culling_shadow: %s", exc)
 
         nodes.clear()
@@ -499,7 +499,7 @@ class ImpostorManager:
                     bpy.ops.object.mode_set(mode="OBJECT")
                     if prev_active:
                         bpy.context.view_layer.objects.active = prev_active
-                except Exception as pack_err:
+                except (RuntimeError, AttributeError, TypeError) as pack_err:
                     logger.debug("pack_islands skipped or failed: %s", pack_err)
 
             logger.info(
@@ -513,7 +513,10 @@ class ImpostorManager:
         except Exception as exc:
             logger.error("Failed creating impostor object: %s", exc)
             if impostor_mesh and bpy and hasattr(bpy, "data") and bpy.data.meshes.get(impostor_mesh.name):
-                bpy.data.meshes.remove(impostor_mesh)
+                try:
+                    bpy.data.meshes.remove(impostor_mesh)
+                except (RuntimeError, ReferenceError, AttributeError) as clean_exc:
+                    logger.debug("Failed removing impostor mesh in error handler: %s", clean_exc)
             raise
 
 

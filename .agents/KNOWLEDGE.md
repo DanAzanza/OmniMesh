@@ -149,3 +149,15 @@ Configuration metadata is strictly decoupled from render geometry and stored in 
 ### 6.2 Serialization & Geometry Isolation Boundaries
 * **MSFS 2024 Serialization**: Serializes `{AssetName}_Config` into modular XML and CFG specifications (`systems.xml`, `cameras.xml`, `flight_model.cfg`, `attached_objects.cfg`).
 * **Geometry Export Isolation**: Configuration metadata Empties must remain strictly separate from exported glTF meshes. Mounting sockets (`ATTACH_POINT_*`) in LOD0 are preserved for attachment rigging, but config Empties reside in `{AssetName}_Config` and are filtered during mesh export.
+
+---
+
+## 7. Subprocess & Headless Runtime Execution Invariants
+
+* **Headless Subprocess CLI Argument Parsing Trap (`--` delimiter)**:
+  When launching headless Blender with `--python script.py -- [args]`, Python's `argparse.parse_known_args()` terminates option parsing upon encountering `--`. All subsequent arguments are placed into the `unknown` vector. Scripts expecting CLI arguments inside Blender must explicitly slice `argv = sys.argv[sys.argv.index("--") + 1:]` prior to invoking `parser.parse_known_args(argv)`. Failure to slice `sys.argv` causes flags like `--in-blender` to be missed (`args.in_blender == False`), causing scripts that re-invoke Blender to enter infinite recursive fork loops.
+* **Working Directory `sys.path` Resolution under `--factory-startup`**:
+  Headless Blender instances launched with `--factory-startup` do not automatically register the repository working directory in Python's `sys.path`. Subprocess scripts executed via `--python` must programmatically determine the repository root (`os.path.dirname(os.path.dirname(os.path.abspath(__file__)))`) and inject it into `sys.path` before attempting to import repository packages (`core`, `ui`, `exporters`, `bridges`).
+* **BMesh Topological Rollback and Recovery Contract**:
+  During non-manifold edge or bowtie vertex splits in BMesh, `bmesh.ops` operations can fail midway. The standard contract requires: if new element creation fails, attempt restoring original vertices; if restoration succeeds, log a warning and preserve the original geometry safely; if restoration *also* fails, immediately raise `TopologyError` fail-fast with actionable diagnostics rather than leaving deleted elements or corrupted holes in the mesh.
+

@@ -138,11 +138,11 @@ class TopologyRepairEngine:
         into independent vertices, preserving UV layers, deform weights (vertex groups),
         face attributes, and smoothing.
         """
-        if not bmesh or not bm or not hasattr(bm, "verts"):
+        if not bm or not hasattr(bm, "verts"):
             return 0
         try:
             bm.verts.ensure_lookup_table()
-        except Exception as exc:
+        except BMESH_OP_ERRORS as exc:
             logger.debug("Lookup table init error in split_bowtie_vertices: %s", exc)
             return 0
 
@@ -181,7 +181,7 @@ class TopologyRepairEngine:
                         dvert = new_vert[dvert_lay]
                         for g_idx, w in orig_weights.items():
                             dvert[g_idx] = w
-                    except Exception as exc:
+                    except BMESH_INSPECTION_ERRORS as exc:
                         logger.debug("Deform weight assign error: %s", exc)
 
                 split_count += _remap_fan_to_new_vertex(bm, extra_fan, vert, new_vert, uv_layers)
@@ -192,7 +192,7 @@ class TopologyRepairEngine:
                 bm.edges.ensure_lookup_table()
                 bm.faces.ensure_lookup_table()
                 bm.verts.index_update()
-            except Exception as exc:
+            except BMESH_OP_ERRORS as exc:
                 logger.debug("Lookup table ensure error: %s", exc)
 
         return split_count
@@ -203,11 +203,11 @@ class TopologyRepairEngine:
         Detects and splits non-manifold edges connected to > 2 faces into separate manifold edges,
         preserving UV layers, deform weights (vertex groups), face attributes, and smoothing.
         """
-        if not bmesh or not bm or not hasattr(bm, "edges"):
+        if not bm or not hasattr(bm, "edges"):
             return 0
         try:
             bm.edges.ensure_lookup_table()
-        except Exception as exc:
+        except BMESH_OP_ERRORS as exc:
             logger.debug("Lookup table init error in split_non_manifold_edges: %s", exc)
             return 0
 

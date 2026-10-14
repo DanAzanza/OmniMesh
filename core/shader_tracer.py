@@ -308,14 +308,14 @@ class ShaderTracer:
         raw_floats = np.empty(src_w * src_h * 4, dtype=np.float32)
         try:
             img.pixels.foreach_get(raw_floats)
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError) as exc:
             logger.warning("Failed reading pixels from '%s': %s", getattr(img, "name", "unknown"), exc)
             return fallback
         finally:
             if hasattr(img, "buffers_free"):
                 try:
                     img.buffers_free()
-                except Exception as exc:
+                except (RuntimeError, AttributeError) as exc:
                     logger.debug("Failed freeing image buffers: %s", exc)
 
         np.nan_to_num(raw_floats, copy=False, nan=default_nan, posinf=1.0, neginf=0.0)
@@ -508,7 +508,7 @@ class ShaderTracer:
             if hasattr(temp_img, "colorspace_settings"):
                 try:
                     temp_img.colorspace_settings.name = "Non-Color"
-                except Exception as exc:
+                except (TypeError, ValueError, AttributeError) as exc:
                     logger.debug("Setting colorspace Non-Color skipped: %s", exc)
             tex_node = nodes.new(type="ShaderNodeTexImage")
             temp_nodes.append(tex_node)
@@ -544,7 +544,7 @@ class ShaderTracer:
             if hasattr(temp_img, "buffers_free"):
                 temp_img.buffers_free()
             return res
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
             logger.debug("Bake execution fallback: %s", exc)
             return None
         finally:
@@ -558,5 +558,5 @@ class ShaderTracer:
                     nodes.remove(tn)
                 if temp_img and bpy and hasattr(bpy.data, "images"):
                     bpy.data.images.remove(temp_img, do_unlink=True)
-            except Exception as exc:
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Bake cleanup skipped: %s", exc)

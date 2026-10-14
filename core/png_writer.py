@@ -82,7 +82,7 @@ def write_png_direct(filepath: str, arr: np.ndarray, bit_depth: int = 8) -> bool
                     continue
                 logger.debug("Pillow save fallback to raw PNG encoder: %s", exc)
                 break
-            except Exception as exc:
+            except (ValueError, TypeError) as exc:
                 logger.debug("Pillow save fallback to raw PNG encoder: %s", exc)
                 break
 

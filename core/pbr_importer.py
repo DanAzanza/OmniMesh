@@ -62,7 +62,7 @@ class OCIOColorSpaceResolver:
             prop = getattr(getattr(image.colorspace_settings, "bl_rna", None), "properties", {}).get("name")
             if prop and hasattr(prop, "enum_items"):
                 available_spaces = {item.identifier for item in prop.enum_items}
-        except Exception as exc:
+        except (AttributeError, TypeError) as exc:
             logger.debug("OCIO enum query: %s", exc)
 
         target_chain = cls.DATA_FALLBACKS if is_data else (cls.LINEAR_FALLBACKS if is_float else cls.COLOR_FALLBACKS)
@@ -482,7 +482,7 @@ class ShaderGraphBuilder:
                 if getattr(img, "users", 0) == 0:
                     try:
                         bpy.data.images.remove(img)
-                    except Exception as exc:
+                    except (RuntimeError, ReferenceError, AttributeError) as exc:
                         logger.debug("Orphan image removal skipped: %s", exc)
 
         return has_any_link

@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Set
 
 import numpy as np
 
+from .exceptions import TopologyError
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -192,7 +194,7 @@ class RobustTransparencyEvaluator:
             # Alpha is channel index 3 in RGBA float buffer
             alpha_samples = buf[3 :: 4 * step]
             return bool(np.any(alpha_samples < 0.98))
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("Fast alpha sample fallback: %s", exc)
             return False
         finally:
@@ -201,7 +203,7 @@ class RobustTransparencyEvaluator:
             if hasattr(img, "buffers_free"):
                 try:
                     img.buffers_free()
-                except Exception as exc:
+                except (RuntimeError, AttributeError) as exc:
                     logger.debug("Failed freeing image buffers: %s", exc)
 
 
@@ -362,7 +364,7 @@ class HardenedOcclusionCuller:
                 from .topology_repair import TopologyRepairEngine
 
                 TopologyRepairEngine.fill_small_boundary_holes(bm, max_edges=6)
-            except Exception as exc:
+            except (TopologyError, RuntimeError, ValueError, ReferenceError) as exc:
                 logger.debug("Hole fill bypassed: %s", exc)
 
             MeshSanitizer.clean_loose_and_degenerates(bm)

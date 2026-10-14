@@ -42,13 +42,13 @@ def safe_load_image(filepath: str) -> Optional[Any]:
             if existing_abs == abs_target:
                 try:
                     img.reload()
-                except Exception as reload_err:
+                except (RuntimeError, ValueError, AttributeError) as reload_err:
                     logger.debug("Failed reloading existing image %s: %s", filepath, reload_err)
                 return img
 
     try:
         return bpy.data.images.load(filepath)
-    except Exception as exc:
+    except (RuntimeError, ValueError, AttributeError) as exc:
         logger.error("Failed loading image from %s: %s", filepath, exc)
         return None
 
@@ -81,22 +81,22 @@ def create_octahedral_preview_material(
     if hasattr(mat, "surface_render_method"):
         try:
             mat.surface_render_method = "DITHERED"
-        except Exception as exc:
+        except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Failed setting surface_render_method on material: %s", exc)
     if hasattr(mat, "use_transparent_shadow"):
         try:
             mat.use_transparent_shadow = True
-        except Exception as exc:
+        except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Failed setting use_transparent_shadow on material: %s", exc)
     if hasattr(mat, "use_backface_culling"):
         try:
             mat.use_backface_culling = True
-        except Exception as exc:
+        except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Failed setting use_backface_culling on material: %s", exc)
     if hasattr(mat, "blend_method"):
         try:
             mat.blend_method = "CLIP"
-        except Exception as exc:
+        except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Failed setting blend_method on material: %s", exc)
 
     nodes = mat.node_tree.nodes

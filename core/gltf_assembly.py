@@ -139,14 +139,14 @@ class GLTFAssemblyEngine:
         try:
             # Execute Blender's glTF importer
             bpy.ops.import_scene.gltf(filepath=str(path))
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError) as exc:
             logger.error("Failed importing glTF '%s': %s", path, exc)
             return []
         finally:
             if prev_active_lc:
                 try:
                     vl.active_layer_collection = prev_active_lc
-                except Exception as exc:
+                except (RuntimeError, AttributeError) as exc:
                     logger.debug("Failed restoring previous active layer collection: %s", exc)
 
         # Identify newly created objects
@@ -165,7 +165,7 @@ class GLTFAssemblyEngine:
                 if hasattr(obj, "data") and getattr(obj.data, "users", 0) > 1:
                     try:
                         obj.data = obj.data.copy()
-                    except Exception as exc:
+                    except (RuntimeError, AttributeError) as exc:
                         logger.debug("Could not copy interaction mesh datablock: %s", exc)
                 interact_col = get_or_create_engine_import_collection(context, effective_asset, "INTERACTIONS")
                 if interact_col:
@@ -178,7 +178,7 @@ class GLTFAssemblyEngine:
                 if hasattr(obj, "data") and getattr(obj.data, "users", 0) > 1:
                     try:
                         obj.data = obj.data.copy()
-                    except Exception as exc:
+                    except (RuntimeError, AttributeError) as exc:
                         logger.debug("Could not copy collider mesh datablock: %s", exc)
                 coll_col = get_or_create_engine_import_collection(context, effective_asset, "COLLIDERS")
                 if coll_col:
@@ -197,18 +197,18 @@ class GLTFAssemblyEngine:
                     if coll != interact_col:
                         try:
                             coll.objects.unlink(obj)
-                        except Exception as exc:
+                        except (RuntimeError, ReferenceError, AttributeError) as exc:
                             logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
                 elif mesh_role == "PHYSICS_COLLIDER":
                     if coll != coll_col:
                         try:
                             coll.objects.unlink(obj)
-                        except Exception as exc:
+                        except (RuntimeError, ReferenceError, AttributeError) as exc:
                             logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
                 elif coll != target_collection:
                     try:
                         coll.objects.unlink(obj)
-                    except Exception as exc:
+                    except (RuntimeError, ReferenceError, AttributeError) as exc:
                         logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
 
         # Cleanup dummy collections created by glTF importer if they are now empty
@@ -217,7 +217,7 @@ class GLTFAssemblyEngine:
             if coll != target_collection and len(coll.objects) == 0 and len(coll.children) == 0:
                 try:
                     bpy.data.collections.remove(coll)
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed removing empty collection %s: %s", coll.name, exc)
 
         return new_objects
@@ -259,7 +259,7 @@ class GLTFAssemblyEngine:
             if dup_mat.users == 0:
                 try:
                     bpy.data.materials.remove(dup_mat, do_unlink=True)
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed removing unreferenced duplicate material %s: %s", dup_mat.name, exc)
 
         return remapped_count
@@ -303,7 +303,7 @@ class GLTFAssemblyEngine:
                     bpy.data.objects.remove(arm_obj, do_unlink=True)
                     if arm_data and hasattr(bpy.data, "armatures") and getattr(arm_data, "users", 0) == 0:
                         bpy.data.armatures.remove(arm_data)
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed removing redundant armature %s: %s", arm_obj.name, exc)
 
         return retargeted_count

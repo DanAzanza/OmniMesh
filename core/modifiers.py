@@ -57,7 +57,7 @@ class ModifierManager:
                     try:
                         mod.render_levels = mod.levels
                         mod_synced = True
-                    except Exception as exc:
+                    except (TypeError, ValueError, AttributeError) as exc:
                         logger.debug("Could not sync render_levels on %s: %s", getattr(mod, "name", "mod"), exc)
 
             # 2. Screw: sync render_steps to steps
@@ -66,7 +66,7 @@ class ModifierManager:
                     try:
                         mod.render_steps = mod.steps
                         mod_synced = True
-                    except Exception as exc:
+                    except (TypeError, ValueError, AttributeError) as exc:
                         logger.debug("Could not sync render_steps on %s: %s", getattr(mod, "name", "mod"), exc)
 
             # 3. Ocean: sync resolution to viewport_resolution
@@ -75,7 +75,7 @@ class ModifierManager:
                     try:
                         mod.resolution = mod.viewport_resolution
                         mod_synced = True
-                    except Exception as exc:
+                    except (TypeError, ValueError, AttributeError) as exc:
                         logger.debug("Could not sync ocean resolution on %s: %s", getattr(mod, "name", "mod"), exc)
 
             # 4. Global visibility: sync show_render to show_viewport
@@ -84,7 +84,7 @@ class ModifierManager:
                     try:
                         mod.show_render = mod.show_viewport
                         mod_synced = True
-                    except Exception as exc:
+                    except (TypeError, ValueError, AttributeError) as exc:
                         logger.debug("Could not sync show_render on %s: %s", getattr(mod, "name", "mod"), exc)
 
             if mod_synced:
@@ -105,6 +105,7 @@ class ModifierManager:
         depsgraph: Any = None,
         preserve_armature: bool = True,
         max_poly_limit: int = 25_000_000,
+        context: Any = None,
     ) -> tuple[Any, Any]:
         """
         Extracts an evaluated mesh datablock with non-armature modifiers baked.
@@ -117,8 +118,9 @@ class ModifierManager:
         # Synchronize viewport settings into render settings
         ModifierManager.sync_viewport_to_render_settings(obj)
 
-        if depsgraph is None and hasattr(bpy.context, "evaluated_depsgraph_get"):
-            depsgraph = bpy.context.evaluated_depsgraph_get()
+        ctx = context or getattr(bpy, "context", None)
+        if depsgraph is None and ctx and hasattr(ctx, "evaluated_depsgraph_get"):
+            depsgraph = ctx.evaluated_depsgraph_get()
 
         if not depsgraph or not hasattr(obj, "evaluated_get"):
             return getattr(obj, "data", None), None
@@ -149,7 +151,7 @@ class ModifierManager:
                 return eval_mesh, eval_obj
             return getattr(eval_obj, "data", None), None
 
-        except Exception as exc:
+        except (RuntimeError, AttributeError, ValueError) as exc:
             logger.error("Failed to extract evaluated mesh for %s: %s", getattr(obj, "name", "obj"), exc)
             return getattr(obj, "data", None), None
 
@@ -158,7 +160,11 @@ class ModifierManager:
                 mod.show_viewport = True
 
     @staticmethod
-    def apply_all_modifiers_in_place(obj: Any, preserve_armature: bool = True) -> bool:
+    def apply_all_modifiers_in_place(
+        obj: Any,
+        preserve_armature: bool = True,
+        context: Any = None,
+    ) -> bool:
         """
         Applies all non-armature modifiers directly to the object in stack order.
         Synchronizes viewport settings into render settings, removes viewport-hidden modifiers,
@@ -178,11 +184,12 @@ class ModifierManager:
             try:
                 obj.data = obj.data.copy()
                 logger.info("Unlinked multi-user mesh data for %s prior to applying modifiers", obj.name)
-            except Exception as exc:
+            except (RuntimeError, AttributeError) as exc:
                 logger.warning("Failed unlinking multi-user mesh for %s: %s", obj.name, exc)
 
         # 3. Iterate and apply modifiers top-to-bottom
         applied_count = 0
+        ctx = context or getattr(bpy, "context", None)
         for mod in list(obj.modifiers):
             if preserve_armature and getattr(mod, "type", "") == "ARMATURE":
                 continue
@@ -196,7 +203,7 @@ class ModifierManager:
                         getattr(mod, "name", "mod"),
                         obj.name,
                     )
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug(
                         "Could not remove hidden modifier %s: %s",
                         getattr(mod, "name", "mod"),
@@ -206,14 +213,14 @@ class ModifierManager:
 
             mod_name = getattr(mod, "name", "modifier")
             try:
-                if hasattr(bpy.context, "temp_override"):
-                    with bpy.context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                if ctx and hasattr(ctx, "temp_override"):
+                    with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
                         bpy.ops.object.modifier_apply(modifier=mod_name)
-                elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
-                    bpy.context.view_layer.objects.active = obj
+                elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
+                    ctx.view_layer.objects.active = obj
                     bpy.ops.object.modifier_apply(modifier=mod_name)
                 applied_count += 1
-            except Exception as exc:
+            except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.warning("Could not apply modifier %s on %s: %s", mod_name, obj.name, exc)
 
         logger.info("Applied %d modifiers in-place on %s", applied_count, obj.name)

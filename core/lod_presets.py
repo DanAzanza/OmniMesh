@@ -228,7 +228,7 @@ class LODPresetManager(BasePresetManager):
                             val["_is_builtin"] = True
                             val["_filepath"] = str(p)
                             loaded[pid] = val
-                    except Exception as exc:
+                    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
                         logger.warning("Failed loading built-in LOD preset '%s': %s", p, exc)
 
             # 2. User custom presets (can override built-in defaults or declare new templates)
@@ -244,7 +244,7 @@ class LODPresetManager(BasePresetManager):
                             val["_is_builtin"] = False
                             val["_filepath"] = str(p)
                             loaded[pid] = val
-                    except Exception as exc:
+                    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
                         logger.warning("Failed loading user LOD preset '%s': %s", p, exc)
 
             cache.clear()

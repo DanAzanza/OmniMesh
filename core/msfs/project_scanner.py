@@ -248,7 +248,7 @@ def parse_model_options(model_cfg_path: Path) -> MSFSModelOptions:
                 if current_section == "model.options" and "=" in line_str:
                     key, val = line_str.split("=", 1)
                     options_dict[key.strip().lower()] = _to_bool(val, False)
-    except Exception as exc:
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         logger.warning("Error reading [model.options] from '%s': %s", model_cfg_path, exc)
 
     if not has_section:
@@ -296,7 +296,7 @@ def parse_model_cfg(model_cfg_path: Path) -> dict[str, str]:
                         key = "normal"
                     if key and val:
                         result[key] = val
-    except Exception as exc:
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         logger.warning("Error reading model.cfg '%s': %s", model_cfg_path, exc)
 
     return result
@@ -362,7 +362,7 @@ def parse_model_xml(xml_path: Path) -> list[MSFSLODInfo]:
                         )
                         lod_index += 1
 
-    except Exception as exc:
+    except (ET.ParseError, OSError, ValueError) as exc:
         logger.warning("Failed parsing ModelInfo XML '%s': %s", xml_path, exc)
 
     # Sort descending by min_size to guarantee highest LOD first

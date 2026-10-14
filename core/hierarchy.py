@@ -121,7 +121,7 @@ def get_rest_world_matrix_for_static(static_obj: Any, armature_obj: Any, bone_na
 
         if m_bone_rest_local is not None and m_parent_inv is not None and m_basis is not None:
             return m_arm_world @ m_bone_rest_local @ m_parent_inv @ m_basis
-    except Exception as exc:
+    except (ValueError, TypeError, AttributeError) as exc:
         logger.debug("Rest world matrix computation error: %s", exc)
 
     return _copy_matrix(static_obj.matrix_world)
@@ -213,7 +213,7 @@ class MeshMergeEngine:
                             m_normal = m_transform.to_3x3().inverted().transposed()
                             for v in temp_bm.verts:
                                 v.normal = (m_normal @ v.normal).normalized()
-                        except Exception as exc:
+                        except (ValueError, AttributeError, RuntimeError) as exc:
                             logger.debug("Normal transformation failed: %s", exc)
 
                     # Remap Material Indices
@@ -473,7 +473,7 @@ class CollectionCloneDAG:
         if hasattr(bpy.context, "view_layer") and bpy.context.view_layer:
             try:
                 bpy.context.view_layer.update()
-            except Exception as exc:
+            except (RuntimeError, AttributeError) as exc:
                 logger.debug("View layer update exception: %s", exc)
 
         # Parent unparented objects to Pivot
@@ -614,11 +614,11 @@ def get_or_create_engine_import_collection(
                 if old_sub.name not in config_col.children:
                     try:
                         config_col.children.link(old_sub)
-                    except Exception as e:
+                    except (RuntimeError, ReferenceError, AttributeError) as e:
                         logger.debug("Could not link legacy subcollection to config: %s", e)
                 try:
                     lod0_col.children.unlink(old_sub)
-                except Exception as e:
+                except (RuntimeError, ReferenceError, AttributeError) as e:
                     logger.debug("Could not unlink legacy subcollection from LOD0: %s", e)
 
     sub_col = _bpy.data.collections.get(sub_name)

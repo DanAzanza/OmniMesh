@@ -5,6 +5,7 @@ Unit tests for Rigging & Skinning Weight Sanitization, Matrix Math Traps & Kinem
 import numpy as np
 import pytest
 
+from core.exceptions import RiggingError
 from core.rigging import (
     KinematicBonePruner,
     WeightSanitizer,
@@ -257,3 +258,31 @@ def test_weight_sanitizer_and_pruner_guards():
 
     assert KinematicBonePruner.prune_kinematic_subtrees(None, None, 10.0, 1.0, 1080) == 0
     assert KinematicBonePruner.prune_kinematic_subtrees(NonMesh(), None, float("nan"), float("inf"), -100) == 0
+
+
+def test_weight_sanitizer_raises_rigging_error_on_bmesh_failure(monkeypatch):
+    class MockMesh:
+        vertices = [1, 2]
+
+    class MockObj:
+        type = "MESH"
+        name = "CorruptObj"
+        data = MockMesh()
+        vertex_groups = ["Group"]
+
+    class MockBMeshModule:
+        def new(self):
+            class FaultyBM:
+                def from_mesh(self, mesh):
+                    raise RuntimeError("BMesh corrupted internal state")
+
+                def free(self):
+                    pass
+
+            return FaultyBM()
+
+    monkeypatch.setattr("core.rigging.bpy", object())
+    monkeypatch.setattr("core.rigging.bmesh", MockBMeshModule())
+
+    with pytest.raises(RiggingError, match="Weight normalization failed on 'CorruptObj'"):
+        WeightSanitizer.normalize_and_clamp_weights(MockObj())

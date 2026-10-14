@@ -87,7 +87,7 @@ class RecursiveHLODManager:
                 cy = sum(c[1] for c in corners) / len(corners)
                 cz = sum(c[2] for c in corners) / len(corners)
                 return grid_spec.get_cell_index((cx, cy, cz))
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Bounding box coordinate resolution skipped: %s", exc)
 
         return (0, 0, 0)
@@ -261,13 +261,13 @@ class RecursiveHLODManager:
                 obj.data = new_mesh
                 try:
                     bpy.data.meshes.remove(old_mesh)
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Could not remove old mesh: %s", exc)
                 return True
             else:
                 obj.modifiers.remove(mod)
                 return False
-        except Exception as exc:
+        except (RuntimeError, AttributeError, ValueError) as exc:
             logger.warning("Voxel proxy remesh evaluation failed: %s", exc)
             try:
                 if mod in obj.modifiers:

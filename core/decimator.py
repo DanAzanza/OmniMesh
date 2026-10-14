@@ -38,7 +38,7 @@ def temporary_vertex_group(obj: Any, group_name: str):
             if vg:
                 try:
                     obj.vertex_groups.remove(vg)
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed cleaning up temporary vertex group '%s': %s", group_name, exc)
 
 
@@ -448,7 +448,7 @@ class MeshDecimator:
         for kb in key_blocks:
             try:
                 kb.value = 0.0
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Failed resetting shape key value: %s", exc)
 
     @classmethod

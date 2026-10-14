@@ -107,7 +107,7 @@ def _extract_action_info(action: Any, bound_object: Any) -> dict[str, Any]:
         guid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"omnimesh.anim.{sanitized}"))
         try:
             action["_omnimesh_guid"] = guid
-        except Exception as exc:
+        except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Could not cache _omnimesh_guid on action: %s", exc)
 
     return {

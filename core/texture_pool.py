@@ -82,7 +82,7 @@ class TexturePoolManager:
                 else:
                     logger.warning("Texture pool worker timed out before completion.")
                     results.append(False)
-        except Exception as exc:
+        except (TimeoutError, RuntimeError, ValueError) as exc:
             logger.error("Exception in TexturePoolManager.wait_all: %s", exc)
         finally:
             cls.compact_memory()
@@ -104,7 +104,7 @@ class TexturePoolManager:
                 libc = ctypes.CDLL(libc_name)
                 if hasattr(libc, "malloc_trim"):
                     libc.malloc_trim(0)
-            except Exception as exc:
+            except (OSError, AttributeError) as exc:
                 logger.debug("Linux malloc_trim skipped: %s", exc)
 
     @classmethod
@@ -113,7 +113,7 @@ class TexturePoolManager:
             if cls._executor:
                 try:
                     cls._executor.shutdown(wait=True)
-                except Exception as exc:
+                except (RuntimeError, OSError) as exc:
                     logger.debug("Texture pool shutdown exception: %s", exc)
                 cls._executor = None
 

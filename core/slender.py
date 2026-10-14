@@ -307,7 +307,7 @@ class SlenderFeatureCuller:
                     from .sanitizer import MeshSanitizer
 
                     MeshSanitizer.clean_loose_and_degenerates(bm)
-                except Exception as exc:
+                except (RuntimeError, ValueError, ReferenceError, IndexError) as exc:
                     logger.debug("Clean loose after slender culling skipped: %s", exc)
 
         return {"culled_islands": culled_islands_count, "culled_faces": len(culled_faces)}

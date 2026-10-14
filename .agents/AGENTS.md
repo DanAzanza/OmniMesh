@@ -27,7 +27,7 @@
 * **Truth-in-Advertising & Evidentiary Documentation**:
   * Every claim in documentation, README files, or release notes—including performance benchmarks, hardware execution models, test counts, and compliance assertions—must be backed by reproducible scripts, benchmark harnesses, or automated test fixtures in the repository.
   * Speculative metrics, unbacked accuracy percentages (e.g. claiming benchmark figures without an in-repo evaluation dataset and evaluation script), and misleading technical branding are strictly prohibited.
-  * Badges, type-checker modes, and linter levels advertised in documentation must strictly match active configuration files (`pyproject.toml`, `pyrightconfig.json`, CI workflows).
+  * Badges, type-checker modes, and linter levels advertised in documentation must strictly match active configuration files (`pyproject.toml`, CI workflows).
 * **Mandatory Negative & Boundary Testing**:
   * Test suites must never assert happy paths alone. Every newly introduced feature or hardened boundary must test explicit failure modes:
     * Negative security assertions (unauthorized requests return 401/403, missing or invalid tokens fail, path traversal is rejected).
@@ -64,9 +64,10 @@
   * Prefer immutable data structures for domain models and data transfer contracts to prevent unexpected in-place side effects.
   * Prohibit synthetic fallback values that conceal missing or malformed data. Fail fast with explicit, typed exceptions when required preconditions are violated.
   * **Strict Exception Boundary**: Core domain routines must raise strongly typed domain exceptions rather than catching and swallowing errors via generic handlers (`except Exception: pass` or silent debug logging). Generic exception catching and user-facing error reporting belongs strictly at presentation/UI boundaries (e.g., CLI entry points or UI operator execution).
-* **Centralized Configuration**:
+* **Centralized Configuration & Single Source of Truth**:
   * Never embed magic constants, fixed paths, or unmanaged environment queries inside nested components.
   * Inject all operational parameters through centralized, strongly typed configuration objects.
+  * Maintain exactly one authoritative configuration file per tool (e.g. consolidate linter, type checker, and build configurations in `pyproject.toml` rather than duplicating across overlapping JSON and dotfiles). Prohibit redundant shadow configs that can drift or override active settings.
 * **Rule of Three Refactoring**:
   * Avoid premature abstraction, but never tolerate unmanaged copy-paste drift: when a pattern, path sanitation routine, or defensive validation check appears for the third time ($N \ge 3$), immediately extract and consolidate it into a unified, thoroughly tested shared utility.
 * **Pragmatic File Size Limits**:
@@ -89,9 +90,11 @@
   * Do not pass boolean parameters that fork a function into two distinct behavioral paths. Decompose the logic into dedicated functions or express intent using descriptive configuration types or enumerations.
 * **Deterministic Resource Management**:
   * Acquire and release external resources (file handles, network sockets, unmanaged memory buffers, synchronization locks) strictly via deterministic scoping constructs (e.g., context managers, `using` blocks, or guaranteed cleanup statements).
+  * **Safe Process Lifecycle & Identification Integrity**: Terminate external processes strictly when spawned by the current session and their identity is positively verified (via active process handle, verified PID paired with creation timestamp or verified command-line invocation). Prohibit terminating processes via blind port scanning or unvalidated persistent PID files alone, preventing accidental termination of reused PIDs or shared system daemons.
 * **Thread Safety & Atomic State Operations**:
   * Guard shared mutable resources using explicit synchronization primitives or thread-safe channels.
   * Ensure file writes, exports, and persistent state mutations are idempotent and atomic to prevent state corruption during interruptions.
+  * **Subscribe Before Dispatch**: In asynchronous or event-driven systems (WebSockets, message queues, reactive callbacks), always establish listeners and subscription channels *before* dispatching the action or request that triggers the events. Never rely on broker buffering or timing assumptions, as cached or immediate operations complete before unestablished subscribers can attach.
 * **Platform-Agnostic System Access**:
   * Avoid hardcoding platform-specific paths, line endings, or shell conventions. Use standard cross-platform path resolution libraries.
   * Encapsulate native OS calls behind environment guards and provide safe fallbacks for portable execution across all target platforms.
@@ -145,6 +148,7 @@ When formulating Git commit messages, adhere strictly to the following standards
   * All authentication, authorization, and validation controls must fail closed (`raise` or deny by default if tokens, configs, or states are missing, corrupted, or unspecified).
   * Never introduce bypass headers, testing backdoors, or debug overrides into production request handlers.
   * Localhost endpoints cannot be assumed trusted or single-user; multi-user environments (terminal servers, containers, shared hosts) expose local ports to all users on the host.
+  * Confine and validate external or server-returned file paths against allowed root directory boundaries (e.g. using `path.resolve().is_relative_to(root)` before reading, writing, or unlinking files).
   * Never interpolate untrusted or document-extracted strings into shell command lines. Pass parameters strictly via environment variables, files, or structured argument vectors.
 * **PII & Data Minimization in Telemetry**:
   * Logs at `INFO` or higher must never print raw personally identifiable information (PII), customer/patient names, or full payload bodies. Use structural summaries or restrict payload dumps strictly to local `DEBUG` logging.

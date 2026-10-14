@@ -41,7 +41,7 @@ def set_principled_socket(
         try:
             socket.default_value = value
             return True
-        except Exception as exc:
+        except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Failed setting socket '%s'/'%s': %s", name_v1, name_v2, exc)
     return False
 
@@ -91,7 +91,7 @@ def get_or_create_principled_node(mat: Any) -> Optional[Any]:
             output = tree.nodes.new(type="ShaderNodeOutputMaterial")
         tree.links.new(bsdf.outputs.get("BSDF"), output.inputs.get("Surface"))
         return bsdf
-    except Exception as exc:
+    except (RuntimeError, ValueError, AttributeError) as exc:
         logger.warning("Could not instantiate Principled BSDF: %s", exc)
         return None
 
@@ -147,7 +147,7 @@ def create_or_update_material_preset(
         if hasattr(mat, "msfs_material_type"):
             try:
                 mat.msfs_material_type = 1
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not assign RNA msfs_material_type: %s", exc)
 
     elif preset_type == "GLASS_TRANSPARENT":
@@ -161,7 +161,7 @@ def create_or_update_material_preset(
         if hasattr(mat, "msfs_material_type"):
             try:
                 mat.msfs_material_type = 4
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not assign RNA msfs_material_type: %s", exc)
 
     elif preset_type == "FLOATING_DECAL":
@@ -174,7 +174,7 @@ def create_or_update_material_preset(
         if hasattr(mat, "msfs_material_type"):
             try:
                 mat.msfs_material_type = 2
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not assign RNA msfs_material_type: %s", exc)
 
     elif preset_type == "INVISIBLE_COLLIDER":
@@ -186,7 +186,7 @@ def create_or_update_material_preset(
         if hasattr(mat, "msfs_material_type"):
             try:
                 mat.msfs_material_type = 12
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not assign RNA msfs_material_type: %s", exc)
 
     elif preset_type == "EMISSIVE_LIGHT":

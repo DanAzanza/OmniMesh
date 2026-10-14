@@ -171,7 +171,7 @@ def configure_game_scene_settings(
                                     enable_backface_culling=opts.enable_backface_culling,
                                 )
                                 viewports_count += 1
-        except Exception as exc:
+        except (AttributeError, ReferenceError, RuntimeError, TypeError) as exc:
             logger.debug("Viewport space traversal skipped or partially failed: %s", exc)
 
     result["viewports_updated"] = viewports_count

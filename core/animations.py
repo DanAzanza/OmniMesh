@@ -35,7 +35,7 @@ def _safe_invert_matrix(mat: Any) -> Any:
                     logger.warning("Singular matrix detected during animation inversion (det=%s). Returning copy.", det)
                     return mat.copy() if hasattr(mat, "copy") else mat
             return mat.inverted()
-        except Exception as exc:
+        except (ValueError, AttributeError, RuntimeError) as exc:
             logger.warning("Animation matrix inversion failed (%s). Returning copy.", exc)
             return mat.copy() if hasattr(mat, "copy") else mat
     return mat
@@ -70,7 +70,7 @@ class AnimationRigSanitizer:
         if hasattr(action, "fcurves") and action.fcurves is not None:
             try:
                 raw_fcurves.extend(list(action.fcurves))
-            except Exception as exc:
+            except (AttributeError, RuntimeError, ReferenceError) as exc:
                 logger.debug("Legacy fcurves extraction skipped: %s", exc)
         if hasattr(action, "layers"):
             try:
@@ -79,7 +79,7 @@ class AnimationRigSanitizer:
                         for cb in getattr(strip, "channelbags", []):
                             if hasattr(cb, "fcurves") and cb.fcurves is not None:
                                 raw_fcurves.extend(list(cb.fcurves))
-            except Exception as exc:
+            except (AttributeError, RuntimeError, ReferenceError) as exc:
                 logger.debug("Layered fcurves extraction skipped: %s", exc)
 
         # Deduplicate while preserving order using composite data_path and array_index
@@ -102,7 +102,7 @@ class AnimationRigSanitizer:
         if hasattr(action, "fcurves") and action.fcurves is not None:
             try:
                 return action.fcurves.new(data_path=data_path, index=index)
-            except Exception as exc:
+            except (RuntimeError, TypeError, AttributeError) as exc:
                 logger.debug("action.fcurves.new failed, attempting layered fallback: %s", exc)
 
         # 2. Blender 5.2+ Slotted / Layered Actions fallback
@@ -148,7 +148,7 @@ class AnimationRigSanitizer:
 
                 if cb and hasattr(cb, "fcurves"):
                     return cb.fcurves.new(data_path=data_path, index=index)
-            except Exception as exc:
+            except (RuntimeError, TypeError, AttributeError) as exc:
                 logger.error("Failed to create slotted FCurve: %s", exc)
 
         return None
@@ -172,7 +172,7 @@ class AnimationRigSanitizer:
                 if math.isfinite(r[0]) and math.isfinite(r[1]):
                     min_frames.append(r[0])
                     max_frames.append(r[1])
-            except Exception as exc:
+            except (RuntimeError, ValueError, AttributeError) as exc:
                 logger.debug("FCurve range extraction failed: %s", exc)
 
         if not min_frames or not max_frames:
@@ -248,7 +248,7 @@ class AnimationRigSanitizer:
             if hasattr(fc, "update"):
                 try:
                     fc.update()
-                except Exception as exc:
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("FCurve update failed: %s", exc)
 
         return snapped_count
@@ -476,7 +476,7 @@ class AnimationRigSanitizer:
                 if c and hasattr(c, "update"):
                     try:
                         c.update()
-                    except Exception as exc:
+                    except (RuntimeError, ReferenceError, AttributeError) as exc:
                         logger.debug("F-Curve update bypassed: %s", exc)
 
         except Exception as bake_exc:
@@ -484,7 +484,7 @@ class AnimationRigSanitizer:
             if bpy and hasattr(bpy.data, "actions"):
                 try:
                     bpy.data.actions.remove(baked_action, do_unlink=True)
-                except Exception as clean_exc:
+                except (RuntimeError, ReferenceError, AttributeError) as clean_exc:
                     logger.debug("Failed removing orphaned action: %s", clean_exc)
             raise
         finally:
@@ -518,6 +518,6 @@ class AnimationRigSanitizer:
             anim_data.action = None  # Ensure NLA evaluation takes precedence
 
             return True
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError) as exc:
             logger.error("Failed to setup clean NLA export: %s", exc)
             return False

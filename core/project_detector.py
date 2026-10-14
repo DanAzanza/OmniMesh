@@ -43,7 +43,7 @@ def detect_engine_project(export_dir: str, target_engine: str, max_depth: int = 
                 return None
             try:
                 abs_dir = bpy.path.abspath(export_dir)
-            except Exception as exc:
+            except (RuntimeError, ValueError, AttributeError) as exc:
                 logger.debug("Failed resolving relative export dir '%s': %s", export_dir, exc)
                 return None
         else:

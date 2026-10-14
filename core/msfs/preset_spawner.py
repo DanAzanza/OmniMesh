@@ -114,7 +114,7 @@ class ConfigPresetSpawner:
         if hasattr(datum_obj, "matrix_world") and hasattr(obj, "matrix_parent_inverse"):
             try:
                 obj.matrix_parent_inverse = datum_obj.matrix_world.inverted()
-            except Exception as exc:
+            except (ValueError, AttributeError, RuntimeError) as exc:
                 logger.debug("Could not invert parent matrix: %s", exc)
 
     @classmethod
@@ -331,7 +331,7 @@ class ConfigPresetSpawner:
                     size=item.get("size", (0.08, 0.08, 0.08)),
                 )
                 count += 1
-            except Exception as exc:
+            except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
                 logger.debug("Failed spawning interaction from preset: %s", exc)
         return count
 
@@ -501,7 +501,7 @@ class ConfigPresetSpawner:
                     extrema = detect_airframe_extrema(coords)
                     bbox_min = Vector((float(coords[:, 0].min()), float(coords[:, 1].min()), float(coords[:, 2].min())))
                     bbox_max = Vector((float(coords[:, 0].max()), float(coords[:, 1].max()), float(coords[:, 2].max())))
-            except Exception as exc:
+            except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
                 logger.debug("Could not compute geometry extrema: %s", exc)
 
         def anchor_fn(anchor_name: str, offset_norm: list[float]) -> Vector:
