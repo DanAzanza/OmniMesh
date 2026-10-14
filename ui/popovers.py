@@ -5,7 +5,8 @@ Declares secondary configuration popovers invoked via gear icons (`layout.popove
 Design Invariants:
 - Omit `bl_category` to prevent ghost tabs in the N-Panel.
 - Omit `bl_parent_id` to prevent accordion collision.
-- Declare `bl_ui_units_x = 16` to prevent label/slider truncation in popups.
+- Declare `bl_ui_units_x = 16` (or 18) to prevent label/slider truncation in popups.
+- Preset popovers are maintained in ui.popover_presets and re-exported here for unified registration.
 """
 
 from __future__ import annotations
@@ -23,63 +24,73 @@ except ImportError:
     Panel = object
 
 try:
-    from ..core.pbr_presets import (
-        DEFAULT_PRESET_ID,
-        PBRExportPresetManager,
-        PBRImportPresetManager,
-    )
+    from .utils import _get_popover_props
 except (ImportError, ValueError):
-    from core.pbr_presets import (
-        DEFAULT_PRESET_ID,
-        PBRExportPresetManager,
-        PBRImportPresetManager,
-    )
+    from ui.utils import _get_popover_props
 
+# Re-export preset popovers from ui.popover_presets
 try:
-    from .utils import resolve_lod_context
-except (ImportError, ValueError):
-    from ui.utils import resolve_lod_context
-
-try:
-    from ..core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
-except (ImportError, ValueError):
-    from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
-
-try:
-    from ..core.engine_import_presets import (
-        DEFAULT_ENGINE_IMPORT_PRESET_ID,
-        EngineImportPresetManager,
+    from .popover_presets import (
+        OMNIMESH_PT_popover_config_preset,
+        OMNIMESH_PT_popover_engine_import_preset,
+        OMNIMESH_PT_popover_export_preset,
+        OMNIMESH_PT_popover_import_preset,
+        OMNIMESH_PT_popover_lod_preset,
     )
 except (ImportError, ValueError):
-    from core.engine_import_presets import (
-        DEFAULT_ENGINE_IMPORT_PRESET_ID,
-        EngineImportPresetManager,
+    from ui.popover_presets import (
+        OMNIMESH_PT_popover_config_preset,
+        OMNIMESH_PT_popover_engine_import_preset,
+        OMNIMESH_PT_popover_export_preset,
+        OMNIMESH_PT_popover_import_preset,
+        OMNIMESH_PT_popover_lod_preset,
     )
-
-try:
-    from ..core.config_presets import (
-        DEFAULT_CONFIG_PRESET_ID,
-        ConfigPresetManager,
-    )
-except (ImportError, ValueError):
-    from core.config_presets import (
-        DEFAULT_CONFIG_PRESET_ID,
-        ConfigPresetManager,
-    )
-
-
-def _get_popover_props(context: Any) -> Any | None:
-    if not context:
-        return None
-    props, _, _ = resolve_lod_context(context)
-    if not props and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
-        props = context.scene.lod_tool
-    return props
 
 
 # =========================================================================
+# 0. SCENE & VIEWPORT SETUP POPOVER
 # =========================================================================
-# 2. MODIFY POPOVERS: SANITIZE & MATERIALS
+
+
+class OMNIMESH_PT_popover_scene_setup(Panel):
+    """Popover for scene initialization, viewport overlays, and helper collection creation."""
+
+    bl_idname = "OMNIMESH_PT_popover_scene_setup"
+    bl_label = "Scene & Viewport Setup"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "HEADER"
+    bl_ui_units_x = 16
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+
+        layout.label(text="Game Scene Setup", icon="SCENE_DATA")
+        row_sc = layout.row(align=True)
+        row_sc.scale_y = 1.15
+        row_sc.operator("omnimesh.quick_scene_setup", text="Game Scene", icon="SCENE_DATA")
+
+        layout.separator()
+        layout.label(text="Viewport Overlays", icon="OVERLAY")
+        row_ov = layout.row(align=True)
+        row_ov.scale_y = 1.1
+        op_st = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Stats", icon="VIEW_CAMERA")
+        op_st.mode = "STATS"
+        op_cav = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Cavity", icon="SHADING_SOLID")
+        op_cav.mode = "CAVITY"
+        op_fo = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Face Orientation", icon="NORMALS_FACE")
+        op_fo.mode = "FACE_ORIENTATION"
+
+        layout.separator()
+        layout.label(text="Helper Collections", icon="HELP")
+        row_help = layout.row(align=True)
+        row_help.scale_y = 1.15
+        row_help.operator("lod_tool.create_helpers_collection", text="Add Helpers Collection", icon="COLLECTION_NEW")
+
+
+# =========================================================================
+# 1. MODIFY POPOVERS: SANITIZE, MATERIALS & COLLISION
 # =========================================================================
 
 
@@ -159,6 +170,16 @@ class OMNIMESH_PT_popover_materials(Panel):
         layout.prop(props, "mat_cleanup_repair_missing_textures", text="Repair Missing Textures")
         layout.prop(props, "mat_cleanup_purge_orphans_blendfile", text="Purge Orphan Materials from .blend")
 
+        # Consolidated Multi-Engine Shader Presets
+        mat_props = getattr(props, "material_preset", None)
+        if mat_props:
+            layout.separator()
+            layout.label(text="Shader Presets", icon="MATERIAL")
+            row_m = layout.row(align=True)
+            row_m.use_property_split = False
+            row_m.prop(mat_props, "preset_type", text="")
+            row_m.operator("omnimesh.assign_material_preset", text="Assign Preset", icon="SHADING_TEXTURE")
+
 
 class OMNIMESH_PT_popover_collision(Panel):
     """Popover for convex collision hull generation and physics decomposition settings."""
@@ -190,7 +211,7 @@ class OMNIMESH_PT_popover_collision(Panel):
 
 
 # =========================================================================
-# 3. LODs POPOVERS: CONFIGURE & GENERATION
+# 2. LODs POPOVERS: CONFIGURE, GENERATE & IMPOSTOR
 # =========================================================================
 
 
@@ -254,132 +275,6 @@ class OMNIMESH_PT_popover_generate(Panel):
         layout.prop(props, "purge_shape_keys", text="Purge Distant Shape Keys")
 
 
-class OMNIMESH_PT_popover_lod_preset(Panel):
-    """Popover for configuring the active LOD preset, quality curve, and generation heuristics."""
-
-    bl_idname = "OMNIMESH_PT_popover_lod_preset"
-    bl_label = "LOD Profile Settings"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 22
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = _get_popover_props(context)
-        if not props:
-            return
-
-        preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
-        preset = LODPresetManager.get_preset(preset_id)
-
-        # 1. Header & Quality Curve
-        layout.label(text=preset.get("name", preset_id), icon="PRESET")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
-
-        layout.prop(props, "tau_sse", slider=True, text="Visual Stability (τ)")
-
-        layout.separator()
-
-        # 2. Preset Tiers (Compact Overview)
-        row_hdr = layout.row(align=True)
-        row_hdr.label(text="Preset Tiers & Budgets", icon="MESH_DATA")
-
-        row = layout.row()
-        active_count = len(props.lod_preset_active_tiers)
-        list_rows = max(3, min(active_count, 5))
-        row.template_list(
-            "OMNIMESH_UL_preset_tiers",
-            "",
-            props,
-            "lod_preset_active_tiers",
-            props,
-            "lod_preset_active_tier_index",
-            rows=list_rows,
-            maxrows=5,
-        )
-        col_btn = row.column(align=True)
-        col_btn.operator("lod_tool.add_preset_tier", icon="ADD", text="")
-        sub_rem = col_btn.column(align=True)
-        sub_rem.enabled = len(props.lod_preset_active_tiers) > 1
-        sub_rem.operator("lod_tool.remove_preset_tier", icon="REMOVE", text="")
-
-        # Cull Screen Size threshold immediately beneath the tiers
-        row_cull = layout.row(align=True)
-        row_cull.prop(props, "cull_screen_size_pct", slider=True, text="Cull at Screen Size")
-
-        layout.separator()
-
-        # 3. Hierarchy & Draw-Calls
-        box_hier = layout.box()
-        box_hier.use_property_split = True
-        box_hier.use_property_decorate = False
-        box_hier.prop(props, "consolidate_hierarchy", text="Consolidate Hierarchy")
-
-        # 4. Occlusion & Slender Culling
-        box_cull = layout.box()
-        box_cull.use_property_split = True
-        box_cull.use_property_decorate = False
-        box_cull.label(text="Occlusion & Slender Culling", icon="HIDE_OFF")
-        box_cull.prop(props, "enable_occlusion_culling", text="Interior Culling")
-        if props.enable_occlusion_culling:
-            box_cull.prop(props, "occlusion_lod_start", text="Start Tier")
-            box_cull.prop(props, "occlusion_ray_density", text="Ray Samples")
-            box_cull.prop(props, "occlusion_evaluate_alpha", text="Eval Alpha")
-        box_cull.prop(props, "enable_slender_culling", text="Slender Culling")
-
-        # 5. Spatial Chunking & HLOD
-        box_chunk = layout.box()
-        box_chunk.use_property_split = True
-        box_chunk.use_property_decorate = False
-        box_chunk.label(text="Spatial Chunking & HLOD", icon="MESH_GRID")
-        box_chunk.prop(props, "enable_spatial_chunking", text="Enable Chunking")
-        if props.enable_spatial_chunking:
-            box_chunk.prop(props, "chunk_partitioning_mode", text="Partitioning")
-            if props.chunk_partitioning_mode == "ADAPTIVE_CLUSTERING":
-                box_chunk.prop(props, "adaptive_cluster_target_polys", text="Max Polys/Cluster")
-            box_chunk.prop(props, "chunk_cell_size", text="Cell Size (m)")
-            box_chunk.prop(props, "chunk_split_z", text="Split Vertical Z")
-            if props.chunk_split_z:
-                box_chunk.prop(props, "chunk_cell_size_z", text="Z Cell Size (m)")
-            box_chunk.prop(props, "enable_hlod", text="Enable HLOD")
-            if props.enable_hlod:
-                box_chunk.prop(props, "enable_hierarchical_hlod", text="Hierarchical (Quadtree)")
-                box_chunk.prop(props, "hlod_start_tier", text="HLOD Start Tier")
-                box_chunk.prop(props, "hlod_proxy_remesh", text="Terminal Voxel Wrap")
-                if props.hlod_proxy_remesh:
-                    box_chunk.prop(props, "hlod_proxy_voxel_size", text="Voxel Shell Size (m)")
-
-        # 6. Billboard Impostor
-        box_imp = layout.box()
-        box_imp.use_property_split = True
-        box_imp.use_property_decorate = False
-        box_imp.label(text="Billboard Impostor", icon="IMAGE_PLANE")
-        box_imp.prop(props, "enable_impostor_lod", text="Enable Impostor")
-        if props.enable_impostor_lod:
-            box_imp.prop(props, "impostor_mode", text="Mode")
-            box_imp.prop(props, "auto_impostor_resolution", text="Auto Resolution")
-            if not getattr(props, "auto_impostor_resolution", True):
-                box_imp.prop(props, "impostor_resolution", text="Resolution")
-            else:
-                # Informational label of calculated resolution
-                s_pct = props.lods[-1].screen_size_pct if len(props.lods) > 0 else 5.0
-                target_px = max(256, min(4096, int(2048 * (s_pct / 10.0))))
-                calc_res = 1 << (target_px - 1).bit_length()
-                calc_res = max(256, min(4096, calc_res))
-                row_calc = box_imp.row()
-                row_calc.label(text=f"Calculated: {calc_res}×{calc_res}", icon="INFO")
-
-        layout.separator()
-        row_act = layout.row(align=True)
-        row_act.operator("lod_tool.analyze_and_configure", text="Reset to Factory", icon="LOOP_BACK")
-        if LODPresetManager.is_user_preset(preset_id):
-            row_act.operator("lod_tool.delete_lod_preset", text="Delete Preset", icon="TRASH")
-
-
 class OMNIMESH_PT_popover_impostor(Panel):
     """Dedicated Quick Configuration Popover for Billboard Impostors."""
 
@@ -418,8 +313,10 @@ class OMNIMESH_PT_popover_impostor(Panel):
 
 
 # =========================================================================
-# 4. EXPORT POPOVERS: PACKAGE & BRIDGE
+# 3. EXPORT POPOVERS: PACKAGE EXPORT
 # =========================================================================
+
+
 class OMNIMESH_PT_popover_export(Panel):
     """Popover for single asset export packaging, texture packing, and animation baking."""
 
@@ -453,283 +350,16 @@ class OMNIMESH_PT_popover_export(Panel):
         layout.prop(props, "bake_animations", text="Bake Skeletal Animations")
 
 
-class OMNIMESH_PT_popover_import_preset(Panel):
-    """Popover for configuring the selected import preset and editing texture map rules."""
-
-    bl_idname = "OMNIMESH_PT_popover_import_preset"
-    bl_label = "Import Preset Settings"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 22
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = _get_popover_props(context)
-        if not props:
-            return
-
-        preset_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
-        preset = PBRImportPresetManager.get_preset(preset_id)
-
-        # Hydrate maps if collection is empty or if active preset has changed
-        cached_pid = getattr(props, "pbr_active_maps_preset_id", "")
-        if len(props.pbr_active_maps) == 0 or cached_pid != preset_id:
-            try:
-                from .properties import sync_maps_from_preset
-            except (ImportError, ValueError):
-                sync_maps_from_preset = None
-            if sync_maps_from_preset:
-                sync_maps_from_preset(props, preset)
-
-        layout.label(text=preset.get("name", preset_id), icon="PRESET")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
-
-        layout.separator()
-        layout.label(text="Texture Path & Routing", icon="IMAGE_DATA")
-        layout.prop(props, "pbr_import_path_mode", text="Path Mode")
-        layout.prop(props, "pbr_import_ao_mode", text="AO Routing")
-        layout.prop(props, "pbr_import_preserve_existing", text="Preserve Other Nodes")
-
-        layout.separator()
-        layout.label(text="Texture Map Rules", icon="NODE_MATERIAL")
-
-        row = layout.row()
-        active_count = len(props.pbr_active_maps)
-        list_rows = max(4, min(active_count, 7))
-        row.template_list(
-            "OMNIMESH_UL_preset_maps",
-            "",
-            props,
-            "pbr_active_maps",
-            props,
-            "pbr_active_map_index",
-            rows=list_rows,
-            maxrows=8,
-        )
-        col_btn = row.column(align=True)
-        col_btn.operator("lod_tool.add_preset_map", icon="ADD", text="")
-        sub_rem = col_btn.column(align=True)
-        sub_rem.enabled = len(props.pbr_active_maps) > 1
-        sub_rem.operator("lod_tool.delete_preset_map", icon="REMOVE", text="")
-
-        maps = props.pbr_active_maps
-        idx = props.pbr_active_map_index
-        if 0 <= idx < len(maps):
-            active_map = maps[idx]
-            box_detail = layout.box()
-            col = box_detail.column(align=True)
-            col.prop(active_map, "name", text="Name")
-            col.prop(active_map, "suffixes_str", text="Suffixes")
-
-            row_cs = col.row(align=True)
-            row_cs.prop(active_map, "color_space", text="Color Space")
-            row_cs.prop(active_map, "priority", text="Priority")
-
-            col.prop(active_map, "is_normal_map", text="Is Normal Map")
-            if active_map.is_normal_map:
-                col.prop(active_map, "normal_format", text="Normal Format")
-
-            col.separator()
-            col.prop(active_map, "is_packed", text="Packed (R/G/B/A)")
-
-            if not active_map.is_packed:
-                col.prop(active_map, "target_rgb", text="Target Socket")
-                row_a = col.row(align=True)
-                row_a.prop(active_map, "target_a", text="Alpha Socket")
-                row_a.prop(active_map, "invert_a", text="Invert")
-            else:
-                for ch in ("r", "g", "b", "a"):
-                    row_ch = col.row(align=True)
-                    row_ch.prop(active_map, f"target_{ch}", text=f"{ch.upper()} Socket")
-                    row_ch.prop(active_map, f"invert_{ch}", text="Invert")
-
-
-class OMNIMESH_PT_popover_export_preset(Panel):
-    """Popover for configuring the selected export preset (Strategy, Bit Depth, Naming, Maps)."""
-
-    bl_idname = "OMNIMESH_PT_popover_export_preset"
-    bl_label = "Export Profile Settings"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 22
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = _get_popover_props(context)
-        if not props:
-            return
-
-        preset_id = getattr(props, "pbr_export_preset", "") or DEFAULT_PRESET_ID
-        preset = PBRExportPresetManager.get_preset(preset_id)
-
-        # Hydrate maps if collection is empty or if active preset has changed
-        cached_pid = getattr(props, "pbr_export_active_maps_preset_id", "")
-        if len(props.pbr_export_active_maps) == 0 or cached_pid != preset_id:
-            try:
-                from .properties import sync_export_maps_from_preset
-            except (ImportError, ValueError):
-                sync_export_maps_from_preset = None
-            if sync_export_maps_from_preset:
-                sync_export_maps_from_preset(props, preset)
-
-        layout.label(text=preset.get("name", preset_id), icon="PRESET")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
-
-        layout.separator()
-        layout.label(text="Preset Configuration", icon="SETTINGS")
-        layout.prop(props, "pbr_export_texture_strategy", text="Strategy")
-        if props.pbr_export_texture_strategy in {"SMART_AUTO", "BAKE"}:
-            layout.prop(props, "texture_max_resolution", text="Bake Resolution")
-        layout.prop(props, "pbr_export_bit_depth", text="Bit Depth")
-        layout.prop(props, "pbr_export_naming_pattern", text="Naming Pattern")
-
-        layout.separator()
-        layout.label(text="Package Pipeline Toggles", icon="PACKAGE")
-        layout.prop(props, "export_packed_textures", text="Pack PBR Textures on Export")
-        layout.prop(props, "bake_animations", text="Bake Skeletal Animations")
-        layout.prop(props, "engine_project_path", text="Engine Project Path (Bridge)")
-
-        layout.separator()
-        layout.label(text="Export Maps & Channel Routing", icon="NODE_MATERIAL")
-
-        row = layout.row()
-        row.template_list(
-            "OMNIMESH_UL_export_preset_maps",
-            "",
-            props,
-            "pbr_export_active_maps",
-            props,
-            "pbr_export_active_map_index",
-            rows=min(max(len(props.pbr_export_active_maps), 2), 5),
-        )
-        col_btn = row.column(align=True)
-        col_btn.operator("lod_tool.add_export_preset_map", icon="ADD", text="")
-        col_btn.operator("lod_tool.delete_export_preset_map", icon="REMOVE", text="")
-
-        # Detail box for selected map
-        idx = props.pbr_export_active_map_index
-        if 0 <= idx < len(props.pbr_export_active_maps):
-            active_map = props.pbr_export_active_maps[idx]
-            box = layout.box()
-            box.use_property_split = True
-            box.use_property_decorate = False
-
-            row_top = box.row(align=True)
-            row_top.prop(active_map, "name", text="Map Name")
-            row_top.prop(active_map, "export", text="Export")
-
-            box.prop(active_map, "export_suffix", text="Suffix")
-            box.prop(active_map, "color_space", text="Color Space")
-
-            row_norm = box.row()
-            row_norm.prop(active_map, "is_normal_map", text="Normal Map")
-            if active_map.is_normal_map:
-                row_norm.prop(active_map, "normal_format", text="")
-
-            box.prop(active_map, "is_packed", text="Channel Packed")
-
-            col = box.column(align=True)
-            if not active_map.is_packed:
-                col.prop(active_map, "target_rgb", text="RGB Socket")
-                row_a = col.row(align=True)
-                row_a.prop(active_map, "target_a", text="Alpha Socket")
-                row_a.prop(active_map, "invert_a", text="Invert")
-            else:
-                for ch in ("r", "g", "b", "a"):
-                    row_ch = col.row(align=True)
-                    row_ch.prop(active_map, f"target_{ch}", text=f"{ch.upper()} Socket")
-                    row_ch.prop(active_map, f"invert_{ch}", text="Invert")
-
-
-class OMNIMESH_PT_popover_engine_import_preset(Panel):
-    """Popover for configuring engine project package import options (toggles, model target, optimization)."""
-
-    bl_idname = "OMNIMESH_PT_popover_engine_import_preset"
-    bl_label = "Engine Import Settings"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 20
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = _get_popover_props(context)
-        if not props:
-            return
-
-        preset_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
-        preset = EngineImportPresetManager.get_preset(preset_id)
-
-        layout.label(text=preset.get("name", preset_id), icon="PACKAGE")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
-
-        layout.separator()
-        layout.label(text="Package Components to Ingest", icon="CHECKBOX_HLT")
-        box_comp = layout.box()
-        box_comp.prop(props, "engine_import_geometry", text="Geometry & Multi-LODs")
-        box_comp.prop(props, "engine_import_spatial", text="Spatial Markers (Datum, CG, Wheels)")
-        box_comp.prop(props, "engine_import_lights", text="Aviation Lights (Nav, Strobe, Landing)")
-        box_comp.prop(props, "engine_import_cameras", text="Cameras (Pilot, Cockpit, External)")
-
-        layout.separator()
-        layout.label(text="Model Target Selection", icon="OUTLINER_OB_MESH")
-        layout.prop(props, "engine_import_model_target", text="Target")
-
-        layout.separator()
-        layout.label(text="Pipeline Optimizations", icon="MODIFIER")
-        box_opt = layout.box()
-        box_opt.prop(props, "engine_import_use_lod0_suffix", text="Use '_LOD0' Suffix")
-        box_opt.prop(props, "engine_import_auto_assign_screen_pct", text="Auto-Assign minSize to Screen %")
-        box_opt.prop(props, "engine_import_deduplicate_materials", text="Deduplicate Re-imported Materials")
-        box_opt.prop(props, "engine_import_reuse_master_rig", text="Reuse Master Armature Rig")
-
-
-class OMNIMESH_PT_popover_config_preset(Panel):
-    """Popover for config preset component filters and options."""
-
-    bl_label = "Config Preset Settings"
-    bl_idname = "OMNIMESH_PT_popover_config_preset"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 16
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context:
-            return
-        layout = self.layout
-        props = _get_popover_props(context)
-        cfg_props = getattr(props, "config_presets", None) if props else None
-        if not cfg_props:
-            return
-
-        preset_id = getattr(cfg_props, "config_preset", "") or DEFAULT_CONFIG_PRESET_ID
-        preset = ConfigPresetManager.get_preset(preset_id)
-
-        layout.label(text=preset.get("name", preset_id), icon="PRESET")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
-
-        layout.separator()
-        layout.label(text="Categories to Include", icon="CHECKBOX_HLT")
-        box_comp = layout.box()
-        box_comp.prop(cfg_props, "include_spatial", text="Spatial & Wheels")
-        box_comp.prop(cfg_props, "include_lights", text="Aviation Lights")
-        box_comp.prop(cfg_props, "include_cameras", text="Cockpit & Cameras")
-        box_comp.prop(cfg_props, "include_exits", text="Exits & Doors")
-        box_comp.prop(cfg_props, "include_engines", text="Engines & Props")
-
+WORKFLOW_POPOVER_CLASSES = (
+    OMNIMESH_PT_popover_scene_setup,
+    OMNIMESH_PT_popover_sanitize,
+    OMNIMESH_PT_popover_materials,
+    OMNIMESH_PT_popover_collision,
+    OMNIMESH_PT_popover_configure,
+    OMNIMESH_PT_popover_generate,
+    OMNIMESH_PT_popover_impostor,
+    OMNIMESH_PT_popover_export,
+)
 
 POPOVER_CLASSES = (
     OMNIMESH_PT_popover_config_preset,
@@ -744,4 +374,23 @@ POPOVER_CLASSES = (
     OMNIMESH_PT_popover_impostor,
     OMNIMESH_PT_popover_export,
     OMNIMESH_PT_popover_export_preset,
+    OMNIMESH_PT_popover_scene_setup,
 )
+
+__all__ = [
+    "OMNIMESH_PT_popover_config_preset",
+    "OMNIMESH_PT_popover_engine_import_preset",
+    "OMNIMESH_PT_popover_import_preset",
+    "OMNIMESH_PT_popover_sanitize",
+    "OMNIMESH_PT_popover_materials",
+    "OMNIMESH_PT_popover_collision",
+    "OMNIMESH_PT_popover_configure",
+    "OMNIMESH_PT_popover_generate",
+    "OMNIMESH_PT_popover_lod_preset",
+    "OMNIMESH_PT_popover_impostor",
+    "OMNIMESH_PT_popover_export",
+    "OMNIMESH_PT_popover_export_preset",
+    "OMNIMESH_PT_popover_scene_setup",
+    "WORKFLOW_POPOVER_CLASSES",
+    "POPOVER_CLASSES",
+]

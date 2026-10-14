@@ -129,6 +129,11 @@ class LODLevelItem(PropertyGroup):
         default=False,
         description="Whether this tier is an impostor billboard representation",
     )
+    show_details: BoolProperty(
+        name="Show Details",
+        default=False,
+        description="Show or hide tuning sliders for this LOD tier",
+    )
     state: EnumProperty(
         name="State",
         items=[
@@ -374,8 +379,11 @@ def sync_preset_tiers_to_preset(props: Any, preset_id: str | None = None) -> str
     return target_id
 
 
+LODTierItem = LODLevelItem
+
 __all__ = [
     "LODLevelItem",
+    "LODTierItem",
     "LODPresetTierItem",
     "on_tier_target_pct_updated",
     "on_tier_target_tris_updated",

@@ -15,10 +15,11 @@ from typing import Any, Optional
 
 try:
     import bpy
-    from bpy.types import Operator
+    from bpy.types import Operator, Panel
 except ImportError:
     bpy = None
     Operator = object
+    Panel = object
 
 try:
     from ..bridges.manager import BridgeManager
@@ -302,6 +303,54 @@ class OMNIMESH_OT_batch_process(Operator):
             context.preferences.edit.use_global_undo = self._orig_global_undo
 
 
+class OMNIMESH_PT_export_batch(Panel):
+    """Subpanel: Multi-asset batch processing and folder ingestion."""
+
+    bl_label = "Batch Folder Export"
+    bl_idname = "OMNIMESH_PT_export_batch"
+    bl_parent_id = "OMNIMESH_PT_export"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "OmniMesh"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        if not context:
+            return False
+        scene = getattr(context, "scene", None)
+        return bool(scene and getattr(scene, "lod_tool", None))
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context:
+            return
+        layout = self.layout
+        props = getattr(context.scene, "lod_tool", None)
+        if not props:
+            return
+
+        row_batch = layout.row(align=True)
+        row_batch.use_property_split = False
+        row_batch.prop(props, "batch_mode", text="Enable Batch Mode")
+
+        row_src = layout.row(align=True)
+        row_src.use_property_split = False
+        row_src.prop(props, "batch_source_directory", text="Source")
+
+        row_act = layout.row(align=True)
+        row_act.use_property_split = False
+        row_act.scale_y = 1.15
+        if getattr(props, "is_batch_running", False):
+            row_act.operator("lod_tool.batch_cancel", text="Cancel Batch", icon="CANCEL")
+        else:
+            row_act.operator("lod_tool.batch_process", text="Batch Export", icon="PACKAGE")
+        row_act.prop(props, "export_directory", text="")
+
+        if getattr(props, "is_batch_running", False):
+            box_status = layout.box()
+            box_status.label(text=props.batch_status_text, icon="TIME")
+
+
 def register_batch_ops() -> None:
     if not bpy:
         return
@@ -325,3 +374,12 @@ def unregister_batch_ops() -> None:
                 bpy.utils.unregister_class(existing)
             except Exception as exc:
                 logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
+
+
+__all__ = [
+    "OMNIMESH_OT_batch_cancel",
+    "OMNIMESH_OT_batch_process",
+    "OMNIMESH_PT_export_batch",
+    "register_batch_ops",
+    "unregister_batch_ops",
+]

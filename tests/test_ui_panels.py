@@ -66,13 +66,17 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_export.bl_category == "OmniMesh"
     assert OMNIMESH_PT_export.bl_order == 3
 
-    # Subpanels (testing subpanel under Panel 3, MSFS spatial subpanel under Panel 4)
-    assert len(SUBPANEL_CLASSES) == 2
+    # Subpanels (testing subpanel under Panel 3, MSFS subpanel under Panel 2, Batch export subpanel under Panel 4)
+    assert len(SUBPANEL_CLASSES) == 3
     assert SUBPANEL_CLASSES[0].bl_idname == "OMNIMESH_PT_lods_testing"
+    assert SUBPANEL_CLASSES[0].bl_parent_id == "OMNIMESH_PT_lods"
     assert SUBPANEL_CLASSES[1].bl_idname == "OMNIMESH_PT_export_msfs_spatial"
+    assert SUBPANEL_CLASSES[1].bl_parent_id == "OMNIMESH_PT_modify"
+    assert SUBPANEL_CLASSES[2].bl_idname == "OMNIMESH_PT_export_batch"
+    assert SUBPANEL_CLASSES[2].bl_parent_id == "OMNIMESH_PT_export"
 
     # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
-    assert len(POPOVER_CLASSES) == 12
+    assert len(POPOVER_CLASSES) == 13
     for popover_cls in POPOVER_CLASSES:
         assert getattr(popover_cls, "bl_space_type", None) == "VIEW_3D"
         assert getattr(popover_cls, "bl_region_type", None) == "HEADER"
@@ -83,16 +87,17 @@ def test_panel_class_hierarchy_and_order():
 
     # Registration tuple (parent-first topological order)
     assert len(PRIMARY_PANELS) == 4
-    assert len(SUBPANEL_CLASSES) == 2
-    assert len(PANEL_CLASSES) == 18
+    assert len(SUBPANEL_CLASSES) == 3
+    assert len(PANEL_CLASSES) == 20
     assert PANEL_CLASSES[0] is OMNIMESH_PT_import
     assert PANEL_CLASSES[1] is OMNIMESH_PT_modify
     assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
     assert PANEL_CLASSES[3] is OMNIMESH_PT_export
     assert PANEL_CLASSES[4] is SUBPANEL_CLASSES[0]
     assert PANEL_CLASSES[5] is SUBPANEL_CLASSES[1]
+    assert PANEL_CLASSES[6] is SUBPANEL_CLASSES[2]
     for idx, pop_cls in enumerate(POPOVER_CLASSES):
-        assert PANEL_CLASSES[6 + idx] is pop_cls
+        assert PANEL_CLASSES[7 + idx] is pop_cls
 
 
 def test_operator_helpers_mocked():
@@ -839,21 +844,114 @@ def test_resolve_lod_context_reference_error_safeguard():
 
 
 def test_msfs_spatial_subpanel_poll():
-    """Verify OMNIMESH_PT_export_msfs_spatial polls True only for MSFS_2024 or with explicit config path."""
+    """Verify OMNIMESH_PT_export_msfs_spatial polls True whenever scene.lod_tool exists."""
     from ui.msfs_panel import OMNIMESH_PT_export_msfs_spatial
 
     ctx = MagicMock()
     ctx.scene.lod_tool.target_engine = "UE5"
     ctx.scene.lod_tool.msfs_spatial_cfg_path = ""
-    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is False
+    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is True
 
     ctx.scene.lod_tool.target_engine = "MSFS_2024"
     assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is True
 
     ctx.scene.lod_tool.target_engine = "GODOT_4"
-    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is False
-
-    ctx.scene.lod_tool.msfs_spatial_cfg_path = "G:/aircraft/flight_model.cfg"
     assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is True
 
+    ctx_no_props = MagicMock()
+    ctx_no_props.scene.lod_tool = None
+    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx_no_props) is False
+
     assert OMNIMESH_PT_export_msfs_spatial.poll(None) is False
+
+
+def test_lods_compact_card_show_details(monkeypatch):
+    """Verify that OMNIMESH_PT_lods renders compact cards (sliders hidden) when show_details is False and renders sliders when True."""
+    from ui.panel import OMNIMESH_PT_lods
+    from ui.properties.lod_properties import LODLevelItem, LODTierItem
+
+    monkeypatch.setattr("ui.panel.bpy", MagicMock())
+
+    assert LODTierItem is LODLevelItem
+
+    tier0 = MagicMock()
+    tier0.name = "LOD0"
+    tier0.actual_tris = 10000
+    tier0.target_tris_pct = 100.0
+    tier0.screen_size_pct = 100.0
+    tier0.distance_m = 0.0
+    tier0.is_impostor = False
+    tier0.is_soloed = False
+    tier0.show_details = False
+    tier0.state = "SOURCE"
+    tier0.last_baked_target_pct = 100.0
+
+    tier1 = MagicMock()
+    tier1.name = "LOD1"
+    tier1.actual_tris = 5000
+    tier1.target_tris_pct = 50.0
+    tier1.screen_size_pct = 40.0
+    tier1.distance_m = 12.0
+    tier1.is_impostor = False
+    tier1.is_soloed = False
+    tier1.show_details = False
+    tier1.state = "BAKED"
+    tier1.last_baked_target_pct = 50.0
+
+    mock_layout = MagicMock()
+    mock_box = MagicMock()
+    mock_card = MagicMock()
+    mock_layout.box.return_value = mock_box
+    mock_box.box.return_value = mock_card
+
+    mock_row = MagicMock()
+    mock_card.row.return_value = mock_row
+
+    ctx = MagicMock()
+    ctx.selected_objects = []
+    ctx.active_object = None
+    ctx.scene.lod_tool.lods = [tier0, tier1]
+    ctx.scene.lod_tool.base_triangles = 10000
+    ctx.scene.lod_tool.lod_preset = "unreal_engine_5"
+    ctx.scene.lod_tool.tau_sse = 2.0
+    ctx.scene.lod_tool.active_asset = ""
+
+    panel = OMNIMESH_PT_lods()
+
+    # Case 1: show_details is False -> sliders are not drawn
+    panel.layout = mock_layout
+    panel.draw(ctx)
+
+    prop_names_called = [call.args[1] for call in mock_row.prop.call_args_list if len(call.args) > 1]
+    assert "target_tris_pct" not in prop_names_called
+    assert "screen_size_pct" not in prop_names_called
+
+    # Case 2: show_details is True -> sliders are drawn
+    tier1.show_details = True
+    mock_row.reset_mock()
+    panel.draw(ctx)
+
+    prop_names_called = [call.args[1] for call in mock_row.prop.call_args_list if len(call.args) > 1]
+    assert "target_tris_pct" in prop_names_called
+    assert "screen_size_pct" in prop_names_called
+
+
+def test_pbr_maps_hydration_without_draw_mutation():
+    """Verify that restore_preset_state_on_load hydrates pbr_active_maps and pbr_export_active_maps without draw()."""
+    from unittest.mock import patch
+    from ui.properties.callbacks import restore_preset_state_on_load
+
+    mock_scene = MagicMock()
+    mock_props = MagicMock()
+    mock_props.is_state_restored = False
+    mock_props.pbr_active_maps = MagicMock()
+    mock_props.pbr_export_active_maps = MagicMock()
+    mock_scene.lod_tool = mock_props
+
+    mock_bpy = MagicMock()
+    mock_bpy.data.scenes = [mock_scene]
+
+    with patch("ui.properties.callbacks.bpy", mock_bpy):
+        restore_preset_state_on_load(None)
+
+    assert mock_props.is_state_restored is True

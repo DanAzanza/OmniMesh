@@ -66,6 +66,7 @@ from .guards import (
 )
 from .lod_properties import (
     LODLevelItem,
+    LODTierItem,
     LODPresetTierItem,
     on_lod_preset_property_modified,
     on_preset_tier_item_updated,
@@ -181,6 +182,7 @@ __all__ = [
     "MapSyncGuard",
     "ExportMapSyncGuard",
     "LODLevelItem",
+    "LODTierItem",
     "LODPresetTierItem",
     "PBRMapItem",
     "PBRExportMapItem",

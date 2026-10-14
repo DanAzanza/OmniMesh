@@ -315,73 +315,70 @@ def on_batch_source_updated(self: Any, _context: Any) -> None:
         logger.debug("Persist batch source: %s", exc)
 
 
+def restore_preset_state_on_load(dummy: Any = None) -> None:
+    """Restores last used preset selections and pipeline settings upon startup or file load."""
+    if not bpy or not hasattr(bpy, "data"):
+        return
+
+    state = get_pipeline_state()
+    last_exp = PBRExportPresetManager.get_last_active_preset()
+    last_imp = PBRImportPresetManager.get_last_active_preset()
+    last_lod = LODPresetManager.get_last_active_preset()
+
+    with StateRestorationGuard(), PresetSyncGuard():
+        for scene in getattr(bpy.data, "scenes", []):
+            props = getattr(scene, "lod_tool", None)
+            if not props or getattr(props, "is_state_restored", False):
+                continue
+            props.is_state_restored = True
+            exp_to_set = last_exp or "unreal_engine_5"
+            imp_to_set = last_imp or "unreal_engine_5"
+            lod_to_set = last_lod or "unreal_engine_5"
+            if hasattr(props, "pbr_export_preset"):
+                props.pbr_export_preset = exp_to_set
+                exp_preset = PBRExportPresetManager.get_preset(exp_to_set)
+                sync_export_maps_from_preset(props, exp_preset)
+            if hasattr(props, "pbr_preset"):
+                props.pbr_preset = exp_to_set
+            if hasattr(props, "pbr_import_preset"):
+                props.pbr_import_preset = imp_to_set
+                preset = PBRImportPresetManager.get_preset(imp_to_set)
+                sync_maps_from_preset(props, preset)
+            if hasattr(props, "lod_preset"):
+                props.lod_preset = lod_to_set
+                lod_preset_data = LODPresetManager.get_preset(lod_to_set)
+                sync_preset_tiers_from_preset(props, lod_preset_data)
+
+            # Auto-migrate legacy MSFS 2020 target version to MSFS 2024
+            if hasattr(props, "msfs_target_version") and getattr(props, "msfs_target_version", "") == "2020":
+                props.msfs_target_version = "2024"
+            msfs_cfg = getattr(props, "msfs_cfg", None)
+            if msfs_cfg and hasattr(msfs_cfg, "target_version") and getattr(msfs_cfg, "target_version", "") == "2020":
+                msfs_cfg.target_version = "2024"
+
+            # Hydrate persistent preferences
+            if "pbr_import_directory" in state and hasattr(props, "pbr_import_directory"):
+                props.pbr_import_directory = state["pbr_import_directory"]
+            if "export_directory" in state and hasattr(props, "export_directory"):
+                props.export_directory = state["export_directory"]
+            if "pbr_import_path_mode" in state and hasattr(props, "pbr_import_path_mode"):
+                props.pbr_import_path_mode = state["pbr_import_path_mode"]
+            if "pbr_import_ao_mode" in state and hasattr(props, "pbr_import_ao_mode"):
+                props.pbr_import_ao_mode = state["pbr_import_ao_mode"]
+            if "pbr_import_preserve_existing" in state and hasattr(props, "pbr_import_preserve_existing"):
+                props.pbr_import_preserve_existing = state["pbr_import_preserve_existing"]
+            if "engine_project_path" in state and hasattr(props, "engine_project_path"):
+                props.engine_project_path = state["engine_project_path"]
+            if "enable_live_sync" in state and hasattr(props, "enable_live_sync"):
+                props.enable_live_sync = state["enable_live_sync"]
+            if "batch_mode" in state and hasattr(props, "batch_mode"):
+                props.batch_mode = state["batch_mode"]
+            if "batch_source_directory" in state and hasattr(props, "batch_source_directory"):
+                props.batch_source_directory = state["batch_source_directory"]
+
+
 if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "handlers"):
-
-    @bpy.app.handlers.persistent
-    def restore_preset_state_on_load(dummy: Any = None) -> None:
-        """Restores last used preset selections and pipeline settings upon startup or file load."""
-        if not bpy or not hasattr(bpy, "data"):
-            return
-
-        state = get_pipeline_state()
-        last_exp = PBRExportPresetManager.get_last_active_preset()
-        last_imp = PBRImportPresetManager.get_last_active_preset()
-        last_lod = LODPresetManager.get_last_active_preset()
-
-        with StateRestorationGuard(), PresetSyncGuard():
-            for scene in getattr(bpy.data, "scenes", []):
-                props = getattr(scene, "lod_tool", None)
-                if not props or getattr(props, "is_state_restored", False):
-                    continue
-                props.is_state_restored = True
-                exp_to_set = last_exp or "unreal_engine_5"
-                imp_to_set = last_imp or "unreal_engine_5"
-                lod_to_set = last_lod or "unreal_engine_5"
-                if hasattr(props, "pbr_export_preset"):
-                    props.pbr_export_preset = exp_to_set
-                if hasattr(props, "pbr_preset"):
-                    props.pbr_preset = exp_to_set
-                if hasattr(props, "pbr_import_preset"):
-                    props.pbr_import_preset = imp_to_set
-                    preset = PBRImportPresetManager.get_preset(imp_to_set)
-                    sync_maps_from_preset(props, preset)
-                if hasattr(props, "lod_preset"):
-                    props.lod_preset = lod_to_set
-                    lod_preset_data = LODPresetManager.get_preset(lod_to_set)
-                    sync_preset_tiers_from_preset(props, lod_preset_data)
-
-                # Auto-migrate legacy MSFS 2020 target version to MSFS 2024
-                if hasattr(props, "msfs_target_version") and getattr(props, "msfs_target_version", "") == "2020":
-                    props.msfs_target_version = "2024"
-                msfs_cfg = getattr(props, "msfs_cfg", None)
-                if (
-                    msfs_cfg
-                    and hasattr(msfs_cfg, "target_version")
-                    and getattr(msfs_cfg, "target_version", "") == "2020"
-                ):
-                    msfs_cfg.target_version = "2024"
-
-                # Hydrate persistent preferences
-                if "pbr_import_directory" in state and hasattr(props, "pbr_import_directory"):
-                    props.pbr_import_directory = state["pbr_import_directory"]
-                if "export_directory" in state and hasattr(props, "export_directory"):
-                    props.export_directory = state["export_directory"]
-                if "pbr_import_path_mode" in state and hasattr(props, "pbr_import_path_mode"):
-                    props.pbr_import_path_mode = state["pbr_import_path_mode"]
-                if "pbr_import_ao_mode" in state and hasattr(props, "pbr_import_ao_mode"):
-                    props.pbr_import_ao_mode = state["pbr_import_ao_mode"]
-                if "pbr_import_preserve_existing" in state and hasattr(props, "pbr_import_preserve_existing"):
-                    props.pbr_import_preserve_existing = state["pbr_import_preserve_existing"]
-                if "engine_project_path" in state and hasattr(props, "engine_project_path"):
-                    props.engine_project_path = state["engine_project_path"]
-                if "enable_live_sync" in state and hasattr(props, "enable_live_sync"):
-                    props.enable_live_sync = state["enable_live_sync"]
-                if "batch_mode" in state and hasattr(props, "batch_mode"):
-                    props.batch_mode = state["batch_mode"]
-                if "batch_source_directory" in state and hasattr(props, "batch_source_directory"):
-                    props.batch_source_directory = state["batch_source_directory"]
-else:
-    restore_preset_state_on_load = None
+    restore_preset_state_on_load = bpy.app.handlers.persistent(restore_preset_state_on_load)
 
 
 def get_lod_preset_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
@@ -415,6 +412,7 @@ def serialize_asset_lod_state(props: Any, asset_name: str) -> None:
                 "last_baked_target_pct": getattr(tier, "last_baked_target_pct", -1.0),
                 "last_baked_screen_pct": getattr(tier, "last_baked_screen_pct", -1.0),
                 "state": getattr(tier, "state", "PLANNED"),
+                "show_details": getattr(tier, "show_details", False),
             }
         )
     _ASSET_LOD_STATE_CACHE[asset_name] = tier_list
@@ -533,6 +531,7 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "", 
         item.triangle_target = item.target_tris
         item.is_soloed = False
         item.is_impostor = bool(t_def.get("is_impostor", False))
+        item.show_details = bool(t_def.get("show_details", False))
 
         s_frac = s_pct / 100.0
         dist = compute_distance_from_screen_size(radius, s_frac, fov_v)

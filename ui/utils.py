@@ -272,6 +272,19 @@ def resolve_lod_context(context: Any) -> tuple[Any, Any | None, bool]:
     return scene_props, active_obj, False
 
 
+def _get_popover_props(context: Any) -> Any | None:
+    """Resolves active OmniMesh settings property group for popover panels."""
+    if not context:
+        return None
+    props, _, _ = resolve_lod_context(context)
+    if not props and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
+        props = context.scene.lod_tool
+    return props
+
+
+get_popover_props = _get_popover_props
+
+
 def safe_report(operator: Any, msg_type: set[str], msg: str) -> None:
     """Safely report status message from an operator with headless fallback."""
     if hasattr(operator, "report"):
