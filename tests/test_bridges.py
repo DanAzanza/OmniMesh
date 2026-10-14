@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from bridges.godot_bridge import GodotLiveBridge
 from bridges.manager import BridgeManager
 from bridges.msfs_bridge import MSFS2024LiveBridge
 from bridges.unity_bridge import UnityLiveBridge
@@ -17,7 +16,7 @@ def test_bridge_manager_registry():
     assert BridgeManager.get_bridge("UE5") is UnrealLiveBridge
     assert BridgeManager.get_bridge("UNITY_6") is UnityLiveBridge
     assert BridgeManager.get_bridge("MSFS_2024") is MSFS2024LiveBridge
-    assert BridgeManager.get_bridge("GODOT_4") is GodotLiveBridge
+    assert BridgeManager.get_bridge("GODOT_4") is None
     assert BridgeManager.get_bridge("UNKNOWN_ENGINE") is None
 
 
@@ -71,32 +70,6 @@ def test_unity_install_companion_scripts():
         assert os.path.exists(cs_path)
 
         ping_ok, ping_msg = UnityLiveBridge.ping_engine(tmpdir)
-        assert ping_ok is True
-        assert "Active" in ping_msg
-
-
-def test_godot_gdscript_post_import_generation():
-    gd_code = GodotLiveBridge.generate_post_import_gdscript()
-    assert "@tool" in gd_code
-    assert "extends EditorScenePostImport" in gd_code
-    assert "visibility_range_begin" in gd_code
-    assert "visibility_range_end" in gd_code
-    assert "VISIBILITY_RANGE_FADE_SELF" in gd_code
-
-
-def test_godot_install_companion_scripts():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create project.godot
-        with open(os.path.join(tmpdir, "project.godot"), "w", encoding="utf-8") as f:
-            f.write("; Godot project configuration\n")
-
-        ok, msg = GodotLiveBridge.install_companion_scripts(tmpdir)
-        assert ok is True
-
-        gd_path = os.path.join(tmpdir, "addons", "omnimesh", "OmniMeshPostImport.gd")
-        assert os.path.exists(gd_path)
-
-        ping_ok, ping_msg = GodotLiveBridge.ping_engine(tmpdir)
         assert ping_ok is True
         assert "Active" in ping_msg
 
@@ -175,41 +148,6 @@ def test_unity_sync_asset_validation():
             assert os.path.exists(dest_tex)
 
 
-def test_godot_sync_asset_validation():
-    # Missing project dir
-    ok, msg = GodotLiveBridge.sync_asset(None, "/fake/export", "SM_Godot", "")
-    assert ok is False
-    assert "not configured" in msg
-
-    # Missing export dir
-    with tempfile.TemporaryDirectory() as proj_dir:
-        ok, msg = GodotLiveBridge.sync_asset(None, "/fake/nonexistent", "SM_Godot", proj_dir)
-        assert ok is False
-        assert "not found" in msg
-
-    # No glTF in export dir
-    with tempfile.TemporaryDirectory() as proj_dir:
-        with tempfile.TemporaryDirectory() as exp_dir:
-            ok, msg = GodotLiveBridge.sync_asset(None, exp_dir, "SM_Godot", proj_dir)
-            assert ok is False
-            assert "No glTF/GLB models found" in msg
-
-    # Successful sync
-    with tempfile.TemporaryDirectory() as proj_dir:
-        with tempfile.TemporaryDirectory() as exp_dir:
-            gltf_file = os.path.join(exp_dir, "SM_Godot.gltf")
-            with open(gltf_file, "w", encoding="utf-8") as f:
-                f.write('{"asset": {}}')
-
-            ok, msg = GodotLiveBridge.sync_asset(None, exp_dir, "SM_Godot", proj_dir)
-            assert ok is True
-            assert "Synced glTF asset" in msg
-            dest_gltf = os.path.join(proj_dir, "OmniMesh_Exports", "SM_Godot", "SM_Godot.gltf")
-            assert os.path.exists(dest_gltf)
-            dest_script = os.path.join(proj_dir, "addons", "omnimesh", "OmniMeshPostImport.gd")
-            assert os.path.exists(dest_script)
-
-
 def test_directory_traversal_prevention():
     with tempfile.TemporaryDirectory() as proj_dir:
         with tempfile.TemporaryDirectory() as exp_dir:
@@ -224,17 +162,4 @@ def test_directory_traversal_prevention():
             assert ok is True
             # Verified that destination is inside project dir and safely stripped
             dest = os.path.join(proj_dir, "Assets", "OmniMesh_Exports", "traversal_test")
-            assert os.path.exists(dest)
-
-
-def test_godot_directory_traversal_prevention():
-    with tempfile.TemporaryDirectory() as proj_dir:
-        with tempfile.TemporaryDirectory() as exp_dir:
-            gltf_file = os.path.join(exp_dir, "model.gltf")
-            with open(gltf_file, "w") as f:
-                f.write("{}")
-
-            ok, msg = GodotLiveBridge.sync_asset(None, exp_dir, "../../../traversal_test", proj_dir)
-            assert ok is True
-            dest = os.path.join(proj_dir, "OmniMesh_Exports", "traversal_test")
             assert os.path.exists(dest)

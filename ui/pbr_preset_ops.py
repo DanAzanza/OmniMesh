@@ -28,6 +28,7 @@ try:
         ExportMapSyncGuard,
         MapSyncGuard,
         PresetSyncGuard,
+        sync_export_maps_from_preset,
         sync_export_maps_to_preset,
         sync_maps_from_preset,
         sync_maps_to_preset,
@@ -48,6 +49,7 @@ except (ImportError, ValueError):
         ExportMapSyncGuard,
         MapSyncGuard,
         PresetSyncGuard,
+        sync_export_maps_from_preset,
         sync_export_maps_to_preset,
         sync_maps_from_preset,
         sync_maps_to_preset,
@@ -92,12 +94,40 @@ class LOD_OT_reset_pbr_preset(Operator):
 
     def execute(self, context: Any) -> set[str]:
         props, _, _ = resolve_lod_context(context)
+        if not props and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
         preset_id = getattr(props, "pbr_import_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
         deleted = PBRImportPresetManager.delete_custom_preset(preset_id)
+        if props:
+            preset = PBRImportPresetManager.get_preset(preset_id)
+            sync_maps_from_preset(props, preset)
         if deleted:
             safe_report(self, {"INFO"}, f"Reset preset '{preset_id}' to built-in default.")
         else:
             safe_report(self, {"INFO"}, f"Preset '{preset_id}' is already a built-in default.")
+        return {"FINISHED"}
+
+
+class LOD_OT_init_preset_maps(Operator):
+    """Initializes active PBR preset maps from built-in or custom definition."""
+
+    bl_idname = "lod_tool.init_preset_maps"
+    bl_label = "Initialize Preset Maps"
+    bl_description = "Synchronizes active preset maps for texture import and export"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[str]:
+        props, _, _ = resolve_lod_context(context)
+        if not props and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
+        if not props:
+            return {"CANCELLED"}
+
+        imp_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
+        exp_id = getattr(props, "pbr_export_preset", "") or DEFAULT_PRESET_ID
+        sync_maps_from_preset(props, PBRImportPresetManager.get_preset(imp_id))
+        sync_export_maps_from_preset(props, PBRExportPresetManager.get_preset(exp_id))
+        safe_report(self, {"INFO"}, "Initialized active preset maps.")
         return {"FINISHED"}
 
 
@@ -623,6 +653,7 @@ class LOD_OT_delete_export_preset(Operator):
 PBR_PRESET_OPERATOR_CLASSES = (
     LOD_OT_reload_pbr_presets,
     LOD_OT_reset_pbr_preset,
+    LOD_OT_init_preset_maps,
     LOD_OT_duplicate_preset,
     LOD_OT_duplicate_export_preset,
     LOD_OT_add_preset_map,
@@ -639,6 +670,7 @@ __all__ = [
     "PBR_PRESET_OPERATOR_CLASSES",
     "LOD_OT_reload_pbr_presets",
     "LOD_OT_reset_pbr_preset",
+    "LOD_OT_init_preset_maps",
     "LOD_OT_duplicate_preset",
     "LOD_OT_duplicate_export_preset",
     "LOD_OT_add_preset_map",

@@ -155,6 +155,19 @@ def register_properties() -> None:
         except Exception as exc:
             logger.debug("Immediate preset restore exception: %s", exc)
 
+        if hasattr(bpy.app, "timers") and hasattr(bpy.app.timers, "register"):
+
+            def _ensure_startup_maps() -> None:
+                try:
+                    restore_preset_state_on_load(None)
+                except Exception as exc:
+                    logger.debug("Startup timer map restore: %s", exc)
+
+            try:
+                bpy.app.timers.register(_ensure_startup_maps, first_interval=0.05)
+            except Exception as exc:
+                logger.debug("Startup timer register skipped: %s", exc)
+
 
 def unregister_properties() -> None:
     if not bpy:

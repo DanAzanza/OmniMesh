@@ -1,8 +1,8 @@
 {
   "schema_type": "omnimesh_lod_preset",
-  "name": "Unreal Engine 5 (Standard)",
+  "name": "Unreal Engine 5 (Skinned / Non-Nanite / UCX & Live Bridge)",
   "version": 2,
-  "description": "Standard 4-tier logarithmic progression for Unreal Engine 5",
+  "description": "2026 production LOD progression for Unreal Engine 5 (Skinned / Non-Nanite / UCX & Live Bridge)",
   "target_engine": "UE5",
   "budget_mode": "PERCENTAGE",
   "tiers": [

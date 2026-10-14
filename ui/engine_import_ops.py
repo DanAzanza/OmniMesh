@@ -46,6 +46,7 @@ try:
         import_spatial_points,
     )
     from .utils import get_or_create_engine_import_collection
+    from ..core.hierarchy import safe_remove_collection_objects
 except (ImportError, ValueError):
     from core.engine_import_presets import (
         DEFAULT_ENGINE_IMPORT_PRESET_ID,
@@ -67,6 +68,7 @@ except (ImportError, ValueError):
         import_spatial_points,
     )
     from ui.utils import get_or_create_engine_import_collection
+    from core.hierarchy import safe_remove_collection_objects
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +288,19 @@ class OMNIMESH_OT_import_engine_project(Operator):
         # 2. Ensure Root Package and Helpers Collections
         get_or_create_engine_import_collection(context, asset_name, "ROOT", use_lod0_suffix)
         get_or_create_engine_import_collection(context, asset_name, "HELPERS")
+
+        # Smart Replace: Remove existing objects in enabled categories before importing
+        if do_spatial:
+            spat_col = get_or_create_engine_import_collection(context, asset_name, "SPATIAL")
+            safe_remove_collection_objects(spat_col, bpy_module=bpy)
+            att_col = get_or_create_engine_import_collection(context, asset_name, "ATTACHMENTS")
+            safe_remove_collection_objects(att_col, bpy_module=bpy)
+        if do_lights:
+            lit_col = get_or_create_engine_import_collection(context, asset_name, "LIGHTS")
+            safe_remove_collection_objects(lit_col, bpy_module=bpy)
+        if do_cameras:
+            cam_col = get_or_create_engine_import_collection(context, asset_name, "CAMERAS")
+            safe_remove_collection_objects(cam_col, bpy_module=bpy)
 
         # 3. Import Geometry / LODs
         lod_mesh_map: dict[int, list[Any]] = {}

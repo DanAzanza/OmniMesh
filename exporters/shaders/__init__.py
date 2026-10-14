@@ -9,7 +9,6 @@ import logging
 import os
 from typing import Any, Optional
 
-from .godot_octahedral import generate_godot_octahedral_shader
 from .unity_octahedral import generate_unity_octahedral_hlsl
 from .unreal_octahedral import generate_unreal_octahedral_hlsl
 
@@ -26,7 +25,7 @@ def export_companion_shaders(
 ) -> dict[str, str]:
     """
     Generates and saves companion shader files for the specified engine(s).
-    Supported engines: 'GODOT', 'UNITY', 'UE5', 'ALL'.
+    Supported engines: 'UNITY', 'UE5', 'ALL'.
     Returns dictionary mapping engine to generated shader filepath.
     """
     shader_dir = os.path.join(output_dir, "shaders")
@@ -34,19 +33,6 @@ def export_companion_shaders(
     results: dict[str, str] = {}
 
     engine_upper = target_engine.upper()
-
-    if engine_upper in {"GODOT", "ALL"}:
-        godot_code = generate_godot_octahedral_shader(
-            base_name=base_name,
-            grid_size=grid_size,
-            alpha_scissor=alpha_scissor,
-            custom_params=custom_params,
-        )
-        godot_path = os.path.join(shader_dir, f"{base_name}_Octahedral.gdshader")
-        with open(godot_path, "w", encoding="utf-8") as f:
-            f.write(godot_code)
-        results["GODOT"] = godot_path
-        logger.info("Exported Godot companion shader: %s", godot_path)
 
     if engine_upper in {"UNITY", "ALL"}:
         unity_code = generate_unity_octahedral_hlsl(
@@ -76,7 +62,6 @@ def export_companion_shaders(
 
 
 __all__ = [
-    "generate_godot_octahedral_shader",
     "generate_unity_octahedral_hlsl",
     "generate_unreal_octahedral_hlsl",
     "export_companion_shaders",

@@ -79,7 +79,6 @@ def bootstrap_addon() -> None:
         "msfs_export",
         "ue5_export",
         "unity_export",
-        "godot_export",
         "engine_export",
     ):
         mod = getattr(omnimesh, attr, None)

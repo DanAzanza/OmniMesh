@@ -1,5 +1,5 @@
 """
-In-Blender Integration Tests for Multi-Engine Export Packages (UE5, Unity 6, Godot 4, MSFS 2024).
+In-Blender Integration Tests for Multi-Engine Export Packages (UE5, Unity 6, MSFS 2024).
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class TestExportPipeline(unittest.TestCase):
             self.skipTest("Blender bpy runtime not available.")
 
     def test_multi_engine_exports_generate_valid_files(self) -> None:
-        """Verify exports create valid disk artifacts for MSFS 2024, UE5, Unity 6, and Godot 4."""
+        """Verify exports create valid disk artifacts for MSFS 2024, UE5, and Unity 6."""
         with in_blender_sandbox() as scene:
             mesh_objs = create_hierarchy_fixture("SM_ExpAsset")
             for obj in mesh_objs:
@@ -90,15 +90,6 @@ class TestExportPipeline(unittest.TestCase):
                 unity_fbx = os.path.join(tmpdir, "SM_ExpAsset.fbx")
                 self.assertTrue(os.path.exists(unity_fbx), "Unity FBX file must exist.")
                 self.assertGreater(os.path.getsize(unity_fbx), 0)
-
-                # 4. Test Godot 4 (glTF with -lod suffixes)
-                props.target_engine = "GODOT_4"
-                res_godot = bpy.ops.lod_tool.export_engine_package()
-                self.assertEqual(res_godot, {"FINISHED"})
-                godot_files = [
-                    f for f in os.listdir(tmpdir) if f.startswith("SM_ExpAsset") and f.endswith((".gltf", ".glb"))
-                ]
-                self.assertGreater(len(godot_files), 0, "Godot glTF/GLB file must exist.")
 
 
 if __name__ == "__main__":

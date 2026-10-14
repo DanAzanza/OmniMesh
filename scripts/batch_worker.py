@@ -71,7 +71,6 @@ def run_worker() -> int:
 
             if hasattr(exporters, "register_exporters") and exporters.register_exporters:
                 exporters.register_exporters()
-            from exporters.godot_export import GodotExporter
             from exporters.msfs_export import MSFSExporter
             from exporters.ue5_export import UE5Exporter
             from exporters.unity_export import UnityExporter
@@ -132,8 +131,6 @@ def run_worker() -> int:
                 success, message = UE5Exporter.export_asset(bpy.context, export_dir, asset_name)
             elif target_engine == "UNITY_6":
                 success, message = UnityExporter.export_asset(bpy.context, export_dir, asset_name)
-            elif target_engine == "GODOT_4":
-                success, message = GodotExporter.export_asset(bpy.context, export_dir, asset_name)
             elif target_engine == "MSFS_2024":
                 success, message = MSFSExporter.export_asset(bpy.context, export_dir, asset_name)
             else:

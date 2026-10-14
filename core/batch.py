@@ -101,13 +101,6 @@ class BatchProcessorEngine:
                     from exporters.unity_export import UnityExporter
 
                 return UnityExporter.export_asset
-            elif engine == "GODOT_4":
-                try:
-                    from ..exporters.godot_export import GodotExporter
-                except (ImportError, ValueError):
-                    from exporters.godot_export import GodotExporter
-
-                return GodotExporter.export_asset
         except (ImportError, ValueError) as exc:
             logger.debug("Lazy exporter load failed for engine '%s': %s", engine, exc)
         return None
@@ -429,7 +422,6 @@ class BatchProcessorEngine:
                     "UE5": "unreal_engine_5",
                     "UNITY_6": "unity_hdrp_maskmap",
                     "MSFS_2024": "msfs_2024_comp",
-                    "GODOT_4": "godot_4_orm",
                 }
                 preset_id = engine_map.get(target_engine, "unreal_engine_5")
 
@@ -482,12 +474,6 @@ class BatchProcessorEngine:
                     elif target_engine == "MSFS_2024":
                         f_fallback = TextureChannelPacker.pack_comp_msfs(
                             mat, os.path.join(tex_dir, f"T_{m_name}_COMP.png"), (2048, 2048)
-                        )
-                        if isinstance(f_fallback, concurrent.futures.Future):
-                            all_tex_futures.append(f_fallback)
-                    elif target_engine == "GODOT_4":
-                        f_fallback = TextureChannelPacker.pack_orm_godot(
-                            mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048)
                         )
                         if isinstance(f_fallback, concurrent.futures.Future):
                             all_tex_futures.append(f_fallback)

@@ -2,7 +2,6 @@
 Multi-Engine Autonomous Export & Ingestion Test Runner for OmniMesh.
 Tests export artifact integrity and downstream engine validation across:
 - Unity 6 (Unity CLI, Postprocessor generation, FBX structure)
-- Godot 4 (Godot CLI Headless Import, GDScript Post-Import)
 - Unreal Engine 5 (UE 5.8 Commandlet, ModelContextProtocol Plugin, Ingest Payload)
 - MSFS 2024 (ModelInfo XML Schema, Descending minSize, glTF validation, fspackagetool)
 """
@@ -84,51 +83,6 @@ def test_msfs_export(export_dir: str, asset_name: str) -> bool:
         return False
 
 
-def test_godot_headless_import(gltf_path: str, asset_name: str) -> bool:
-    logger.info("=== Testing Godot 4 Headless Import ===")
-    godot_cmd = os.environ.get("GODOT_PATH") or shutil.which("godot")
-    if not godot_cmd and sys.platform == "win32":
-        default_cmd = os.path.expanduser(r"~/.gemini/antigravity/bin/godot.cmd")
-        if os.path.exists(default_cmd):
-            godot_cmd = default_cmd
-
-    if not godot_cmd:
-        logger.warning("Godot binary not located. Skipping live Godot import test.")
-        return False
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        proj_file = os.path.join(tmpdir, "project.godot")
-        with open(proj_file, "w", encoding="utf-8") as f:
-            f.write('config_version=5\n[application]\nconfig/name="OmniMeshTest"\n')
-
-        # Install companion script
-        addons_dir = os.path.join(tmpdir, "addons", "omnimesh")
-        os.makedirs(addons_dir, exist_ok=True)
-        from bridges.godot_bridge import GodotLiveBridge
-
-        with open(os.path.join(addons_dir, "OmniMeshPostImport.gd"), "w", encoding="utf-8") as f:
-            f.write(GodotLiveBridge.generate_post_import_gdscript())
-
-        # Copy glTF
-        target_gltf = os.path.join(tmpdir, os.path.basename(gltf_path))
-        shutil.copy2(gltf_path, target_gltf)
-
-        # Run headless editor import
-        cmd = [godot_cmd, "--headless", "--path", tmpdir, "--editor", "--quit"]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if res.returncode != 0:
-            logger.error("Godot headless import failed with code %d: %s", res.returncode, res.stderr)
-            return False
-
-        imported_dir = os.path.join(tmpdir, ".godot", "imported")
-        if not os.path.isdir(imported_dir):
-            logger.error("Godot .godot/imported directory was not generated.")
-            return False
-
-        logger.info("[PASS] Godot 4 headless imported asset successfully.")
-        return True
-
-
 def test_unity_cli_integration(fbx_path: str, asset_name: str) -> bool:
     logger.info("=== Testing Unity 6 CLI Integration ===")
     unity_bin = shutil.which("unity")
@@ -208,11 +162,10 @@ def main() -> int:
                 json.dump({"asset": {"version": "2.0"}, "scenes": [{"nodes": [0]}], "nodes": [{"name": f"LOD{i}"}]}, gf)
 
         msfs_ok = test_msfs_export(tmpdir, "SM_Test")
-        godot_ok = test_godot_headless_import(os.path.join(tmpdir, "SM_Test_LOD0.gltf"), "SM_Test")
         unity_ok = test_unity_cli_integration(os.path.join(tmpdir, "SM_Test.fbx"), "SM_Test")
         ue_ok = test_unreal_engine_integration(os.path.join(tmpdir, "SM_Test.fbx"), "SM_Test")
 
-    all_passed = msfs_ok and godot_ok and unity_ok and ue_ok
+    all_passed = msfs_ok and unity_ok and ue_ok
     if all_passed:
         logger.info("ALL MULTI-ENGINE EXPORT & INTEGRATION TESTS PASSED!")
         return 0

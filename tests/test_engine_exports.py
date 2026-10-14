@@ -12,18 +12,15 @@ Tier 2: Live engine integration tests (skipped if engine executables are missing
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import xml.etree.ElementTree as ET
 
 import pytest
 
-from bridges.godot_bridge import GodotLiveBridge
 from bridges.unity_bridge import UnityLiveBridge
 from bridges.unreal_bridge import UnrealLiveBridge
 from exporters.msfs_export import MSFSExporter
@@ -87,17 +84,6 @@ def test_unity6_postprocessor_code_structure():
     assert "_LOD" in cs_code
 
 
-def test_godot4_post_import_gdscript_structure():
-    """Validates that Godot 4 post-import GDScript contains visibility ranges and impostor setup."""
-    gd_code = GodotLiveBridge.generate_post_import_gdscript()
-    assert "@tool" in gd_code
-    assert "EditorScenePostImport" in gd_code
-    assert "_post_import" in gd_code
-    assert "visibility_range_begin" in gd_code
-    assert "visibility_range_end" in gd_code
-    assert "impostor" in gd_code
-
-
 def test_unreal_engine_ingest_payload_structure():
     """Validates that Unreal Engine 5 ingest payload generates correct Python script with LODGroup setup."""
     fbx_dummy_path = "C:/Projects/Game/Art/SM_Prop.fbx"
@@ -111,40 +97,6 @@ def test_unreal_engine_ingest_payload_structure():
 # ==============================================================================
 # Tier 2: Live Engine Integration Tests (Skipped when engines not installed)
 # ==============================================================================
-
-
-def test_live_godot_headless_import():
-    """Live headless import into Godot 4 editor (skipped unless RUN_LIVE_ENGINE_TESTS=1)."""
-    if not os.environ.get("RUN_LIVE_ENGINE_TESTS"):
-        pytest.skip("Live Godot engine process test skipped by default. Set RUN_LIVE_ENGINE_TESTS=1 to execute.")
-
-    godot_cmd = os.environ.get("GODOT_PATH") or shutil.which("godot")
-    if not godot_cmd and sys.platform == "win32":
-        default_cmd = os.path.expanduser(r"~/.gemini/antigravity/bin/godot.cmd")
-        if os.path.exists(default_cmd):
-            godot_cmd = default_cmd
-
-    if not godot_cmd:
-        pytest.skip("Godot 4 executable not found in PATH or environment")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        proj_file = os.path.join(tmpdir, "project.godot")
-        with open(proj_file, "w", encoding="utf-8") as f:
-            f.write('config_version=5\n[application]\nconfig/name="OmniMeshTest"\n')
-
-        addons_dir = os.path.join(tmpdir, "addons", "omnimesh")
-        os.makedirs(addons_dir, exist_ok=True)
-        with open(os.path.join(addons_dir, "OmniMeshPostImport.gd"), "w", encoding="utf-8") as f:
-            f.write(GodotLiveBridge.generate_post_import_gdscript())
-
-        # Create dummy minimal glTF
-        gltf_p = os.path.join(tmpdir, "SM_Box_LOD0.gltf")
-        with open(gltf_p, "w", encoding="utf-8") as gf:
-            json.dump({"asset": {"version": "2.0"}, "scenes": [{"nodes": [0]}], "nodes": [{"name": "LOD0"}]}, gf)
-
-        cmd = [godot_cmd, "--headless", "--path", tmpdir, "--editor", "--quit"]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        assert res.returncode == 0, f"Godot headless import failed: {res.stderr}"
 
 
 def test_live_unity_cli_integration():

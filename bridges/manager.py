@@ -8,7 +8,6 @@ import logging
 from typing import Any, Dict, Optional, Tuple, Type
 
 from .base import EngineBridgeBase
-from .godot_bridge import GodotLiveBridge
 from .msfs_bridge import MSFS2024LiveBridge
 from .unity_bridge import UnityLiveBridge
 from .unreal_bridge import UnrealLiveBridge
@@ -31,7 +30,6 @@ class BridgeManager:
         "UE5": UnrealLiveBridge,
         "UNITY_6": UnityLiveBridge,
         "MSFS_2024": MSFS2024LiveBridge,
-        "GODOT_4": GodotLiveBridge,
     }
 
     @classmethod

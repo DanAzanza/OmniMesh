@@ -46,9 +46,6 @@ def get_engine_interaction_name(asset_name: str, role: str, name: str, engine: s
     elif "UE" in eng_upper or "UNREAL" in eng_upper:
         # Unreal Engine non-blocking gameplay trigger (never UCX_)
         return f"INTERACT_{clean_role}_{clean_name}"
-    elif "GODOT" in eng_upper:
-        # Godot Area3D non-blocking trigger suffix
-        return f"{clean_name}_{clean_role}-areacol"
     elif "UNITY" in eng_upper:
         # Unity trigger volume naming
         return f"TRIGGER_{clean_role}_{clean_name}"
@@ -132,7 +129,6 @@ def create_interaction_volume(
     obj["_is_trigger"] = True
     obj["msfs_interaction_name"] = get_engine_interaction_name(clean_asset, role_upper, clean_name, "MSFS")
     obj["ue5_trigger_name"] = get_engine_interaction_name(clean_asset, role_upper, clean_name, "UNREAL")
-    obj["godot_trigger_name"] = get_engine_interaction_name(clean_asset, role_upper, clean_name, "GODOT")
     obj["unity_is_trigger"] = True
 
     # Link to isolated Interactions collection under {AssetName}_Config

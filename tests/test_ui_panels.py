@@ -66,14 +66,12 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_export.bl_category == "OmniMesh"
     assert OMNIMESH_PT_export.bl_order == 3
 
-    # Subpanels (testing subpanel under Panel 3, MSFS subpanel under Panel 2, Batch export subpanel under Panel 4)
-    assert len(SUBPANEL_CLASSES) == 3
+    # Subpanels (testing subpanel under Panel 3, Batch export subpanel under Panel 4)
+    assert len(SUBPANEL_CLASSES) == 2
     assert SUBPANEL_CLASSES[0].bl_idname == "OMNIMESH_PT_lods_testing"
     assert SUBPANEL_CLASSES[0].bl_parent_id == "OMNIMESH_PT_lods"
-    assert SUBPANEL_CLASSES[1].bl_idname == "OMNIMESH_PT_export_msfs_spatial"
-    assert SUBPANEL_CLASSES[1].bl_parent_id == "OMNIMESH_PT_modify"
-    assert SUBPANEL_CLASSES[2].bl_idname == "OMNIMESH_PT_export_batch"
-    assert SUBPANEL_CLASSES[2].bl_parent_id == "OMNIMESH_PT_export"
+    assert SUBPANEL_CLASSES[1].bl_idname == "OMNIMESH_PT_export_batch"
+    assert SUBPANEL_CLASSES[1].bl_parent_id == "OMNIMESH_PT_export"
 
     # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
     assert len(POPOVER_CLASSES) == 13
@@ -87,17 +85,16 @@ def test_panel_class_hierarchy_and_order():
 
     # Registration tuple (parent-first topological order)
     assert len(PRIMARY_PANELS) == 4
-    assert len(SUBPANEL_CLASSES) == 3
-    assert len(PANEL_CLASSES) == 20
+    assert len(SUBPANEL_CLASSES) == 2
+    assert len(PANEL_CLASSES) == 19
     assert PANEL_CLASSES[0] is OMNIMESH_PT_import
     assert PANEL_CLASSES[1] is OMNIMESH_PT_modify
     assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
     assert PANEL_CLASSES[3] is OMNIMESH_PT_export
     assert PANEL_CLASSES[4] is SUBPANEL_CLASSES[0]
     assert PANEL_CLASSES[5] is SUBPANEL_CLASSES[1]
-    assert PANEL_CLASSES[6] is SUBPANEL_CLASSES[2]
     for idx, pop_cls in enumerate(POPOVER_CLASSES):
-        assert PANEL_CLASSES[7 + idx] is pop_cls
+        assert PANEL_CLASSES[6 + idx] is pop_cls
 
 
 def test_operator_helpers_mocked():
@@ -388,7 +385,7 @@ def test_preset_delete_button_disabled_for_factory_presets():
     assert PBRImportPresetManager.is_builtin("unreal_engine_5") is True
     assert PBRImportPresetManager.is_builtin("standard_pbr_split") is True
     assert PBRExportPresetManager.is_builtin("unreal_engine_5") is True
-    assert PBRExportPresetManager.is_builtin("godot_4_orm") is True
+    assert PBRExportPresetManager.is_builtin("unity_hdrp") is True
 
     # 2. Empty or invalid preset ID must safely fall back to is_builtin=True (locked)
     assert PBRImportPresetManager.is_builtin("") is True
@@ -773,8 +770,9 @@ def test_ui_properties_enums():
     """Verify enum items in modularized ui.properties.enums enforce strict invariants."""
     # 1. Target engines structural contract
     engine_ids = {item[0] for item in TARGET_ENGINE_ITEMS}
-    expected_engines = {"MSFS_2024", "UE5", "UNITY_6", "GODOT_4"}
-    assert expected_engines.issubset(engine_ids), f"Missing core target engines: {expected_engines - engine_ids}"
+    expected_engines = {"MSFS_2024", "UE5", "UNITY_6"}
+    assert engine_ids == expected_engines, f"Engine mismatch: {engine_ids} != {expected_engines}"
+    assert "GODOT_4" not in engine_ids
 
     # 2. Asset category structural contract
     category_ids = {item[0] for item in ASSET_CATEGORY_ITEMS}
@@ -843,26 +841,17 @@ def test_resolve_lod_context_reference_error_safeguard():
     assert is_deriv is False
 
 
-def test_msfs_spatial_subpanel_poll():
-    """Verify OMNIMESH_PT_export_msfs_spatial polls True whenever scene.lod_tool exists."""
-    from ui.msfs_panel import OMNIMESH_PT_export_msfs_spatial
+def test_msfs_panel_removed():
+    """Verify that legacy ui/msfs_panel.py is eliminated and not in sys.modules or SUBPANEL_CLASSES."""
+    import importlib
+    import pytest
 
-    ctx = MagicMock()
-    ctx.scene.lod_tool.target_engine = "UE5"
-    ctx.scene.lod_tool.msfs_spatial_cfg_path = ""
-    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is True
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("ui.msfs_panel")
 
-    ctx.scene.lod_tool.target_engine = "MSFS_2024"
-    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is True
-
-    ctx.scene.lod_tool.target_engine = "GODOT_4"
-    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx) is True
-
-    ctx_no_props = MagicMock()
-    ctx_no_props.scene.lod_tool = None
-    assert OMNIMESH_PT_export_msfs_spatial.poll(ctx_no_props) is False
-
-    assert OMNIMESH_PT_export_msfs_spatial.poll(None) is False
+    subpanel_names = [cls.bl_idname for cls in SUBPANEL_CLASSES]
+    assert "OMNIMESH_PT_export_msfs_spatial" not in subpanel_names
+    assert len(subpanel_names) == 2
 
 
 def test_lods_compact_card_show_details(monkeypatch):

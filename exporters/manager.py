@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .godot_export import GodotExporter
 from .msfs_export import MSFSExporter
 from .ue5_export import UE5Exporter
 from .unity_export import UnityExporter
@@ -30,7 +29,6 @@ class ExporterManager:
         "UE5": UE5Exporter,
         "UNITY_6": UnityExporter,
         "MSFS_2024": MSFSExporter,
-        "GODOT_4": GodotExporter,
     }
 
     @classmethod

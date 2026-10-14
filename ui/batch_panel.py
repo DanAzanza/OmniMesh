@@ -329,10 +329,6 @@ class OMNIMESH_PT_export_batch(Panel):
         if not props:
             return
 
-        row_batch = layout.row(align=True)
-        row_batch.use_property_split = False
-        row_batch.prop(props, "batch_mode", text="Enable Batch Mode")
-
         row_src = layout.row(align=True)
         row_src.use_property_split = False
         row_src.prop(props, "batch_source_directory", text="Source")

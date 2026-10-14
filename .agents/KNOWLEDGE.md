@@ -16,7 +16,7 @@ python scripts/verify_ci.py
 ### 0.2 Git Commit Scope Mapping
 Repository-specific component scopes required by `AGENTS.md` Section 6:
 * `[Core]`: Core LOD decimation engine, modifier pipeline, impostor baking, property groups (`core/`).
-* `[Exporters]`: Target engine exporters (MSFS 2024, Unreal Engine 5, Unity 6, Godot 4) (`exporters/`).
+* `[Exporters]`: Target engine exporters (MSFS 2024, Unreal Engine 5, Unity 6) (`exporters/`).
 * `[Bridges]`: External tool bridges, IPC socket servers, subprocess execution (`bridges/`).
 * `[UI]`: 3D Viewport N-Panels, custom UILists, modal operators, popovers (`ui/`).
 * `[Tests]`: Test suite, test fixtures, headless Blender test runners (`tests/`, `scripts/test_engine_exports.py`).
@@ -95,9 +95,8 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * **Blender Headless `--python-exit-code 1`**: Blender headless (`blender -b`) exits with code `0` even when unhandled exceptions occur or unittests fail. CI pipelines and verification scripts must explicitly supply `--python-exit-code 1`.
 * **Headless `bpy` Mocking Boundary**: When executing pure unit tests via Pytest outside Blender, `bpy` is `None`. Defensive guards (`if not bpy or not context: return True, ...`) bypass execution early. To test transactional rollbacks, pose restorations, and failure branches in headless mode, tests must explicitly mock `bpy` using `monkeypatch.setattr("core.lod_generator.bpy", MagicMock())`.
 * **Live Engine Subprocess Gating (`RUN_LIVE_ENGINE_TESTS`)**: Spawning external game engine executables (such as `godot --headless`) introduces ~4–5 seconds of startup latency per test run. Headless unit test suites must gate live editor subprocesses behind `RUN_LIVE_ENGINE_TESTS` to keep regular test runs sub-5s while preserving end-to-end integration capability.
-* **Multi-Engine Export Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 4 engine export pipelines (distinct from the central pre-commit gate `scripts/verify_ci.py`).
+* **Multi-Engine Export Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 3 engine export pipelines (distinct from the central pre-commit gate `scripts/verify_ci.py`).
 * **Engine Headless CLI Execution**:
-  * **Godot 4**: `godot --headless --path <project_dir> --editor --quit` (requires `Godot_*_win64_console.exe`, GUI exe drops stdout/stderr pipes). Colliders: `-convcolonly` for invisible hulls (`-convcol` creates visible shapes). Custom impostor suffixes bypass regex; map explicitly to max distance tier (`visibility_range_begin = max_tier_distance`).
   * **Unity 6**: `unity run <project_dir> --editor-version <installed_ver> -- -nographics`. Never pass `-quit` or `-batchmode` after `--`.
   * **Unreal Engine 5**: `UnrealEditor-Cmd.exe <Project.uproject> -run=pythonscript -script="<script>.py" -nullrhi -nosound -unattended`. Colliders: `UCX_{Asset}_{Index}`.
   * **MSFS 2024**: `fspackagetool.exe <Project.xml> -forcesteam -nopause` with `stdin=subprocess.DEVNULL`. Steam installs require `fspackagetool_overrideExePath.txt`. All interior references in `model.cfg` must use POSIX forward slashes (`interior=../model/{Interior}.xml`).

@@ -90,10 +90,6 @@ def detect_engine_project(export_dir: str, target_engine: str, max_depth: int = 
                 if has_assets and (has_version or has_settings):
                     return str(curr)
 
-            elif target_engine == "GODOT_4":
-                if (curr / "project.godot").is_file():
-                    return str(curr)
-
             elif target_engine == "MSFS_2024":
                 if (
                     (curr / "PackageDefinitions").is_dir()

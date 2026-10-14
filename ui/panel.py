@@ -23,13 +23,11 @@ except ImportError:
 
 try:
     from .batch_panel import OMNIMESH_PT_export_batch
-    from .msfs_panel import OMNIMESH_PT_export_msfs_spatial
     from .operators import resolve_lod_context
     from .popovers import POPOVER_CLASSES
     from .utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
     from ui.batch_panel import OMNIMESH_PT_export_batch
-    from ui.msfs_panel import OMNIMESH_PT_export_msfs_spatial
     from ui.operators import resolve_lod_context
     from ui.popovers import POPOVER_CLASSES
     from ui.utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
@@ -485,7 +483,7 @@ class OMNIMESH_PT_export(Panel):
             row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Offline", icon="COLOR_RED")
             row3_link.operator("lod_tool.sync_live_bridge", text="Retry Sync", icon="FILE_REFRESH")
 
-        if props.target_engine in ("UNITY_6", "GODOT_4") and getattr(props, "engine_project_path", ""):
+        if props.target_engine == "UNITY_6" and getattr(props, "engine_project_path", ""):
             row_inst = box_exp.row(align=True)
             row_inst.operator("lod_tool.install_companion_scripts", text="Install Engine Scripts", icon="SCRIPT")
 
@@ -501,7 +499,6 @@ PRIMARY_PANELS = (
 
 SUBPANEL_CLASSES = (
     OMNIMESH_PT_lods_testing,
-    OMNIMESH_PT_export_msfs_spatial,
     OMNIMESH_PT_export_batch,
 )
 

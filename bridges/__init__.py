@@ -8,7 +8,6 @@ from .base import EngineBridgeBase
 from .unreal_bridge import UnrealLiveBridge
 from .unity_bridge import UnityLiveBridge
 from .msfs_bridge import MSFS2024LiveBridge
-from .godot_bridge import GodotLiveBridge
 from .manager import BridgeManager
 
 __all__ = [
@@ -16,6 +15,5 @@ __all__ = [
     "UnrealLiveBridge",
     "UnityLiveBridge",
     "MSFS2024LiveBridge",
-    "GodotLiveBridge",
     "BridgeManager",
 ]

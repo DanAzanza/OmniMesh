@@ -16,7 +16,7 @@ bl_info = {
     "version": (0, 8, 1),
     "blender": (5, 0, 0),
     "location": "View3D > Sidebar > OmniMesh",
-    "description": "Screen-Space Error driven LOD generation, topology sanitization, occlusion culling, collision hulls, multi-mesh hierarchies, skeletal rigging, bone pruning, billboard impostors, real-time viewport simulator, and multi-engine export (MSFS 2024, UE5, Unity 6, Godot 4)",
+    "description": "Screen-Space Error driven LOD generation, topology sanitization, occlusion culling, collision hulls, multi-mesh hierarchies, skeletal rigging, bone pruning, billboard impostors, real-time viewport simulator, and multi-engine export (MSFS 2024, UE5, Unity 6)",
     "category": "Mesh",
 }
 
@@ -76,7 +76,6 @@ if __package__:
     )
     from .exporters import (
         engine_export,
-        godot_export,
         msfs_export,
         ue5_export,
         unity_export,
@@ -104,7 +103,6 @@ if __package__:
         msfs_ground_ops,
         msfs_lighting_ops,
         msfs_migration_ops,
-        msfs_panel,
         msfs_spatial_ops,
         operators,
         panel,
@@ -168,7 +166,6 @@ else:
     )
     from exporters import (
         engine_export,
-        godot_export,
         msfs_export,
         ue5_export,
         unity_export,
@@ -196,7 +193,6 @@ else:
         msfs_ground_ops,
         msfs_lighting_ops,
         msfs_migration_ops,
-        msfs_panel,
         msfs_spatial_ops,
         operators,
         panel,
@@ -272,7 +268,6 @@ if _OMNIMESH_RELOAD:
         msfs_export,
         ue5_export,
         unity_export,
-        godot_export,
         exporter_manager,
         engine_export,
     ):
@@ -314,7 +309,6 @@ if _OMNIMESH_RELOAD:
         msfs_camera_ops,
         msfs_migration_ops,
         msfs_attachment_ops,
-        msfs_panel,
     ):
         importlib.reload(mod)
 

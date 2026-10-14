@@ -13,7 +13,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from exporters.engine_export import AssetMeshResolver
-from exporters.godot_export import GodotExporter
 from exporters.msfs_export import MSFSExporter
 from exporters.ue5_export import UE5Exporter
 from exporters.unity_export import UnityExporter
@@ -481,32 +480,6 @@ def test_ue5_export_transactional_rollback(mock_hierarchy, tmp_path, monkeypatch
     # Ensure parents were restored
     for obj in bpy_mock.data.objects:
         assert obj.parent == orig_parent
-
-
-def test_godot_export_transactional_rollback(mock_hierarchy, tmp_path, monkeypatch):
-    """Verifies that GodotExporter restores custom properties and collider names after export."""
-    import exporters.engine_export as ee
-    import exporters.godot_export as ge
-
-    ctx, bpy_mock, _ = mock_hierarchy
-    monkeypatch.setattr(ee, "bpy", bpy_mock)
-    monkeypatch.setattr(ge, "bpy", bpy_mock)
-
-    mesh_obj = next(o for o in bpy_mock.data.objects if o.name == "Fuselage_LOD0")
-    mesh_obj["custom_tag"] = "pre_existing"
-
-    coll_obj = next(o for o in bpy_mock.data.objects if o.name == "Fuselage_Collider")
-    original_coll_name = coll_obj.name
-
-    export_path = str(tmp_path / "Godot_Export")
-    ok, _ = GodotExporter.export_asset(ctx, export_path, "Simple_Aircraft")
-
-    assert ok is True
-    # Ensure collider name restored
-    assert coll_obj.name == original_coll_name
-    # Ensure visibility properties cleaned up and existing custom property preserved
-    assert "visibility_range_begin" not in mesh_obj
-    assert mesh_obj.get("custom_tag") == "pre_existing"
 
 
 def test_unity_export_asset_gathering(mock_hierarchy, tmp_path, monkeypatch):

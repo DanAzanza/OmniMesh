@@ -36,11 +36,6 @@ def test_engine_interaction_naming_schemes():
     assert ue_name == "INTERACT_BUTTON_MasterBattery"
     assert not ue_name.startswith("UCX_")
 
-    # Godot Area3D non-blocking area trigger (never -colonly)
-    godot_name = get_engine_interaction_name(asset, role, name, "GODOT")
-    assert godot_name == "MasterBattery_BUTTON-areacol"
-    assert "-colonly" not in godot_name
-
     # Unity trigger volume
     unity_name = get_engine_interaction_name(asset, role, name, "UNITY")
     assert unity_name == "TRIGGER_BUTTON_MasterBattery"
@@ -126,7 +121,6 @@ def test_create_interaction_volume_box(monkeypatch):
     assert vol["_is_trigger"] is True
     assert vol["msfs_interaction_name"] == "Collision_LEVER_ParkingBrake"
     assert vol["ue5_trigger_name"] == "INTERACT_LEVER_ParkingBrake"
-    assert vol["godot_trigger_name"] == "ParkingBrake_LEVER-areacol"
     assert vol["unity_is_trigger"] is True
 
     # Linked into Cessna_Interactions collection

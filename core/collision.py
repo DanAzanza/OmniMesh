@@ -285,13 +285,10 @@ class CollisionManager:
         """
         Translates generic Blender collider name into the exact format required by target engine.
         - UE5: UCX_{base_name}_{index:02d}
-        - Godot 4: {base_name}_Collider_{index:02d}-convcolonly
         - Unity 6 / MSFS 2024 / Generic: {base_name}_Collider_{index:02d}
         """
         if target_engine == "UE5":
             return f"UCX_{base_name}_{index:02d}"
-        elif target_engine == "GODOT_4":
-            return f"{base_name}_Collider_{index:02d}-convcolonly"
         elif target_engine in {"UNITY_6", "MSFS_2024"}:
             return f"{base_name}_Collider_{index:02d}"
         return f"{base_name}_Collider_{index:02d}"

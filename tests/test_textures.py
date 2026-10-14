@@ -203,7 +203,7 @@ def test_pack_maskmap_unity_smoothness():
             assert np.allclose(arr[:, :, 3], 191, atol=1)
 
 
-def test_pack_comp_msfs_and_godot():
+def test_pack_comp_msfs():
     mat = DummyMaterial()
     with tempfile.TemporaryDirectory() as tmpdir:
         out_path_msfs = os.path.join(tmpdir, "T_Test_COMP.png")
@@ -213,14 +213,6 @@ def test_pack_comp_msfs_and_godot():
             assert np.all(arr1[:, :, 0] == 255)
             assert np.allclose(arr1[:, :, 1], 64, atol=1)
             assert np.allclose(arr1[:, :, 2], 191, atol=1)
-
-        out_path_godot = os.path.join(tmpdir, "T_Test_Godot_ORM.png")
-        assert TextureChannelPacker.pack_orm_godot(mat, out_path_godot, (64, 64)) is True
-        with Image.open(out_path_godot) as img2:
-            arr2 = np.asarray(img2)
-            assert np.all(arr2[:, :, 0] == 255)
-            assert np.allclose(arr2[:, :, 1], 64, atol=1)
-            assert np.allclose(arr2[:, :, 2], 191, atol=1)
 
 
 def test_convert_normal_directx():
@@ -463,7 +455,7 @@ def test_pack_material_preset_16bit():
 
 
 def test_pack_material_preset_passthrough():
-    preset = PBRImporterPresetManager.get_preset("godot_4_orm")
+    preset = PBRImporterPresetManager.get_preset("standard_pbr_split")
     mat = DummyMaterial()
     with tempfile.TemporaryDirectory() as tmpdir:
         futures = TextureChannelPacker.pack_material_preset(

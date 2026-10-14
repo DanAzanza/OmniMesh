@@ -77,7 +77,7 @@ def test_build_octahedral_cutout_polygon():
 
 
 def test_companion_shader_generation_and_export():
-    """Verifies generation and syntax of Godot, Unity, and Unreal companion shaders."""
+    """Verifies generation and syntax of Unity and Unreal companion shaders."""
     with tempfile.TemporaryDirectory() as temp_dir:
         exported = export_companion_shaders(
             base_name="Hero_Asset",
@@ -87,19 +87,9 @@ def test_companion_shader_generation_and_export():
             alpha_scissor=0.45,
         )
 
-        assert "GODOT" in exported
         assert "UNITY" in exported
         assert "UE5" in exported
-
-        # Verify Godot .gdshader
-        godot_file = exported["GODOT"]
-        assert os.path.exists(godot_file)
-        with open(godot_file, "r", encoding="utf-8") as f:
-            godot_src = f.read()
-            assert "shader_type spatial;" in godot_src
-            assert "uniform vec2 grid_size" in godot_src
-            assert "v_local_view_dir" in godot_src
-            assert "dir_to_hemi_octa" in godot_src
+        assert "GODOT" not in exported
 
         # Verify Unity HLSL
         unity_file = exported["UNITY"]

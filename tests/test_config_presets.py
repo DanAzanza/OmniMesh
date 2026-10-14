@@ -38,6 +38,22 @@ def test_builtin_config_presets_exist():
     assert "plane_general_aviation" in preset_ids
     assert "plane_commercial_airliner" in preset_ids
     assert "plane_taildragger" in preset_ids
+    assert "plane_playermodel" in preset_ids
+    assert "plane_ai_npc" in preset_ids
+    assert "car_playermodel" in preset_ids
+    assert "car_npc" in preset_ids
+
+    # Plane - Playermodel archetype
+    plane_player = get_config_preset("plane_playermodel")
+    assert plane_player is not None
+    assert plane_player["name"] == "Plane - Playermodel"
+    assert len(plane_player["interactions"]) > 0
+
+    # Car - Playermodel archetype
+    car_player = get_config_preset("car_playermodel")
+    assert car_player is not None
+    assert car_player["name"] == "Car - Playermodel"
+    assert len(car_player["spatial"]) >= 4
 
     ga = get_config_preset("plane_general_aviation")
     assert ga is not None
@@ -277,13 +293,20 @@ def test_add_config_preset_non_destructive(monkeypatch: pytest.MonkeyPatch):
     )
     monkeypatch.setattr(
         "ui.config_preset_ops.get_or_create_engine_import_collection",
-        lambda ctx, asset, role: mock_hierarchy[role.lower()],
+        lambda ctx, asset, role: mock_hierarchy.get(role.lower(), spatial_col),
     )
 
     mock_bpy = MagicMock()
     mock_bpy.data.objects.new.side_effect = lambda name, data: MockObject(name, data)
     mock_bpy.data.lights.new.return_value = MagicMock()
     mock_bpy.data.cameras.new.return_value = MagicMock()
+
+    def _mock_remove(obj, do_unlink=True):
+        for col_list in (spatial_objects, lights_objects, cameras_objects):
+            if obj in col_list:
+                col_list.remove(obj)
+
+    mock_bpy.data.objects.remove.side_effect = _mock_remove
 
     monkeypatch.setattr("ui.config_preset_ops.bpy", mock_bpy)
     monkeypatch.setattr("ui.config_preset_ops.Euler", None)
@@ -306,7 +329,7 @@ def test_add_config_preset_non_destructive(monkeypatch: pytest.MonkeyPatch):
     assert "EXITS:exit.0" in msfs_ids
     assert "GENERALENGINEDATA:engine.0" in msfs_ids
 
-    # SECOND RUN: Must be strictly idempotent - NO objects duplicated or replaced
+    # SECOND RUN: Smart Replace cleanly replaces enabled categories without duplicating
     res2 = op.execute(mock_context)
     assert res2 == {"FINISHED"}
     assert len(spatial_objects) + len(lights_objects) + len(cameras_objects) == initial_count
@@ -316,17 +339,141 @@ def test_add_config_preset_non_destructive(monkeypatch: pytest.MonkeyPatch):
     ids_run2 = [o.get("msfs_id") for o in all_objs_run2 if o.get("msfs_id")]
     assert len(ids_run2) == len(set(ids_run2))
 
-    # THIRD RUN: Remove 1 object (e.g. an engine or exit) and re-run.
-    # It must spawn ONLY that 1 missing marker and keep all existing untouched.
-    removed_obj = spatial_objects.pop()
-    removed_id = removed_obj.get("msfs_id")
-    assert len(spatial_objects) + len(lights_objects) + len(cameras_objects) == initial_count - 1
 
-    res3 = op.execute(mock_context)
-    assert res3 == {"FINISHED"}
-    assert len(spatial_objects) + len(lights_objects) + len(cameras_objects) == initial_count
+def test_smart_replace_and_autofit_geometry(monkeypatch: pytest.MonkeyPatch):
+    """
+    Verify that config preset spawner detects wheel submeshes,
+    snaps wheel contact points to actual tire bottoms, aligns scrape points,
+    and replaces existing objects cleanly without duplicates.
+    """
+    import numpy as np
+    from core.msfs.preset_spawner import ConfigPresetSpawner
 
-    all_objs_run3 = spatial_objects + lights_objects + cameras_objects
-    ids_run3 = [o.get("msfs_id") for o in all_objs_run3 if o.get("msfs_id")]
-    assert removed_id in ids_run3
-    assert len(ids_run3) == len(set(ids_run3))
+    mock_context = MagicMock()
+    mock_bpy = MagicMock()
+
+    class MockMeshObject:
+        def __init__(self, name: str, bbox: list[tuple[float, float, float]]):
+            self.name = name
+            self.type = "MESH"
+            self.data = MagicMock()
+            self.data.vertices = [MagicMock() for _ in bbox]
+            self.matrix_world = MagicMock()
+            self._bbox = bbox
+
+        @property
+        def bound_box(self):
+            return self._bbox
+
+    # Simulate aircraft with separate wheel submeshes and fuselage
+    # Nose wheel center: (0.0, 4.0), bottom: -1.2
+    nose_wheel = MockMeshObject("Wheel_Nose", [(-0.2, 3.8, -1.2), (0.2, 4.2, -0.6)])
+    # Left wheel center: (-2.5, -0.5), bottom: -1.3
+    left_wheel = MockMeshObject("Main_Gear_Left_Tire", [(-2.7, -0.7, -1.3), (-2.3, -0.3, -0.7)])
+    # Right wheel center: (2.5, -0.5), bottom: -1.3
+    right_wheel = MockMeshObject("Main_Gear_Right_Tire", [(2.3, -0.7, -1.3), (2.7, -0.3, -0.7)])
+    # Fuselage
+    fuselage = MockMeshObject("Fuselage", [(-3.0, -6.0, -0.5), (3.0, 5.0, 2.5)])
+
+    base_meshes = [nose_wheel, left_wheel, right_wheel, fuselage]
+
+    # Mock extract_world_vertices_numpy
+    def _mock_extract(obj):
+        if hasattr(obj, "_bbox"):
+            pts = []
+            for b in obj._bbox:
+                pts.append(b)
+            return np.array(pts, dtype=np.float32)
+        return np.empty((0, 3), dtype=np.float32)
+
+    monkeypatch.setattr("core.msfs.geometry.extract_world_vertices_numpy", _mock_extract)
+
+    # Collections
+    spatial_objs: list[Any] = []
+    lights_objs: list[Any] = []
+    cameras_objs: list[Any] = []
+
+    class MockCol:
+        def __init__(self, name: str, o_list: list[Any]):
+            self.name = name
+            self._list = o_list
+            self.objects = MagicMock()
+            self.objects.__iter__.side_effect = lambda: iter(self._list)
+            self.objects.link = lambda obj: self._list.append(obj)
+
+    def _col_fn(_ctx, _asset, role):
+        r = role.upper()
+        if r == "SPATIAL":
+            return MockCol("Plane_Spatial", spatial_objs)
+        elif r == "LIGHTS":
+            return MockCol("Plane_Lights", lights_objs)
+        elif r == "CAMERAS":
+            return MockCol("Plane_Cameras", cameras_objs)
+        return MockCol("Plane_Other", [])
+
+    class MockSpawnObject:
+        def __init__(self, name: str, data: Any = None):
+            self.name = name
+            self.data = data
+            self.location = (0.0, 0.0, 0.0)
+            self._dict: dict[str, Any] = {}
+
+        def __setitem__(self, k, v):
+            self._dict[k] = v
+
+        def __getitem__(self, k):
+            return self._dict[k]
+
+        def get(self, k, d=None):
+            return self._dict.get(k, d)
+
+    mock_bpy.data.objects.new.side_effect = lambda name, data: MockSpawnObject(name, data)
+    mock_bpy.data.lights.new.return_value = MagicMock()
+    mock_bpy.data.cameras.new.return_value = MagicMock()
+
+    def _remove_side_effect(obj, do_unlink=True):
+        for lst in (spatial_objs, lights_objs, cameras_objs):
+            if obj in lst:
+                lst.remove(obj)
+
+    mock_bpy.data.objects.remove.side_effect = _remove_side_effect
+
+    preset = get_config_preset("plane_general_aviation")
+
+    # Spawning pass 1
+    added1 = ConfigPresetSpawner.spawn_preset_objects(
+        context=mock_context,
+        asset_name="TestPlane",
+        preset_data=preset,
+        bpy_module=mock_bpy,
+        get_base_meshes_fn=lambda _ctx, _a: base_meshes,
+        get_import_collection_fn=_col_fn,
+    )
+    assert added1 > 0
+    total1 = len(spatial_objs) + len(lights_objs) + len(cameras_objs)
+
+    # Verify wheel contact points snapped to detected tire bottoms
+    pt0 = next((o for o in spatial_objs if o.get("msfs_key") == "point.0"), None)
+    assert pt0 is not None
+    # Nose wheel bottom is -1.2
+    assert pt0.location[1] == pytest.approx(4.0, abs=0.1)
+    assert pt0.location[2] == pytest.approx(-1.2, abs=0.1)
+
+    pt1 = next((o for o in spatial_objs if o.get("msfs_key") == "point.1"), None)
+    assert pt1 is not None
+    # Left wheel bottom is -1.3, X is -2.5
+    assert pt1.location[0] == pytest.approx(-2.5, abs=0.1)
+    assert pt1.location[2] == pytest.approx(-1.3, abs=0.1)
+
+    # Spawning pass 2: Smart replace must replace without duplicates
+    added2 = ConfigPresetSpawner.spawn_preset_objects(
+        context=mock_context,
+        asset_name="TestPlane",
+        preset_data=preset,
+        bpy_module=mock_bpy,
+        get_base_meshes_fn=lambda _ctx, _a: base_meshes,
+        get_import_collection_fn=_col_fn,
+    )
+    total2 = len(spatial_objs) + len(lights_objs) + len(cameras_objs)
+    assert total2 == total1
+    assert added2 > 0

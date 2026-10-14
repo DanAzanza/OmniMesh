@@ -21,7 +21,6 @@ def test_builtin_lod_presets_discovery_and_schema():
     expected_builtins = {
         "unreal_engine_5",
         "unity_hdrp",
-        "godot_4",
         "msfs_2024",
         "msfs_aircraft_huge_ext",
         "msfs_aircraft_big_ext",
@@ -135,7 +134,7 @@ def test_duplicate_lod_preset():
         with patch.object(LODPresetManager, "get_user_dir", return_value=tmp_path):
             LODPresetManager.load_presets(force_reload=True)
             new_id = LODPresetManager.duplicate_preset("unreal_engine_5")
-            assert new_id == "unreal_engine_5_standard_copy"
+            assert new_id == "unreal_engine_5_skinned_non-nanite_ucx_live_bridge_copy"
 
             presets = LODPresetManager.load_presets(force_reload=True)
             assert new_id in presets

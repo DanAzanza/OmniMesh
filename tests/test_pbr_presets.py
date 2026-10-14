@@ -22,7 +22,6 @@ def test_builtin_presets_discovery_and_schema():
         "unreal_engine_5",
         "unity_hdrp_maskmap",
         "unity_urp_metallic",
-        "godot_4_orm",
         "msfs_2024_comp",
         "standard_pbr_split",
     }
@@ -162,7 +161,6 @@ def test_unified_preset_export_properties():
         "unreal_engine_5": ("UE5", "CONVERT_PNG", 8),
         "unity_hdrp_maskmap": ("UNITY_6", "CONVERT_PNG", 16),
         "unity_urp_metallic": ("UNITY_6", "CONVERT_PNG", 8),
-        "godot_4_orm": ("GODOT_4", "PASSTHROUGH", 8),
         "msfs_2024_comp": ("MSFS_2024", "CONVERT_PNG", 8),
     }
     for pid, (expected_engine, expected_strat, expected_bits) in engine_presets.items():
@@ -196,11 +194,11 @@ def test_cross_session_state_persistence():
 
             # Save export and import preferences
             PBRImporterPresetManager.set_last_active_preset("export", "unity_hdrp_maskmap")
-            PBRImporterPresetManager.set_last_active_preset("import", "godot_4_orm")
+            PBRImporterPresetManager.set_last_active_preset("import", "standard_pbr_split")
 
             assert state_file.exists()
             assert PBRImporterPresetManager.get_last_active_preset("export") == "unity_hdrp_maskmap"
-            assert PBRImporterPresetManager.get_last_active_preset("import") == "godot_4_orm"
+            assert PBRImporterPresetManager.get_last_active_preset("import") == "standard_pbr_split"
 
             # Invalid preset ID falls back to default
             PBRImporterPresetManager.set_last_active_preset("export", "non_existent_preset_xyz")

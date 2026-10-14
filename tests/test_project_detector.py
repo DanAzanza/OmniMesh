@@ -57,16 +57,6 @@ class TestProjectDetector(unittest.TestCase):
         self.assertIsNotNone(detected)
         self.assertEqual(os.path.normpath(str(detected)), os.path.normpath(str(project_root)))
 
-    def test_detect_godot4_project(self) -> None:
-        project_root = Path(self.temp_dir) / "GodotProject"
-        export_dir = project_root / "scenes" / "models"
-        export_dir.mkdir(parents=True)
-        (project_root / "project.godot").write_text("config_version=5", encoding="utf-8")
-
-        detected = detect_engine_project(str(export_dir), "GODOT_4")
-        self.assertIsNotNone(detected)
-        self.assertEqual(os.path.normpath(str(detected)), os.path.normpath(str(project_root)))
-
     def test_detect_msfs_project(self) -> None:
         project_root = Path(self.temp_dir) / "MyAirport"
         export_dir = project_root / "PackageSources" / "modelLib"

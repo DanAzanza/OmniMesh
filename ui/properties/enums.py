@@ -15,7 +15,6 @@ TARGET_ENGINE_ITEMS: list[tuple[str, str, str]] = [
     ("MSFS_2024", "MSFS 2024 (glTF + XML)", "Microsoft Flight Simulator 2024 glTF and ModelInfo XML standard"),
     ("UE5", "Unreal Engine 5 (FBX)", "Epic Games Unreal Engine 5 LODGroup FBX hierarchy"),
     ("UNITY_6", "Unity 6 (FBX)", "Unity Technologies LOD Group FBX naming standard"),
-    ("GODOT_4", "Godot 4 (glTF)", "Godot Engine 4.x visibility range glTF metadata standard"),
 ]
 
 ASSET_CATEGORY_ITEMS: list[tuple[str, str, str]] = [

@@ -14,7 +14,6 @@ import threading
 import time
 from unittest.mock import MagicMock, patch
 
-from bridges.godot_bridge import GodotLiveBridge
 from bridges.manager import BridgeManager
 from bridges.msfs_bridge import MSFS2024LiveBridge
 from bridges.unity_bridge import UnityLiveBridge
@@ -129,47 +128,7 @@ def test_ue5_web_remote_control_fallback():
 
 
 # ==============================================================================
-# 2. GODOT 4 BRIDGE & EDITOR PLUGIN TESTS
-# ==============================================================================
-
-
-def test_godot_plugin_generation_and_auto_import(tmp_path: Path):
-    """Tests Godot 4 EditorPlugin, SceneImportPlugin, and companion .import file generation."""
-    proj_dir = tmp_path / "TestGodotProject"
-    proj_dir.mkdir()
-    (proj_dir / "project.godot").write_text("config_version=5\n", encoding="utf-8")
-
-    export_dir = tmp_path / "OmniMeshExport"
-    export_dir.mkdir()
-    (export_dir / "SM_Hero_LOD0.glb").write_bytes(b"glTF mock binary")
-    (export_dir / "SM_Hero_LOD1.glb").write_bytes(b"glTF mock binary")
-
-    # Sync to Godot project
-    ok, msg = GodotLiveBridge.sync_asset_headless(str(export_dir), "SM_Hero", str(proj_dir))
-    assert ok
-    assert "Synced glTF asset 'SM_Hero'" in msg
-
-    # Verify addons/omnimesh structure
-    addons_dir = proj_dir / "addons" / "omnimesh"
-    assert (addons_dir / "plugin.cfg").is_file()
-    assert (addons_dir / "OmniMeshPlugin.gd").is_file()
-    assert (addons_dir / "OmniMeshSceneImportPlugin.gd").is_file()
-    assert (addons_dir / "OmniMeshPostImport.gd").is_file()
-
-    # Verify companion .import file was synthesized with correct res:// path
-    dest_dir = proj_dir / "OmniMesh_Exports" / "SM_Hero"
-    assert (dest_dir / "SM_Hero_LOD0.glb").is_file()
-    import_file = dest_dir / "SM_Hero_LOD0.glb.import"
-    assert import_file.is_file()
-
-    import_content = import_file.read_text(encoding="utf-8")
-    assert "custom_script/enabled=true" in import_content
-    assert 'custom_script/path="res://addons/omnimesh/OmniMeshPostImport.gd"' in import_content
-    assert 'source_file="res://OmniMesh_Exports/SM_Hero/SM_Hero_LOD0.glb"' in import_content
-
-
-# ==============================================================================
-# 3. UNITY 6 BRIDGE, FILE LOCK RETRY, & .META PRESERVATION
+# 2. UNITY 6 BRIDGE, FILE LOCK RETRY, & .META PRESERVATION
 # ==============================================================================
 
 
@@ -258,10 +217,10 @@ def test_bridge_manager_headless_routing(tmp_path: Path):
     assert not ok
     assert "Unity Project Path not configured" in msg
 
-    # Godot without configured project path
+    # Godot dropped - returns unknown engine
     ok, msg = BridgeManager.sync_asset_headless("GODOT_4", str(export_dir), "Asset")
     assert not ok
-    assert "Target Godot project directory not configured" in msg
+    assert "Unknown target engine" in msg
 
 
 def test_async_bridge_ping_dispatch():

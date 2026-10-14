@@ -81,6 +81,11 @@ class OMNIMESH_ConfigPresetSettings(PropertyGroup):
         default=True,
         description="Include engine and propeller reference coordinates",
     )
+    include_interactions: BoolProperty(
+        name="Interaction & Clickspots",
+        default=True,
+        description="Include interaction triggers and clickspot volumes",
+    )
     last_spawn_summary: StringProperty(
         name="Last Spawn Summary",
         default="",

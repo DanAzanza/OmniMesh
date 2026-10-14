@@ -57,8 +57,12 @@ def compute_preset_anchor_position(
     extrema: dict[str, tuple[float, float, float]],
     bbox_min: Vector,
     bbox_max: Vector,
+    detected_wheels: dict[str, tuple[float, float, float]] | None = None,
 ) -> Vector:
-    """Computes world-space coordinate for a given named anchor and normalized offset."""
+    """Computes world-space coordinate for a given named anchor and normalized offset.
+
+    Adapts proportionally to bounding box dimensions and detected wheel contact points.
+    """
     half_span = max(0.1, (bbox_max.x - bbox_min.x) * 0.5)
     length = max(0.1, bbox_max.y - bbox_min.y)
     height = max(0.1, bbox_max.z - bbox_min.z)
@@ -68,6 +72,16 @@ def compute_preset_anchor_position(
     oy = float(offset_norm[1]) if len(offset_norm) > 1 else 0.0
     oz = float(offset_norm[2]) if len(offset_norm) > 2 else 0.0
 
+    # 1. Direct detected wheel contact point matching
+    if detected_wheels and anchor_name in detected_wheels:
+        base = Vector(detected_wheels[anchor_name])
+        if not offset_norm or (
+            len(offset_norm) >= 3 and offset_norm[0] == 0.0 and offset_norm[1] == 0.0 and offset_norm[2] == 0.0
+        ):
+            return base
+        return Vector((base.x + ox * half_span, base.y + oy * length, base.z + oz * height))
+
+    # 2. Named geometric extrema and archetypes
     if anchor_name == "EXTREMA_NOSE" and "Scrape_Nose" in extrema:
         base = Vector(extrema["Scrape_Nose"])
     elif anchor_name == "EXTREMA_TAIL" and "Scrape_Tail" in extrema:
@@ -82,6 +96,48 @@ def compute_preset_anchor_position(
         base = Vector((bbox_center.x, bbox_center.y + 0.2 * length, bbox_center.z + 0.15 * height))
     elif anchor_name in ("AABB_MIN_Z", "EXTREMA_BELLY"):
         base = Vector((bbox_center.x, bbox_center.y, bbox_min.z))
+    # Wheel contact points (proportional fallback when no separate wheel mesh detected)
+    elif anchor_name in ("WHEEL_NOSE", "WHEEL_FRONT"):
+        base = Vector((bbox_center.x, bbox_center.y + 0.35 * length, bbox_min.z))
+    elif anchor_name == "WHEEL_LEFT":
+        base = Vector((bbox_center.x - 0.25 * half_span, bbox_center.y - 0.1 * length, bbox_min.z))
+    elif anchor_name == "WHEEL_RIGHT":
+        base = Vector((bbox_center.x + 0.25 * half_span, bbox_center.y - 0.1 * length, bbox_min.z))
+    elif anchor_name == "WHEEL_FRONT_L":
+        base = Vector((bbox_center.x - 0.35 * half_span, bbox_center.y + 0.3 * length, bbox_min.z))
+    elif anchor_name == "WHEEL_FRONT_R":
+        base = Vector((bbox_center.x + 0.35 * half_span, bbox_center.y + 0.3 * length, bbox_min.z))
+    elif anchor_name == "WHEEL_REAR_L":
+        base = Vector((bbox_center.x - 0.35 * half_span, bbox_center.y - 0.3 * length, bbox_min.z))
+    elif anchor_name == "WHEEL_REAR_R":
+        base = Vector((bbox_center.x + 0.35 * half_span, bbox_center.y - 0.3 * length, bbox_min.z))
+    elif anchor_name == "WHEEL_TAIL":
+        base = Vector((bbox_center.x, bbox_center.y - 0.45 * length, bbox_min.z))
+    # Ground vehicle anchors
+    elif anchor_name == "EXTREMA_BUMPER_F_L":
+        base = Vector(extrema.get("Scrape_Bumper_F_L", (bbox_min.x, bbox_max.y, bbox_min.z + 0.05 * height)))
+    elif anchor_name == "EXTREMA_BUMPER_F_R":
+        base = Vector(extrema.get("Scrape_Bumper_F_R", (bbox_max.x, bbox_max.y, bbox_min.z + 0.05 * height)))
+    elif anchor_name == "EXTREMA_BUMPER_R_L":
+        base = Vector(extrema.get("Scrape_Bumper_R_L", (bbox_min.x, bbox_min.y, bbox_min.z + 0.05 * height)))
+    elif anchor_name == "EXTREMA_BUMPER_R_R":
+        base = Vector(extrema.get("Scrape_Bumper_R_R", (bbox_max.x, bbox_min.y, bbox_min.z + 0.05 * height)))
+    elif anchor_name == "EXTREMA_ROOF":
+        base = Vector(extrema.get("Scrape_Roof", (bbox_center.x, bbox_center.y, bbox_max.z)))
+    elif anchor_name == "HEADLIGHT_L":
+        base = Vector((bbox_min.x + 0.2 * half_span, bbox_max.y, bbox_min.z + 0.35 * height))
+    elif anchor_name == "HEADLIGHT_R":
+        base = Vector((bbox_max.x - 0.2 * half_span, bbox_max.y, bbox_min.z + 0.35 * height))
+    elif anchor_name == "TAILLIGHT_L":
+        base = Vector((bbox_min.x + 0.2 * half_span, bbox_min.y, bbox_min.z + 0.45 * height))
+    elif anchor_name == "TAILLIGHT_R":
+        base = Vector((bbox_max.x - 0.2 * half_span, bbox_min.y, bbox_min.z + 0.45 * height))
+    elif anchor_name == "DRIVER_SEAT":
+        base = Vector((bbox_center.x - 0.35 * half_span, bbox_center.y - 0.05 * length, bbox_min.z + 0.55 * height))
+    elif anchor_name == "PASSENGER_SEAT":
+        base = Vector((bbox_center.x + 0.35 * half_span, bbox_center.y - 0.05 * length, bbox_min.z + 0.55 * height))
+    elif anchor_name == "CHASE_CAMERA":
+        base = Vector((bbox_center.x, bbox_min.y - 0.4 * length, bbox_max.z + 0.3 * height))
     elif anchor_name == "ROTOR_HUB_MAIN":
         base = Vector((bbox_center.x, bbox_center.y, bbox_max.z))
     elif anchor_name == "ROTOR_HUB_TAIL":
@@ -157,8 +213,9 @@ class ConfigPresetSpawner:
         datum_obj: Any,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
+        detected_wheels: dict[str, tuple[float, float, float]] | None = None,
     ) -> int:
-        """Spawns spatial contact points and markers."""
+        """Spawns spatial contact points and markers, snapping wheel contact points to detected tire bottoms."""
         count = 0
         datum_id = "WEIGHT_AND_BALANCE:reference_datum_position"
         for item in items:
@@ -166,7 +223,34 @@ class ConfigPresetSpawner:
             if not item_id or item_id in existing_ids or item_id == datum_id:
                 continue
 
-            pos = anchor_fn(item.get("anchor", "AABB_CENTER"), item.get("offset_normalized", [0.0, 0.0, 0.0]))
+            # Snap Class 1 (wheel) contact points to detected tire bottoms if available
+            matched_wheel = None
+            if item.get("point_class") == 1 and detected_wheels:
+                item_name_lower = (str(item.get("name", "")) + " " + str(item.get("id", ""))).lower()
+                anchor_name = item.get("anchor", "")
+                if anchor_name in detected_wheels:
+                    matched_wheel = detected_wheels[anchor_name]
+                elif "nose" in item_name_lower and "WHEEL_NOSE" in detected_wheels:
+                    matched_wheel = detected_wheels["WHEEL_NOSE"]
+                elif ("front_l" in item_name_lower or "_fl" in item_name_lower) and "WHEEL_FRONT_L" in detected_wheels:
+                    matched_wheel = detected_wheels["WHEEL_FRONT_L"]
+                elif ("front_r" in item_name_lower or "_fr" in item_name_lower) and "WHEEL_FRONT_R" in detected_wheels:
+                    matched_wheel = detected_wheels["WHEEL_FRONT_R"]
+                elif ("rear_l" in item_name_lower or "_rl" in item_name_lower) and "WHEEL_REAR_L" in detected_wheels:
+                    matched_wheel = detected_wheels["WHEEL_REAR_L"]
+                elif ("rear_r" in item_name_lower or "_rr" in item_name_lower) and "WHEEL_REAR_R" in detected_wheels:
+                    matched_wheel = detected_wheels["WHEEL_REAR_R"]
+                elif "tail" in item_name_lower and "WHEEL_TAIL" in detected_wheels:
+                    matched_wheel = detected_wheels["WHEEL_TAIL"]
+                elif "left" in item_name_lower and "WHEEL_LEFT" in detected_wheels:
+                    matched_wheel = detected_wheels["WHEEL_LEFT"]
+                elif "right" in item_name_lower and "WHEEL_RIGHT" in detected_wheels:
+                    matched_wheel = detected_wheels["WHEEL_RIGHT"]
+
+            if matched_wheel is not None:
+                pos = Vector(matched_wheel)
+            else:
+                pos = anchor_fn(item.get("anchor", "AABB_CENTER"), item.get("offset_normalized", [0.0, 0.0, 0.0]))
             p_name = f"{asset_name}_{item.get('name', 'Point')}"
             obj = _bpy.data.objects.new(p_name, None)
             is_class1 = item.get("point_class") == 1
@@ -486,11 +570,22 @@ class ConfigPresetSpawner:
             except (ImportError, ValueError):
                 from core.hierarchy import get_or_create_engine_import_collection as col_fn
 
-        from .geometry import detect_airframe_extrema, extract_world_vertices_numpy
+        from .geometry import (
+            detect_airframe_extrema,
+            detect_ground_vehicle_extrema,
+            detect_wheel_submeshes,
+            extract_world_vertices_numpy,
+        )
 
-        # 1. Inspect geometry extrema
+        try:
+            from ..hierarchy import safe_remove_collection_objects
+        except (ImportError, ValueError):
+            from core.hierarchy import safe_remove_collection_objects
+
+        # 1. Inspect geometry extrema & detected wheels
         base_meshes = mesh_fn(context, asset_name)
         extrema: dict[str, tuple[float, float, float]] = {}
+        detected_wheels: dict[str, tuple[float, float, float]] = {}
         bbox_min = Vector((-5.0, -5.0, -1.0))
         bbox_max = Vector((5.0, 5.0, 3.0))
 
@@ -498,37 +593,73 @@ class ConfigPresetSpawner:
             try:
                 coords = extract_world_vertices_numpy(base_meshes)
                 if coords.shape[0] >= 4:
-                    extrema = detect_airframe_extrema(coords)
+                    archetype = str(preset_data.get("archetype", "")).lower()
+                    if "car" in archetype or "ground" in archetype:
+                        extrema = detect_ground_vehicle_extrema(coords)
+                    else:
+                        extrema = detect_airframe_extrema(coords)
                     bbox_min = Vector((float(coords[:, 0].min()), float(coords[:, 1].min()), float(coords[:, 2].min())))
                     bbox_max = Vector((float(coords[:, 0].max()), float(coords[:, 1].max()), float(coords[:, 2].max())))
+                # Detect wheel/gear submeshes by name heuristics
+                detected_wheels = detect_wheel_submeshes(base_meshes)
             except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
                 logger.debug("Could not compute geometry extrema: %s", exc)
 
         def anchor_fn(anchor_name: str, offset_norm: list[float]) -> Vector:
-            return compute_preset_anchor_position(anchor_name, offset_norm, extrema, bbox_min, bbox_max)
+            return compute_preset_anchor_position(
+                anchor_name, offset_norm, extrema, bbox_min, bbox_max, detected_wheels
+            )
 
-        # 2. Ensure target collections
+        # 2. Target collections
         spatial_col = col_fn(context, asset_name, "SPATIAL")
         lights_col = col_fn(context, asset_name, "LIGHTS")
         cameras_col = col_fn(context, asset_name, "CAMERAS")
+        interact_col = col_fn(context, asset_name, "INTERACTIONS")
 
-        # Map existing IDs
+        # Feature toggles
+        inc_spatial = getattr(cfg_props, "include_spatial", True) if cfg_props else True
+        inc_lights = getattr(cfg_props, "include_lights", True) if cfg_props else True
+        inc_cams = getattr(cfg_props, "include_cameras", True) if cfg_props else True
+        inc_exits = getattr(cfg_props, "include_exits", True) if cfg_props else True
+        inc_engines = getattr(cfg_props, "include_engines", True) if cfg_props else True
+        inc_interactions = getattr(cfg_props, "include_interactions", True) if cfg_props else True
+
+        # SMART REPLACE: Cleanly remove existing objects in enabled categories before spawning
+        if spatial_col:
+
+            def _spatial_predicate(o: Any) -> bool:
+                m_type = str(o.get("msfs_type", "") if hasattr(o, "get") else "")
+                m_sec = str(o.get("msfs_section", "") if hasattr(o, "get") else "")
+                if inc_spatial and (
+                    m_type in ("CONTACT_POINT", "PAYLOAD_STATION", "DATUM", "CG")
+                    or m_sec in ("CONTACT_POINTS", "WEIGHT_AND_BALANCE", "FUEL")
+                ):
+                    return True
+                if inc_exits and (m_type == "EXIT" or m_sec == "EXITS"):
+                    return True
+                if inc_engines and (m_type == "ENGINE" or m_sec == "GENERALENGINEDATA"):
+                    return True
+                return False
+
+            safe_remove_collection_objects(spatial_col, bpy_module=_bpy, predicate=_spatial_predicate)
+
+        if lights_col and inc_lights:
+            safe_remove_collection_objects(lights_col, bpy_module=_bpy)
+
+        if cameras_col and inc_cams:
+            safe_remove_collection_objects(cameras_col, bpy_module=_bpy)
+
+        if interact_col and inc_interactions:
+            safe_remove_collection_objects(interact_col, bpy_module=_bpy)
+
+        # Map remaining existing IDs
         existing_ids: set[str] = set()
-        for col in (spatial_col, lights_col, cameras_col):
+        for col in (spatial_col, lights_col, cameras_col, interact_col):
             if col and hasattr(col, "objects"):
                 for o in col.objects:
                     mid = o.get("msfs_id") if hasattr(o, "get") else None
                     if mid:
                         existing_ids.add(mid)
-
-        if hasattr(_bpy, "data") and hasattr(_bpy.data, "objects"):
-            try:
-                for o in _bpy.data.objects:
-                    mid = o.get("msfs_id") if hasattr(o, "get") else None
-                    if mid:
-                        existing_ids.add(mid)
-            except TypeError:
-                pass
 
         total_added = 0
 
@@ -536,42 +667,45 @@ class ConfigPresetSpawner:
         datum_obj, datum_added = cls._spawn_datum_if_missing(_bpy, asset_name, spatial_col, existing_ids, anchor_fn)
         total_added += datum_added
 
-        # 4. Spatial points
-        inc_spatial = getattr(cfg_props, "include_spatial", True) if cfg_props else True
+        # 4. Spatial points & station loads
         if inc_spatial:
             total_added += cls._spawn_spatial_points(
-                _bpy, asset_name, preset_data.get("spatial", []), spatial_col, datum_obj, existing_ids, anchor_fn
+                _bpy,
+                asset_name,
+                preset_data.get("spatial", []),
+                spatial_col,
+                datum_obj,
+                existing_ids,
+                anchor_fn,
+                detected_wheels,
             )
             total_added += cls._spawn_station_loads(
                 _bpy, asset_name, preset_data.get("station_loads", []), spatial_col, datum_obj, existing_ids, anchor_fn
             )
 
         # 5. Exits
-        inc_exits = getattr(cfg_props, "include_exits", True) if cfg_props else True
         if inc_exits:
             total_added += cls._spawn_exits(
                 _bpy, asset_name, preset_data.get("exits", []), spatial_col, datum_obj, existing_ids, anchor_fn
             )
 
         # 6. Engines
-        inc_engines = getattr(cfg_props, "include_engines", True) if cfg_props else True
         if inc_engines:
             total_added += cls._spawn_engines(
                 _bpy, asset_name, preset_data.get("engines", []), spatial_col, datum_obj, existing_ids, anchor_fn
             )
 
         # 7. Interactions
-        total_added += cls._spawn_interactions(context, asset_name, preset_data.get("interactions", []))
+        if inc_interactions:
+            total_added += cls._spawn_interactions(context, asset_name, preset_data.get("interactions", []))
 
         # 8. Lights
-        inc_lights = getattr(cfg_props, "include_lights", True) if cfg_props else True
         if inc_lights:
             total_added += cls._spawn_lights(
                 _bpy, asset_name, preset_data.get("lights", []), lights_col, existing_ids, anchor_fn
             )
 
         # 9. Cameras
-        inc_cams = getattr(cfg_props, "include_cameras", True) if cfg_props else True
         if inc_cams:
             total_added += cls._spawn_cameras(
                 _bpy, asset_name, preset_data.get("cameras", []), cameras_col, existing_ids, anchor_fn

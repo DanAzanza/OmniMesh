@@ -105,7 +105,6 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
         sub_del = row_act.row(align=True)
         sub_del.enabled = not is_builtin
         sub_del.operator("omnimesh.delete_engine_import_preset", text="Delete", icon="X")
-        row_act.operator("omnimesh.convert_asobo_hierarchy", text="Convert x0..x6", icon="OUTLINER_COLLECTION")
 
         layout.separator()
         layout.label(text="Package Components to Ingest", icon="CHECKBOX_HLT")
@@ -179,6 +178,7 @@ class OMNIMESH_PT_popover_import_preset(Panel):
         if len(props.pbr_active_maps) == 0:
             box_empty = layout.box()
             box_empty.label(text="Preset maps not initialized.", icon="INFO")
+            box_empty.operator("lod_tool.init_preset_maps", text="Initialize Maps", icon="FILE_REFRESH")
             return
 
         row = layout.row()
@@ -244,7 +244,7 @@ class OMNIMESH_PT_popover_config_preset(Panel):
     bl_idname = "OMNIMESH_PT_popover_config_preset"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
-    bl_ui_units_x = 16
+    bl_ui_units_x = 18
 
     def draw(self, context: Any) -> None:
         if not bpy or not context:
@@ -279,6 +279,18 @@ class OMNIMESH_PT_popover_config_preset(Panel):
         box_comp.prop(cfg_props, "include_cameras", text="Cockpit & Cameras")
         box_comp.prop(cfg_props, "include_exits", text="Exits & Doors")
         box_comp.prop(cfg_props, "include_engines", text="Engines & Props")
+        box_comp.prop(cfg_props, "include_interactions", text="Interaction & Clickspots")
+
+        int_props = getattr(props, "interaction", None) if props else None
+        if int_props:
+            layout.separator()
+            layout.label(text="Custom Interaction Trigger", icon="SNAP_VOLUME")
+            box_int = layout.box()
+            row_i = box_int.row(align=True)
+            row_i.use_property_split = False
+            row_i.prop(int_props, "role", text="")
+            row_i.prop(int_props, "shape", text="")
+            row_i.operator("omnimesh.add_interaction_volume", text="Add Trigger", icon="ADD")
 
 
 # =========================================================================
@@ -474,16 +486,14 @@ class OMNIMESH_PT_popover_export_preset(Panel):
             box_msfs_opts.use_property_decorate = False
             box_msfs_opts.label(text="MSFS SDK Options", icon="PREFERENCES")
             box_msfs_opts.prop(props, "msfs_export_full_package", text="Export Full Package")
-            box_msfs_opts.prop(props, "msfs_target_version", text="Target SDK")
             box_msfs_opts.prop(props, "msfs_preserve_decals", text="Preserve Decals")
 
-            if getattr(props, "msfs_target_version", "2024") == "2024":
-                box_opts_2024 = box_msfs_opts.box()
-                box_opts_2024.label(text="[model.options] (MSFS 2024)", icon="FILE_TEXT")
-                box_opts_2024.prop(props, "msfs_with_exterior_show_interior", text="Show Interior")
-                box_opts_2024.prop(props, "msfs_with_exterior_show_interior_hide_first_lod", text="Hide First LOD Int")
-                box_opts_2024.prop(props, "msfs_with_interior_force_first_lod", text="Force First LOD Int")
-                box_opts_2024.prop(props, "msfs_with_interior_show_exterior", text="Show Exterior")
+            box_opts_2024 = box_msfs_opts.box()
+            box_opts_2024.label(text="[model.options] (MSFS 2024)", icon="FILE_TEXT")
+            box_opts_2024.prop(props, "msfs_with_exterior_show_interior", text="Show Interior")
+            box_opts_2024.prop(props, "msfs_with_exterior_show_interior_hide_first_lod", text="Hide First LOD Int")
+            box_opts_2024.prop(props, "msfs_with_interior_force_first_lod", text="Force First LOD Int")
+            box_opts_2024.prop(props, "msfs_with_interior_show_exterior", text="Show Exterior")
 
         layout.separator()
         layout.label(text="Export Maps & Channel Routing", icon="NODE_MATERIAL")
@@ -491,6 +501,7 @@ class OMNIMESH_PT_popover_export_preset(Panel):
         if len(props.pbr_export_active_maps) == 0:
             box_empty = layout.box()
             box_empty.label(text="Export maps not initialized.", icon="INFO")
+            box_empty.operator("lod_tool.init_preset_maps", text="Initialize Maps", icon="FILE_REFRESH")
             return
 
         row = layout.row()

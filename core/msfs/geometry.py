@@ -17,6 +17,11 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+try:
+    from mathutils import Vector
+except ImportError:
+    Vector = None
+
 if TYPE_CHECKING:
     import bpy
 
@@ -25,6 +30,12 @@ logger = logging.getLogger(__name__)
 # Regex pattern to exclude non-structural elements (antennas, props, wicks, interiors)
 EXCLUDED_OBJECT_PATTERN = re.compile(
     r"(?i)(prop|rotor|blade|spinner|antenna|wick|glass|interior|pilot|light|shadow|collider|hitbox)"
+)
+
+# Regex patterns for wheel/gear/tire submesh detection and false-positive exclusion
+WHEEL_OBJECT_PATTERN = re.compile(r"(?i)(wheel|tire|gear)")
+WHEEL_EXCLUDED_PATTERN = re.compile(
+    r"(?i)(trim|lever|door|cockpit|indicator|handle|gearbox|prop|bay|well|switch|pedal|brake_disc)"
 )
 
 # Standard default parameter template for MSFS Class 2 (Scrape) contact points:
@@ -67,23 +78,18 @@ def is_structural_airframe_object(obj_name: str) -> bool:
 
 
 def extract_world_vertices_numpy(
-    obj: bpy.types.Object,
-    depsgraph: bpy.types.Depsgraph | None = None,
+    obj: Any,
+    depsgraph: Any | None = None,
 ) -> np.ndarray:
     """Extract world-space vertex coordinates of a mesh object using fast NumPy buffers.
 
     Evaluates modifiers (if depsgraph is provided) and guarantees that temporary
-    mesh instances are freed.
-
-    Args:
-        obj: Blender mesh object.
-        depsgraph: Optional dependency graph to evaluate modifiers.
-
-    Returns:
-        NumPy array of shape (N, 3) containing world-space vertex positions (float32),
-        or an empty array of shape (0, 3) if object has no vertices.
+    mesh instances are freed. Can also accept a list/tuple of objects.
     """
-    if obj.type != "MESH" or not obj.data:
+    if isinstance(obj, (list, tuple)):
+        return collect_airframe_vertices(list(obj), depsgraph=depsgraph, filter_non_structural=False)
+
+    if not hasattr(obj, "type") or getattr(obj, "type", "") != "MESH" or not getattr(obj, "data", None):
         return np.empty((0, 3), dtype=np.float32)
 
     eval_obj = obj.evaluated_get(depsgraph) if depsgraph is not None else obj
@@ -301,3 +307,140 @@ def format_class_2_scrape_tokens(
     tokens[3] = f"{vert_ft:.2f}"
 
     return [str(t) for t in tokens]
+
+
+def detect_wheel_submeshes(
+    objects: list[Any],
+) -> dict[str, tuple[float, float, float]]:
+    """Detects wheel/tire/gear submeshes by name heuristics and calculates tire bottom contact points.
+
+    Excludes interior cockpit wheels (trim wheels, gear levers, doors, etc.).
+
+    Args:
+        objects: List of candidate mesh objects (typically from asset's LOD0).
+
+    Returns:
+        Dictionary mapping semantic wheel keys to (x, y, z) contact positions in meters.
+        Possible keys:
+            - 'WHEEL_NOSE' / 'WHEEL_FRONT'
+            - 'WHEEL_LEFT' / 'WHEEL_RIGHT'
+            - 'WHEEL_FRONT_L' / 'WHEEL_FRONT_R'
+            - 'WHEEL_REAR_L' / 'WHEEL_REAR_R'
+            - 'WHEEL_TAIL'
+    """
+    results: dict[str, tuple[float, float, float]] = {}
+    if not objects:
+        return results
+
+    candidates: list[tuple[str, tuple[float, float, float]]] = []
+
+    for obj in objects:
+        if not obj or getattr(obj, "type", "") != "MESH":
+            continue
+        obj_name = getattr(obj, "name", "")
+        if not WHEEL_OBJECT_PATTERN.search(obj_name) or WHEEL_EXCLUDED_PATTERN.search(obj_name):
+            continue
+
+        coords = extract_world_vertices_numpy(obj)
+        if coords.shape[0] >= 3:
+            min_x, max_x = float(coords[:, 0].min()), float(coords[:, 0].max())
+            min_y, max_y = float(coords[:, 1].min()), float(coords[:, 1].max())
+            min_z = float(coords[:, 2].min())
+            center_x = (min_x + max_x) * 0.5
+            center_y = (min_y + max_y) * 0.5
+            candidates.append((obj_name, (center_x, center_y, min_z)))
+        elif hasattr(obj, "bound_box") and hasattr(obj, "matrix_world"):
+            try:
+                mw = obj.matrix_world
+                world_pts = [mw @ Vector(pt) for pt in obj.bound_box] if Vector else list(obj.bound_box)
+                min_x = min(float(p[0]) for p in world_pts)
+                max_x = max(float(p[0]) for p in world_pts)
+                min_y = min(float(p[1]) for p in world_pts)
+                max_y = max(float(p[1]) for p in world_pts)
+                min_z = min(float(p[2]) for p in world_pts)
+                center_x = (min_x + max_x) * 0.5
+                center_y = (min_y + max_y) * 0.5
+                candidates.append((obj_name, (center_x, center_y, min_z)))
+            except Exception as exc:
+                logger.debug("Bounding box extraction failed for wheel candidate: %s", exc)
+
+    if not candidates:
+        return results
+
+    for name, pos in candidates:
+        n_low = name.lower()
+        if "nose" in n_low:
+            results["WHEEL_NOSE"] = pos
+            results["WHEEL_FRONT"] = pos
+        elif "tail" in n_low:
+            results["WHEEL_TAIL"] = pos
+        elif ("front" in n_low or "f_" in n_low or "_fl" in n_low) and ("left" in n_low or "_l" in n_low):
+            results["WHEEL_FRONT_L"] = pos
+            results.setdefault("WHEEL_LEFT", pos)
+        elif ("front" in n_low or "f_" in n_low or "_fr" in n_low) and ("right" in n_low or "_r" in n_low):
+            results["WHEEL_FRONT_R"] = pos
+            results.setdefault("WHEEL_RIGHT", pos)
+        elif ("rear" in n_low or "back" in n_low or "r_" in n_low or "_rl" in n_low) and (
+            "left" in n_low or "_l" in n_low
+        ):
+            results["WHEEL_REAR_L"] = pos
+            results.setdefault("WHEEL_LEFT", pos)
+        elif ("rear" in n_low or "back" in n_low or "r_" in n_low or "_rr" in n_low) and (
+            "right" in n_low or "_r" in n_low
+        ):
+            results["WHEEL_REAR_R"] = pos
+            results.setdefault("WHEEL_RIGHT", pos)
+        elif "left" in n_low or "_l" in n_low:
+            results["WHEEL_LEFT"] = pos
+        elif "right" in n_low or "_r" in n_low:
+            results["WHEEL_RIGHT"] = pos
+        else:
+            cx, cy, _ = pos
+            if abs(cx) < 0.25:
+                if cy >= 0:
+                    results["WHEEL_NOSE"] = pos
+                    results["WHEEL_FRONT"] = pos
+                else:
+                    results["WHEEL_TAIL"] = pos
+            elif cx < 0:
+                results["WHEEL_LEFT"] = pos
+            else:
+                results["WHEEL_RIGHT"] = pos
+
+    return results
+
+
+def detect_ground_vehicle_extrema(
+    vertices: np.ndarray,
+) -> dict[str, tuple[float, float, float]]:
+    """Detects bumper, roof, and rocker boundary extrema for ground vehicles.
+
+    Args:
+        vertices: NumPy array of shape (N, 3).
+
+    Returns:
+        Dictionary mapping point tags to (x, y, z) in meters.
+    """
+    if vertices.shape[0] < 4:
+        raise ValueError(f"Insufficient vertices for ground vehicle extrema: {vertices.shape[0]}")
+
+    min_x, max_x = float(vertices[:, 0].min()), float(vertices[:, 0].max())
+    min_y, max_y = float(vertices[:, 1].min()), float(vertices[:, 1].max())
+    min_z, max_z = float(vertices[:, 2].min()), float(vertices[:, 2].max())
+    center_x = (min_x + max_x) * 0.5
+    center_y = (min_y + max_y) * 0.5
+    height = max(0.1, max_z - min_z)
+
+    return {
+        "Scrape_Bumper_F_L": (min_x, max_y, min_z + 0.05 * height),
+        "Scrape_Bumper_F_R": (max_x, max_y, min_z + 0.05 * height),
+        "Scrape_Bumper_R_L": (min_x, min_y, min_z + 0.05 * height),
+        "Scrape_Bumper_R_R": (max_x, min_y, min_z + 0.05 * height),
+        "Scrape_Roof": (center_x, center_y, max_z),
+        "Scrape_Nose": (center_x, max_y, min_z + 0.08 * height),
+        "Scrape_Tail": (center_x, min_y, min_z + 0.08 * height),
+        "Scrape_Wing_L": (min_x, center_y, min_z + 0.15 * height),
+        "Scrape_Wing_R": (max_x, center_y, min_z + 0.15 * height),
+        "Scrape_Keel": (center_x, center_y, min_z),
+        "Scrape_Fin": (center_x, center_y, max_z),
+    }

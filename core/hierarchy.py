@@ -640,3 +640,67 @@ def get_or_create_engine_import_collection(
 
     sub_col["_omnimesh_role"] = role_upper
     return sub_col
+
+
+def safe_remove_collection_objects(
+    col: Any,
+    bpy_module: Any = None,
+    predicate: Any = None,
+) -> int:
+    """
+    Safely and cleanly removes objects belonging to a collection and their unshared datablocks.
+    Guards against RNA pointer invalidation and collection mutation during iteration.
+    """
+    _bpy = bpy_module or bpy
+    if not col or not hasattr(col, "objects") or not _bpy:
+        return 0
+
+    removed = 0
+    # Create shallow snapshot of objects to prevent mutation during iteration
+    objs_to_remove = [o for o in list(col.objects) if o is not None and (predicate is None or predicate(o))]
+
+    for obj in objs_to_remove:
+        try:
+            # Unparent children safely
+            if hasattr(obj, "children"):
+                for child in list(obj.children):
+                    if child and hasattr(child, "parent"):
+                        child.parent = None
+            if hasattr(obj, "parent") and obj.parent:
+                obj.parent = None
+
+            # Deselect if selected
+            if hasattr(obj, "select_set"):
+                try:
+                    obj.select_set(False)
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    logger.debug("Deselect on removal skipped: %s", exc)
+
+            # Capture unshared data block
+            data_to_remove = None
+            if hasattr(obj, "data") and obj.data:
+                data = obj.data
+                users = getattr(data, "users", 1)
+                if isinstance(users, (int, float)) and users <= 1:
+                    data_to_remove = data
+
+            # Unlink and remove object from bpy.data.objects
+            if hasattr(_bpy, "data") and hasattr(_bpy.data, "objects"):
+                _bpy.data.objects.remove(obj, do_unlink=True)
+                removed += 1
+
+            # Remove orphaned datablock
+            if data_to_remove is not None and hasattr(_bpy, "data"):
+                try:
+                    if hasattr(_bpy.data, "meshes") and data_to_remove in _bpy.data.meshes.values():
+                        _bpy.data.meshes.remove(data_to_remove)
+                    elif hasattr(_bpy.data, "lights") and data_to_remove in _bpy.data.lights.values():
+                        _bpy.data.lights.remove(data_to_remove)
+                    elif hasattr(_bpy.data, "cameras") and data_to_remove in _bpy.data.cameras.values():
+                        _bpy.data.cameras.remove(data_to_remove)
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    logger.debug("Orphaned datablock removal skipped: %s", exc)
+        except (ReferenceError, AttributeError, RuntimeError) as exc:
+            logger.debug("Safe object removal exception: %s", exc)
+
+    return removed

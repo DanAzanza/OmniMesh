@@ -44,7 +44,6 @@ logger = logging.getLogger(__name__)
 ENGINE_TO_FACTORY_PRESET: dict[str, str] = {
     "UE5": "unreal_engine_5",
     "UNITY_6": "unity_hdrp_maskmap",
-    "GODOT_4": "godot_4_orm",
     "MSFS_2024": "msfs_2024_comp",
 }
 
@@ -328,7 +327,13 @@ def restore_preset_state_on_load(dummy: Any = None) -> None:
     with StateRestorationGuard(), PresetSyncGuard():
         for scene in getattr(bpy.data, "scenes", []):
             props = getattr(scene, "lod_tool", None)
-            if not props or getattr(props, "is_state_restored", False):
+            if not props:
+                continue
+            maps_empty = (
+                len(getattr(props, "pbr_active_maps", [])) == 0
+                or len(getattr(props, "pbr_export_active_maps", [])) == 0
+            )
+            if getattr(props, "is_state_restored", False) and not maps_empty:
                 continue
             props.is_state_restored = True
             exp_to_set = last_exp or "unreal_engine_5"
@@ -348,6 +353,10 @@ def restore_preset_state_on_load(dummy: Any = None) -> None:
                 props.lod_preset = lod_to_set
                 lod_preset_data = LODPresetManager.get_preset(lod_to_set)
                 sync_preset_tiers_from_preset(props, lod_preset_data)
+
+            # Auto-migrate legacy GODOT_4 target engine to UE5
+            if hasattr(props, "target_engine") and getattr(props, "target_engine", "") == "GODOT_4":
+                props.target_engine = "UE5"
 
             # Auto-migrate legacy MSFS 2020 target version to MSFS 2024
             if hasattr(props, "msfs_target_version") and getattr(props, "msfs_target_version", "") == "2020":
