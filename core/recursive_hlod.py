@@ -245,16 +245,13 @@ class RecursiveHLODManager:
         mod.adaptivity = 0.0
 
         try:
-            # Safe evaluation via depsgraph (headless-compatible, zero bpy.ops UI dependencies)
-            eval_depsgraph = (
-                context.evaluated_depsgraph_get()
-                if context and hasattr(context, "evaluated_depsgraph_get")
-                else (
-                    bpy.context.evaluated_depsgraph_get()
-                    if hasattr(bpy, "context") and hasattr(bpy.context, "evaluated_depsgraph_get")
-                    else None
-                )
-            )
+            eval_depsgraph = None
+            if context and hasattr(context, "evaluated_depsgraph_get"):
+                eval_depsgraph = context.evaluated_depsgraph_get()
+            else:
+                ctx = getattr(bpy, "context", None)
+                if ctx and hasattr(ctx, "evaluated_depsgraph_get"):
+                    eval_depsgraph = ctx.evaluated_depsgraph_get()
             if eval_depsgraph:
                 eval_obj = obj.evaluated_get(eval_depsgraph)
                 new_mesh = bpy.data.meshes.new_from_object(

@@ -62,15 +62,25 @@ class EphemeralBakeSceneGuard:
     remain completely unpolluted during baking passes.
     """
 
-    def __init__(self, scene_name: str = "OMNIMESH_TEMP_BAKE"):
+    def __init__(
+        self,
+        scene_name: str = "OMNIMESH_TEMP_BAKE",
+        orig_scene: Any | None = None,
+        context: Any | None = None,
+    ):
         self.temp_scene_name = scene_name
-        self.orig_scene = None
+        self.context = context
+        self.orig_scene = orig_scene
         self.bake_scene = None
 
     def __enter__(self) -> Optional[Any]:
         if not bpy:
             return None
-        self.orig_scene = bpy.context.scene
+        ctx = self.context or getattr(bpy, "context", None)
+        if not self.orig_scene:
+            self.orig_scene = getattr(ctx, "scene", None) or (
+                bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None
+            )
         self.bake_scene = bpy.data.scenes.new(self.temp_scene_name)
 
         # Configure minimal, fast unlit rendering environment
@@ -114,16 +124,19 @@ class EphemeralBakeSceneGuard:
                 bg.inputs["Color"].default_value = (0.0, 0.0, 0.0, 1.0)
         self.bake_scene.world = world
 
-        if getattr(bpy.context, "window", None):
-            bpy.context.window.scene = self.bake_scene
+        win = getattr(ctx, "window", None)
+        if win:
+            win.scene = self.bake_scene
         return self.bake_scene
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if not bpy:
             return
         try:
-            if self.orig_scene and getattr(bpy.context, "window", None):
-                bpy.context.window.scene = self.orig_scene
+            ctx = self.context or getattr(bpy, "context", None)
+            win = getattr(ctx, "window", None)
+            if self.orig_scene and win:
+                win.scene = self.orig_scene
             if self.bake_scene:
                 if self.bake_scene.camera:
                     cam_obj = self.bake_scene.camera
@@ -265,7 +278,7 @@ class ImpostorAtlasBaker:
         return atlas
 
     @classmethod
-    def configure_cycles_compute_device(cls, scene: Any) -> tuple[str, list[str]]:
+    def configure_cycles_compute_device(cls, scene: Any, context: Any = None) -> tuple[str, list[str]]:
         """
         Automatically probes and configures the optimal compute device for Cycles baking.
         Supports NVIDIA (OptiX, CUDA), Apple Silicon (Metal), AMD (HIP), Intel (oneAPI),
@@ -276,12 +289,15 @@ class ImpostorAtlasBaker:
 
         backend_priority = ["OPTIX", "METAL", "HIP", "ONEAPI", "CUDA"]
         try:
-            cycles_addon = bpy.context.preferences.addons.get("cycles")
+            ctx = context or getattr(bpy, "context", None)
+            prefs = getattr(ctx, "preferences", None)
+            addons = getattr(prefs, "addons", {}) if prefs else {}
+            cycles_addon = addons.get("cycles")
             if cycles_addon and hasattr(cycles_addon, "preferences"):
                 cpref = cycles_addon.preferences
                 avail = (
-                    {item[0] for item in cpref.get_device_types(bpy.context)}
-                    if hasattr(cpref, "get_device_types")
+                    {item[0] for item in cpref.get_device_types(ctx)}
+                    if hasattr(cpref, "get_device_types") and ctx
                     else set()
                 )
                 for backend in backend_priority:
@@ -323,6 +339,7 @@ class ImpostorAtlasBaker:
         target_engine: str = "UE5",
         dilation_iterations: int = 4,
         grid_size: int = 8,
+        context: Any = None,
     ) -> dict[str, str]:
         """
         Bakes an NxN Octahedral Impostor atlas using an ephemeral animation timeline render.
@@ -363,7 +380,7 @@ class ImpostorAtlasBaker:
             else ImpostorMath.full_octahedral_to_vector
         )
 
-        with EphemeralBakeSceneGuard() as bake_scene:
+        with EphemeralBakeSceneGuard(scene_name=f"{base_name}_BakeScene", context=context) as bake_scene:
             if not bake_scene:
                 return {}
 
@@ -446,12 +463,12 @@ class ImpostorAtlasBaker:
                             except (TypeError, ValueError, AttributeError) as exc:
                                 logger.debug("Failed setting view_transform on bake scene: %s", exc)
 
+                        ctx = context or getattr(bpy, "context", None)
+                        win = getattr(ctx, "window", None) if ctx else None
                         try:
-                            if getattr(bpy.context, "window", None) and hasattr(bpy.context, "temp_override"):
+                            if win and ctx and hasattr(ctx, "temp_override"):
                                 try:
-                                    with cast(Any, bpy.context).temp_override(
-                                        scene=bake_scene, window=bpy.context.window
-                                    ):
+                                    with cast(Any, ctx).temp_override(scene=bake_scene, window=win):
                                         bpy.ops.render.render(animation=True, scene=bake_scene.name)
                                 except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
                                     logger.debug("Render temp_override fallback: %s", exc)
@@ -593,6 +610,7 @@ class ImpostorAtlasBaker:
         target_engine: str = "UE5",
         dilation_iterations: int = 4,
         impostor_obj: Optional[Any] = None,
+        context: Any = None,
     ) -> dict[str, str]:
         """
         Bakes BaseColor, Tangent Normal, and ORM (AO/Roughness/Metallic) maps using Cycles Selected-to-Active
@@ -611,6 +629,7 @@ class ImpostorAtlasBaker:
                 target_engine=target_engine,
                 dilation_iterations=dilation_iterations,
                 grid_size=8,
+                context=context,
             )
 
         try:
@@ -636,16 +655,23 @@ class ImpostorAtlasBaker:
 
         max_span = max((max(c[i] for c in all_coords) - min(c[i] for c in all_coords) for i in range(3)), default=4.0)
 
-        scene = bpy.context.scene
+        ctx = context or getattr(bpy, "context", None)
+        scene = getattr(ctx, "scene", None) or (
+            bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None
+        )
+        if not scene:
+            return {}
         orig_engine = scene.render.engine
-        scene.render.engine = "CYCLES"
+        cast(Any, scene.render).engine = "CYCLES"
 
         # Automatically probe and configure best compute device (NVIDIA OptiX/CUDA, Apple Metal, AMD HIP, Intel oneAPI, or CPU)
-        cls.configure_cycles_compute_device(scene)
+        cls.configure_cycles_compute_device(scene, context=ctx)
 
         is_bg = getattr(bpy.app, "background", False) if bpy else False
-        scene.cycles.samples = 1 if is_bg else 16
-        scene.cycles.use_denoising = not is_bg
+        cycles = getattr(scene, "cycles", None)
+        if cycles:
+            cycles.samples = 1 if is_bg else 16
+            cycles.use_denoising = not is_bg
         scene.render.film_transparent = True
 
         # Ensure objects are visible in view layer
@@ -660,7 +686,9 @@ class ImpostorAtlasBaker:
         for o in mesh_objs:
             o.select_set(True)
         target_impostor.select_set(True)
-        bpy.context.view_layer.objects.active = target_impostor
+        vl = getattr(ctx, "view_layer", None)
+        if vl and hasattr(vl, "objects"):
+            vl.objects.active = target_impostor
 
         # Bake configuration
         scene.render.bake.use_selected_to_active = True

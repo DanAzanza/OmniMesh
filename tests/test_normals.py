@@ -48,5 +48,23 @@ def test_reproject_custom_split_normals_armature_pose_lock():
 
 def test_kdtree_normal_transfer_fallback_guards():
     assert NormalManager._kdtree_normal_transfer_fallback(None, None) is False
+
+
+def test_reproject_custom_split_normals_context_decoupled():
+    mock_src = MagicMock()
+    mock_src.type = "MESH"
+    mock_tgt = MagicMock()
+    mock_tgt.type = "MESH"
+    mock_src.data.vertices = [MagicMock(co=(0, 0, 0), normal=(0, 0, 1))]
+    mock_tgt.data.vertices = [MagicMock(co=(0, 0, 0), normal=(0, 0, 1))]
+    mock_src.data.polygons = [MagicMock(loop_indices=[0])]
+    mock_tgt.data.polygons = [MagicMock(loop_indices=[0])]
+    mock_tgt.data.loops = [MagicMock(vertex_index=0)]
+
+    mock_context = MagicMock()
+    # Explicit context passed
+    NormalManager.reproject_custom_split_normals(mock_tgt, mock_src, context=mock_context)
+    # None context passed
+    NormalManager.reproject_custom_split_normals(mock_tgt, mock_src, context=None)
     assert NormalManager._kdtree_normal_transfer_fallback(object(), None) is False
     assert NormalManager._kdtree_normal_transfer_fallback(None, object()) is False

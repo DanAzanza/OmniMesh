@@ -27,14 +27,14 @@ else:
         bpy = None
         Operator = object
 
-    def StringProperty(**kwargs: Any) -> Any:
-        return ""
+        def StringProperty(**kwargs: Any) -> Any:
+            return Any
 
-    def BoolProperty(**kwargs: Any) -> Any:
-        return True
+        def BoolProperty(**kwargs: Any) -> Any:
+            return Any
 
-    def EnumProperty(**kwargs: Any) -> Any:
-        return ""
+        def EnumProperty(**kwargs: Any) -> Any:
+            return Any
 
 
 try:

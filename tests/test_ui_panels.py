@@ -945,3 +945,63 @@ def test_pbr_maps_hydration_without_draw_mutation():
         restore_preset_state_on_load(None)
 
     assert mock_props.is_state_restored is True
+
+
+def test_operator_classes_type_hints_clean():
+    """Verify that typing.get_type_hints evaluates cleanly across all UI operator classes without SyntaxError."""
+    import typing
+    from ui import (
+        chunk_ops,
+        cleanup_ops,
+        config_preset_ops,
+        engine_import_ops,
+        hull_impostor_ops,
+        msfs_camera_ops,
+        msfs_lighting_ops,
+        msfs_spatial_ops,
+        operators,
+        setup_ops,
+    )
+
+    tested = 0
+    modules = [
+        operators,
+        config_preset_ops,
+        engine_import_ops,
+        msfs_camera_ops,
+        msfs_lighting_ops,
+        msfs_spatial_ops,
+        setup_ops,
+        cleanup_ops,
+        chunk_ops,
+        hull_impostor_ops,
+    ]
+    for mod in modules:
+        for attr in dir(mod):
+            val = getattr(mod, attr)
+            cls_list = (
+                val
+                if isinstance(val, (list, tuple))
+                and any(
+                    kw in attr
+                    for kw in (
+                        "classes",
+                        "OPERATOR_CLASSES",
+                        "CONFIG_PRESET_OPERATOR_CLASSES",
+                        "CHUNK_OPERATOR_CLASSES",
+                        "CLEANUP_OPERATOR_CLASSES",
+                        "HULL_IMPOSTOR_OPERATOR_CLASSES",
+                        "LOD_OPERATOR_CLASSES",
+                        "PBR_OPERATOR_CLASSES",
+                        "PRESET_OPERATOR_CLASSES",
+                    )
+                )
+                else []
+            )
+            for cls in cls_list:
+                if isinstance(cls, type):
+                    hints = typing.get_type_hints(cls)
+                    assert isinstance(hints, dict)
+                    tested += 1
+
+    assert tested >= 100, f"Expected at least 100 operator classes evaluated, got {tested}"

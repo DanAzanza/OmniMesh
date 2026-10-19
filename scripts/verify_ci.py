@@ -84,6 +84,11 @@ def main() -> int:
     if not run_command([sys.executable, "-m", "pyright", "."], "Pyright Static Type Checker"):
         return 1
 
+    audit_script = os.path.join(os.path.dirname(__file__), "audit_architecture.py")
+    if os.path.exists(audit_script):
+        if not run_command([sys.executable, audit_script], "Architecture & Invariant Compliance Audit"):
+            return 1
+
     pytest_cmd = [
         sys.executable,
         "-m",

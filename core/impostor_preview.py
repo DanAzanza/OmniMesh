@@ -373,14 +373,20 @@ def create_octahedral_preview_material(
     return mat
 
 
-def setup_impostor_tracking(proxy_obj: Any, camera_obj: Optional[Any] = None) -> Optional[Any]:
+def setup_impostor_tracking(proxy_obj: Any, camera_obj: Optional[Any] = None, context: Any = None) -> Optional[Any]:
     """
     Configures a TRACK_TO constraint on the proxy quad to orient continuously toward the camera.
     """
     if not bpy or not proxy_obj:
         return None
 
-    cam = camera_obj or bpy.context.scene.camera
+    ctx = context or getattr(bpy, "context", None)
+    sc = (
+        getattr(ctx, "scene", None)
+        if ctx
+        else (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+    )
+    cam = camera_obj or (getattr(sc, "camera", None) if sc else None)
     if not cam:
         return None
 
@@ -402,6 +408,7 @@ def setup_preview_turntable(
     radius: float,
     height: float,
     num_frames: int = 72,
+    context: Any = None,
 ) -> bool:
     """
     Keyframes an elevated circular camera orbit around target_center over frames 1..num_frames.
@@ -412,7 +419,14 @@ def setup_preview_turntable(
     if not bpy or not cam_obj:
         return False
 
-    scene = bpy.context.scene
+    ctx = context or getattr(bpy, "context", None)
+    scene = (
+        getattr(ctx, "scene", None)
+        if ctx
+        else (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+    )
+    if not scene:
+        return False
     scene.frame_start = 1
     scene.frame_end = num_frames
 
@@ -463,10 +477,14 @@ def setup_impostor_preview_rig(
     Places all temporary objects in a dedicated '{base_name}_Preview_Rig' collection.
     Never alters the production transforms of mesh_objs.
     """
-    if not bpy or not mesh_objs:
+    ctx = context or getattr(bpy, "context", None)
+    scene = (
+        getattr(ctx, "scene", None)
+        if ctx
+        else (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+    )
+    if not scene:
         return {}
-
-    scene = context.scene if context and hasattr(context, "scene") else bpy.context.scene
     rig_coll_name = f"{base_name}_Preview_Rig"
 
     # 1. Manage dedicated collection
@@ -642,8 +660,14 @@ def teardown_impostor_preview_rig(context: Any, base_name: str) -> bool:
         bpy.data.materials.remove(mat)
 
     # Restore default active camera if possible
-    scene = context.scene if context and hasattr(context, "scene") else bpy.context.scene
-    if scene.camera and scene.camera.name == f"{base_name}_Preview_Camera":
+    ctx = context or getattr(bpy, "context", None)
+    scene = (
+        getattr(ctx, "scene", None)
+        if ctx
+        else (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+    )
+    cam = getattr(scene, "camera", None) if scene else None
+    if cam and getattr(cam, "name", "") == f"{base_name}_Preview_Camera" and scene:
         first_cam = next((o for o in scene.objects if o.type == "CAMERA"), None)
         scene.camera = first_cam
 

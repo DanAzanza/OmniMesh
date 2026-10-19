@@ -406,6 +406,7 @@ class ImpostorManager:
         target_collection_name: str = "",
         atlas_resolution: int = 2048,
         scene: Any = None,
+        context: Any = None,
     ) -> Any:
         """
         Constructs and links the Impostor billboard object in Blender.
@@ -414,7 +415,12 @@ class ImpostorManager:
         if not bpy or not mesh_objs:
             return None
 
-        sc = scene or getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if bpy and bpy.data.scenes else None)
+        ctx = context or getattr(bpy, "context", None)
+        sc = (
+            scene
+            or getattr(ctx, "scene", None)
+            or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+        )
 
         coll_name = target_collection_name or f"{base_name}_LOD_Impostor"
         target_coll = bpy.data.collections.get(coll_name)
@@ -490,25 +496,37 @@ class ImpostorManager:
 
             # Proportional UV Island Packing (only for intersecting star planes in GUI mode)
             is_bg = getattr(bpy.app, "background", False) if bpy else False
+            vl = getattr(ctx, "view_layer", None)
             if (
                 mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}
                 and not is_bg
-                and hasattr(bpy.context, "window")
-                and hasattr(bpy.context, "view_layer")
+                and getattr(ctx, "window", None)
+                and vl
             ):
                 try:
-                    prev_active = getattr(bpy.context.view_layer.objects, "active", None)
+                    vl_objs = getattr(vl, "objects", None)
+                    prev_active = getattr(vl_objs, "active", None) if vl_objs else None
                     scene_objs = getattr(sc, "objects", [])
                     for o in scene_objs:
                         o.select_set(False)
-                    bpy.context.view_layer.objects.active = impostor_obj
+                    if vl_objs:
+                        vl_objs.active = impostor_obj
                     impostor_obj.select_set(True)
-                    bpy.ops.object.mode_set(mode="EDIT")
-                    bpy.ops.mesh.select_all(action="SELECT")
-                    bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)
-                    bpy.ops.object.mode_set(mode="OBJECT")
-                    if prev_active:
-                        bpy.context.view_layer.objects.active = prev_active
+                    if ctx and hasattr(ctx, "temp_override"):
+                        with cast(Any, ctx).temp_override(
+                            active_object=impostor_obj, object=impostor_obj, selected_objects=[impostor_obj]
+                        ):
+                            bpy.ops.object.mode_set(mode="EDIT")
+                            bpy.ops.mesh.select_all(action="SELECT")
+                            bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)
+                            bpy.ops.object.mode_set(mode="OBJECT")
+                    else:
+                        bpy.ops.object.mode_set(mode="EDIT")
+                        bpy.ops.mesh.select_all(action="SELECT")
+                        bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)
+                        bpy.ops.object.mode_set(mode="OBJECT")
+                    if prev_active and vl_objs:
+                        vl_objs.active = prev_active
                 except (RuntimeError, AttributeError, TypeError) as pack_err:
                     logger.debug("pack_islands skipped or failed: %s", pack_err)
 

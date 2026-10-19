@@ -47,7 +47,12 @@ class NormalManager:
 
     @classmethod
     def reproject_custom_split_normals(
-        cls, lod_obj: Any, source_lod0: Any, delta_world: float = 0.1, armature_obj: Any = None
+        cls,
+        lod_obj: Any,
+        source_lod0: Any,
+        delta_world: float = 0.1,
+        armature_obj: Any = None,
+        context: Any = None,
     ) -> bool:
         """
         Transfers custom split normals from LOD0 source to decimated LOD using Data Transfer modifier
@@ -110,25 +115,27 @@ class NormalManager:
             return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)
 
         try:
+            ctx = context or getattr(bpy, "context", None)
+            vl = getattr(ctx, "view_layer", None)
+            vl_objects = getattr(vl, "objects", None)
+
             # Move modifier to top of stack so reprojection evaluates against undeformed geometry
             if hasattr(bpy.ops.object, "modifier_move_to_index"):
                 try:
-                    if hasattr(bpy.context, "temp_override"):
-                        with cast(Any, bpy.context).temp_override(active_object=lod_obj, object=lod_obj):
+                    if ctx and hasattr(ctx, "temp_override"):
+                        with cast(Any, ctx).temp_override(active_object=lod_obj, object=lod_obj):
                             bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
-                    elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
-                        bpy.context.view_layer.objects.active = lod_obj
+                    elif vl_objects is not None:
+                        vl_objects.active = lod_obj
                         bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
                 except (RuntimeError, ValueError, AttributeError) as exc:
                     logger.debug("Failed moving DATA_TRANSFER modifier to index 0: %s", exc)
 
-            if hasattr(bpy.context, "temp_override"):
-                with cast(Any, bpy.context).temp_override(
-                    active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj]
-                ):
+            if ctx and hasattr(ctx, "temp_override"):
+                with cast(Any, ctx).temp_override(active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj]):
                     bpy.ops.object.modifier_apply(modifier=dt_mod.name)
-            elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
-                bpy.context.view_layer.objects.active = lod_obj
+            elif vl_objects is not None:
+                vl_objects.active = lod_obj
                 bpy.ops.object.modifier_apply(modifier=dt_mod.name)
             cls.ensure_sharp_edge_attribute(lod_obj.data)
             lod_obj.data.update()

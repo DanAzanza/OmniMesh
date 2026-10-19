@@ -28,8 +28,8 @@ else:
         Object = object
         Operator = object
 
-    def StringProperty(**kwargs: Any) -> Any:
-        return ""
+        def StringProperty(**kwargs: Any) -> Any:
+            return Any
 
 
 try:

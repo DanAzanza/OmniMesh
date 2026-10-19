@@ -103,35 +103,69 @@ class LOD_OT_clean_and_repair_mesh(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"FINISHED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            props = context.scene.lod_tool
+    @staticmethod
+    def _object_needs_transform_apply(obj: Any) -> bool:
+        mesh_data = getattr(obj, "data", None)
+        if not mesh_data:
+            return False
+        users = getattr(mesh_data, "users", 1)
+        if isinstance(users, int) and users > 1:
+            logger.warning("Skipping transform apply on %s: multi-user mesh", getattr(obj, "name", ""))
+            return False
+        if getattr(mesh_data, "shape_keys", None):
+            logger.warning("Skipping transform apply on %s: mesh has shape keys", getattr(obj, "name", ""))
+            return False
+        anim_data = getattr(obj, "animation_data", None)
+        if anim_data and getattr(anim_data, "action", None):
+            logger.warning("Skipping transform apply on %s: animated object", getattr(obj, "name", ""))
+            return False
 
-        mesh_objs = get_lod0_mesh_objects(context)
-        if not mesh_objs:
-            mesh_objs = get_selected_mesh_objects(context)
-        if not mesh_objs:
-            safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found to sanitize.")
-            return {"CANCELLED"}
-        total_loose = 0
-        total_deg = 0
-        total_welded = 0
-        total_bowties = 0
-        total_split_nm = 0
-        total_holes = 0
-        total_ngons = 0
-        total_transforms_applied = 0
+        s = getattr(obj, "scale", None)
+        r = getattr(obj, "rotation_euler", None)
+        needs_scale = False
+        if s and hasattr(s, "x") and hasattr(s, "y") and hasattr(s, "z"):
+            try:
+                needs_scale = abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4
+            except (TypeError, ValueError) as e:
+                logger.debug("Failed checking scale threshold on %s: %s", getattr(obj, "name", ""), e)
+        needs_rot = False
+        if r and hasattr(r, "x") and hasattr(r, "y") and hasattr(r, "z"):
+            try:
+                needs_rot = abs(r.x) > 1e-4 or abs(r.y) > 1e-4 or abs(r.z) > 1e-4
+            except (TypeError, ValueError) as e:
+                logger.debug("Failed checking rotation threshold on %s: %s", getattr(obj, "name", ""), e)
 
-        weld_dist = props.cleanup_weld_distance if getattr(props, "cleanup_enable_weld", False) else 0.0
-        total_mods_baked = 0
+        return needs_scale or needs_rot
+
+    @classmethod
+    def _apply_transforms_if_needed(cls, context: Any, props: Any, mesh_objs: list[Any]) -> int:
+        if not bool(getattr(props, "cleanup_auto_apply_transforms", False)) or not bpy:
+            return 0
+        applied_count = 0
+        for obj in mesh_objs:
+            if not cls._object_needs_transform_apply(obj):
+                continue
+            try:
+                if hasattr(context, "temp_override"):
+                    with context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+                else:
+                    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+                applied_count += 1
+            except Exception as e:
+                logger.warning("Could not apply transform on %s: %s", getattr(obj, "name", ""), e)
+        return applied_count
+
+    @staticmethod
+    def _bake_modifiers_if_requested(context: Any, props: Any, mesh_objs: list[Any]) -> int:
         apply_mods = getattr(props, "cleanup_apply_modifiers", False) or (
             hasattr(context, "scene")
             and hasattr(context.scene, "lod_tool")
             and getattr(context.scene.lod_tool, "cleanup_apply_modifiers", False)
         )
+        if not apply_mods:
+            return 0
+
         sync_vp = getattr(props, "cleanup_sync_viewport_settings", True)
         if (
             hasattr(context, "scene")
@@ -140,61 +174,30 @@ class LOD_OT_clean_and_repair_mesh(Operator):
         ):
             sync_vp = getattr(context.scene.lod_tool, "cleanup_sync_viewport_settings", sync_vp)
 
-        target_cols = [c for obj in mesh_objs for c in getattr(obj, "users_collection", [])]
-        with LayerCollectionGuard(getattr(context, "view_layer", None), target_cols):
-            # Optional defensive auto-apply transforms
-            auto_transforms = bool(getattr(props, "cleanup_auto_apply_transforms", False) is True)
-            if auto_transforms and bpy:
-                for obj in mesh_objs:
-                    mesh_data = getattr(obj, "data", None)
-                    if not mesh_data:
-                        continue
-                    users = getattr(mesh_data, "users", 1)
-                    if isinstance(users, int) and users > 1:
-                        logger.warning("Skipping transform apply on %s: multi-user mesh", getattr(obj, "name", ""))
-                        continue
-                    if getattr(mesh_data, "shape_keys", None):
-                        logger.warning("Skipping transform apply on %s: mesh has shape keys", getattr(obj, "name", ""))
-                        continue
-                    anim_data = getattr(obj, "animation_data", None)
-                    if anim_data and getattr(anim_data, "action", None):
-                        logger.warning("Skipping transform apply on %s: animated object", getattr(obj, "name", ""))
-                        continue
+        baked_count = 0
+        for obj in mesh_objs:
+            if ModifierManager.has_unapplied_modifiers(obj):
+                if sync_vp:
+                    ModifierManager.sync_viewport_to_render_settings(obj)
+                if ModifierManager.apply_all_modifiers_in_place(obj, preserve_armature=True):
+                    baked_count += 1
+        return baked_count
 
-                    s = getattr(obj, "scale", None)
-                    r = getattr(obj, "rotation_euler", None)
-                    needs_scale = False
-                    if s and hasattr(s, "x") and hasattr(s, "y") and hasattr(s, "z"):
-                        try:
-                            needs_scale = abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4
-                        except (TypeError, ValueError) as e:
-                            logger.debug("Failed checking scale threshold on %s: %s", getattr(obj, "name", ""), e)
-                    needs_rot = False
-                    if r and hasattr(r, "x") and hasattr(r, "y") and hasattr(r, "z"):
-                        try:
-                            needs_rot = abs(r.x) > 1e-4 or abs(r.y) > 1e-4 or abs(r.z) > 1e-4
-                        except (TypeError, ValueError) as e:
-                            logger.debug("Failed checking rotation threshold on %s: %s", getattr(obj, "name", ""), e)
-
-                    if needs_scale or needs_rot:
-                        try:
-                            if hasattr(context, "temp_override"):
-                                with context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
-                                    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-                            else:
-                                bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-                            total_transforms_applied += 1
-                        except Exception as e:
-                            logger.warning("Could not apply transform on %s: %s", getattr(obj, "name", ""), e)
-
-            if apply_mods:
-                for obj in mesh_objs:
-                    if ModifierManager.has_unapplied_modifiers(obj):
-                        if sync_vp:
-                            ModifierManager.sync_viewport_to_render_settings(obj)
-                        if ModifierManager.apply_all_modifiers_in_place(obj, preserve_armature=True):
-                            total_mods_baked += 1
-
+    def _sanitize_mesh_objects(
+        self,
+        mesh_objs: list[Any],
+        props: Any,
+        weld_dist: float,
+    ) -> dict[str, int] | None:
+        counts = {
+            "loose": 0,
+            "deg": 0,
+            "welded": 0,
+            "bowties": 0,
+            "split_nm": 0,
+            "holes": 0,
+            "ngons": 0,
+        }
         for obj in mesh_objs:
             if not getattr(obj, "data", None) or not bmesh:
                 continue
@@ -215,57 +218,85 @@ class LOD_OT_clean_and_repair_mesh(Operator):
                         normal_recalc_policy=props.cleanup_normal_policy,
                     ),
                 )
-                total_loose += res.get("loose_verts_deleted", res.get("loose_verts", 0))
-                total_deg += res.get("degenerate_faces_deleted", res.get("zero_faces", 0))
-                total_welded += res.get("welded_verts", 0)
-                total_bowties += res.get("split_bowties", 0)
-                total_split_nm += res.get("split_non_manifold_edges", 0)
-                total_holes += res.get("filled_holes", 0)
-                total_ngons += res.get("triangulated_ngons", 0)
+                counts["loose"] += res.get("loose_verts_deleted", res.get("loose_verts", 0))
+                counts["deg"] += res.get("degenerate_faces_deleted", res.get("zero_faces", 0))
+                counts["welded"] += res.get("welded_verts", 0)
+                counts["bowties"] += res.get("split_bowties", 0)
+                counts["split_nm"] += res.get("split_non_manifold_edges", 0)
+                counts["holes"] += res.get("filled_holes", 0)
+                counts["ngons"] += res.get("triangulated_ngons", 0)
                 bm.to_mesh(obj.data)
             except OmniMeshError as err:
                 safe_report(self, {"ERROR"}, f"Topology repair failed on {getattr(obj, 'name', 'mesh')}: {err}")
-                return {"CANCELLED"}
+                return None
             finally:
                 bm.free()
             obj.data.update()
 
-        summary_parts = []
-        if total_transforms_applied > 0:
-            summary_parts.append(f"{total_transforms_applied} transform(s) applied")
-        if total_mods_baked > 0:
-            summary_parts.append(f"{total_mods_baked} obj modifier(s) baked")
-        if total_loose > 0:
-            summary_parts.append(f"{total_loose} loose verts")
-        if total_deg > 0:
-            summary_parts.append(f"{total_deg} degenerate faces")
-        if total_welded > 0:
-            summary_parts.append(f"{total_welded} welded verts")
-        if total_bowties > 0:
-            summary_parts.append(f"{total_bowties} bowties split")
-        if total_split_nm > 0:
-            summary_parts.append(f"{total_split_nm} non-manifold edges split")
-        if total_holes > 0:
-            summary_parts.append(f"{total_holes} holes filled")
-        if total_ngons > 0:
-            summary_parts.append(f"{total_ngons} n-gons triangulated")
+        return counts
 
-        if summary_parts:
-            props.last_cleanup_summary = f"Cleaned: {', '.join(summary_parts)}."
-        else:
-            props.last_cleanup_summary = "Cleaned: 0 issues found (Mesh Already Clean)."
+    @staticmethod
+    def _build_cleanup_summary(counts: dict[str, int]) -> str:
+        parts: list[str] = []
+        labels = [
+            ("transforms_applied", "{n} transform(s) applied"),
+            ("mods_baked", "{n} obj modifier(s) baked"),
+            ("loose", "{n} loose verts"),
+            ("deg", "{n} degenerate faces"),
+            ("welded", "{n} welded verts"),
+            ("bowties", "{n} bowties split"),
+            ("split_nm", "{n} non-manifold edges split"),
+            ("holes", "{n} holes filled"),
+            ("ngons", "{n} n-gons triangulated"),
+        ]
+        for key, template in labels:
+            n = counts.get(key, 0)
+            if n > 0:
+                parts.append(template.format(n=n))
+        if parts:
+            return f"Cleaned: {', '.join(parts)}."
+        return "Cleaned: 0 issues found (Mesh Already Clean)."
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"FINISHED"}
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = context.scene.lod_tool
+
+        mesh_objs = get_lod0_mesh_objects(context)
+        if not mesh_objs:
+            mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found to sanitize.")
+            return {"CANCELLED"}
+
+        weld_dist = props.cleanup_weld_distance if getattr(props, "cleanup_enable_weld", False) else 0.0
+
+        target_cols = [c for obj in mesh_objs for c in getattr(obj, "users_collection", [])]
+        with LayerCollectionGuard(getattr(context, "view_layer", None), target_cols):
+            total_transforms_applied = self._apply_transforms_if_needed(context, props, mesh_objs)
+            total_mods_baked = self._bake_modifiers_if_requested(context, props, mesh_objs)
+
+        counts = self._sanitize_mesh_objects(mesh_objs, props, weld_dist)
+        if counts is None:
+            return {"CANCELLED"}
+        counts["transforms_applied"] = total_transforms_applied
+        counts["mods_baked"] = total_mods_baked
+
+        summary = self._build_cleanup_summary(counts)
+        props.last_cleanup_summary = summary
 
         # Refresh preflight diagnostic properties so popovers never display stale defects
         run_preflight_inspection(context, mesh_objs)
 
         # Trigger transient viewport HUD toast notification
         try:
-            LODViewportHUD.show_toast(props.last_cleanup_summary)
+            LODViewportHUD.show_toast(summary)
         except Exception as exc:
             logger.debug("Could not show HUD toast: %s", exc)
 
-        if hasattr(self, "report"):
-            self.report({"INFO"}, props.last_cleanup_summary)
+        safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
 
 

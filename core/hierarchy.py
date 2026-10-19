@@ -329,7 +329,7 @@ class CollectionCloneDAG:
     """
 
     @classmethod
-    def get_or_create_sibling_collection(cls, root_coll: Any, tier_idx: int, base_name: str) -> Any:
+    def get_or_create_sibling_collection(cls, root_coll: Any, tier_idx: int, base_name: str, scene: Any = None) -> Any:
         """
         Creates or retrieves a sibling collection for LOD tier i (e.g. Model_LOD1).
         """
@@ -359,8 +359,14 @@ class CollectionCloneDAG:
                     linked = True
                     break
 
-        if not linked and bpy.context and bpy.context.scene:
-            bpy.context.scene.collection.children.link(target_coll)
+        if not linked:
+            sc = (
+                scene
+                or getattr(getattr(bpy, "context", None), "scene", None)
+                or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+            )
+            if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
+                sc.collection.children.link(target_coll)
 
         return target_coll
 
@@ -418,7 +424,11 @@ class CollectionCloneDAG:
         if not bpy or not objects:
             return None, None
 
-        sc = scene or getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if bpy and bpy.data.scenes else None)
+        sc = (
+            scene
+            or getattr(getattr(bpy, "context", None), "scene", None)
+            or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+        )
 
         coll = bpy.data.collections.get(base_name)
         if not coll:
@@ -476,9 +486,11 @@ class CollectionCloneDAG:
         pivot_obj["_is_pivot"] = True
         coll.objects.link(pivot_obj)
 
-        if hasattr(bpy.context, "view_layer") and bpy.context.view_layer:
+        ctx = getattr(bpy, "context", None)
+        vl = getattr(ctx, "view_layer", None)
+        if vl and hasattr(vl, "update"):
             try:
-                bpy.context.view_layer.update()
+                vl.update()
             except (RuntimeError, AttributeError) as exc:
                 logger.debug("View layer update exception: %s", exc)
 

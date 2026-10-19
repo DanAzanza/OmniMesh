@@ -478,10 +478,11 @@ class MeshChunkSlicer:
                 chunk_mesh.materials.append(mat)
 
             # Link to collection
+            fallback_coll = getattr(getattr(bpy, "context", None), "collection", None)
             if target_collection and hasattr(target_collection, "objects"):
                 target_collection.objects.link(chunk_obj)
-            elif bpy.context.collection:
-                bpy.context.collection.objects.link(chunk_obj)
+            elif fallback_coll and hasattr(fallback_coll, "objects"):
+                fallback_coll.objects.link(chunk_obj)
 
             # Center local pivot to chunk's local bounding box center
             MeshChunkSlicer._recenter_pivot_stationary(chunk_obj)

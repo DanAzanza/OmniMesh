@@ -231,7 +231,7 @@ def _process_merged_tier(
                 mesh_objs, ref_merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
             )
             owned_ref = True
-        NormalManager.reproject_custom_split_normals(tier_obj, target_ref, tolerances["delta_world"])
+        NormalManager.reproject_custom_split_normals(tier_obj, target_ref, tolerances["delta_world"], context=context)
     except (RuntimeError, ValueError, AttributeError) as exc:
         logger.warning(
             "Merged custom split normal reprojection failed for '%s' (LOD%d): %s; attempting single-mesh fallback",
@@ -241,7 +241,9 @@ def _process_merged_tier(
         )
         if mesh_objs:
             try:
-                NormalManager.reproject_custom_split_normals(tier_obj, mesh_objs[0], tolerances["delta_world"])
+                NormalManager.reproject_custom_split_normals(
+                    tier_obj, mesh_objs[0], tolerances["delta_world"], context=context
+                )
             except (RuntimeError, ValueError, AttributeError) as fb_exc:
                 logger.warning(
                     "Fallback single-mesh normal reprojection also failed for '%s': %s",
@@ -402,7 +404,7 @@ def _process_unmerged_tier(
             preserve_slot_indexing=props.preserve_slot_indexing,
         )
 
-        NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"])
+        NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"], context=context)
 
         if armature_obj and len(lod_obj.vertex_groups) > 0:
             if props.enable_bone_pruning and tier_idx >= 2:

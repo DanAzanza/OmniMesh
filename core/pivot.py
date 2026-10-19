@@ -178,15 +178,17 @@ class PivotPreservationEngine:
 
     @classmethod
     def reparent_sockets_to_pivot(
-        cls, sockets: list[Any], target_pivot: Any | None, target_collection: Any
+        cls, sockets: list[Any], target_pivot: Any | None, target_collection: Any, context: Any = None
     ) -> list[Any]:
         """
         Clones sockets into target collection and parents them to the tier's Pivot Empty
         while strictly preserving their exact world-space locations.
         """
-        if bpy and hasattr(bpy.context, "view_layer") and bpy.context.view_layer:
+        ctx = context or getattr(bpy, "context", None)
+        vl = getattr(ctx, "view_layer", None)
+        if vl and hasattr(vl, "update"):
             try:
-                bpy.context.view_layer.update()
+                vl.update()
             except (RuntimeError, AttributeError) as exc:
                 logger.debug("View layer update skipped: %s", exc)
 

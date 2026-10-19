@@ -166,10 +166,11 @@ class HLODClusterMerger:
                 hlod_mesh.materials.append(mat)
 
             # Link to target collection
+            fallback_coll = getattr(getattr(bpy, "context", None), "collection", None)
             if target_collection and hasattr(target_collection, "objects"):
                 target_collection.objects.link(hlod_obj)
-            elif bpy.context.collection:
-                bpy.context.collection.objects.link(hlod_obj)
+            elif fallback_coll and hasattr(fallback_coll, "objects"):
+                fallback_coll.objects.link(hlod_obj)
 
             # Ensure auto-smooth / sharp attribute exists
             NormalManager.ensure_sharp_edge_attribute(hlod_mesh)

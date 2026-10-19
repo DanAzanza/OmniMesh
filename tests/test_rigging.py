@@ -5,6 +5,8 @@ Unit tests for Rigging & Skinning Weight Sanitization, Matrix Math Traps & Kinem
 import numpy as np
 import pytest
 
+from unittest.mock import MagicMock
+
 from core.exceptions import RiggingError
 from core.rigging import (
     KinematicBonePruner,
@@ -237,6 +239,17 @@ def test_armature_rest_pose_context_manager():
     # None armature safely yields
     with armature_rest_pose_context(None):
         pass
+
+    # Context decoupling verification with mock context and None context
+    mock_ctx = MagicMock()
+    with armature_rest_pose_context(arm, context=mock_ctx):
+        assert arm.data.pose_position == "REST"
+    assert arm.data.pose_position == "POSE"
+    assert mock_ctx.view_layer.update.called
+
+    with armature_rest_pose_context(arm, context=None):
+        assert arm.data.pose_position == "REST"
+    assert arm.data.pose_position == "POSE"
 
 
 def test_weight_sanitizer_and_pruner_guards():

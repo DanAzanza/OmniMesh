@@ -22,9 +22,16 @@ else:
     except ImportError:
         bpy = None
         Operator = object
-        BoolProperty = None  # type: ignore
-        EnumProperty = None  # type: ignore
-        IntProperty = None  # type: ignore
+
+        def BoolProperty(**kwargs: Any) -> Any:
+            return Any
+
+        def EnumProperty(**kwargs: Any) -> Any:
+            return Any
+
+        def IntProperty(**kwargs: Any) -> Any:
+            return Any
+
 
 try:
     from ..core.collision import CollisionManager

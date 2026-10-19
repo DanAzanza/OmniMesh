@@ -51,7 +51,11 @@ class CollisionManager:
         if not bpy or not mesh_objs:
             return []
 
-        sc = scene or getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if bpy and bpy.data.scenes else None)
+        sc = (
+            scene
+            or getattr(getattr(bpy, "context", None), "scene", None)
+            or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+        )
 
         # Remove pre-existing colliders for clean regeneration first
         cls.remove_colliders_for_objects(mesh_objs, base_name)

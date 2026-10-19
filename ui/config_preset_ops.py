@@ -29,8 +29,8 @@ else:
         Euler = None
         Vector = None
 
-    def StringProperty(**kwargs: Any) -> Any:
-        return ""
+        def StringProperty(**kwargs: Any) -> Any:
+            return Any
 
 
 if not TYPE_CHECKING and Vector is None:

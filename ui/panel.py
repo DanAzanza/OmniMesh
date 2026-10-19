@@ -201,15 +201,9 @@ class OMNIMESH_PT_lods(Panel):
     bl_category = "OmniMesh"
     bl_order = 2
 
-    def draw(self, context: Any) -> None:
-        if not bpy or not context or not self.layout:
-            return
-        layout = self.layout
-        props, _, _ = resolve_lod_context(context)
-        if not props or (len(getattr(props, "lods", [])) == 0 and len(getattr(context.scene.lod_tool, "lods", [])) > 0):
-            props = context.scene.lod_tool
-
-        # Contextual Selection & Hierarchy Banners
+    @classmethod
+    def _draw_selection_banners(cls, layout: Any, context: Any) -> None:
+        """Renders multi-selection sync button and sub-LOD hierarchy navigation banners."""
         sel_objs = getattr(context, "selected_objects", []) or []
         sel_meshes = [o for o in sel_objs if is_object_valid(o) and getattr(o, "type", "") == "MESH"]
         if len(sel_meshes) > 1:
@@ -233,6 +227,122 @@ class OMNIMESH_PT_lods(Panel):
                     row_nav.label(text=f"Sub-LOD of '{root_name}'", icon="LINKED")
                     row_nav.operator("lod_tool.select_master_asset", text="Select Master", icon="RESTRICT_SELECT_OFF")
 
+    @classmethod
+    def _calculate_base_tris(cls, context: Any, props: Any, active_obj: Any) -> int:
+        """Pure read-only query calculating base triangle budget for LOD targets."""
+        base_tris = getattr(props, "base_triangles", 0) or getattr(props, "last_generated_base_tris", 0)
+        if base_tris > 0:
+            return int(base_tris)
+
+        effective_asset = resolve_effective_asset_name(context, props)
+        l0_meshes = get_asset_base_meshes(context, effective_asset) if effective_asset else []
+        if l0_meshes:
+            return sum(
+                sum(len(p.vertices) - 2 for p in m.data.polygons)
+                for m in l0_meshes
+                if hasattr(m, "data") and hasattr(m.data, "polygons")
+            )
+        if (
+            active_obj
+            and getattr(active_obj, "type", "") == "MESH"
+            and hasattr(active_obj, "data")
+            and hasattr(active_obj.data, "polygons")
+        ):
+            return sum(len(p.vertices) - 2 for p in active_obj.data.polygons)
+        return 0
+
+    @classmethod
+    def _draw_lod_card(cls, box_lod: Any, tier: Any, idx: int, base_tris: int, total_tiers: int) -> bool:
+        """Renders an individual collapsible LOD card and returns whether tier is out-of-sync."""
+        card = box_lod.box()
+        card.use_property_split = False
+
+        row_hdr = card.row(align=True)
+        if idx > 0:
+            show_det = bool(getattr(tier, "show_details", False))
+            arrow_icon = "TRIA_DOWN" if show_det else "TRIA_RIGHT"
+            row_hdr.prop(tier, "show_details", text="", icon=arrow_icon, emboss=False)
+
+        is_solo = getattr(tier, "is_soloed", False)
+        solo_icon = "HIDE_OFF" if is_solo else "HIDE_ON"
+        op_s = row_hdr.operator("lod_tool.solo_tier", text="", icon=solo_icon, emboss=False)
+        op_s.tier_index = idx
+
+        tier_name = getattr(tier, "name", f"LOD{idx}")
+        actual_t = getattr(tier, "actual_tris", 0)
+
+        # Determine card state badge
+        is_out_of_sync = False
+        last_target = getattr(tier, "last_baked_target_pct", -1.0)
+        if idx == 0:
+            state = "SOURCE"
+        elif last_target > 0.0 and abs(tier.target_tris_pct - last_target) > 0.01:
+            state = "OUT_OF_SYNC"
+            is_out_of_sync = True
+        elif actual_t > 0:
+            state = "BAKED"
+        else:
+            state = "PLANNED"
+
+        if getattr(tier, "is_impostor", False):
+            row_hdr.label(text=f"{tier_name} (Impostor)", icon="IMAGE_DATA")
+        elif actual_t > 0:
+            row_hdr.label(text=f"{tier_name}  •  {actual_t:,} tris", icon="MESH_DATA")
+        else:
+            target_calc = (
+                int(base_tris * (tier.target_tris_pct / 100.0)) if base_tris > 0 else getattr(tier, "target_tris", 0)
+            )
+            target_str = f"  •  ~{target_calc:,} tris" if target_calc > 0 else f"  •  {tier.target_tris_pct:.0f}%"
+            row_hdr.label(text=f"{tier_name}{target_str}", icon="MESH_DATA")
+
+        # State Badge
+        if state == "SOURCE":
+            row_hdr.label(text="Source")
+        elif state == "BAKED":
+            row_hdr.label(text="Baked")
+        elif state == "OUT_OF_SYNC":
+            row_hdr.label(text="Out of Sync")
+        else:
+            row_hdr.label(text="Planned")
+
+        if idx > 0 and total_tiers > 1:
+            op_del = row_hdr.operator("lod_tool.remove_lod_tier", text="", icon="X", emboss=False)
+            op_del.tier_index = idx
+
+        # Tuning sliders: only drawn when idx > 0 and tier.show_details is True
+        if idx > 0 and getattr(tier, "show_details", False):
+            target_calc = (
+                int(base_tris * (tier.target_tris_pct / 100.0)) if base_tris > 0 else getattr(tier, "target_tris", 0)
+            )
+            row_pct = card.row()
+            row_pct.prop(
+                tier,
+                "target_tris_pct",
+                text=f"Tris: {tier.target_tris_pct:.0f}%  (~{target_calc:,})",
+                slider=True,
+            )
+
+            row_dist = card.row()
+            dist_text = f"  ({tier.distance_m:.1f}m)" if tier.distance_m > 0 else ""
+            row_dist.prop(
+                tier,
+                "screen_size_pct",
+                text=f"Screen: {tier.screen_size_pct:.0f}%{dist_text}",
+                slider=True,
+            )
+
+        return is_out_of_sync
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context or not self.layout:
+            return
+        layout = self.layout
+        props, _, _ = resolve_lod_context(context)
+        if not props or (len(getattr(props, "lods", [])) == 0 and len(getattr(context.scene.lod_tool, "lods", [])) > 0):
+            props = context.scene.lod_tool
+
+        self._draw_selection_banners(layout, context)
+
         box_lod = layout.box()
         box_lod.label(text="LOD Generation & Progression", icon="GEOMETRY_NODES")
 
@@ -250,113 +360,14 @@ class OMNIMESH_PT_lods(Panel):
         # Row 2: Visual Stability (tau_sse) slider directly below preset
         box_lod.prop(props, "tau_sse", text="Visual Stability (τ_sse)", slider=True)
 
-        base_tris = getattr(props, "base_triangles", 0) or getattr(props, "last_generated_base_tris", 0)
-        if base_tris <= 0:
-            effective_asset = resolve_effective_asset_name(context, props)
-            l0_meshes = get_asset_base_meshes(context, effective_asset) if effective_asset else []
-            if l0_meshes:
-                base_tris = sum(
-                    sum(len(p.vertices) - 2 for p in m.data.polygons)
-                    for m in l0_meshes
-                    if hasattr(m, "data") and hasattr(m.data, "polygons")
-                )
-            elif (
-                active_obj
-                and getattr(active_obj, "type", "") == "MESH"
-                and hasattr(active_obj, "data")
-                and hasattr(active_obj.data, "polygons")
-            ):
-                base_tris = sum(len(p.vertices) - 2 for p in active_obj.data.polygons)
+        active_obj = getattr(context, "active_object", None)
+        base_tris = self._calculate_base_tris(context, props, active_obj)
 
         has_out_of_sync = False
-
-        # Compact Collapsible LOD Cards
         if props.lods:
             for idx, tier in enumerate(props.lods):
-                card = box_lod.box()
-                card.use_property_split = False
-
-                # Card Header
-                row_hdr = card.row(align=True)
-
-                if idx > 0:
-                    show_det = bool(getattr(tier, "show_details", False))
-                    arrow_icon = "TRIA_DOWN" if show_det else "TRIA_RIGHT"
-                    row_hdr.prop(tier, "show_details", text="", icon=arrow_icon, emboss=False)
-
-                is_solo = getattr(tier, "is_soloed", False)
-                solo_icon = "HIDE_OFF" if is_solo else "HIDE_ON"
-                op_s = row_hdr.operator("lod_tool.solo_tier", text="", icon=solo_icon, emboss=False)
-                op_s.tier_index = idx
-
-                tier_name = getattr(tier, "name", f"LOD{idx}")
-                actual_t = getattr(tier, "actual_tris", 0)
-
-                # Determine card state badge
-                state = getattr(tier, "state", "PLANNED")
-                last_target = getattr(tier, "last_baked_target_pct", -1.0)
-                if idx == 0:
-                    state = "SOURCE"
-                elif last_target > 0.0 and abs(tier.target_tris_pct - last_target) > 0.01:
-                    state = "OUT_OF_SYNC"
+                if self._draw_lod_card(box_lod, tier, idx, base_tris, len(props.lods)):
                     has_out_of_sync = True
-                elif actual_t > 0:
-                    state = "BAKED"
-                else:
-                    state = "PLANNED"
-
-                if getattr(tier, "is_impostor", False):
-                    row_hdr.label(text=f"{tier_name} (Impostor)", icon="IMAGE_DATA")
-                elif actual_t > 0:
-                    row_hdr.label(text=f"{tier_name}  •  {actual_t:,} tris", icon="MESH_DATA")
-                else:
-                    target_calc = (
-                        int(base_tris * (tier.target_tris_pct / 100.0))
-                        if base_tris > 0
-                        else getattr(tier, "target_tris", 0)
-                    )
-                    target_str = (
-                        f"  •  ~{target_calc:,} tris" if target_calc > 0 else f"  •  {tier.target_tris_pct:.0f}%"
-                    )
-                    row_hdr.label(text=f"{tier_name}{target_str}", icon="MESH_DATA")
-
-                # State Badge
-                if state == "SOURCE":
-                    row_hdr.label(text="Source")
-                elif state == "BAKED":
-                    row_hdr.label(text="Baked")
-                elif state == "OUT_OF_SYNC":
-                    row_hdr.label(text="Out of Sync")
-                else:
-                    row_hdr.label(text="Planned")
-
-                if idx > 0 and len(props.lods) > 1:
-                    op_del = row_hdr.operator("lod_tool.remove_lod_tier", text="", icon="X", emboss=False)
-                    op_del.tier_index = idx
-
-                # Tuning sliders: only drawn when idx > 0 and tier.show_details is True
-                if idx > 0 and getattr(tier, "show_details", False):
-                    target_calc = (
-                        int(base_tris * (tier.target_tris_pct / 100.0))
-                        if base_tris > 0
-                        else getattr(tier, "target_tris", 0)
-                    )
-                    row_pct = card.row()
-                    row_pct.prop(
-                        tier,
-                        "target_tris_pct",
-                        text=f"Tris: {tier.target_tris_pct:.0f}%  (~{target_calc:,})",
-                        slider=True,
-                    )
-
-                    row_dist = card.row()
-                    dist_text = f"  ({tier.distance_m:.1f}m)" if tier.distance_m > 0 else ""
-                    row_dist.prop(
-                        tier,
-                        "screen_size_pct",
-                        text=f"Screen: {tier.screen_size_pct:.0f}%{dist_text}",
-                        slider=True,
-                    )
 
             # Cull Screen Size directly below the final LOD card
             row_cull = box_lod.row(align=True)

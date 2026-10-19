@@ -137,7 +137,7 @@ def normalize_weights_pure(
 
 
 @contextmanager
-def armature_rest_pose_context(armature_obj: Any):
+def armature_rest_pose_context(armature_obj: Any, context: Any = None):
     """
     Context manager to safely lock an armature to REST pose during operations
     (decimation, normal transfer, mesh consolidation) and restore the original pose state.
@@ -147,16 +147,14 @@ def armature_rest_pose_context(armature_obj: Any):
         yield
         return
 
+    ctx = context or getattr(bpy, "context", None)
+    vl = getattr(ctx, "view_layer", None)
+
     orig_pose_pos = getattr(data, "pose_position", "POSE")
     try:
         data.pose_position = "REST"
-        if (
-            bpy
-            and hasattr(bpy, "context")
-            and hasattr(bpy.context, "view_layer")
-            and hasattr(bpy.context.view_layer, "update")
-        ):
-            bpy.context.view_layer.update()
+        if vl and hasattr(vl, "update"):
+            vl.update()
     except (RuntimeError, AttributeError, TypeError) as exc:
         logger.warning("Failed to set armature to REST pose: %s", exc)
 
@@ -166,13 +164,8 @@ def armature_rest_pose_context(armature_obj: Any):
         try:
             if armature_obj and getattr(armature_obj, "data", None):
                 armature_obj.data.pose_position = orig_pose_pos
-                if (
-                    bpy
-                    and hasattr(bpy, "context")
-                    and hasattr(bpy.context, "view_layer")
-                    and hasattr(bpy.context.view_layer, "update")
-                ):
-                    bpy.context.view_layer.update()
+                if vl and hasattr(vl, "update"):
+                    vl.update()
         except (RuntimeError, AttributeError, TypeError) as exc:
             logger.debug("Failed to restore armature pose position: %s", exc)
 

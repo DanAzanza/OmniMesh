@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, cast
 import numpy as np
 
 try:
@@ -490,7 +490,11 @@ class ShaderTracer:
         surf_sock = out_node.inputs["Surface"]
         orig_surf_from = surf_sock.links[0].from_socket if surf_sock.is_linked else None
 
-        scene = bpy.context.scene
+        scene = getattr(getattr(bpy, "context", None), "scene", None) or (
+            bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None
+        )
+        if not scene:
+            return None
         old_engine = scene.render.engine
         old_samples = getattr(getattr(scene, "cycles", None), "samples", 1)
         temp_nodes: list[Any] = []
@@ -516,9 +520,10 @@ class ShaderTracer:
             tex_node.image = temp_img
             nodes.active = tex_node
 
-            scene.render.engine = "CYCLES"
-            if hasattr(scene, "cycles"):
-                scene.cycles.samples = 1
+            cast(Any, scene.render).engine = "CYCLES"
+            cycles = getattr(scene, "cycles", None)
+            if cycles:
+                cycles.samples = 1
 
             bpy.ops.object.bake(type="EMIT", margin=0, use_clear=True)
 
@@ -550,9 +555,10 @@ class ShaderTracer:
             return None
         finally:
             try:
-                scene.render.engine = old_engine
-                if hasattr(scene, "cycles"):
-                    scene.cycles.samples = old_samples
+                cast(Any, scene.render).engine = old_engine
+                cycles = getattr(scene, "cycles", None)
+                if cycles and old_samples is not None:
+                    cycles.samples = old_samples
                 if orig_surf_from:
                     links.new(orig_surf_from, surf_sock)
                 for tn in temp_nodes:
