@@ -5,14 +5,17 @@ Shared UI utilities and context resolvers for OmniMesh operators and panels.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 
 def is_object_valid(obj: Any) -> bool:
@@ -257,8 +260,8 @@ def resolve_lod_context(context: Any) -> tuple[Any, Any | None, bool]:
         else:
             master_obj = None
 
-        if is_object_valid(master_obj) and hasattr(master_obj, "lod_tool"):
-            m_props = master_obj.lod_tool
+        if master_obj is not None and is_object_valid(master_obj) and hasattr(master_obj, "lod_tool"):
+            m_props = getattr(master_obj, "lod_tool", None)
             if len(getattr(m_props, "lods", [])) == 0 and scene_props and len(getattr(scene_props, "lods", [])) > 0:
                 return scene_props, master_obj, True
             return m_props, master_obj, True

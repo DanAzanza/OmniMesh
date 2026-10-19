@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Batch Processing Modal Operator and UI Orchestrator.
 
@@ -11,15 +12,19 @@ import logging
 import os
 import subprocess
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator, Panel
-except ImportError:
-    bpy = None
-    Operator = object
-    Panel = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator, Panel
+    except ImportError:
+        bpy = None
+        Operator = object
+        Panel = object
 
 try:
     from ..bridges.manager import BridgeManager
@@ -39,7 +44,7 @@ class OMNIMESH_OT_batch_cancel(Operator):
     bl_description = "Cancel currently running batch export queue"
     bl_options = {"INTERNAL"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         OMNIMESH_OT_batch_process._abort_requested = True
         return {"FINISHED"}
 
@@ -70,7 +75,7 @@ class OMNIMESH_OT_batch_process(Operator):
         props = context.scene.lod_tool
         return bool(props.batch_source_directory and props.batch_source_directory.strip())
 
-    def invoke(self, context: Any, _event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props = context.scene.lod_tool
@@ -127,7 +132,7 @@ class OMNIMESH_OT_batch_process(Operator):
         self.report({"INFO"}, f"Batch Export started ({self._total_count} .blend files). Press ESC to abort.")
         return {"RUNNING_MODAL"}
 
-    def modal(self, context: Any, event: Any) -> set[str]:
+    def modal(self, context: Any, event: Any) -> set[Any]:
         if event.type == "ESC" or type(self)._abort_requested:
             type(self)._abort_requested = False
             return self.cancel_batch(context, "Batch processing aborted by user.")
@@ -171,7 +176,7 @@ class OMNIMESH_OT_batch_process(Operator):
                                 error_tail = "".join(lines[-20:])
                         except Exception as exc:
                             logger.debug("Reading worker log tail failed: %s", exc)
-                    elif getattr(self._current_proc, "stderr", None):
+                    elif self._current_proc.stderr is not None:
                         try:
                             error_tail = self._current_proc.stderr.read()
                         except Exception as exc:
@@ -322,7 +327,7 @@ class OMNIMESH_PT_export_batch(Panel):
         return bool(scene and getattr(scene, "lod_tool", None))
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = getattr(context.scene, "lod_tool", None)

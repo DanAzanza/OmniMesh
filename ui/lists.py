@@ -5,16 +5,20 @@ UIList components for OmniMesh LOD tiers with responsive column layout.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import UIList
-except ImportError:
-    bpy = None
-    UIList = object
+else:
+    try:
+        import bpy
+        from bpy.types import UIList
+    except ImportError:
+        bpy = None
+        UIList = object
 
 
 class LOD_UL_tier_list(UIList):
@@ -28,9 +32,9 @@ class LOD_UL_tier_list(UIList):
         item: Any,
         icon: Any,
         active_data: Any,
-        active_propname: Any,
-        index: int = 0,
-        flt_flag: int = 0,
+        active_property: Any,
+        index: Any = 0,
+        flt_flag: Any = 0,
     ) -> None:
         if not item:
             return
@@ -84,15 +88,15 @@ class OMNIMESH_UL_preset_maps(UIList):
 
     def draw_item(
         self,
-        _context: Any,
+        context: Any,
         layout: Any,
-        _data: Any,
+        data: Any,
         item: Any,
-        _icon: Any,
-        _active_data: Any,
-        _active_propname: Any,
-        _index: int = 0,
-        _flt_flag: int = 0,
+        icon: Any,
+        active_data: Any,
+        active_property: Any,
+        index: Any = 0,
+        flt_flag: Any = 0,
     ) -> None:
         if not item:
             return
@@ -131,15 +135,15 @@ class OMNIMESH_UL_export_preset_maps(UIList):
 
     def draw_item(
         self,
-        _context: Any,
+        context: Any,
         layout: Any,
-        _data: Any,
+        data: Any,
         item: Any,
-        _icon: Any,
-        _active_data: Any,
-        _active_propname: Any,
-        _index: int = 0,
-        _flt_flag: int = 0,
+        icon: Any,
+        active_data: Any,
+        active_property: Any,
+        index: Any = 0,
+        flt_flag: Any = 0,
     ) -> None:
         if not item:
             return
@@ -179,13 +183,13 @@ class OMNIMESH_UL_preset_tiers(UIList):
         self,
         context: Any,
         layout: Any,
-        _data: Any,
+        data: Any,
         item: Any,
-        _icon: Any,
-        _active_data: Any,
-        _active_propname: Any,
-        index: int = 0,
-        _flt_flag: int = 0,
+        icon: Any,
+        active_data: Any,
+        active_property: Any,
+        index: Any = 0,
+        flt_flag: Any = 0,
     ) -> None:
         if not item:
             return

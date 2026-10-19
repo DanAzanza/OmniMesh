@@ -17,7 +17,7 @@ import os
 import shutil
 import tempfile
 import time
-from typing import Any
+from typing import Any, cast
 
 import bpy
 
@@ -46,10 +46,11 @@ def run_live_mcp_pipeline_tests() -> str:
         monkey = bpy.context.active_object
         assert monkey is not None, "Failed to spawn monkey mesh"
         monkey.name = "Suzanne"
+        monkey_data: Any = monkey.data
         results["tests"]["mesh_creation"] = {
             "status": "PASS",
             "name": monkey.name,
-            "triangles": len(monkey.data.polygons),
+            "triangles": len(monkey_data.polygons),
         }
     except Exception as exc:
         results["tests"]["mesh_creation"] = {"status": "FAIL", "error": str(exc)}
@@ -89,7 +90,7 @@ def run_live_mcp_pipeline_tests() -> str:
 
         poly_counts = []
         for col in sorted(lod_cols, key=lambda c: c.name):
-            col_tris = sum(len(o.data.polygons) for o in col.objects if o.type == "MESH")
+            col_tris = sum(len(cast(Any, o.data).polygons) for o in col.objects if o.type == "MESH")
             poly_counts.append(col_tris)
 
         # Assert monotonic triangle reduction

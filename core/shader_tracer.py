@@ -505,9 +505,10 @@ class ShaderTracer:
             temp_img = bpy.data.images.new(
                 "_OM_Bake_Temp", width=target_w, height=target_h, alpha=False, float_buffer=(bit_depth == 16)
             )
-            if hasattr(temp_img, "colorspace_settings"):
+            cs = getattr(temp_img, "colorspace_settings", None)
+            if cs is not None and hasattr(cs, "name"):
                 try:
-                    temp_img.colorspace_settings.name = "Non-Color"
+                    cs.name = "Non-Color"
                 except (TypeError, ValueError, AttributeError) as exc:
                     logger.debug("Setting colorspace Non-Color skipped: %s", exc)
             tex_node = nodes.new(type="ShaderNodeTexImage")

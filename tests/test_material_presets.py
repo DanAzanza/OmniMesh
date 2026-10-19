@@ -6,6 +6,7 @@ EEVEE Next transparency guards, shader preset configuration, and object assignme
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 
@@ -20,7 +21,7 @@ from core.material_presets import (
 
 
 class MockSocket:
-    def __init__(self, name: str, default_val: any = None):
+    def __init__(self, name: str, default_val: Any = None):
         self.name = name
         self.default_value = default_val
 
@@ -36,7 +37,7 @@ class MockMaterial:
     def __init__(self, name: str):
         self.name = name
         self.use_nodes = True
-        self.custom_props: dict[str, any] = {}
+        self.custom_props: dict[str, Any] = {}
         self.node_tree = MagicMock()
         self.bsdf = MockNode("BSDF_PRINCIPLED")
         self.bsdf.inputs = {
@@ -53,13 +54,13 @@ class MockMaterial:
         self.surface_render_method = "DITHERED"
         self.use_transparent_shadow = False
 
-    def __setitem__(self, key: str, value: any):
+    def __setitem__(self, key: str, value: Any):
         self.custom_props[key] = value
 
     def __getitem__(self, key: str):
         return self.custom_props[key]
 
-    def get(self, key: str, default: any = None):
+    def get(self, key: str, default: Any = None):
         return self.custom_props.get(key, default)
 
 

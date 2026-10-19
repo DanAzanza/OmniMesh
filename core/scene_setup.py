@@ -14,14 +14,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 # Native Outliner Collection Color Tags (Blender 4.0+)
 # COLOR_01: Red, COLOR_02: Orange, COLOR_03: Yellow, COLOR_04: Green,
@@ -248,7 +251,7 @@ def setup_asset_collections(
 
     root_col["_omnimesh_role"] = "MODEL_ROOT"
     if opts.apply_color_tags and hasattr(root_col, "color_tag"):
-        root_col.color_tag = COLLECTION_COLOR_TAGS.get("ROOT", "COLOR_08")
+        root_col.color_tag = cast(Any, COLLECTION_COLOR_TAGS.get("ROOT", "COLOR_08"))
 
     collections["root"] = root_col
 
@@ -273,7 +276,7 @@ def setup_asset_collections(
 
         sub_col["_omnimesh_role"] = role_key
         if opts.apply_color_tags and hasattr(sub_col, "color_tag"):
-            sub_col.color_tag = COLLECTION_COLOR_TAGS.get(role_key, "NONE")
+            sub_col.color_tag = cast(Any, COLLECTION_COLOR_TAGS.get(role_key, "NONE"))
         return sub_col
 
     # 2. LOD0 Collection

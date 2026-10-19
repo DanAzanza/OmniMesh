@@ -13,26 +13,26 @@ import logging
 import os
 import re
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
-
-
-try:
     from .base import EngineExporterBase
     from .engine_export import AssetMeshResolver
-except (ImportError, ValueError):
+else:
     try:
+        import bpy
+    except ImportError:
+        bpy = None
+
+    try:
+        from .base import EngineExporterBase
+        from .engine_export import AssetMeshResolver
+    except (ImportError, ValueError):
         from exporters.base import EngineExporterBase
         from exporters.engine_export import AssetMeshResolver
-    except (ImportError, ValueError):
-        EngineExporterBase = object  # type: ignore
-        AssetMeshResolver = None  # type: ignore
 
 try:
     from ..core.msfs.project_scanner import MSFSModelOptions

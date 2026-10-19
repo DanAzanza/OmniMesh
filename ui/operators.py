@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Central User Operators Coordinator and Registration Hub.
 Modularized into single-responsibility submodules:
@@ -10,14 +11,19 @@ Modularized into single-responsibility submodules:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import logging
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 from .chunk_ops import (
     CLASSES as CHUNK_OPERATOR_CLASSES,

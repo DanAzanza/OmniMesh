@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh PBR Texture Map and Channel Packing RNA Data Models.
 Maintains interactive property groups and synchronization handlers for import and export presets.
@@ -5,7 +6,7 @@ Maintains interactive property groups and synchronization handlers for import an
 
 import copy
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .guards import ExportMapSyncGuard, MapSyncGuard, PresetSyncGuard, StateRestorationGuard
 
@@ -20,7 +21,7 @@ except (ImportError, ValueError):
         PBRImportPresetManager,
     )
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import (
         BoolProperty,
@@ -29,21 +30,31 @@ try:
         StringProperty,
     )
     from bpy.types import PropertyGroup
-except ImportError:
-    bpy = None
-    PropertyGroup = object
+else:
+    try:
+        import bpy
+        from bpy.props import (
+            BoolProperty,
+            EnumProperty,
+            IntProperty,
+            StringProperty,
+        )
+        from bpy.types import PropertyGroup
+    except ImportError:
+        bpy = None
+        PropertyGroup = object
 
-    def BoolProperty(**kwargs: Any) -> Any:
-        return None
+        def BoolProperty(**kwargs: Any) -> Any:
+            return None
 
-    def EnumProperty(**kwargs: Any) -> Any:
-        return None
+        def EnumProperty(**kwargs: Any) -> Any:
+            return None
 
-    def IntProperty(**kwargs: Any) -> Any:
-        return None
+        def IntProperty(**kwargs: Any) -> Any:
+            return None
 
-    def StringProperty(**kwargs: Any) -> Any:
-        return None
+        def StringProperty(**kwargs: Any) -> Any:
+            return None
 
 
 logger = logging.getLogger(__name__)

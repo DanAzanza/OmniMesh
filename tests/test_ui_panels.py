@@ -4,6 +4,7 @@ Unit tests for OmniMesh 3-Panel UI architecture, UIList components, and operator
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 from ui.hud import LODViewportHUD
@@ -207,9 +208,9 @@ def test_ui_list_draw_item_mock():
         layout=mock_layout,
         data=None,
         item=mock_item,
-        icon=None,
+        icon=0,
         active_data=None,
-        active_propname=None,
+        active_property="",
     )
     assert mock_layout.row.called
 
@@ -452,12 +453,12 @@ def test_modify_panel_collision_row_and_popover(monkeypatch):
 
     # Draw OMNIMESH_PT_modify
     mock_layout = MagicMock()
-    panel_modify.layout = mock_layout
+    cast(Any, panel_modify).layout = mock_layout
     panel_modify.draw(mock_context)
     assert mock_layout.row.called
 
     # Draw OMNIMESH_PT_popover_collision
-    popover_col.layout = mock_layout
+    cast(Any, popover_col).layout = mock_layout
     popover_col.draw(mock_context)
     assert mock_layout.prop.called
 
@@ -487,7 +488,7 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     mock_props.last_generated_collider_count = 0
 
     mock_layout = MagicMock()
-    panel_modify.layout = mock_layout
+    cast(Any, panel_modify).layout = mock_layout
     panel_modify.draw(mock_context)
     assert mock_layout.row.called
 
@@ -503,7 +504,7 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     mock_props.cleanup_enable_fill_holes = True
 
     mock_san_layout = MagicMock()
-    popover_san.layout = mock_san_layout
+    cast(Any, popover_san).layout = mock_san_layout
     popover_san.draw(mock_context)
     assert mock_san_layout.label.called
     assert mock_san_layout.prop.called
@@ -610,7 +611,7 @@ def test_panel2_modify_collection_first_and_lod0_only(monkeypatch):
 
     panel_modify = OMNIMESH_PT_modify()
     mock_layout = MagicMock()
-    panel_modify.layout = mock_layout
+    cast(Any, panel_modify).layout = mock_layout
     panel_modify.draw(mock_context)
     assert mock_layout.row.called
 
@@ -662,7 +663,7 @@ def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
     mock_layout = MagicMock()
     mock_row = MagicMock()
     mock_layout.row.return_value = mock_row
-    panel.layout = mock_layout
+    cast(Any, panel).layout = mock_layout
     panel.draw(mock_context)
 
     # Verify active_asset is rendered in the first row
@@ -908,7 +909,7 @@ def test_lods_compact_card_show_details(monkeypatch):
     panel = OMNIMESH_PT_lods()
 
     # Case 1: show_details is False -> sliders are not drawn
-    panel.layout = mock_layout
+    cast(Any, panel).layout = mock_layout
     panel.draw(ctx)
 
     prop_names_called = [call.args[1] for call in mock_row.prop.call_args_list if len(call.args) > 1]

@@ -7,68 +7,71 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Tuple
+from typing import TYPE_CHECKING, Any, Tuple, cast
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     from mathutils import Vector
-except ImportError:
+else:
+    try:
+        from mathutils import Vector
+    except ImportError:
 
-    class Vector(tuple):  # type: ignore
-        """Fallback Vector for headless testing."""
+        class Vector(tuple):  # type: ignore
+            """Fallback Vector for headless testing."""
 
-        def __new__(cls, coords: Any) -> Vector:
-            return super().__new__(cls, tuple(float(x) for x in coords))
+            def __new__(cls, coords: Any) -> Vector:
+                return super().__new__(cls, tuple(float(x) for x in coords))
 
-        @property
-        def x(self) -> float:
-            return self[0]
+            @property
+            def x(self) -> float:
+                return self[0]
 
-        @property
-        def y(self) -> float:
-            return self[1]
+            @property
+            def y(self) -> float:
+                return self[1]
 
-        @property
-        def z(self) -> float:
-            return self[2]
+            @property
+            def z(self) -> float:
+                return self[2]
 
-        @property
-        def length(self) -> float:
-            return math.sqrt(self[0] * self[0] + self[1] * self[1] + self[2] * self[2])
+            @property
+            def length(self) -> float:
+                return math.sqrt(self[0] * self[0] + self[1] * self[1] + self[2] * self[2])
 
-        def normalized(self) -> Vector:
-            l_val = self.length
-            if l_val < 1e-9:
-                return Vector((0.0, 0.0, 0.0))
-            return Vector((self[0] / l_val, self[1] / l_val, self[2] / l_val))
+            def normalized(self) -> Vector:
+                l_val = self.length
+                if l_val < 1e-9:
+                    return Vector((0.0, 0.0, 0.0))
+                return Vector((self[0] / l_val, self[1] / l_val, self[2] / l_val))
 
-        def dot(self, o: Any) -> float:
-            return self[0] * o[0] + self[1] * o[1] + self[2] * o[2]
+            def dot(self, o: Any) -> float:
+                return self[0] * o[0] + self[1] * o[1] + self[2] * o[2]
 
-        def cross(self, o: Any) -> Vector:
-            return Vector(
-                (self[1] * o[2] - self[2] * o[1], self[2] * o[0] - self[0] * o[2], self[0] * o[1] - self[1] * o[0])
-            )
+            def cross(self, o: Any) -> Vector:
+                return Vector(
+                    (self[1] * o[2] - self[2] * o[1], self[2] * o[0] - self[0] * o[2], self[0] * o[1] - self[1] * o[0])
+                )
 
-        def __neg__(self) -> Vector:
-            return Vector((-self[0], -self[1], -self[2]))
+            def __neg__(self) -> Vector:
+                return Vector((-self[0], -self[1], -self[2]))
 
-        def __sub__(self, o: Any) -> Vector:
-            return Vector((self[0] - o[0], self[1] - o[1], self[2] - o[2]))
+            def __sub__(self, o: Any) -> Vector:
+                return Vector((self[0] - o[0], self[1] - o[1], self[2] - o[2]))
 
-        def __add__(self, o: Any) -> Vector:
-            return Vector((self[0] + o[0], self[1] + o[1], self[2] + o[2]))
+            def __add__(self, o: Any) -> Vector:
+                return Vector((self[0] + o[0], self[1] + o[1], self[2] + o[2]))
 
-        def __mul__(self, scalar: Any) -> Vector:
-            s = float(scalar)
-            return Vector((self[0] * s, self[1] * s, self[2] * s))
+            def __mul__(self, scalar: Any) -> Vector:
+                s = float(scalar)
+                return Vector((self[0] * s, self[1] * s, self[2] * s))
 
-        def __rmul__(self, scalar: Any) -> Vector:
-            s = float(scalar)
-            return Vector((self[0] * s, self[1] * s, self[2] * s))
+            def __rmul__(self, scalar: Any) -> Vector:
+                s = float(scalar)
+                return Vector((self[0] * s, self[1] * s, self[2] * s))
 
 
 class ImpostorMath:
@@ -168,8 +171,8 @@ class ImpostorMath:
             # At polar zenith/nadir, use +Y as reference to avoid degenerate cross product
             up_ref = Vector((0.0, 1.0, 0.0))
 
-        right = up_ref.cross(-forward).normalized()
-        up = (-forward).cross(right).normalized()
+        right = cast(Vector, up_ref.cross(-forward)).normalized()
+        up = cast(Vector, (-forward).cross(right)).normalized()
         return right, up, forward
 
     @staticmethod

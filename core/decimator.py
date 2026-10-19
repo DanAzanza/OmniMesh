@@ -7,20 +7,25 @@ from __future__ import annotations
 import contextlib
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .exceptions import DecimationError
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from mathutils import Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    Vector = None
+else:
+    try:
+        import bmesh
+        import bpy
+        from mathutils import Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        Vector = None
 
 UV_SEAM_EPSILON: float = 1e-4
 
@@ -321,11 +326,11 @@ class MeshDecimator:
         Returns set of tagged vertex indices.
         """
         tagged_indices: set[int] = set()
-        if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
+        if not obj or obj.type != "MESH" or not obj.data:
             return tagged_indices
 
         mesh = obj.data
-        if not hasattr(mesh, "edges") or not hasattr(mesh, "vertices"):
+        if not mesh.edges or not mesh.vertices:
             return tagged_indices
 
         if bmesh:
@@ -335,13 +340,13 @@ class MeshDecimator:
                 bm.edges.ensure_lookup_table()
                 bm.verts.ensure_lookup_table()
                 for edge in bm.edges:
-                    if getattr(edge, "is_boundary", False):
+                    if edge.is_boundary:
                         for v in edge.verts:
                             tagged_indices.add(v.index)
             finally:
                 bm.free()
 
-        if tagged_indices and hasattr(obj, "vertex_groups"):
+        if tagged_indices:
             vg = obj.vertex_groups.get(group_name)
             if not vg:
                 vg = obj.vertex_groups.new(name=group_name)
@@ -364,19 +369,19 @@ class MeshDecimator:
         Supports custom vertex group factor for strict boundary pinning.
         Optionally cleans up temporary protection vertex groups upon completion.
         """
-        if not obj or getattr(obj, "type", "") != "MESH":
+        if not obj or obj.type != "MESH":
             return
 
         clamped_ratio = max(0.001, min(1.0, target_ratio))
         if clamped_ratio >= 0.999:
             # Clean up protection vertex group if returning without decimation
-            if cleanup_group and hasattr(obj, "vertex_groups"):
+            if cleanup_group and obj:
                 vg = obj.vertex_groups.get(group_name)
                 if vg:
                     obj.vertex_groups.remove(vg)
             return
 
-        if not hasattr(obj, "modifiers") or not bpy:
+        if not bpy:
             return
 
         ctx = context if context is not None else getattr(bpy, "context", None)
@@ -388,24 +393,23 @@ class MeshDecimator:
             dec_mod.use_symmetry = False
             dec_mod.use_collapse_triangulate = True
 
-            if use_curvature_weight and hasattr(obj, "vertex_groups") and group_name in obj.vertex_groups:
+            if use_curvature_weight and obj.vertex_groups.get(group_name):
                 dec_mod.vertex_group = group_name
                 dec_mod.invert_vertex_group = True
                 dec_mod.vertex_group_factor = max(0.0, min(1.0, float(vertex_group_factor)))
 
-            if hasattr(obj, "modifiers"):
-                for m in obj.modifiers:
-                    if getattr(m, "type", "") == "ARMATURE":
-                        orig_armature_states[m] = getattr(m, "show_viewport", True)
-                        m.show_viewport = False
+            for m in obj.modifiers:
+                if m.type == "ARMATURE":
+                    orig_armature_states[m] = m.show_viewport
+                    m.show_viewport = False
 
-                if hasattr(bpy.ops.object, "modifier_move_to_index"):
-                    try:
-                        if ctx and hasattr(ctx, "temp_override"):
-                            with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
-                                bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
-                    except (RuntimeError, ValueError, AttributeError) as exc:
-                        logger.debug("Modifier move to index 0 skipped: %s", exc)
+            if hasattr(bpy.ops.object, "modifier_move_to_index"):
+                try:
+                    if ctx and hasattr(ctx, "temp_override"):
+                        with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                            bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
+                except (RuntimeError, ValueError, AttributeError) as exc:
+                    logger.debug("Modifier move to index 0 skipped: %s", exc)
 
             if ctx and hasattr(ctx, "temp_override"):
                 with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
@@ -416,7 +420,7 @@ class MeshDecimator:
         except (RuntimeError, ValueError, AttributeError) as exc:
             obj_name = getattr(obj, "name", "Unnamed")
             logger.error("QEM Decimate modifier apply failed on '%s' (ratio=%.4f): %s", obj_name, clamped_ratio, exc)
-            if hasattr(obj, "modifiers") and dec_mod.name in obj.modifiers:
+            if dec_mod.name in obj.modifiers:
                 obj.modifiers.remove(dec_mod)
             raise DecimationError(
                 f"Failed applying QEM decimate modifier on '{obj_name}' (target_ratio={clamped_ratio:.4f}): {exc}"
@@ -430,7 +434,7 @@ class MeshDecimator:
                     logger.debug("Restoring armature show_viewport failed: %s", exc)
 
             # Cleanup protection vertex group if requested
-            if cleanup_group and hasattr(obj, "vertex_groups"):
+            if cleanup_group and obj:
                 vg = obj.vertex_groups.get(group_name)
                 if vg:
                     obj.vertex_groups.remove(vg)
@@ -441,7 +445,7 @@ class MeshDecimator:
         Resets all shape key evaluation values to 0.0 (neutral Basis pose).
         Prevents deformed geometry during LOD decimation or normal reprojection.
         """
-        if not obj or not hasattr(obj, "data") or not obj.data or not getattr(obj.data, "shape_keys", None):
+        if not obj or not obj.data or not obj.data.shape_keys:
             return
 
         key_blocks = getattr(obj.data.shape_keys, "key_blocks", [])
@@ -457,7 +461,7 @@ class MeshDecimator:
         Purges all shape keys from the target mesh datablock.
         Strictly guarantees key blocks are reset to 0.0 before removal (KNOWLEDGE.md §3).
         """
-        if not obj or not hasattr(obj, "data") or not obj.data or not getattr(obj.data, "shape_keys", None):
+        if not obj or not obj.data or not obj.data.shape_keys:
             return
         if not bpy:
             return

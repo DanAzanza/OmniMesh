@@ -6,14 +6,17 @@ Identifies root asset collections, inspects current scene state, and computes LO
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 
 def _strip_collection_suffixes(name: str) -> str:

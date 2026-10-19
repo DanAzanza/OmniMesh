@@ -13,16 +13,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 import gc
 import logging
-from typing import Any, Iterator, Optional
+from typing import TYPE_CHECKING, Any, Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
-except ImportError:
-    bpy = None
-    bmesh = None
+else:
+    try:
+        import bmesh
+        import bpy
+    except ImportError:
+        bpy = None
+        bmesh = None
 
 try:
     from .decimator import MeshDecimator
@@ -98,17 +102,21 @@ class BatchMeshIterator:
                 bm = bmesh.new()
                 try:
                     bm.from_mesh(mesh_data)
-                    MeshSanitizer.clean_and_repair(bm)
-                    MeshDecimator.decimate_ratio(
-                        bm,
-                        ratio=self.target_ratio,
-                        preserve_boundaries=self.preserve_boundaries,
-                        planar_dissolve=self.planar_dissolve,
-                    )
+                    MeshSanitizer.execute_tier0_pure_hygiene(bm)
+                    if self.planar_dissolve:
+                        MeshDecimator.apply_planar_limited_dissolve(bm, angle_limit_rad=0.0872665)
                     bm.to_mesh(mesh_data)
                     mesh_data.update()
                 finally:
                     bm.free()
+
+                if self.target_ratio < 0.999:
+                    MeshDecimator.execute_decimate_qem(
+                        obj,
+                        target_ratio=self.target_ratio,
+                        use_curvature_weight=self.preserve_boundaries,
+                        context=context,
+                    )
 
                 final_tris = len(mesh_data.polygons)
 

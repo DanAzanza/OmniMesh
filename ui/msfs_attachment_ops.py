@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 MSFS 2024 Modular Attachments & Submodels Viewport Operators.
 Provides operators for importing, representing, and synchronizing
@@ -8,22 +9,27 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import FloatProperty, FloatVectorProperty, StringProperty
     from bpy.types import Collection, Object, Operator
-except ImportError:
-    bpy = None
-    Collection = object
-    Object = object
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.props import FloatProperty, FloatVectorProperty, StringProperty
+        from bpy.types import Collection, Object, Operator
+    except ImportError:
+        bpy = None
+        Collection = object
+        Object = object
+        Operator = object
 
-    def _mock_prop(**kwargs: Any) -> Any:
-        return None
+        def _mock_prop(**kwargs: Any) -> Any:
+            return None
 
-    FloatProperty = FloatVectorProperty = StringProperty = _mock_prop
+        FloatProperty = FloatVectorProperty = StringProperty = _mock_prop
 
 try:
     from ..core.msfs.attachments_cst import MSFSAttachmentsCST
@@ -110,7 +116,7 @@ def find_mounting_socket_node(
 
     # 2. Bone search across all Armatures in the scene or asset
     for o in bpy.data.objects:
-        if o.type == "ARMATURE" and hasattr(o, "data") and hasattr(o.data, "bones"):
+        if o.type == "ARMATURE" and isinstance(o.data, bpy.types.Armature):
             bone = o.data.bones.get(clean_socket)
             if not bone:
                 clean_lower = clean_socket.lower()
@@ -143,7 +149,7 @@ class OMNIMESH_OT_import_msfs_attachments(Operator):
         p = getattr(msfs_cfg, "attached_objects_cfg_path", "")
         return bool(p and os.path.isfile(p))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -262,7 +268,7 @@ class OMNIMESH_OT_export_msfs_attachments(Operator):
         p = getattr(msfs_cfg, "attached_objects_cfg_path", "")
         return bool(p and (os.path.isfile(p) or (p.endswith(".cfg") and os.path.isdir(os.path.dirname(p)))))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -421,7 +427,7 @@ class OMNIMESH_OT_add_msfs_attachment(Operator):
     attachment_path: StringProperty(name="Submodel XML", default="")
     attach_to_model: StringProperty(name="Target Model", default="Interior")
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 

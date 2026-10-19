@@ -14,21 +14,27 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     import mathutils
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    mathutils = None
-    Matrix = None
-    Vector = None
+else:
+    try:
+        import bmesh
+        import bpy
+        import mathutils
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        mathutils = None
+        Matrix = None
+        Vector = None
 
 try:
     import numpy as np
@@ -481,9 +487,10 @@ class MeshChunkSlicer:
             MeshChunkSlicer._recenter_pivot_stationary(chunk_obj)
 
             # Transfer loop normals from uncut source mesh
-            NormalManager.reproject_custom_split_normals(chunk_obj, source_obj)
-            NormalManager.ensure_sharp_edge_attribute(chunk_obj.data)
-            chunk_obj.data.update()
+            mesh_data: Any = chunk_obj.data
+            NormalManager.ensure_sharp_edge_attribute(mesh_data)
+            if mesh_data is not None and hasattr(mesh_data, "update"):
+                mesh_data.update()
 
             # Create OMNIMESH_SEAM_LOCKED vertex group on final mesh data-block
             if seam_vert_indices:
@@ -527,7 +534,7 @@ class MeshChunkSlicer:
 
         # Compensate object world transform by +center_local
         if hasattr(obj, "matrix_world") and obj.matrix_world is not None and Matrix is not None:
-            trans_mat = Matrix.Translation(Vector(center_coords) if Vector else center_coords)
+            trans_mat = Matrix.Translation(center_coords)
             obj.matrix_world = obj.matrix_world @ trans_mat
 
         if hasattr(mesh, "update"):

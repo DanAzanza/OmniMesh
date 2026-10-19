@@ -5,12 +5,15 @@ Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture, Animatio
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 
 logger = logging.getLogger(__name__)

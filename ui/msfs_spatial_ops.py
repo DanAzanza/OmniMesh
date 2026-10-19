@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 MSFS Spatial Configuration Operators for Blender.
 Provides viewport operators for importing, visualizing, and synchronizing
@@ -8,17 +9,22 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import StringProperty
     from bpy.types import Collection, Object, Operator
-except ImportError:
-    bpy = None
-    Collection = object
-    Object = object
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.props import StringProperty
+        from bpy.types import Collection, Object, Operator
+    except ImportError:
+        bpy = None
+        Collection = object
+        Object = object
+        Operator = object
 
     def StringProperty(**kwargs: Any) -> Any:
         return ""
@@ -138,7 +144,7 @@ class OMNIMESH_OT_import_msfs_spatial(Operator):
         options={"HIDDEN"},
     )
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -150,7 +156,7 @@ class OMNIMESH_OT_import_msfs_spatial(Operator):
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -286,7 +292,7 @@ class OMNIMESH_OT_import_msfs_spatial(Operator):
             empty.parent = parent
 
         empty.location = local_pos_m
-        empty.empty_display_type = display_type
+        empty.empty_display_type = cast(Any, display_type)
         empty.empty_display_size = display_size
 
         # Custom Properties for round-trip tracking
@@ -316,7 +322,7 @@ class OMNIMESH_OT_export_msfs_spatial(Operator):
         props = getattr(context.scene, "lod_tool", None)
         return bool(props and props.msfs_spatial_cfg_path and os.path.isfile(props.msfs_spatial_cfg_path))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -410,7 +416,7 @@ class OMNIMESH_OT_snap_msfs_point_to_vertex(Operator):
         active = getattr(context, "active_object", None)
         return bool(active and active.get("msfs_id"))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -481,7 +487,7 @@ class OMNIMESH_OT_mirror_msfs_marker(Operator):
         active = getattr(context, "active_object", None)
         return bool(active and active.get("msfs_id"))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 

@@ -83,8 +83,8 @@ def test_msfs_xml_empty_and_single_tier():
     root_empty = ET.fromstring(xml_empty)
     lods_empty = root_empty.find("LODS")
     assert lods_empty is not None
-    assert len(lods_empty.findall("LOD")) == 1
-    assert lods_empty.find("LOD").attrib["minSize"] == "0"
+    lod_empty = lods_empty.find("LOD")
+    assert lod_empty is not None and lod_empty.attrib["minSize"] == "0"
 
     # Single tier
     xml_single = MSFSExporter.generate_model_info_xml("SingleAsset", [{"screen_size_pct": 100.0}])
@@ -92,4 +92,5 @@ def test_msfs_xml_empty_and_single_tier():
     lods_single = root_single.find("LODS")
     assert lods_single is not None
     assert len(lods_single.findall("LOD")) == 1
-    assert lods_single.find("LOD").attrib["minSize"] == "0"
+    lod_single = lods_single.find("LOD")
+    assert lod_single is not None and lod_single.attrib["minSize"] == "0"

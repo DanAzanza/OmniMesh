@@ -9,20 +9,25 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .chunk_merger import HLODClusterMerger
 from .decimator import MeshDecimator
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    Matrix = None
-    Vector = None
+else:
+    try:
+        import bmesh
+        import bpy
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        Matrix = None
+        Vector = None
 
 logger = logging.getLogger(__name__)
 

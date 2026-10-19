@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 Core LOD Generation, Configuration, Tier Preview, and Selection Synchronization Operators.
 Generation engine logic is modularized in core.lod_generator; preset operators in ui.lod_preset_ops.
@@ -7,16 +8,20 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..core.lod_generator import generate_all_lods
@@ -75,7 +80,7 @@ class LOD_OT_reset_to_preset(Operator):
     bl_description = "Resets all tier budgets and transition metrics back to the active preset defaults"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -106,7 +111,7 @@ class LOD_OT_analyze_and_configure(Operator):
         meshes = get_asset_base_meshes(context, asset_name) if asset_name else []
         return bool(context and (meshes or get_selected_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, target_obj, is_deriv = resolve_lod_context(context)
@@ -151,7 +156,7 @@ class LOD_OT_generate_all(Operator):
         meshes = get_asset_base_meshes(context, asset_name) if asset_name else []
         return bool(context and (meshes or get_selected_mesh_objects(context)) and props and len(props.lods) > 0)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, target_obj, is_deriv = resolve_lod_context(context)
@@ -205,7 +210,7 @@ class LOD_OT_solo_tier(Operator):
 
     tier_index: bpy.props.IntProperty(name="Tier Index", default=0) if bpy else 0
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -230,7 +235,7 @@ class LOD_OT_solo_tier(Operator):
                     target_objs = (
                         list(coll.objects)
                         if coll.objects
-                        else [o for o in coll.all_objects if coll in o.users_collection]
+                        else [o for o in cast(Any, coll.all_objects) if coll in o.users_collection]
                     )
                     for obj in target_objs:
                         obj.hide_set(False, view_layer=view_layer)
@@ -258,7 +263,7 @@ class LOD_OT_solo_tier(Operator):
                     target_objs = (
                         list(coll.objects)
                         if coll.objects
-                        else [o for o in coll.all_objects if coll in o.users_collection]
+                        else [o for o in cast(Any, coll.all_objects) if coll in o.users_collection]
                     )
                     for obj in target_objs:
                         obj.hide_set(i != 0, view_layer=view_layer)
@@ -277,7 +282,7 @@ class LOD_OT_solo_tier(Operator):
                     target_objs = (
                         list(coll.objects)
                         if coll.objects
-                        else [o for o in coll.all_objects if coll in o.users_collection]
+                        else [o for o in cast(Any, coll.all_objects) if coll in o.users_collection]
                     )
                     for obj in target_objs:
                         obj.hide_set(not is_target, view_layer=view_layer)
@@ -310,7 +315,7 @@ class LOD_OT_add_lod_tier(Operator):
     bl_description = "Appends a new LOD tier to the current configuration"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -368,7 +373,7 @@ class LOD_OT_remove_lod_tier(Operator):
 
     tier_index: bpy.props.IntProperty(name="Tier Index", default=-1) if bpy else -1
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -414,10 +419,10 @@ class LOD_OT_preview_tier(Operator):
 
     tier_index: bpy.props.IntProperty(default=0) if bpy else 0
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
-        return bpy.ops.lod_tool.solo_tier(tier_index=int(self.tier_index))
+        return cast(Any, bpy.ops).lod_tool.solo_tier(tier_index=int(self.tier_index))
 
 
 class LOD_OT_sync_selection_settings(Operator):
@@ -427,7 +432,7 @@ class LOD_OT_sync_selection_settings(Operator):
     bl_label = "Copy Settings to Selection"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props, target_obj, _ = resolve_lod_context(context)
@@ -489,7 +494,7 @@ class LOD_OT_select_master_asset(Operator):
     bl_label = "Select Master Asset"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         active_obj = context.active_object

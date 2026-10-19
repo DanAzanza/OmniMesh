@@ -11,16 +11,20 @@ import hashlib
 import json
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
-except ImportError:
-    bpy = None
-    bmesh = None
+else:
+    try:
+        import bmesh
+        import bpy
+    except ImportError:
+        bpy = None
+        bmesh = None
 
 
 class DeepMaterialHasher:

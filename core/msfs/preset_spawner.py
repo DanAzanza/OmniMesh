@@ -8,47 +8,48 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from mathutils import Euler, Vector
-except ImportError:
-    bpy = None
-    Euler = None
-    Vector = None
+else:
+    try:
+        import bpy
+        from mathutils import Euler, Vector
+    except ImportError:
+        bpy = None
+        Euler = None
 
-if Vector is None:
+        class Vector(tuple):  # type: ignore[no-redef]
+            def __new__(cls, coords):
+                return super().__new__(cls, (float(c) for c in coords))
 
-    class Vector(tuple):  # type: ignore[no-redef]
-        def __new__(cls, coords):
-            return super().__new__(cls, (float(c) for c in coords))
+            @property
+            def x(self) -> float:
+                return self[0]
 
-        @property
-        def x(self) -> float:
-            return self[0]
+            @property
+            def y(self) -> float:
+                return self[1]
 
-        @property
-        def y(self) -> float:
-            return self[1]
+            @property
+            def z(self) -> float:
+                return self[2]
 
-        @property
-        def z(self) -> float:
-            return self[2]
+            def __add__(self, other):
+                return Vector((self[0] + other[0], self[1] + other[1], self[2] + other[2]))
 
-        def __add__(self, other):
-            return Vector((self[0] + other[0], self[1] + other[1], self[2] + other[2]))
+            def __sub__(self, other):
+                return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
 
-        def __sub__(self, other):
-            return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
+            def __mul__(self, scalar):
+                return Vector((self[0] * scalar, self[1] * scalar, self[2] * scalar))
 
-        def __mul__(self, scalar):
-            return Vector((self[0] * scalar, self[1] * scalar, self[2] * scalar))
-
-        def __rmul__(self, scalar):
-            return Vector((self[0] * scalar, self[1] * scalar, self[2] * scalar))
+            def __rmul__(self, scalar):
+                return Vector((self[0] * scalar, self[1] * scalar, self[2] * scalar))
 
 
 def compute_preset_anchor_position(

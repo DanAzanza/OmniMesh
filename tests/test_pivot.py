@@ -11,7 +11,7 @@ class DummyObject:
     def __init__(self, name: str, obj_type: str = "EMPTY", is_pivot: bool = False, is_socket: bool = False):
         self.name = name
         self.type = obj_type
-        self.matrix_world = MagicMock()
+        self.matrix_world: Any = MagicMock()
         self.data = MagicMock() if obj_type == "MESH" else None
         self._custom_props = {"is_pivot": is_pivot, "is_socket": is_socket}
 

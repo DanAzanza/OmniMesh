@@ -11,17 +11,21 @@ Features:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    Matrix = None
-    Vector = None
+else:
+    try:
+        import bpy
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        Matrix = None
+        Vector = None
 
 
 class PivotPreservationEngine:
@@ -206,7 +210,11 @@ class PivotPreservationEngine:
                 sock_clone.matrix_world = sock_world
             else:
                 sock_clone.parent = target_pivot
-                if hasattr(target_pivot, "matrix_world") and hasattr(target_pivot.matrix_world, "inverted"):
+                if (
+                    target_pivot is not None
+                    and hasattr(target_pivot, "matrix_world")
+                    and hasattr(target_pivot.matrix_world, "inverted")
+                ):
                     try:
                         sock_clone.matrix_parent_inverse = target_pivot.matrix_world.inverted()
                     except (ValueError, AttributeError, RuntimeError) as exc:

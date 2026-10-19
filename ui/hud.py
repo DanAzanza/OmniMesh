@@ -5,20 +5,26 @@ Viewport HUD and Statistics Overlay for OmniMesh & Real-Time Simulator.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import blf
     import bpy
     import gpu
     from gpu_extras.batch import batch_for_shader
-except ImportError:
-    bpy = None
-    gpu = None
-    batch_for_shader = None
-    blf = None
+else:
+    try:
+        import blf
+        import bpy
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+    except ImportError:
+        bpy = None
+        gpu = None
+        batch_for_shader = None
+        blf = None
 
 
 class LODViewportHUD:

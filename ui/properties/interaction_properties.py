@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Multi-Engine Interaction Volumes & Clickspot Properties.
 Kept in a dedicated submodule to strictly enforce AGENTS.md < 800 LOC limit on settings.py.
@@ -5,20 +6,25 @@ Kept in a dedicated submodule to strictly enforce AGENTS.md < 800 LOC limit on s
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
     from bpy.types import PropertyGroup
-except ImportError:
-    bpy = None
-    PropertyGroup = object
+else:
+    try:
+        import bpy
+        from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
+        from bpy.types import PropertyGroup
+    except ImportError:
+        bpy = None
+        PropertyGroup = object
 
-    def _mock_prop(**kwargs: Any) -> Any:
-        return None
+        def _mock_prop(**kwargs: Any) -> Any:
+            return None
 
-    BoolProperty = EnumProperty = FloatProperty = StringProperty = _mock_prop
+        BoolProperty = EnumProperty = FloatProperty = StringProperty = _mock_prop
 
 
 SHAPE_ITEMS = [

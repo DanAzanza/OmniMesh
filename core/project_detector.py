@@ -10,12 +10,15 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None  # type: ignore[assignment]
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,7 @@ def detect_engine_project(export_dir: str, target_engine: str, max_depth: int = 
 
     Args:
         export_dir: Destination path or relative path (e.g. '//Export').
-        target_engine: Target engine identifier ('UE5', 'UNITY_6', 'GODOT_4', 'MSFS_2024').
+        target_engine: Target engine identifier ('UE5', 'UNITY_6', 'MSFS_2024').
         max_depth: Maximum number of parent directory levels to inspect.
 
     Returns:

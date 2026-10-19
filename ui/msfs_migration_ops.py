@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 Operator for non-destructive migration of legacy MSFS / Asobo x0_..x6_ outliner hierarchies
 into OmniMesh Variante A standard ({AssetName}_LOD0..N, {AssetName}_Config, {AssetName}_Helpers).
@@ -7,16 +8,20 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..core.hierarchy import get_or_create_engine_import_collection
@@ -46,7 +51,7 @@ class OMNIMESH_OT_convert_asobo_hierarchy(Operator):
             return False
         return any(re.match(r"^x[0-6]_", getattr(c, "name", ""), re.IGNORECASE) for c in collections)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 
@@ -102,7 +107,7 @@ class OMNIMESH_OT_convert_asobo_hierarchy(Operator):
                 dest_col = helpers_col if is_helper else target_lod_col
 
                 if dest_col:
-                    dest_objs = getattr(dest_col, "objects", None)
+                    dest_objs: Any = getattr(dest_col, "objects", None)
                     if hasattr(dest_objs, "link"):
                         try:
                             if obj.name not in dest_objs:
@@ -113,7 +118,7 @@ class OMNIMESH_OT_convert_asobo_hierarchy(Operator):
                         dest_objs.append(obj)
 
                 # Unlink from old collection
-                old_objs = getattr(old_col, "objects", None)
+                old_objs: Any = getattr(old_col, "objects", None)
                 if hasattr(old_objs, "unlink"):
                     try:
                         old_objs.unlink(obj)

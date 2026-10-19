@@ -6,12 +6,18 @@ engine presets, mesh cleanup, material cleanup, impostors, PBR importer, live si
 
 import logging
 
-try:
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
     import bpy
     from bpy.props import PointerProperty
-except ImportError:
-    bpy = None
-    PointerProperty = None
+else:
+    try:
+        import bpy
+        from bpy.props import PointerProperty
+    except ImportError:
+        bpy = None
+        PointerProperty = None
 
 logger = logging.getLogger(__name__)
 
@@ -141,8 +147,9 @@ def register_properties() -> None:
         except Exception as exc:
             logger.debug("Safe register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
     try:
-        bpy.types.Scene.lod_tool = PointerProperty(type=LODToolSettings)
-        bpy.types.Object.lod_tool = PointerProperty(type=LODToolSettings)
+        if PointerProperty:
+            setattr(bpy.types.Scene, "lod_tool", PointerProperty(type=LODToolSettings))  # noqa: B010
+            setattr(bpy.types.Object, "lod_tool", PointerProperty(type=LODToolSettings))  # noqa: B010
     except Exception as exc:
         logger.debug("PointerProperty assignment exception: %s", exc)
 
@@ -179,9 +186,9 @@ def unregister_properties() -> None:
             except (ValueError, KeyError, AttributeError) as exc:
                 logger.debug("Handler removal skipped: %s", exc)
     if hasattr(bpy.types.Scene, "lod_tool"):
-        del bpy.types.Scene.lod_tool
+        delattr(bpy.types.Scene, "lod_tool")
     if hasattr(bpy.types.Object, "lod_tool"):
-        del bpy.types.Object.lod_tool
+        delattr(bpy.types.Object, "lod_tool")
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
 

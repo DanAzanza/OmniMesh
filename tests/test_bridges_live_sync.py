@@ -1,7 +1,7 @@
 """
 OmniMesh Live Engine Bridges Integration & Hardening Tests.
 Tests real-time synchronization, mock TCP/HTTP servers, and script generators for
-Unreal Engine 5, Unity 6, Godot 4, and MSFS 2024.
+Unreal Engine 5, Unity 6, and MSFS 2024.
 """
 
 from __future__ import annotations

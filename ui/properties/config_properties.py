@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Config Preset Properties.
 Kept in a dedicated submodule to strictly enforce AGENTS.md < 800 LOC limit on settings.py.
@@ -6,22 +7,27 @@ Kept in a dedicated submodule to strictly enforce AGENTS.md < 800 LOC limit on s
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import BoolProperty, EnumProperty, StringProperty
     from bpy.types import PropertyGroup
-except ImportError:
-    bpy = None
-    PropertyGroup = object
+else:
+    try:
+        import bpy
+        from bpy.props import BoolProperty, EnumProperty, StringProperty
+        from bpy.types import PropertyGroup
+    except ImportError:
+        bpy = None
+        PropertyGroup = object
 
-    def _mock_prop(**kwargs: Any) -> Any:
-        return None
+        def _mock_prop(**kwargs: Any) -> Any:
+            return None
 
-    BoolProperty = EnumProperty = StringProperty = _mock_prop
+        BoolProperty = EnumProperty = StringProperty = _mock_prop
 
 try:
     from ...core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager

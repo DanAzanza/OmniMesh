@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 Non-Blocking Modal Batch Decimation Operator for OmniMesh.
 Blender 4.2+ and 5.2 LTS Compatible.
@@ -10,16 +11,20 @@ Provides:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..core.batch_iterator import BatchMeshIterator, BatchProgress
@@ -44,7 +49,7 @@ class LOD_OT_batch_generate_modal(Operator):
     _failed_count: int = 0
     _total_count: int = 0
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -83,7 +88,7 @@ class LOD_OT_batch_generate_modal(Operator):
         )
         return {"RUNNING_MODAL"}
 
-    def modal(self, context: Any, event: Any) -> set[str]:
+    def modal(self, context: Any, event: Any) -> set[Any]:
         if event.type == "ESC":
             self._cleanup(context)
             safe_report(

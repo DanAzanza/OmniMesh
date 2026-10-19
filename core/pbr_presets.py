@@ -16,12 +16,15 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 logger = logging.getLogger(__name__)
 

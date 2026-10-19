@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 Modal Operators and Live Handlers for Viewport LOD Simulator.
 """
@@ -6,16 +7,20 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..core.simulator import LODSimulatorEngine, extract_viewport_camera_params
@@ -39,7 +44,7 @@ class LOD_OT_toggle_simulator(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(bpy and context and hasattr(context.scene, "lod_tool"))
 
-    def modal(self, context: Any, event: Any) -> set[str]:
+    def modal(self, context: Any, event: Any) -> set[Any]:
         props = getattr(context.scene, "lod_tool", None) if (context and context.scene) else None
         if not props or not self._is_running:
             return self.cancel_simulation(context)
@@ -131,7 +136,7 @@ class LOD_OT_toggle_simulator(Operator):
                 if area.type == "VIEW_3D":
                     area.tag_redraw()
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not context or not context.scene:
             return {"CANCELLED"}
         props = getattr(context.scene, "lod_tool", None)
@@ -200,7 +205,7 @@ class LOD_OT_reset_virtual_distance(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(bpy and context and hasattr(context.scene, "lod_tool"))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not context or not context.scene:
             return {"CANCELLED"}
         props = getattr(context.scene, "lod_tool", None)
@@ -228,9 +233,10 @@ class LOD_OT_toggle_live_simulator(Operator):
     bl_label = "Toggle LOD Simulator"
     bl_options = {"INTERNAL"}
 
-    def execute(self, context: Any) -> set[str]:
-        if bpy and hasattr(bpy.ops.lod_tool, "toggle_simulator"):
-            return bpy.ops.lod_tool.toggle_simulator()
+    def execute(self, context: Any) -> set[Any]:
+        ops: Any = getattr(bpy, "ops", None)
+        if ops and hasattr(ops.lod_tool, "toggle_simulator"):
+            return ops.lod_tool.toggle_simulator()
         return {"CANCELLED"}
 
 

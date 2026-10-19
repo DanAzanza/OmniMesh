@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Visual A/B Split-Screen Viewport Comparison Engine.
 Renders real-time side-by-side silhouette and shader comparison (LOD0 vs LOD_N)
@@ -7,20 +8,27 @@ with 2D GPU divider line overlay and zero RNA/DNA mutation inside draw callbacks
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     import blf
     import bpy
     import gpu
     from bpy.types import Operator
     from gpu_extras.batch import batch_for_shader
-except ImportError:
-    bpy = None
-    gpu = None
-    batch_for_shader = None
-    blf = None
-    Operator = object
+else:
+    try:
+        import blf
+        import bpy
+        import gpu
+        from bpy.types import Operator
+        from gpu_extras.batch import batch_for_shader
+    except ImportError:
+        bpy = None
+        gpu = None
+        batch_for_shader = None
+        blf = None
+        Operator = object
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +196,7 @@ class OMNIMESH_OT_toggle_split_preview(Operator):
         props, _, _ = resolve_lod_context(context)
         return bool(props and hasattr(props, "lods") and len(props.lods) > 1)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props, _, _ = resolve_lod_context(context)
@@ -207,7 +215,7 @@ class OMNIMESH_OT_toggle_split_preview(Operator):
         else:
             return self.cancel_split(context)
 
-    def modal(self, context: Any, event: Any) -> set[str]:
+    def modal(self, context: Any, event: Any) -> set[Any]:
         props, _, _ = resolve_lod_context(context)
         if not props or not props.is_split_active or event.type in ("ESC", "RIGHTMOUSE"):
             return self.cancel_split(context)

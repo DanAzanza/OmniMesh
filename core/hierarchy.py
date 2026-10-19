@@ -11,19 +11,24 @@ Features:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    Matrix = None
-    Vector = None
+else:
+    try:
+        import bmesh
+        import bpy
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        Matrix = None
+        Vector = None
 
 try:
     from .modifiers import ModifierManager
@@ -237,7 +242,7 @@ class MeshMergeEngine:
                     # Append verts into target BMesh
                     vert_map: dict[Any, Any] = {}
                     for v in temp_bm.verts:
-                        new_v = target_bm.verts.new(v.co)
+                        new_v = target_bm.verts.new((v.co.x, v.co.y, v.co.z))
                         new_v.normal = v.normal
                         vert_map[v] = new_v
 
@@ -292,7 +297,7 @@ class MeshMergeEngine:
 
         # Assign unified material slots
         for mat in global_materials:
-            merged_obj.data.materials.append(mat)
+            merged_mesh.materials.append(mat)
 
         # Create unified vertex groups
         for gname in global_group_names:
@@ -301,7 +306,7 @@ class MeshMergeEngine:
         # Re-attach to Armature if skinned
         if armature_obj:
             merged_obj.parent = armature_obj
-            arm_mod = merged_obj.modifiers.new(name="Armature", type="ARMATURE")
+            arm_mod: Any = merged_obj.modifiers.new(name="Armature", type="ARMATURE")
             arm_mod.object = armature_obj
             if pivot_obj and hasattr(pivot_obj, "matrix_world"):
                 merged_obj.matrix_world = pivot_obj.matrix_world.copy()
@@ -310,7 +315,8 @@ class MeshMergeEngine:
 
         elif pivot_obj and hasattr(pivot_obj, "matrix_world"):
             merged_obj.parent = pivot_obj
-            merged_obj.matrix_parent_inverse = Matrix.Identity(4) if Matrix else None
+            if Matrix:
+                merged_obj.matrix_parent_inverse = Matrix.Identity(4)
             merged_obj.matrix_world = pivot_obj.matrix_world.copy()
 
         return merged_obj

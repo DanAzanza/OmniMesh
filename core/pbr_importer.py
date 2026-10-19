@@ -16,12 +16,15 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 try:
     from .pbr_classifier import PBRSemanticClassifier

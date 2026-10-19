@@ -1,7 +1,7 @@
 """
 OmniMesh Multi-Engine Live Bridge Package.
 Provides real-time non-destructive asset, material, and animation sync for
-Unreal Engine 5, Unity 6, MSFS 2024, and Godot 4.
+Unreal Engine 5, Unity 6, and MSFS 2024.
 """
 
 from .base import EngineBridgeBase

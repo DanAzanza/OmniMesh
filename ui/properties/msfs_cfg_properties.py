@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh MSFS Configuration Settings Properties.
 Maintains MSFS 2020 & 2024 flight model, lighting, cameras, options, and attached_objects.cfg path and status.
@@ -7,22 +8,27 @@ Kept in a dedicated submodule to enforce AGENTS.md < 750 LOC limit on settings.p
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
     from bpy.types import PropertyGroup
-except ImportError:
-    bpy = None
-    PropertyGroup = object
+else:
+    try:
+        import bpy
+        from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
+        from bpy.types import PropertyGroup
+    except ImportError:
+        bpy = None
+        PropertyGroup = object
 
-    def _mock_prop(**kwargs: Any) -> Any:
-        return None
+        def _mock_prop(**kwargs: Any) -> Any:
+            return None
 
-    BoolProperty = EnumProperty = FloatProperty = StringProperty = _mock_prop
+        BoolProperty = EnumProperty = FloatProperty = StringProperty = _mock_prop
 
 try:
     from .enums import MSFS_GEAR_STATE_ITEMS, MSFS_TARGET_VERSION_ITEMS

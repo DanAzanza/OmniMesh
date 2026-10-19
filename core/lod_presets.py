@@ -9,12 +9,15 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 try:
     from .pbr_presets import BasePresetManager

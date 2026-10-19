@@ -17,12 +17,15 @@ import os
 import subprocess
 import sys
 import time
-from typing import Any, Callable, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, cast
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 try:
     from .decimator import MeshDecimator
@@ -230,7 +233,7 @@ class BatchProcessorEngine:
                 if hasattr(bpy.ops.wm, "obj_import"):
                     bpy.ops.wm.obj_import(filepath=filepath)
                 elif hasattr(bpy.ops.import_scene, "obj"):
-                    bpy.ops.import_scene.obj(filepath=filepath)
+                    cast(Any, bpy.ops.import_scene).obj(filepath=filepath)
             elif ext in (".gltf", ".glb"):
                 if hasattr(bpy.ops.import_scene, "gltf"):
                     bpy.ops.import_scene.gltf(filepath=filepath)
@@ -361,17 +364,19 @@ class BatchProcessorEngine:
                     coll.objects.link(lod_obj)
                 generated_lod_objs.append(lod_obj)
 
+                lod_mesh: Any = lod_obj.data
+
                 # Decimate geometry
-                if i > 0:
+                if i > 0 and lod_mesh is not None:
                     import bmesh
 
                     bm = bmesh.new()
                     try:
-                        bm.from_mesh(lod_obj.data)
+                        bm.from_mesh(lod_mesh)
                         pinned_verts = MeshDecimator.tag_boundaries_and_uv_seams(bm)
                         MeshDecimator.apply_planar_limited_dissolve(bm, math.radians(tolerances["planar_angle_deg"]))
                         MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
-                        bm.to_mesh(lod_obj.data)
+                        bm.to_mesh(lod_mesh)
                     finally:
                         bm.free()
 
@@ -384,11 +389,7 @@ class BatchProcessorEngine:
                         )
                         MaterialOptimizer.purge_unused_materials(lod_obj)
 
-                current_tris = (
-                    len(lod_obj.data.polygons)
-                    if (hasattr(lod_obj, "data") and hasattr(lod_obj.data, "polygons"))
-                    else 0
-                )
+                current_tris = len(lod_mesh.polygons) if (lod_mesh is not None and hasattr(lod_mesh, "polygons")) else 0
                 if i == len(screen_tiers) - 1:
                     final_lod_tris = current_tris
 

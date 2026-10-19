@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import bpy
 
@@ -111,14 +112,15 @@ def run_worker() -> int:
         lod_colls = [c for c in bpy.data.collections if "_LOD" in c.name]
         if not lod_colls:
             logger.info("No pre-existing LOD collections found. Generating LODs for '%s'...", asset_name)
+            ops: Any = cast(Any, bpy.ops).lod_tool
             if len(props.lods) == 0:
                 logger.info("Configuring default LOD tiers...")
                 try:
-                    bpy.ops.lod_tool.analyze_and_configure()
+                    ops.analyze_and_configure()
                 except Exception as exc:
                     logger.warning("Auto-configure tiers fallback: %s", exc)
             try:
-                bpy.ops.lod_tool.generate_all()
+                ops.generate_all()
             except Exception as exc:
                 logger.error("Failed generating LODs for '%s': %s", asset_name, exc)
                 return 1

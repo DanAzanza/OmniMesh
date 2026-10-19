@@ -6,6 +6,7 @@ and apply_all_modifiers_in_place.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from core.modifiers import ModifierManager
@@ -16,6 +17,13 @@ class MockModifier:
         self.name = name
         self.type = mod_type
         self.show_viewport = show_viewport
+        self.show_render: bool = True
+        self.levels: int = 1
+        self.render_levels: int = 1
+        self.steps: int = 1
+        self.render_steps: int = 1
+        self.resolution: int = 1
+        self.viewport_resolution: int = 1
 
 
 class MockMesh:
@@ -34,6 +42,7 @@ class MockObject:
         self.type = obj_type
         self.data = MockMesh(f"{name}_Data")
         self.modifiers: list[MockModifier] = []
+        self.evaluated_get: Any = None
 
 
 def test_has_unapplied_modifiers_null_or_empty():

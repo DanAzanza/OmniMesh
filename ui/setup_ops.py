@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Scene Setup & Asset Initialization Operators.
 Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
@@ -11,15 +12,20 @@ Features:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import BoolProperty, EnumProperty, StringProperty
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.props import BoolProperty, EnumProperty, StringProperty
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
     def StringProperty(**kwargs: Any) -> Any:
         return ""
@@ -110,7 +116,7 @@ class OMNIMESH_OT_initialize_asset(Operator):
         default=False,
     )
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -130,7 +136,7 @@ class OMNIMESH_OT_initialize_asset(Operator):
         return context.window_manager.invoke_props_dialog(self, width=380)
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         layout.use_property_split = True
@@ -160,7 +166,7 @@ class OMNIMESH_OT_initialize_asset(Operator):
         box_colls.prop(self, "create_helpers", text="Helpers (_Helpers)")
         box_colls.prop(self, "create_config", text="Engine Config (_Config)")
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -288,7 +294,7 @@ class OMNIMESH_OT_quick_scene_setup(Operator):
     )
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -326,7 +332,7 @@ class OMNIMESH_OT_toggle_viewport_overlay(Operator):
         default="STATS",
     )
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 

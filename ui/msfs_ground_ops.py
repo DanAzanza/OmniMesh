@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 MSFS Airframe Geometry & Ground Level Alignment Operators.
 Provides operators for auto-generating Class 2 scrape points and aligning
@@ -8,18 +9,25 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Collection, Object, Operator
-except ImportError:
-    bpy = None
-    Collection = object
-    Object = object
-    Operator = object
+    from mathutils import Vector
+else:
+    try:
+        import bpy
+        from bpy.types import Collection, Object, Operator
+        from mathutils import Vector
+    except ImportError:
+        bpy = None
+        Collection = object
+        Object = object
+        Operator = object
+        Vector = None
 
 try:
     from ..core.msfs.cst_parser import MSFSCSTParser
@@ -70,7 +78,7 @@ class OMNIMESH_OT_generate_msfs_scrape_points(Operator):
             return False
         return True
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -207,7 +215,7 @@ class OMNIMESH_OT_align_gear_ground_level(Operator):
             return False
         return True
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -269,9 +277,7 @@ class OMNIMESH_OT_align_gear_ground_level(Operator):
                         parent_inv = empty.parent.matrix_world.inverted()
                         new_world = (empty_world.x, empty_world.y, lowest_z)
                         empty.location = (
-                            parent_inv @ bpy.types.Vector(new_world)
-                            if hasattr(bpy.types, "Vector")
-                            else (empty.location.x, empty.location.y, lowest_z)
+                            parent_inv @ Vector(new_world) if Vector else (empty.location.x, empty.location.y, lowest_z)
                         )
                     else:
                         empty.location.z = lowest_z

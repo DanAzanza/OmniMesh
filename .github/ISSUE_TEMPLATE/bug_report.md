@@ -24,7 +24,7 @@ A clear and concise description of what you expected to happen.
 - Blender Version (e.g. 4.2.0, 5.2.1 LTS):
 - OmniMesh Version (e.g. 1.2.0):
 - OS (Windows / Linux / macOS):
-- Target Engine (MSFS 2024 / UE5 / Unity 6 / Godot 4):
+- Target Engine (MSFS 2024 / UE5 / Unity 6):
 
 **Additional Context**
 Add any other context, console output, or screenshots about the problem here.

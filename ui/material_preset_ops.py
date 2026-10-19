@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Material Preset Operators.
 Exposes UI operators for generating and assigning multi-engine shader presets
@@ -7,16 +8,20 @@ Exposes UI operators for generating and assigning multi-engine shader presets
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..core.material_presets import assign_material_to_objects, create_or_update_material_preset
@@ -41,7 +46,7 @@ class OMNIMESH_OT_assign_material_preset(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(bpy and context)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 

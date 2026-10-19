@@ -7,21 +7,26 @@ from __future__ import annotations
 from contextlib import contextmanager
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from .exceptions import RiggingError
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    Matrix = None
-    Vector = None
+else:
+    try:
+        import bmesh
+        import bpy
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        Matrix = None
+        Vector = None
 
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 Mesh Preflight Inspection, Topology Repair, and Material Cleanup Operators.
 """
@@ -5,21 +6,26 @@ Mesh Preflight Inspection, Topology Repair, and Material Cleanup Operators.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    bmesh = None
-    Operator = object
+else:
+    try:
+        import bmesh
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        bmesh = None
+        Operator = object
 
 try:
-    from ..core.exceptions import OmniMeshError, TopologyError
+    from ..core.exceptions import OmniMeshError
     from ..core.hierarchy import LayerCollectionGuard
     from ..core.materials import MaterialOptimizer
     from ..core.modifiers import ModifierManager
@@ -34,7 +40,7 @@ try:
         safe_report,
     )
 except (ImportError, ValueError):
-    from core.exceptions import OmniMeshError, TopologyError
+    from core.exceptions import OmniMeshError
     from core.hierarchy import LayerCollectionGuard
     from core.materials import MaterialOptimizer
     from core.modifiers import ModifierManager
@@ -66,7 +72,7 @@ class LOD_OT_inspect_lod0(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         mesh_objs = get_lod0_mesh_objects(context)
@@ -97,7 +103,7 @@ class LOD_OT_clean_and_repair_mesh(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -217,7 +223,7 @@ class LOD_OT_clean_and_repair_mesh(Operator):
                 total_holes += res.get("filled_holes", 0)
                 total_ngons += res.get("triangulated_ngons", 0)
                 bm.to_mesh(obj.data)
-            except (TopologyError, OmniMeshError) as err:
+            except OmniMeshError as err:
                 safe_report(self, {"ERROR"}, f"Topology repair failed on {getattr(obj, 'name', 'mesh')}: {err}")
                 return {"CANCELLED"}
             finally:
@@ -274,7 +280,7 @@ class LOD_OT_clean_and_repair_materials(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -325,7 +331,7 @@ class LOD_OT_apply_all_modifiers(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 
@@ -359,7 +365,7 @@ class LOD_OT_apply_transforms(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 
@@ -420,7 +426,7 @@ class LOD_OT_create_helpers_collection(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(bpy and context)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 

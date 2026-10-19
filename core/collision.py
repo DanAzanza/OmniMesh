@@ -2,22 +2,26 @@
 Multi-Convex Collision Hull Generator & Physics Hierarchy Manager for OmniMesh.
 
 Provides Blender scene integration, collection linking, transform hierarchy synchronization,
-and engine-specific collider naming (UE5, Unity, Godot, MSFS).
+and engine-specific collider naming (UE5, Unity, MSFS).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, List
 
 from .collision_decomposer import CollisionDecomposer
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
-except ImportError:
-    bpy = None  # type: ignore
-    bmesh = None  # type: ignore
+else:
+    try:
+        import bmesh
+        import bpy
+    except ImportError:
+        bpy = None  # type: ignore
+        bmesh = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +227,7 @@ class CollisionManager:
     def remove_colliders_for_objects(cls, mesh_objs: List[Any], base_name: str) -> int:
         """
         Purges existing collider objects and meshes scoped strictly to `{base_name}`.
-        Supports standard, UCX (UE5), and Godot engine naming prefixes.
+        Supports standard and UCX (UE5) engine naming prefixes.
         Does not affect colliders of other assets in the scene.
         """
         if not bpy:

@@ -12,19 +12,24 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     import mathutils
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    mathutils = None
-    Vector = None  # type: ignore
-    Matrix = None  # type: ignore
+else:
+    try:
+        import bpy
+        import mathutils
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        mathutils = None
+        Vector = None  # type: ignore
+        Matrix = None  # type: ignore
 
 
 def safe_load_image(filepath: str) -> Optional[Any]:
@@ -99,8 +104,10 @@ def create_octahedral_preview_material(
         except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Failed setting blend_method on material: %s", exc)
 
-    nodes = mat.node_tree.nodes
-    links = mat.node_tree.links
+    if not mat.node_tree:
+        return mat
+    nodes: Any = mat.node_tree.nodes
+    links: Any = mat.node_tree.links
     nodes.clear()
 
     # 1. Output & Principled BSDF
@@ -540,8 +547,9 @@ def setup_impostor_preview_rig(
         target_engine=target_engine,
     )
     if preview_mat:
-        proxy_obj.data.materials.clear()
-        proxy_obj.data.materials.append(preview_mat)
+        proxy_data: Any = proxy_obj.data
+        proxy_data.materials.clear()
+        proxy_data.materials.append(preview_mat)
 
     # 6. Setup dedicated preview camera
     cam_name = f"{base_name}_Preview_Camera"
@@ -576,7 +584,7 @@ def setup_impostor_preview_rig(
     sun_name = f"{base_name}_Preview_Sun"
     sun_obj = bpy.data.objects.get(sun_name)
     if not sun_obj:
-        sun_data = bpy.data.lights.new(name=f"{sun_name}_Data", type="SUN")
+        sun_data: Any = bpy.data.lights.new(name=f"{sun_name}_Data", type="SUN")
         sun_data.energy = 3.0
         sun_obj = bpy.data.objects.new(sun_name, sun_data)
         rig_coll.objects.link(sun_obj)

@@ -141,15 +141,18 @@ def test_engine_import_collection_hierarchy(monkeypatch: pytest.MonkeyPatch):
 
     # 1. Create root and LOD0
     root = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "PACKAGE_ROOT")
+    assert root is not None
     assert root.name == "Aircraft"
     assert "Aircraft" in mock_scene_col._child_list
 
     lod0 = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "LOD0")
+    assert lod0 is not None
     assert lod0.name == "Aircraft_LOD0"
     assert "Aircraft_LOD0" in root._child_list
 
     # 2. Config collections must be child of Aircraft_Config (sibling of LOD0)
     spatial = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "SPATIAL")
+    assert spatial is not None
     assert spatial.name == "Aircraft_Spatial"
     assert "Aircraft_Config" in root._child_list
     assert "Aircraft_Spatial" in created_collections["Aircraft_Config"]._child_list
@@ -157,17 +160,20 @@ def test_engine_import_collection_hierarchy(monkeypatch: pytest.MonkeyPatch):
     assert "Aircraft_Spatial" not in root._child_list
 
     lights = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "LIGHTS")
+    assert lights is not None
     assert lights.name == "Aircraft_Lights"
     assert "Aircraft_Lights" in created_collections["Aircraft_Config"]._child_list
     assert "Aircraft_Lights" not in lod0._child_list
 
     cams = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "CAMERAS")
+    assert cams is not None
     assert cams.name == "Aircraft_Cameras"
     assert "Aircraft_Cameras" in created_collections["Aircraft_Config"]._child_list
     assert "Aircraft_Cameras" not in lod0._child_list
 
     # 3. LOD1 must be child of root
     lod1 = ui_utils.get_or_create_engine_import_collection(mock_context, "Aircraft", "LOD1")
+    assert lod1 is not None
     assert lod1.name == "Aircraft_LOD1"
     assert "Aircraft_LOD1" in root._child_list
     assert "Aircraft_LOD1" not in lod0._child_list
@@ -223,37 +229,44 @@ def test_variante_a_multi_model_and_variant_collections(monkeypatch: pytest.Monk
 
     # 1. Base / Exterior Model
     ext_root = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft", "ROOT")
+    assert ext_root is not None
     assert ext_root.name == "Wasm_Aircraft"
     assert "Wasm_Aircraft" in mock_scene_col.children
     assert ext_root.get("_omnimesh_role") == "MODEL_ROOT"
 
     ext_lod0 = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft", "LOD0")
+    assert ext_lod0 is not None
     assert ext_lod0.name == "Wasm_Aircraft_LOD0"
     assert "Wasm_Aircraft_LOD0" in ext_root.children
 
     # 2. Interior / Cockpit Model
     inte_root = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft_Interior", "ROOT")
+    assert inte_root is not None
     assert inte_root.name == "Wasm_Aircraft_Interior"
     assert "Wasm_Aircraft_Interior" in mock_scene_col.children
     assert inte_root.get("_omnimesh_role") == "INTERIOR"
     assert inte_root.get("_omnimesh_parent") == "Wasm_Aircraft"
 
     inte_lod0 = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft_Interior", "LOD0")
+    assert inte_lod0 is not None
     assert inte_lod0.name == "Wasm_Aircraft_Interior_LOD0"
     assert "Wasm_Aircraft_Interior_LOD0" in inte_root.children
 
     inte_cams = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft_Interior", "CAMERAS")
+    assert inte_cams is not None
     assert inte_cams.name == "Wasm_Aircraft_Interior_Cameras"
     assert "Wasm_Aircraft_Interior_Config" in inte_root.children
     assert "Wasm_Aircraft_Interior_Cameras" in created_collections["Wasm_Aircraft_Interior_Config"].children
 
     # 3. Geometry Variant (e.g. Floats)
     var_root = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft_Floats", "ROOT")
+    assert var_root is not None
     assert var_root.name == "Wasm_Aircraft_Floats"
     assert "Wasm_Aircraft_Floats" in mock_scene_col.children
     assert var_root.get("_omnimesh_role") == "VARIANT"
 
     var_lod0 = ui_utils.get_or_create_engine_import_collection(mock_context, "Wasm_Aircraft_Floats", "LOD0")
+    assert var_lod0 is not None
     assert var_lod0.name == "Wasm_Aircraft_Floats_LOD0"
     assert "Wasm_Aircraft_Floats_LOD0" in var_root.children
 

@@ -5,7 +5,7 @@ Contains reactive update callbacks, project directory detectors, preset hydrator
 
 import copy
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .guards import MapSyncGuard, PresetSyncGuard, StateRestorationGuard
 from .lod_properties import sync_preset_tiers_from_preset
@@ -34,10 +34,13 @@ except (ImportError, ValueError):
     )
     from ui.utils import get_asset_base_meshes, get_asset_existing_lods, resolve_effective_asset_name
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 logger = logging.getLogger(__name__)
 

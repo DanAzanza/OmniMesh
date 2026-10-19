@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import math
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, cast
 
 from .topology_repair import TopologyRepairEngine, TopologyRepairOptions
 
@@ -36,15 +36,21 @@ class SanitizeOptions:
     world_matrix: Any = None
 
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     import mathutils
     from mathutils import Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    mathutils = None
+else:
+    try:
+        import bmesh
+        import bpy
+        import mathutils
+        from mathutils import Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        mathutils = None
 
     class Vector(tuple):  # type: ignore
         """Fallback Vector for headless unit tests."""
@@ -352,7 +358,7 @@ class MeshSanitizer:
                             total_non_manifold_edges += 1
                     for f in getattr(bm, "faces", []):
                         calc_area = getattr(f, "calc_area", None)
-                        if callable(calc_area) and float(calc_area()) <= 1e-10:
+                        if callable(calc_area) and float(cast(Any, calc_area)()) <= 1e-10:
                             total_degenerate_tris += 1
                 finally:
                     bm.free()

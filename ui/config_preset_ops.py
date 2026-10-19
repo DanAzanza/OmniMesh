@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Config Preset Spawning Operators.
 Instantiates MSFS spatial markers, lights, cameras, exits, and engines from preset definitions
@@ -7,26 +8,32 @@ into the active asset collection hierarchy ({AssetName}_Config -> _Spatial, _Lig
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import StringProperty
     from bpy.types import Operator
     from mathutils import Euler, Vector
-except ImportError:
-    bpy = None
-    Operator = object
-    Euler = None
-    Vector = None
+else:
+    try:
+        import bpy
+        from bpy.props import StringProperty
+        from bpy.types import Operator
+        from mathutils import Euler, Vector
+    except ImportError:
+        bpy = None
+        Operator = object
+        Euler = None
+        Vector = None
 
     def StringProperty(**kwargs: Any) -> Any:
         return ""
 
 
-if Vector is None:
+if not TYPE_CHECKING and Vector is None:
 
     class Vector(tuple):  # type: ignore[no-redef]
         def __new__(cls, coords):
@@ -92,7 +99,7 @@ class OMNIMESH_OT_add_config_preset(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(bpy and context)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 
@@ -142,7 +149,7 @@ class OMNIMESH_OT_duplicate_config_preset(Operator):
         default="Custom Aircraft",
     )
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         props = getattr(context.scene, "lod_tool", None) if context else None
         cfg_props = getattr(props, "config_presets", None) if props else None
         curr_id = (
@@ -158,7 +165,7 @@ class OMNIMESH_OT_duplicate_config_preset(Operator):
         safe_report(self, {"WARNING"}, "Failed duplicating config preset.")
         return {"CANCELLED"}
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         wm = getattr(context, "window_manager", None)
         if wm and hasattr(wm, "invoke_props_dialog"):
             return wm.invoke_props_dialog(self)
@@ -179,7 +186,7 @@ class OMNIMESH_OT_delete_config_preset(Operator):
         curr_id = getattr(cfg_props, "config_preset", "") if cfg_props else ""
         return bool(curr_id and not ConfigPresetManager.is_builtin(curr_id))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         props = getattr(context.scene, "lod_tool", None) if context else None
         cfg_props = getattr(props, "config_presets", None) if props else None
         curr_id = getattr(cfg_props, "config_preset", "") if cfg_props else ""

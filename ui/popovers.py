@@ -12,16 +12,20 @@ Design Invariants:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Panel
-except ImportError:
-    bpy = None
-    Panel = object
+else:
+    try:
+        import bpy
+        from bpy.types import Panel
+    except ImportError:
+        bpy = None
+        Panel = object
 
 try:
     from .utils import _get_popover_props
@@ -62,7 +66,7 @@ class OMNIMESH_PT_popover_scene_setup(Panel):
     bl_ui_units_x = 16
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
 
@@ -104,7 +108,7 @@ class OMNIMESH_PT_popover_sanitize(Panel):
     bl_ui_units_x = 16
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -149,7 +153,7 @@ class OMNIMESH_PT_popover_materials(Panel):
     bl_ui_units_x = 16
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -191,7 +195,7 @@ class OMNIMESH_PT_popover_collision(Panel):
     bl_ui_units_x = 16
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -225,7 +229,7 @@ class OMNIMESH_PT_popover_configure(Panel):
     bl_ui_units_x = 16
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -255,7 +259,7 @@ class OMNIMESH_PT_popover_generate(Panel):
     bl_ui_units_x = 16
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -285,7 +289,7 @@ class OMNIMESH_PT_popover_impostor(Panel):
     bl_ui_units_x = 18
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -327,7 +331,7 @@ class OMNIMESH_PT_popover_export(Panel):
     bl_ui_units_x = 16
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)

@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 Convex Collision Hull Decomposition and Billboard Impostor Operators.
 """
@@ -5,24 +6,29 @@ Convex Collision Hull Decomposition and Billboard Impostor Operators.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import BoolProperty, EnumProperty, IntProperty
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
-    BoolProperty = None  # type: ignore
-    EnumProperty = None  # type: ignore
-    IntProperty = None  # type: ignore
+else:
+    try:
+        import bpy
+        from bpy.props import BoolProperty, EnumProperty, IntProperty
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
+        BoolProperty = None  # type: ignore
+        EnumProperty = None  # type: ignore
+        IntProperty = None  # type: ignore
 
 try:
     from ..core.collision import CollisionManager
-    from ..core.exceptions import ImpostorBakeError, OmniMeshError
+    from ..core.exceptions import OmniMeshError
     from ..core.impostor import ImpostorManager, resolve_impostor_export_dir
     from ..core.impostor_baker import ImpostorAtlasBaker
     from ..core.impostor_preview import setup_impostor_preview_rig, teardown_impostor_preview_rig
@@ -37,7 +43,7 @@ try:
     )
 except (ImportError, ValueError):
     from core.collision import CollisionManager
-    from core.exceptions import ImpostorBakeError, OmniMeshError
+    from core.exceptions import OmniMeshError
     from core.impostor import ImpostorManager, resolve_impostor_export_dir
     from core.impostor_baker import ImpostorAtlasBaker
     from core.impostor_preview import setup_impostor_preview_rig, teardown_impostor_preview_rig
@@ -63,7 +69,7 @@ class LOD_OT_generate_impostor(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and get_selected_mesh_objects(context))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -120,7 +126,7 @@ class LOD_OT_generate_impostor(Operator):
                 dilation_iterations=4,
                 impostor_obj=res,
             )
-        except (ImpostorBakeError, OmniMeshError) as bake_err:
+        except OmniMeshError as bake_err:
             safe_report(self, {"ERROR"}, f"Impostor baking failed: {bake_err}")
             return {"CANCELLED"}
 
@@ -169,7 +175,7 @@ class LOD_OT_remove_impostor(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -226,7 +232,7 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_selected_mesh_objects(context) or get_lod0_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -309,7 +315,7 @@ class LOD_OT_remove_impostor_preview_rig(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -355,7 +361,7 @@ class LOD_OT_generate_collision_hulls(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and (get_selected_mesh_objects(context) or get_lod0_mesh_objects(context)))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -399,7 +405,7 @@ class LOD_OT_remove_collision_hulls(Operator):
     bl_label = "Remove Colliders"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)

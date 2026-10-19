@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh LOD Tier Preset CRUD & Management Operators.
 Handles adding, removing, saving, applying, capturing, and deleting
@@ -7,7 +8,7 @@ LOD tier templates and custom presets.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 try:
     from ..core.lod_presets import (
@@ -30,12 +31,16 @@ except (ImportError, ValueError):
     )
     from ui.utils import resolve_lod_context, safe_report
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +53,7 @@ class LOD_OT_delete_lod_preset(Operator):
     bl_description = "Deletes the active custom LOD preset file and resets to factory default"
     bl_options = {"REGISTER", "UNDO"}
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
@@ -60,7 +65,7 @@ class LOD_OT_delete_lod_preset(Operator):
             return {"CANCELLED"}
         return context.window_manager.invoke_confirm(self, event)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         targets = []
         if context and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
             targets.append(context.scene.lod_tool)
@@ -112,7 +117,7 @@ class LOD_OT_add_preset_tier(Operator):
     bl_description = "Appends a new tier template to the current preset"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -146,7 +151,7 @@ class LOD_OT_remove_preset_tier(Operator):
     bl_description = "Removes the selected tier template from the current preset"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -178,7 +183,7 @@ class LOD_OT_save_preset_tiers(Operator):
     bl_description = "Saves tier screensizes and budgets to the custom preset JSON file"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -203,10 +208,10 @@ class LOD_OT_apply_preset_tiers(Operator):
     bl_description = "Applies preset tier definitions to the scene and updates switch distances"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
-        return bpy.ops.lod_tool.analyze_and_configure()
+        return cast(Any, bpy.ops).lod_tool.analyze_and_configure()
 
 
 class LOD_OT_capture_scene_tiers(Operator):
@@ -217,7 +222,7 @@ class LOD_OT_capture_scene_tiers(Operator):
     bl_description = "Captures the active scene LOD tiers into the preset template"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)

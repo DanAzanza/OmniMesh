@@ -14,10 +14,6 @@ from typing import Any, Optional, Tuple
 
 import numpy as np
 
-try:
-    from PIL import Image
-except ImportError:
-    Image = None
 
 try:
     import bpy
@@ -129,21 +125,22 @@ class TextureChannelPacker:
             if strategy == "PASSTHROUGH" and "rgb" in channels and len(channels) == 1:
                 target_sock_name = channels["rgb"].get("target", "")
                 img, _, _, _ = cls.trace_upstream_channel(material, target_sock_name)
-                if img and getattr(img, "filepath", "") and os.path.exists(bpy.path.abspath(img.filepath)):
-                    src_path = bpy.path.abspath(img.filepath)
-                    src_w, src_h = getattr(img, "size", (0, 0))[:2]
-                    # If format and resolution match, direct copy
-                    if (src_w, src_h) == (map_w, map_h) and src_path.lower().endswith(".png") and bit_depth == 8:
-                        import shutil
+                if bpy and hasattr(bpy, "path") and img and getattr(img, "filepath", ""):
+                    src_path = bpy.path.abspath(getattr(img, "filepath", ""))
+                    if os.path.exists(src_path):
+                        src_w, src_h = getattr(img, "size", (0, 0))[:2]
+                        # If format and resolution match, direct copy
+                        if (src_w, src_h) == (map_w, map_h) and src_path.lower().endswith(".png") and bit_depth == 8:
+                            import shutil
 
-                        try:
-                            shutil.copy2(src_path, out_filepath)
-                            f = concurrent.futures.Future()
-                            f.set_result(True)
-                            futures.append(f)
-                            continue
-                        except OSError:
-                            pass
+                            try:
+                                shutil.copy2(src_path, out_filepath)
+                                f = concurrent.futures.Future()
+                                f.set_result(True)
+                                futures.append(f)
+                                continue
+                            except OSError:
+                                pass
 
             # Channel Assembly
             if "rgb" in channels:
@@ -334,16 +331,6 @@ class TextureChannelPacker:
         success = write_png_direct(output_filepath, packed_rgba, bit_depth=8)
         cls.compact_memory()
         return success
-
-    @classmethod
-    def pack_orm_godot(
-        cls,
-        material: Any,
-        output_filepath: str,
-        target_size: Tuple[int, int] = (2048, 2048),
-    ) -> bool:
-        """Legacy proxy for Godot ORM packing."""
-        return cls.pack_comp_msfs(material, output_filepath, target_size)
 
     @classmethod
     def convert_normal_directx(

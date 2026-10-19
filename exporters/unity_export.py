@@ -6,28 +6,27 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+import re
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-import re
-
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
-
-
-try:
     from .base import EngineExporterBase
     from .engine_export import AssetMeshResolver
-except (ImportError, ValueError):
+else:
     try:
+        import bpy
+    except ImportError:
+        bpy = None
+
+    try:
+        from .base import EngineExporterBase
+        from .engine_export import AssetMeshResolver
+    except (ImportError, ValueError):
         from exporters.base import EngineExporterBase
         from exporters.engine_export import AssetMeshResolver
-    except (ImportError, ValueError):
-        EngineExporterBase = object  # type: ignore
-        AssetMeshResolver = None  # type: ignore
 
 
 class UnityExporter(EngineExporterBase):

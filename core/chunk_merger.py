@@ -8,21 +8,26 @@ material slot unification, and bone-mapped skeletal vertex weight consolidation.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import math
 
 from .normals import NormalManager
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None  # type: ignore
-    bmesh = None  # type: ignore
-    Matrix = None  # type: ignore
-    Vector = None  # type: ignore
+else:
+    try:
+        import bmesh
+        import bpy
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None  # type: ignore
+        bmesh = None  # type: ignore
+        Matrix = None  # type: ignore
+        Vector = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +102,7 @@ class HLODClusterMerger:
                         f.material_index = slot_map.get(f.material_index, 0)
 
                     # Append to merged BMesh
-                    vert_map = {v: merged_bm.verts.new(v.co) for v in temp_bm.verts}
+                    vert_map = {v: merged_bm.verts.new((v.co.x, v.co.y, v.co.z)) for v in temp_bm.verts}
                     merged_bm.verts.ensure_lookup_table()
 
                     # Copy and remap skeletal deform weights by bone name
@@ -210,7 +215,7 @@ class HLODClusterMerger:
 
         # Compensate object world transform by +center_local
         if hasattr(obj, "matrix_world") and obj.matrix_world is not None and Matrix is not None:
-            trans_mat = Matrix.Translation(Vector(center_coords) if Vector else center_coords)
+            trans_mat = Matrix.Translation((center_coords[0], center_coords[1], center_coords[2]))
             obj.matrix_world = obj.matrix_world @ trans_mat
 
         if hasattr(mesh, "update"):

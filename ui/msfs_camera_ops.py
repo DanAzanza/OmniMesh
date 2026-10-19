@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 MSFS Camera Configuration Operators for Blender.
 Provides operators for importing, visualizing, aligning, and synchronizing
@@ -9,17 +10,22 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import StringProperty
     from bpy.types import Collection, Object, Operator
-except ImportError:
-    bpy = None
-    Collection = object
-    Object = object
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.props import StringProperty
+        from bpy.types import Collection, Object, Operator
+    except ImportError:
+        bpy = None
+        Collection = object
+        Object = object
+        Operator = object
 
     def StringProperty(**kwargs: Any) -> Any:
         return ""
@@ -146,7 +152,7 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(bpy and context and context.scene)
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         props = getattr(context.scene, "lod_tool", None)
         target = getattr(props, "msfs_cameras_cfg_path", "") if props else ""
         if target and os.path.isfile(target):
@@ -155,7 +161,7 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -256,7 +262,7 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
                 target_col.objects.link(cam_obj)
             else:
                 cam_obj.name = cam_name
-                camera_data = cam_obj.data
+                camera_data: Any = cam_obj.data
 
             if cam_obj is None or camera_data is None:
                 continue
@@ -321,7 +327,7 @@ class OMNIMESH_OT_export_msfs_cameras(Operator):
         props = getattr(context.scene, "lod_tool", None)
         return bool(props and props.msfs_cameras_cfg_path and os.path.isfile(props.msfs_cameras_cfg_path))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -463,7 +469,7 @@ class OMNIMESH_OT_look_through_msfs_camera(Operator):
         active = getattr(context, "active_object", None)
         return bool(active and active.type == "CAMERA" and active.get("msfs_camera_index") is not None)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -504,7 +510,7 @@ class OMNIMESH_OT_restore_scene_camera(Operator):
         is_msfs_cam = bool(context.scene.camera and context.scene.camera.get("msfs_camera_index") is not None)
         return has_prev or is_msfs_cam
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context or not context.scene:
             return {"CANCELLED"}
 
@@ -547,7 +553,7 @@ class OMNIMESH_OT_align_msfs_camera_to_view(Operator):
         active = getattr(context, "active_object", None)
         return bool(active and active.type == "CAMERA" and active.get("msfs_camera_index") is not None)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 

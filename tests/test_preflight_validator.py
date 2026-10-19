@@ -2,6 +2,8 @@
 Unit tests for PreFlightValidator quality gates.
 """
 
+from typing import Any
+
 from exporters.engine_export import PreFlightValidator
 
 
@@ -34,7 +36,7 @@ class MockScale:
 
 
 class MockMaterialSlot:
-    def __init__(self, material="Mat"):
+    def __init__(self, material: Any = "Mat"):
         self.material = material
 
 

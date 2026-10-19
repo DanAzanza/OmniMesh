@@ -6,6 +6,7 @@ deterministic GUID generation, and MSFS ModelInfo XML block synthesis.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 
@@ -26,9 +27,9 @@ class MockAction:
     def __init__(self, name: str, frame_range: tuple[float, float] = (0.0, 120.0)):
         self.name = name
         self.frame_range = frame_range
-        self.custom_props: dict[str, any] = {}
+        self.custom_props: dict[str, Any] = {}
 
-    def __setitem__(self, key: str, value: any):
+    def __setitem__(self, key: str, value: Any):
         self.custom_props[key] = value
 
     def __getitem__(self, key: str):
@@ -37,7 +38,7 @@ class MockAction:
     def __contains__(self, key: str) -> bool:
         return key in self.custom_props
 
-    def get(self, key: str, default: any = None):
+    def get(self, key: str, default: Any = None):
         return self.custom_props.get(key, default)
 
 

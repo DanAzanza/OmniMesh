@@ -17,16 +17,20 @@ Design Invariants:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Panel
-except ImportError:
-    bpy = None
-    Panel = object
+else:
+    try:
+        import bpy
+        from bpy.types import Panel
+    except ImportError:
+        bpy = None
+        Panel = object
 
 try:
     from ..core.config_presets import (
@@ -83,7 +87,7 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
     bl_ui_units_x = 20
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -142,7 +146,7 @@ class OMNIMESH_PT_popover_import_preset(Panel):
     bl_ui_units_x = 22
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -247,7 +251,7 @@ class OMNIMESH_PT_popover_config_preset(Panel):
     bl_ui_units_x = 18
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -308,7 +312,7 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
     bl_ui_units_x = 22
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)
@@ -440,7 +444,7 @@ class OMNIMESH_PT_popover_export_preset(Panel):
     bl_ui_units_x = 22
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = _get_popover_props(context)

@@ -6,18 +6,23 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import Generator
+from typing import TYPE_CHECKING, Any, Generator, cast
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     import mathutils
-except ImportError:
-    bpy = None
-    bmesh = None
-    mathutils = None
+else:
+    try:
+        import bmesh
+        import bpy
+        import mathutils
+    except ImportError:
+        bpy = None
+        bmesh = None
+        mathutils = None
 
 try:
     from core.simulator import LODSimulatorEngine
@@ -26,7 +31,7 @@ except (ImportError, ValueError):
 
 
 @contextlib.contextmanager
-def in_blender_sandbox() -> Generator[bpy.types.Scene, None, None]:
+def in_blender_sandbox() -> Generator[bpy.types.Scene | None, None, None]:
     """Isolate in-blender test execution within a transient Blender scene.
 
     Protects developer workspace/artwork in live MCP sessions from deletion.
@@ -44,9 +49,10 @@ def in_blender_sandbox() -> Generator[bpy.types.Scene, None, None]:
         bpy.context.window.scene = test_scene
 
     # Reset add-on scene props
-    if hasattr(test_scene, "lod_tool"):
-        test_scene.lod_tool.lods.clear()
-        test_scene.lod_tool.is_configured = False
+    scene_props = getattr(test_scene, "lod_tool", None)
+    if scene_props:
+        scene_props.lods.clear()
+        scene_props.is_configured = False
 
     try:
         yield test_scene
@@ -64,9 +70,9 @@ def in_blender_sandbox() -> Generator[bpy.types.Scene, None, None]:
         # Purge test scene datablocks
         test_objects = list(test_scene.objects)
         for obj in test_objects:
-            mesh_data = obj.data if getattr(obj, "type", "") == "MESH" else None
+            mesh_data = obj.data
             bpy.data.objects.remove(obj, do_unlink=True)
-            if mesh_data and getattr(mesh_data, "users", 0) == 0:
+            if isinstance(mesh_data, bpy.types.Mesh) and getattr(mesh_data, "users", 0) == 0:
                 bpy.data.meshes.remove(mesh_data, do_unlink=True)
 
         for coll in list(test_scene.collection.children):
@@ -97,21 +103,21 @@ def create_dirty_mesh(name: str = "SM_DirtyMesh") -> bpy.types.Object:
     bmesh.ops.create_cube(bm, size=2.0)
 
     # 2. Loose Vertices (2 floating vertices)
-    bm.verts.new(mathutils.Vector((5.0, 5.0, 5.0)))
-    bm.verts.new(mathutils.Vector((6.0, 6.0, 6.0)))
+    bm.verts.new((5.0, 5.0, 5.0))
+    bm.verts.new((6.0, 6.0, 6.0))
 
     # 3. Degenerate Zero-Area Triangle (3 coincident vertices)
-    v_deg1 = bm.verts.new(mathutils.Vector((0.0, 0.0, 10.0)))
-    v_deg2 = bm.verts.new(mathutils.Vector((0.0, 0.0, 10.0)))
-    v_deg3 = bm.verts.new(mathutils.Vector((0.0, 0.0, 10.0)))
+    v_deg1 = bm.verts.new((0.0, 0.0, 10.0))
+    v_deg2 = bm.verts.new((0.0, 0.0, 10.0))
+    v_deg3 = bm.verts.new((0.0, 0.0, 10.0))
     bm.faces.new((v_deg1, v_deg2, v_deg3))
 
     # 4. Bowtie Non-Manifold Pinch Point (2 triangles sharing only 1 vertex)
-    v_center = bm.verts.new(mathutils.Vector((10.0, 0.0, 0.0)))
-    v_l1 = bm.verts.new(mathutils.Vector((9.0, 1.0, 0.0)))
-    v_l2 = bm.verts.new(mathutils.Vector((9.0, -1.0, 0.0)))
-    v_r1 = bm.verts.new(mathutils.Vector((11.0, 1.0, 0.0)))
-    v_r2 = bm.verts.new(mathutils.Vector((11.0, -1.0, 0.0)))
+    v_center = bm.verts.new((10.0, 0.0, 0.0))
+    v_l1 = bm.verts.new((9.0, 1.0, 0.0))
+    v_l2 = bm.verts.new((9.0, -1.0, 0.0))
+    v_r1 = bm.verts.new((11.0, 1.0, 0.0))
+    v_r2 = bm.verts.new((11.0, -1.0, 0.0))
     bm.faces.new((v_center, v_l1, v_l2))
     bm.faces.new((v_center, v_r1, v_r2))
 
@@ -127,7 +133,7 @@ def create_dirty_mesh(name: str = "SM_DirtyMesh") -> bpy.types.Object:
 
     # Assign a dummy material
     mat = bpy.data.materials.new(name=f"M_{name}")
-    obj.data.materials.append(mat)
+    mesh.materials.append(mat)
 
     return obj
 
@@ -181,24 +187,25 @@ def create_skinned_mesh(name: str = "SM_SkinnedMesh") -> tuple[bpy.types.Object,
     # 3. Add Armature Modifier and Parent
     mesh_obj.parent = arm_obj
     mod = mesh_obj.modifiers.new(name="Armature", type="ARMATURE")
-    mod.object = arm_obj
+    cast(Any, mod).object = arm_obj
 
     # 4. Assign 6 Bone Weights per Vertex
     for b_name in bone_names:
         vg = mesh_obj.vertex_groups.new(name=b_name)
         weight_val = 1.0 / 6.0
-        vert_indices = list(range(len(mesh_obj.data.vertices)))
+        vert_indices = list(range(len(mesh.vertices)))
         vg.add(vert_indices, weight_val, "REPLACE")
 
     # 5. Add Shape Keys (Basis + Smile)
     mesh_obj.shape_key_add(name="Basis", from_mix=False)
     sk = mesh_obj.shape_key_add(name="Key_Smile", from_mix=False)
     # Deform key vertex slightly
-    if len(sk.data) > 0:
-        sk.data[0].co.z += 0.2
+    sk_data: Any = getattr(sk, "data", [])
+    if len(sk_data) > 0:
+        sk_data[0].co.z += 0.2
 
     mat = bpy.data.materials.new(name=f"M_{name}")
-    mesh_obj.data.materials.append(mat)
+    mesh.materials.append(mat)
 
     return mesh_obj, arm_obj
 
@@ -223,7 +230,7 @@ def create_hierarchy_fixture(base_name: str = "SM_CompoundProp") -> list[bpy.typ
     bpy.context.scene.collection.objects.link(lid_obj)
 
     mat = bpy.data.materials.new(name=f"M_{base_name}")
-    body_obj.data.materials.append(mat)
-    lid_obj.data.materials.append(mat)
+    body_mesh.materials.append(mat)
+    lid_mesh.materials.append(mat)
 
     return [body_obj, lid_obj]

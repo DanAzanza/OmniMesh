@@ -10,16 +10,20 @@ Structured into streamlined sequential workflow panels with gear-icon popovers:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Panel
-except ImportError:
-    bpy = None
-    Panel = object
+else:
+    try:
+        import bpy
+        from bpy.types import Panel
+    except ImportError:
+        bpy = None
+        Panel = object
 
 try:
     from .batch_panel import OMNIMESH_PT_export_batch
@@ -49,7 +53,7 @@ class OMNIMESH_PT_import(Panel):
     bl_order = 0
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = context.scene.lod_tool
@@ -110,7 +114,7 @@ class OMNIMESH_PT_modify(Panel):
     bl_order = 1
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props, _, _ = resolve_lod_context(context)
@@ -150,10 +154,9 @@ class OMNIMESH_PT_modify(Panel):
         collider_count = 0
         if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and coll_name:
             target_coll = bpy.data.collections.get(coll_name)
-            if target_coll and hasattr(target_coll, "objects"):
-                collider_count = len(
-                    [o for o in target_coll.objects if o.get("_is_collider", False) or "_Collider_" in o.name]
-                )
+            if target_coll:
+                objs: Any = target_coll.objects
+                collider_count = len([o for o in objs if o.get("_is_collider", False) or "_Collider_" in o.name])
         last_count = getattr(props, "last_generated_collider_count", 0)
         if collider_count == 0 and isinstance(last_count, int) and last_count > 0:
             collider_count = last_count
@@ -199,7 +202,7 @@ class OMNIMESH_PT_lods(Panel):
     bl_order = 2
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props, _, _ = resolve_lod_context(context)
@@ -218,15 +221,17 @@ class OMNIMESH_PT_lods(Panel):
             )
 
         active_obj = getattr(context, "active_object", None)
-        if is_object_valid(active_obj) and hasattr(active_obj, "lod_tool"):
-            root_val = getattr(active_obj.lod_tool, "lod_root_object", None)
-            if root_val and (
-                getattr(active_obj.lod_tool, "is_generated_lod", False) or "_LOD" in getattr(active_obj, "name", "")
-            ):
-                root_name = root_val.name if is_object_valid(root_val) else str(root_val)
-                row_nav = layout.row(align=True)
-                row_nav.label(text=f"Sub-LOD of '{root_name}'", icon="LINKED")
-                row_nav.operator("lod_tool.select_master_asset", text="Select Master", icon="RESTRICT_SELECT_OFF")
+        if active_obj and is_object_valid(active_obj):
+            lod_tool = getattr(active_obj, "lod_tool", None)
+            if lod_tool:
+                root_val = getattr(lod_tool, "lod_root_object", None)
+                if root_val and (
+                    getattr(lod_tool, "is_generated_lod", False) or "_LOD" in getattr(active_obj, "name", "")
+                ):
+                    root_name = root_val.name if is_object_valid(root_val) else str(root_val)
+                    row_nav = layout.row(align=True)
+                    row_nav.label(text=f"Sub-LOD of '{root_name}'", icon="LINKED")
+                    row_nav.operator("lod_tool.select_master_asset", text="Select Master", icon="RESTRICT_SELECT_OFF")
 
         box_lod = layout.box()
         box_lod.label(text="LOD Generation & Progression", icon="GEOMETRY_NODES")
@@ -385,7 +390,7 @@ class OMNIMESH_PT_lods_testing(Panel):
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props = context.scene.lod_tool
@@ -444,7 +449,7 @@ class OMNIMESH_PT_export(Panel):
     bl_order = 3
 
     def draw(self, context: Any) -> None:
-        if not bpy or not context:
+        if not bpy or not context or not self.layout:
             return
         layout = self.layout
         props, _, _ = resolve_lod_context(context)

@@ -16,7 +16,7 @@ A clear and concise summary of what this pull request introduces or fixes.
 - [ ] 🐛 Bug fix (non-breaking change which fixes an issue)
 - [ ] ✨ New feature (non-breaking change adding pipeline/operator functionality)
 - [ ] ⚡ Performance optimization (BMesh speed, reduction solver, memory hygiene)
-- [ ] 🎮 Engine exporter update (MSFS 2024 / UE5 / Unity 6 / Godot 4)
+- [ ] 🎮 Engine exporter update (MSFS 2024 / UE5 / Unity 6)
 - [ ] 🧹 Refactoring or code quality enhancement
 - [ ] 📖 Documentation update
 

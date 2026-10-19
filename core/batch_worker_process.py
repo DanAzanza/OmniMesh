@@ -11,12 +11,15 @@ import re
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None  # type: ignore
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 

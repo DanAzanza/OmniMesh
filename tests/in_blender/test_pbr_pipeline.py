@@ -5,23 +5,31 @@ Blender 4.2+ and 5.2 LTS Compatible.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import contextlib
 import os
 import tempfile
 import unittest
 
-try:
+if TYPE_CHECKING:
     import bpy
     from core.pbr_importer import BatchMaterialSlotMatcher, ShaderGraphBuilder
     from core.pbr_presets import PBRImportPresetManager
     from tests.in_blender.fixtures import create_hierarchy_fixture, in_blender_sandbox
-except ImportError:
-    bpy = None
-    BatchMaterialSlotMatcher = None  # type: ignore
-    ShaderGraphBuilder = None  # type: ignore
-    PBRImportPresetManager = None  # type: ignore
-    create_hierarchy_fixture = None  # type: ignore
-    in_blender_sandbox = None  # type: ignore
+else:
+    try:
+        import bpy
+        from core.pbr_importer import BatchMaterialSlotMatcher, ShaderGraphBuilder
+        from core.pbr_presets import PBRImportPresetManager
+        from tests.in_blender.fixtures import create_hierarchy_fixture, in_blender_sandbox
+    except ImportError:
+        bpy = None
+        BatchMaterialSlotMatcher = None  # type: ignore
+        ShaderGraphBuilder = None  # type: ignore
+        PBRImportPresetManager = None  # type: ignore
+        create_hierarchy_fixture = None  # type: ignore
+        in_blender_sandbox = None  # type: ignore
 
 
 class TestPBRPipeline(unittest.TestCase):
@@ -50,7 +58,8 @@ class TestPBRPipeline(unittest.TestCase):
             img = bpy.data.images.new(name, width=4, height=4, alpha=True)
             try:
                 # Fill pixel buffer (RGBA float)
-                img.pixels = list(color) * (4 * 4)
+                img_any: Any = img
+                img_any.pixels = list(color) * (4 * 4)
                 img.filepath_raw = path
                 img.file_format = "PNG"
                 img.save()
@@ -74,6 +83,8 @@ class TestPBRPipeline(unittest.TestCase):
             self.assertTrue(success, "ShaderGraphBuilder must report successful graph generation.")
 
             self.assertTrue(mat.use_nodes)
+            if mat.node_tree is None:
+                self.fail("Material node_tree must exist.")
             nodes = mat.node_tree.nodes
 
             # Output and Principled BSDF nodes
@@ -110,6 +121,8 @@ class TestPBRPipeline(unittest.TestCase):
             success = ShaderGraphBuilder.build_pbr_graph(mat, texture_map, preset=preset)
             self.assertTrue(success)
 
+            if mat.node_tree is None:
+                self.fail("Material node_tree must exist.")
             sub_math_nodes = [
                 n for n in mat.node_tree.nodes if n.type == "MATH" and getattr(n, "operation", "") == "SUBTRACT"
             ]
@@ -120,6 +133,8 @@ class TestPBRPipeline(unittest.TestCase):
     def test_batch_material_slot_matcher_live_mesh(self) -> None:
         """Verify BatchMaterialSlotMatcher pairs texture sets to live Blender mesh material slots."""
         with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
             mesh_objs = create_hierarchy_fixture("SM_SlotTest")
             active_obj = mesh_objs[0]
             scene.view_layers[0].objects.active = active_obj
@@ -127,8 +142,9 @@ class TestPBRPipeline(unittest.TestCase):
             # Create multiple material slots on object
             mat1 = bpy.data.materials.new(name="Asset_Body")
             mat2 = bpy.data.materials.new(name="Asset_Glass")
-            active_obj.data.materials.append(mat1)
-            active_obj.data.materials.append(mat2)
+            mesh_data: Any = active_obj.data
+            mesh_data.materials.append(mat1)
+            mesh_data.materials.append(mat2)
 
             # Generate slot-specific textures in tempdir
             for prefix in ("Asset_Body", "Asset_Glass"):

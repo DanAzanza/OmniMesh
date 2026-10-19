@@ -5,19 +5,25 @@ Blender 4.2+ and 5.2 LTS Compatible.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import unittest
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from core.normals import NormalManager
     from tests.in_blender.fixtures import in_blender_sandbox
-except ImportError:
-    bmesh = None  # type: ignore
-    bpy = None
-    NormalManager = None  # type: ignore
-    in_blender_sandbox = None  # type: ignore
+else:
+    try:
+        import bmesh
+        import bpy
+        from core.normals import NormalManager
+        from tests.in_blender.fixtures import in_blender_sandbox
+    except ImportError:
+        bmesh = None  # type: ignore
+        bpy = None
+        NormalManager = None  # type: ignore
+        in_blender_sandbox = None  # type: ignore
 
 
 def create_test_cylinder(name: str, radius: float = 1.0, depth: float = 2.0, segments: int = 16) -> Any:
@@ -66,6 +72,8 @@ class TestNormalsPipeline(unittest.TestCase):
     def test_reproject_custom_split_normals(self) -> None:
         """Verify reproject_custom_split_normals transfers split normals from LOD0 to LOD1."""
         with in_blender_sandbox() as scene:
+            if scene is None:
+                return
             lod0_obj = create_test_cylinder("SM_NormalsSource", segments=32)
             lod1_obj = create_test_cylinder("SM_NormalsTarget", segments=12)
 

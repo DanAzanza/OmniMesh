@@ -9,16 +9,20 @@ from __future__ import annotations
 import logging
 import math
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-try:
+if TYPE_CHECKING:
     import bpy
     from mathutils import Matrix, Quaternion, Vector
-except ImportError:
-    bpy = None
-    Matrix = None
-    Quaternion = None
-    Vector = None
+else:
+    try:
+        import bpy
+        from mathutils import Matrix, Quaternion, Vector
+    except ImportError:
+        bpy = None
+        Matrix = None
+        Quaternion = None
+        Vector = None
 
 logger = logging.getLogger(__name__)
 

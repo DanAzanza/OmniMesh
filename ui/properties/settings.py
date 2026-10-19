@@ -1,9 +1,10 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Central Settings PropertyGroup.
 Attached to Scene (for project-wide pipeline globals) and Object (for per-asset geometry persistence).
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .animation_properties import OMNIMESH_AnimationSettings
 from .callbacks import (
@@ -53,7 +54,7 @@ try:
 except (ImportError, ValueError):
     from ui.utils import get_asset_enum_items
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import (
         BoolProperty,
@@ -66,15 +67,29 @@ try:
         StringProperty,
     )
     from bpy.types import PropertyGroup
-except ImportError:
-    bpy = None
-    PropertyGroup = object
+else:
+    try:
+        import bpy
+        from bpy.props import (
+            BoolProperty,
+            CollectionProperty,
+            EnumProperty,
+            FloatProperty,
+            FloatVectorProperty,
+            IntProperty,
+            PointerProperty,
+            StringProperty,
+        )
+        from bpy.types import PropertyGroup
+    except ImportError:
+        bpy = None
+        PropertyGroup = object
 
-    def _mock_prop(**kwargs: Any) -> Any:
-        return None
+        def _mock_prop(**kwargs: Any) -> Any:
+            return None
 
-    BoolProperty = CollectionProperty = EnumProperty = _mock_prop
-    FloatProperty = FloatVectorProperty = IntProperty = PointerProperty = StringProperty = _mock_prop
+        BoolProperty = CollectionProperty = EnumProperty = _mock_prop
+        FloatProperty = FloatVectorProperty = IntProperty = PointerProperty = StringProperty = _mock_prop
 
 
 class LODToolSettings(PropertyGroup):
@@ -110,7 +125,7 @@ class LODToolSettings(PropertyGroup):
     # Per-Object Metadata & Root Linkage
     is_configured: BoolProperty(name="Is Configured", default=False)
     is_generated_lod: BoolProperty(name="Is Generated Derivative", default=False)
-    lod_root_object: PointerProperty(name="Root Master Asset", type=bpy.types.Object if bpy else object)
+    lod_root_object: PointerProperty(name="Root Master Asset", type=bpy.types.Object if bpy else None)
     lod_index: IntProperty(name="Derivative Tier Index", default=0, min=0, max=7)
     bounding_radius: FloatProperty(name="Bounding Radius", default=1.0, min=0.0)
     bounding_center: FloatVectorProperty(name="Bounding Center", size=3, default=(0.0, 0.0, 0.0))
@@ -587,7 +602,7 @@ class LODToolSettings(PropertyGroup):
         name="Engine Project Path",
         subtype="DIR_PATH",
         default="",
-        description="Root path to active Unreal, Unity, MSFS Community, or Godot project folder",
+        description="Root path to active Unreal, Unity, or MSFS Community project folder",
         update=on_engine_project_path_updated,
     )
     enable_live_sync: BoolProperty(

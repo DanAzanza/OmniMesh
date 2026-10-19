@@ -9,19 +9,23 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Collection, LayerCollection, Material, Object
-except ImportError:
-    bpy = None
-    Collection = object
-    LayerCollection = object
-    Material = object
-    Object = object
+else:
+    try:
+        import bpy
+        from bpy.types import Collection, LayerCollection, Material, Object
+    except ImportError:
+        bpy = None
+        Collection = object
+        LayerCollection = object
+        Material = object
+        Object = object
 
 from .msfs.project_scanner import MSFSProjectManifest
 
@@ -162,9 +166,10 @@ class GLTFAssemblyEngine:
             mesh_role = classify_imported_mesh_node(obj, is_interior=is_interior)
 
             if mesh_role == "INTERACTION_VOLUME" and get_or_create_engine_import_collection:
-                if hasattr(obj, "data") and getattr(obj.data, "users", 0) > 1:
+                mesh_data = getattr(obj, "data", None)
+                if mesh_data is not None and getattr(mesh_data, "users", 0) > 1:
                     try:
-                        obj.data = obj.data.copy()
+                        obj.data = mesh_data.copy()
                     except (RuntimeError, AttributeError) as exc:
                         logger.debug("Could not copy interaction mesh datablock: %s", exc)
                 interact_col = get_or_create_engine_import_collection(context, effective_asset, "INTERACTIONS")
@@ -175,9 +180,10 @@ class GLTFAssemblyEngine:
                 obj["_omnimesh_role"] = "INTERACTION_VOLUME"
                 obj["_is_trigger"] = True
             elif mesh_role == "PHYSICS_COLLIDER" and get_or_create_engine_import_collection:
-                if hasattr(obj, "data") and getattr(obj.data, "users", 0) > 1:
+                mesh_data = getattr(obj, "data", None)
+                if mesh_data is not None and getattr(mesh_data, "users", 0) > 1:
                     try:
-                        obj.data = obj.data.copy()
+                        obj.data = mesh_data.copy()
                     except (RuntimeError, AttributeError) as exc:
                         logger.debug("Could not copy collider mesh datablock: %s", exc)
                 coll_col = get_or_create_engine_import_collection(context, effective_asset, "COLLIDERS")

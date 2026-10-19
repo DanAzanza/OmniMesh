@@ -5,15 +5,19 @@ Core Engine for Live Viewport LOD Simulator & Camera Distance Evaluation.
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     import bpy
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    Vector = None
-    Matrix = None
+else:
+    try:
+        import bpy
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        Vector = None
+        Matrix = None
 
 
 def calculate_effective_distance_pure(
@@ -177,14 +181,18 @@ class LODAssetRecord:
         if not bpy:
             return
         coll = bpy.data.collections.get(self.collection_name)
-        if not coll or len(coll.objects) == 0:
+        if coll is None:
+            self.is_valid = False
+            return
+        coll_objs = list(coll.objects)
+        if not coll_objs:
             self.is_valid = False
             return
 
         self.tier_objects.clear()
         all_coords = []
 
-        for obj in coll.objects:
+        for obj in coll_objs:
             if obj.type != "MESH":
                 continue
             tier_idx = 0
@@ -259,8 +267,10 @@ class LODSimulatorEngine:
                     # LOD 1..k
                     for i in range(1, 8):
                         s_c = bpy.data.collections.get(f"{coll.name}_LOD{i}")
-                        if s_c:
-                            s_objs = [o for o in s_c.objects if o.type == "MESH" and not o.get("_is_collider", False)]
+                        if s_c is not None:
+                            s_objs = [
+                                o for o in list(s_c.objects) if o.type == "MESH" and not o.get("_is_collider", False)
+                            ]
                             if s_objs:
                                 record.tier_objects[i] = s_objs
 

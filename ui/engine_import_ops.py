@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Engine Project Importer Operators.
 Provides directory-driven one-click ingestion of engine project packages (MSFS 2024 / 2020),
@@ -8,15 +9,20 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import BoolProperty, StringProperty
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.props import BoolProperty, StringProperty
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
     def StringProperty(**kwargs: Any) -> Any:
         return ""
@@ -95,7 +101,7 @@ class OMNIMESH_OT_import_engine_project(Operator):
         options={"HIDDEN"},
     )
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props = getattr(context.scene, "lod_tool", None)
@@ -238,7 +244,7 @@ class OMNIMESH_OT_import_engine_project(Operator):
     def _import_attachments(self, context: Any, manifest: Any) -> int:
         return import_attachments(context, manifest)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -364,7 +370,7 @@ class OMNIMESH_OT_duplicate_engine_import_preset(Operator):
         default="",
     )
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props = getattr(context.scene, "lod_tool", None)
@@ -373,7 +379,7 @@ class OMNIMESH_OT_duplicate_engine_import_preset(Operator):
         self.new_name = f"{preset.get('name', active_id)} (Copy)"
         return context.window_manager.invoke_props_dialog(self)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props = getattr(context.scene, "lod_tool", None)
@@ -405,7 +411,7 @@ class OMNIMESH_OT_delete_engine_import_preset(Operator):
         active_id = getattr(props, "engine_import_preset", "")
         return not EngineImportPresetManager.is_builtin(active_id)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props = getattr(context.scene, "lod_tool", None)

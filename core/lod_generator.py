@@ -8,21 +8,27 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from mathutils import Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    Vector = None
+else:
+    try:
+        import bmesh
+        import bpy
+        from mathutils import Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        Vector = None
 
 try:
     from .decimator import MeshDecimator
+    from .exceptions import DecimationError
     from .hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
     from .material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
     from .materials import MaterialOptimizer
@@ -40,6 +46,7 @@ try:
     from .slender import SlenderFeatureCuller
 except (ImportError, ValueError):
     from core.decimator import MeshDecimator
+    from core.exceptions import DecimationError
     from core.hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
     from core.material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
     from core.materials import MaterialOptimizer
@@ -140,6 +147,8 @@ def _process_merged_tier(
     tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
         mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
     )
+    if not tier_obj:
+        raise DecimationError(f"Mesh consolidation failed for {merged_name}.")
     if tier_obj.name not in tier_coll.objects:
         tier_coll.objects.link(tier_obj)
 
@@ -613,8 +622,9 @@ def generate_all_lods(
 
         if getattr(props, "enable_impostor_lod", False):
             try:
-                if hasattr(bpy.ops.lod_tool, "generate_impostor"):
-                    bpy.ops.lod_tool.generate_impostor()
+                ops: Any = getattr(bpy, "ops", None)
+                if ops and hasattr(ops.lod_tool, "generate_impostor"):
+                    ops.lod_tool.generate_impostor()
             except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.debug("Automatic impostor generation skipped: %s", exc)
 

@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Export & Engine Bridge Operators.
 Provides UI operators for 1-click multi-engine packaging, PBR texture packing,
@@ -9,14 +10,18 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..bridges.manager import BridgeManager
@@ -53,7 +58,7 @@ class LOD_OT_pack_pbr_textures(Operator):
         props, _, _ = resolve_lod_context(context)
         return bool(props)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props, _, _ = resolve_lod_context(context)
@@ -101,7 +106,6 @@ class LOD_OT_pack_pbr_textures(Operator):
                 "UE5": "unreal_engine_5",
                 "UNITY_6": "unity_hdrp_maskmap",
                 "MSFS_2024": "msfs_2024_comp",
-                "GODOT_4": "godot_4_orm",
             }
             preset_id = engine_map.get(target_engine, "unreal_engine_5")
 
@@ -164,7 +168,7 @@ class LOD_OT_bake_rig_animation(Operator):
         obj = getattr(context, "active_object", None)
         return bool(obj and (obj.type == "ARMATURE" or (obj.parent and obj.parent.type == "ARMATURE")))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"CANCELLED"}
         obj = context.active_object
@@ -303,7 +307,7 @@ class LOD_OT_sync_live_bridge(Operator):
         props, _, _ = resolve_lod_context(context)
         return bool(props)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props, _, _ = resolve_lod_context(context)
@@ -334,7 +338,7 @@ class LOD_OT_toggle_live_bridge(Operator):
         props, _, _ = resolve_lod_context(context)
         return bool(props)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props, _, _ = resolve_lod_context(context)
@@ -384,7 +388,7 @@ class LOD_OT_export_engine_package(Operator):
         props, _, _ = resolve_lod_context(context)
         return bool(props and len(getattr(props, "lods", [])) > 0)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props, _, _ = resolve_lod_context(context)
@@ -407,7 +411,7 @@ class LOD_OT_export_engine_package(Operator):
         # Auto-pack PBR textures if enabled
         if props.export_packed_textures:
             try:
-                bpy.ops.lod_tool.pack_pbr_textures()
+                cast(Any, bpy.ops).lod_tool.pack_pbr_textures()
             except (RuntimeError, AttributeError, OSError) as exc:
                 logger.warning("Auto PBR texture packing failed during export: %s", exc)
 
@@ -421,7 +425,7 @@ class LOD_OT_export_engine_package(Operator):
             )
             if armature and armature.animation_data and armature.animation_data.action:
                 try:
-                    bpy.ops.lod_tool.bake_rig_animation()
+                    cast(Any, bpy.ops).lod_tool.bake_rig_animation()
                 except (RuntimeError, AttributeError, ValueError) as exc:
                     logger.warning("Auto animation baking failed during export: %s", exc)
 
@@ -472,7 +476,7 @@ class LOD_OT_install_companion_scripts(Operator):
         props, _, _ = resolve_lod_context(context)
         return bool(props and props.engine_project_path)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props, _, _ = resolve_lod_context(context)

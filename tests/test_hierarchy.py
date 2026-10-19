@@ -4,13 +4,20 @@ Unit tests for OmniMesh Hierarchy & Multi-Mesh Consolidation Module.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from core.hierarchy import MeshMergeEngine, get_rest_world_matrix_for_static
 
 
 class DummyBone:
-    def __init__(self, name: str, matrix_local: list[list[float]] | None = None):
+    def __init__(self, name: str, matrix_local: Any = None):
         self.name = name
-        self.matrix_local = matrix_local or [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+        self.matrix_local = matrix_local or [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
 
 
 class DummyArmatureData:
@@ -22,11 +29,11 @@ class DummyArmature:
     def __init__(self, bones: dict[str, DummyBone]):
         self.type = "ARMATURE"
         self.data = DummyArmatureData(bones)
-        self.matrix_world = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+        self.matrix_world = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
 
 
 class DummyObject:
-    def __init__(self, matrix_world: list[list[float]]):
+    def __init__(self, matrix_world: Any):
         self.type = "MESH"
         self.matrix_world = matrix_world
         self.matrix_parent_inverse = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
@@ -59,5 +66,5 @@ def test_get_rest_world_matrix_for_static_missing_bone():
 
 def test_consolidate_and_merge_meshes_null_or_empty():
     assert MeshMergeEngine.consolidate_and_merge_meshes([], "Merged") is None
-    assert MeshMergeEngine.consolidate_and_merge_meshes(None, "Merged") is None
+    assert MeshMergeEngine.consolidate_and_merge_meshes(cast(Any, None), "Merged") is None
     assert MeshMergeEngine.consolidate_and_merge_meshes([None, object()], "Merged") is None

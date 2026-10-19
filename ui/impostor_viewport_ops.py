@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Live Impostor Viewport Tracker Operator and Timer Service.
 Blender 4.2+ and 5.0+ LTS Compatible.
@@ -10,18 +11,23 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
     from mathutils import Vector
-except ImportError:
-    bpy = None
-    Operator = object  # type: ignore
-    Vector = None  # type: ignore
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+        from mathutils import Vector
+    except ImportError:
+        bpy = None
+        Operator = object  # type: ignore
+        Vector = None  # type: ignore
 
 _ACTIVE_TIMERS: dict[str, Callable[[], Optional[float]]] = {}
 
@@ -152,7 +158,7 @@ class LOD_OT_impostor_viewport_tracker(Operator):
             return False
         return bool(context and hasattr(context, "window_manager") and context.scene)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 

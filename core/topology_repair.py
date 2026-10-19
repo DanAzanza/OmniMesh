@@ -8,18 +8,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .exceptions import TopologyError
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
-except ImportError:
-    bpy = None
-    bmesh = None
+else:
+    try:
+        import bmesh
+        import bpy
+    except ImportError:
+        bpy = None
+        bmesh = None
 
 BMESH_INSPECTION_ERRORS = (AttributeError, KeyError, IndexError, ValueError, TypeError, ReferenceError)
 BMESH_OP_ERRORS = (RuntimeError, ValueError, IndexError, ReferenceError)

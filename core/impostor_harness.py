@@ -12,14 +12,23 @@ Constructs unlit emission shader overrides for the required PBR and depth passes
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
+
+
+try:
+    from .exceptions import ImpostorBakeError
+except (ImportError, ValueError):
+    from core.exceptions import ImpostorBakeError
 
 
 class ImpostorShaderHarness:
@@ -47,8 +56,10 @@ class ImpostorShaderHarness:
 
         mat = bpy.data.materials.new(f"OM_Bake_{channel_layer}")
         mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        links = mat.node_tree.links
+        if not mat.node_tree:
+            raise ImpostorBakeError("Material has no node tree.")
+        nodes: Any = mat.node_tree.nodes
+        links: Any = mat.node_tree.links
         nodes.clear()
 
         out_node = nodes.new(type="ShaderNodeOutputMaterial")
@@ -56,7 +67,7 @@ class ImpostorShaderHarness:
         emit_node = nodes.new(type="ShaderNodeEmission")
         emit_node.location = (150, 0)
 
-        src_bsdf = None
+        src_bsdf: Any = None
         if source_mat and getattr(source_mat, "use_nodes", False) and source_mat.node_tree:
             src_bsdf = next(
                 (n for n in source_mat.node_tree.nodes if getattr(n, "type", "") == "BSDF_PRINCIPLED"), None
@@ -139,7 +150,7 @@ class ImpostorShaderHarness:
                 comb_node.inputs["Green"].default_value = 1.0
                 comb_node.inputs["Blue"].default_value = 1.0 - rough_val
             else:
-                # UE5, MSFS 2024, Godot: R=AO, G=Roughness, B=Metallic
+                # UE5, MSFS 2024: R=AO, G=Roughness, B=Metallic
                 comb_node.inputs["Red"].default_value = 1.0
                 comb_node.inputs["Green"].default_value = rough_val
                 comb_node.inputs["Blue"].default_value = metal_val
@@ -149,7 +160,7 @@ class ImpostorShaderHarness:
         # Cutout Transparency Handling (Crucial for foliage / leaf cards across all passes)
         has_alpha_link = src_bsdf is not None and "Alpha" in src_bsdf.inputs and src_bsdf.inputs["Alpha"].is_linked
 
-        if has_alpha_link:
+        if has_alpha_link and src_bsdf is not None:
             transp_node = nodes.new(type="ShaderNodeBsdfTransparent")
             transp_node.location = (200, -150)
             mix_node = nodes.new(type="ShaderNodeMixShader")

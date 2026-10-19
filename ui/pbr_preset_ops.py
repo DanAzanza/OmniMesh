@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh PBR Preset CRUD & Management Operators.
 Handles creation, duplication, map configuration, persistence, and deletion
@@ -11,7 +12,7 @@ import logging
 import os
 import sys
 from contextlib import nullcontext
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 try:
     from ..core.lod_presets import (
@@ -56,12 +57,16 @@ except (ImportError, ValueError):
     )
     from ui.utils import resolve_lod_context, safe_report
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +78,7 @@ class LOD_OT_reload_pbr_presets(Operator):
     bl_label = "Reload Presets"
     bl_description = "Refreshes the PBR importer and exporter presets from built-in and user folders"
 
-    def execute(self, _context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         loaded_imp = PBRImportPresetManager.load_presets(force_reload=True)
         loaded_exp = PBRExportPresetManager.load_presets(force_reload=True)
         safe_report(
@@ -92,7 +97,7 @@ class LOD_OT_reset_pbr_preset(Operator):
     bl_description = "Deletes user custom overrides for this preset and restores factory defaults"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         props, _, _ = resolve_lod_context(context)
         if not props and hasattr(context, "scene"):
             props = getattr(context.scene, "lod_tool", None)
@@ -116,7 +121,7 @@ class LOD_OT_init_preset_maps(Operator):
     bl_description = "Synchronizes active preset maps for texture import and export"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         props, _, _ = resolve_lod_context(context)
         if not props and hasattr(context, "scene"):
             props = getattr(context.scene, "lod_tool", None)
@@ -163,7 +168,7 @@ class LOD_OT_duplicate_preset(Operator):
         else ""
     )
 
-    def invoke(self, context: Any, _event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
@@ -184,13 +189,13 @@ class LOD_OT_duplicate_preset(Operator):
         self.new_name = f"{current_name} (Copy)"
         return context.window_manager.invoke_props_dialog(self)
 
-    def draw(self, _context: Any) -> None:
-        if not bpy:
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
             return
         layout = self.layout
         layout.prop(self, "new_name")
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         targets = []
         if context and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
             targets.append(context.scene.lod_tool)
@@ -304,10 +309,10 @@ class LOD_OT_duplicate_export_preset(Operator):
         else ""
     )
 
-    def execute(self, _context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
-        return bpy.ops.lod_tool.duplicate_preset(preset_type="EXPORT", new_name=self.new_name)
+        return cast(Any, bpy.ops).lod_tool.duplicate_preset(preset_type="EXPORT", new_name=self.new_name)
 
 
 class LOD_OT_add_preset_map(Operator):
@@ -318,7 +323,7 @@ class LOD_OT_add_preset_map(Operator):
     bl_description = "Adds a new texture map rule to the active preset (creates an editable copy if built-in)"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
@@ -354,7 +359,7 @@ class LOD_OT_delete_preset_map(Operator):
     bl_description = "Removes the selected texture map rule from the active preset"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
@@ -392,7 +397,7 @@ class LOD_OT_add_export_preset_map(Operator):
     bl_description = "Adds a new texture map rule to the active export preset (creates an editable copy if built-in)"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
@@ -429,7 +434,7 @@ class LOD_OT_delete_export_preset_map(Operator):
     bl_description = "Removes the selected texture map rule from the active export preset"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
@@ -479,7 +484,7 @@ class LOD_OT_open_presets_directory(Operator):
         else "EXPORTER"
     )
 
-    def execute(self, _context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if self.category == "IMPORTER":
             target_dir = str(PBRImportPresetManager.get_user_dir())
         else:
@@ -514,7 +519,7 @@ class LOD_OT_save_export_preset(Operator):
     bl_description = "Saves target engine, channel strategy, and naming settings to the active custom preset"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         props, _, _ = resolve_lod_context(context)
         if not props:
             props = getattr(context.scene, "lod_tool", None)
@@ -548,7 +553,7 @@ class LOD_OT_delete_import_preset(Operator):
     bl_description = "Deletes the active custom import preset file and resets to factory default"
     bl_options = {"REGISTER", "UNDO"}
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
@@ -560,7 +565,7 @@ class LOD_OT_delete_import_preset(Operator):
             return {"CANCELLED"}
         return context.window_manager.invoke_confirm(self, event)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         targets = []
         if context and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
             targets.append(context.scene.lod_tool)
@@ -601,7 +606,7 @@ class LOD_OT_delete_export_preset(Operator):
     bl_description = "Deletes the active custom export preset file and resets to factory default"
     bl_options = {"REGISTER", "UNDO"}
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
@@ -613,7 +618,7 @@ class LOD_OT_delete_export_preset(Operator):
             return {"CANCELLED"}
         return context.window_manager.invoke_confirm(self, event)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         targets = []
         if context and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
             targets.append(context.scene.lod_tool)

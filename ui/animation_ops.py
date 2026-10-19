@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Animation & Action Tagging Operators.
 Exposes UI operators for tagging active Blender Actions with semantic categories
@@ -7,16 +8,20 @@ Exposes UI operators for tagging active Blender Actions with semantic categories
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..core.animation_manager import scan_asset_animations, tag_action_category
@@ -46,7 +51,7 @@ class OMNIMESH_OT_tag_animation(Operator):
             return False
         return bool(getattr(active.animation_data, "action", None))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 
@@ -82,7 +87,7 @@ class OMNIMESH_OT_scan_animations(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(bpy and context)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 

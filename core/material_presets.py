@@ -2,25 +2,29 @@
 OmniMesh Multi-Engine Material Preset Generator.
 Generates production-grade PBR, Glass, Decal, Invisible/Collision, and Emissive materials
 using native Blender Principled BSDF node trees compatible across Blender 3.6 - 5.2 LTS,
-with engine-specific metadata tags for MSFS, Unreal Engine 5, Unity 6, and Godot 4.
+with engine-specific metadata tags for MSFS, Unreal Engine 5, and Unity 6.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Material, Node, Object, ShaderNodeBsdfPrincipled
-except ImportError:
-    bpy = None
-    Material = object
-    Node = object
-    Object = object
-    ShaderNodeBsdfPrincipled = object
+else:
+    try:
+        import bpy
+        from bpy.types import Material, Node, Object, ShaderNodeBsdfPrincipled
+    except ImportError:
+        bpy = None
+        Material = object
+        Node = object
+        Object = object
+        ShaderNodeBsdfPrincipled = object
 
 
 def set_principled_socket(
@@ -146,7 +150,7 @@ def create_or_update_material_preset(
         mat["msfs_material_type"] = 1  # MSFS Standard PBR
         if hasattr(mat, "msfs_material_type"):
             try:
-                mat.msfs_material_type = 1
+                cast(Any, mat).msfs_material_type = 1
             except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not assign RNA msfs_material_type: %s", exc)
 
@@ -160,7 +164,7 @@ def create_or_update_material_preset(
         mat["msfs_material_type"] = 4  # MSFS Windshield
         if hasattr(mat, "msfs_material_type"):
             try:
-                mat.msfs_material_type = 4
+                cast(Any, mat).msfs_material_type = 4
             except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not assign RNA msfs_material_type: %s", exc)
 
@@ -173,7 +177,7 @@ def create_or_update_material_preset(
         mat["msfs_material_type"] = 2  # MSFS Decal
         if hasattr(mat, "msfs_material_type"):
             try:
-                mat.msfs_material_type = 2
+                cast(Any, mat).msfs_material_type = 2
             except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not assign RNA msfs_material_type: %s", exc)
 
@@ -185,7 +189,7 @@ def create_or_update_material_preset(
         mat["msfs_material_type"] = 12  # MSFS Collision / Invisible
         if hasattr(mat, "msfs_material_type"):
             try:
-                mat.msfs_material_type = 12
+                cast(Any, mat).msfs_material_type = 12
             except (TypeError, ValueError, AttributeError) as exc:
                 logger.debug("Could not assign RNA msfs_material_type: %s", exc)
 

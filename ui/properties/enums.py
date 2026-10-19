@@ -73,7 +73,7 @@ IMPOSTOR_MODE_ITEMS: list[tuple[str, str, str]] = [
     (
         "OCTAHEDRAL_HEMI",
         "Octahedral Impostor (1 Quad, 64 Views)",
-        "Modern AAA standard with companion shaders for Unreal Engine 5, Unity, and Godot 4",
+        "Modern AAA standard with companion shaders for Unreal Engine 5 and Unity 6",
     ),
 ]
 

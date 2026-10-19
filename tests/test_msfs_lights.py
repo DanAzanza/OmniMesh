@@ -11,7 +11,7 @@ import tempfile
 import pytest
 
 from core.msfs.cst_parser import MSFSCSTParser
-from core.msfs.models import CFGLineRecord
+from core.msfs.models import CFGLineRecord, LightPoint
 from core.msfs.transforms import (
     _euler_xyz_to_matrix,
     blender_rotation_to_msfs_pbh,
@@ -107,12 +107,12 @@ def test_parse_and_insert_lights():
         assert len(config.lights) == 3
 
         nav_green = config.get_point_by_id("LIGHTS:lightdef.0")
-        assert nav_green is not None
+        assert isinstance(nav_green, LightPoint)
         assert nav_green.coords_msfs_rel_ft == (-2.0, 16.4, 0.2)
         assert nav_green.em_mesh == "LIGHT_Nav_G"
 
         landing = config.get_point_by_id("LIGHTS:lightdef.4")
-        assert landing is not None
+        assert isinstance(landing, LightPoint)
         assert landing.rotation_pbh_deg == (10.0, 0.0, 0.0)
 
         # Test inserting a new mirrored taxi light into [LIGHTS]
@@ -160,13 +160,13 @@ def test_parse_real_simpleaircraft_systems():
 
     # Check Nav Green
     nav_g = config.get_point_by_id("LIGHTS:lightdef.0")
-    assert nav_g is not None
+    assert isinstance(nav_g, LightPoint)
     assert nav_g.light_type == 3
     assert nav_g.coords_msfs_rel_ft == (-2.0, 16.4, 0.2)
     assert nav_g.em_mesh == "LIGHT_Navigation_Green"
 
     # Check Landing
     landing = config.get_point_by_id("LIGHTS:lightdef.4")
-    assert landing is not None
+    assert isinstance(landing, LightPoint)
     assert landing.light_type == 6
     assert landing.rotation_pbh_deg == (10.0, 0.0, 0.0)

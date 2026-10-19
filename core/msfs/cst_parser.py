@@ -511,5 +511,4 @@ class MSFSCSTParser:
         updated_rotations: Optional[dict[str, tuple[float, float, float]]] = None,
         target_path: Optional[str] = None,
     ) -> str:
-        """Serializes updated attachment offsets back to attached_objects.cfg atomically."""
-        return MSFSAttachmentsCST.serialize_and_save(config, updated_points, updated_rotations, target_path)
+        return MSFSAttachmentsCST.serialize_and_save(config, updated_points, updated_rotations, target_path=target_path)

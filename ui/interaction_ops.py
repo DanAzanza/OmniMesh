@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Interaction Volume Operators.
 Exposes operators to spawn non-blocking clickspots and interaction triggers in Blender.
@@ -6,16 +7,20 @@ Exposes operators to spawn non-blocking clickspots and interaction triggers in B
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..core.interaction_volumes import create_interaction_volume
@@ -32,7 +37,7 @@ class OMNIMESH_OT_add_interaction_volume(Operator):
     bl_label = "Add Clickspot / Trigger"
     bl_description = (
         "Creates a non-blocking interaction volume (Box, Sphere, Cylinder) in {AssetName}_Interactions "
-        "configured for MSFS MouseRects, UE5 Overlap, Unity Triggers, and Godot Area3D"
+        "configured for MSFS MouseRects, UE5 Overlap, and Unity Triggers"
     )
     bl_options = {"REGISTER", "UNDO"}
 
@@ -40,7 +45,7 @@ class OMNIMESH_OT_add_interaction_volume(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(bpy and context)
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 

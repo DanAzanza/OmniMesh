@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 PBR Texture Set Importer and Slot Auto-Matcher Operators.
 Preset CRUD operations are modularized in ui.pbr_preset_ops and ui.preset_ops.
@@ -7,16 +8,20 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        Operator = object
 
 try:
     from ..core.pbr_importer import (
@@ -82,7 +87,7 @@ class LOD_OT_import_pbr_set(Operator):
     directory: Any = bpy.props.StringProperty(subtype="DIR_PATH") if bpy else ""  # type: ignore
     files: Any = bpy.props.CollectionProperty(type=bpy.types.OperatorFileListElement) if bpy else None  # type: ignore
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -175,7 +180,7 @@ class LOD_OT_import_pbr_set(Operator):
         safe_report(self, {"WARNING"}, "Failed to construct shader network.")
         return {"CANCELLED"}
 
-    def invoke(self, context: Any, _event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -208,7 +213,7 @@ class LOD_OT_auto_match_pbr_folder(Operator):
 
     directory: Any = bpy.props.StringProperty(subtype="DIR_PATH") if bpy else ""  # type: ignore
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
@@ -283,7 +288,7 @@ class LOD_OT_auto_match_pbr_folder(Operator):
         safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
 
-    def invoke(self, context: Any, _event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy:
             return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)

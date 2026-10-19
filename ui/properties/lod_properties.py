@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh LOD Tier and Preset RNA Data Models.
 Maintains data structures for LOD level items and template preset tier definitions.
@@ -5,7 +6,7 @@ Maintains data structures for LOD level items and template preset tier definitio
 
 import copy
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .guards import PresetSyncGuard, StateRestorationGuard
 
@@ -20,7 +21,7 @@ except (ImportError, ValueError):
         LODPresetManager,
     )
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import (
         BoolProperty,
@@ -31,27 +32,39 @@ try:
         StringProperty,
     )
     from bpy.types import PropertyGroup
-except ImportError:
-    bpy = None
-    PropertyGroup = object
+else:
+    try:
+        import bpy
+        from bpy.props import (
+            BoolProperty,
+            EnumProperty,
+            FloatProperty,
+            IntProperty,
+            PointerProperty,
+            StringProperty,
+        )
+        from bpy.types import PropertyGroup
+    except ImportError:
+        bpy = None
+        PropertyGroup = object
 
-    def BoolProperty(**kwargs: Any) -> Any:
-        return None
+        def BoolProperty(**kwargs: Any) -> Any:
+            return None
 
-    def EnumProperty(**kwargs: Any) -> Any:
-        return None
+        def EnumProperty(**kwargs: Any) -> Any:
+            return None
 
-    def FloatProperty(**kwargs: Any) -> Any:
-        return None
+        def FloatProperty(**kwargs: Any) -> Any:
+            return None
 
-    def IntProperty(**kwargs: Any) -> Any:
-        return None
+        def IntProperty(**kwargs: Any) -> Any:
+            return None
 
-    def PointerProperty(**kwargs: Any) -> Any:
-        return None
+        def PointerProperty(**kwargs: Any) -> Any:
+            return None
 
-    def StringProperty(**kwargs: Any) -> Any:
-        return None
+        def StringProperty(**kwargs: Any) -> Any:
+            return None
 
 
 logger = logging.getLogger(__name__)
@@ -154,7 +167,7 @@ class LODLevelItem(PropertyGroup):
         default=-1.0,
         precision=2,
     )
-    generated_obj: PointerProperty(name="Mesh Object", type=bpy.types.Object if bpy else object)
+    generated_obj: PointerProperty(name="Mesh Object", type=bpy.types.Object if bpy else None)
 
 
 def on_preset_tier_item_updated(self: Any, context: Any) -> None:

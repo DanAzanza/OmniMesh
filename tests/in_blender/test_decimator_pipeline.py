@@ -5,19 +5,27 @@ Blender 4.2+ and 5.2 LTS Compatible.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import math
 import unittest
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from core.decimator import MeshDecimator
     from tests.in_blender.fixtures import in_blender_sandbox
-except ImportError:
-    bmesh = None  # type: ignore
-    bpy = None
-    MeshDecimator = None  # type: ignore
-    in_blender_sandbox = None  # type: ignore
+else:
+    try:
+        import bmesh
+        import bpy
+        from core.decimator import MeshDecimator
+        from tests.in_blender.fixtures import in_blender_sandbox
+    except ImportError:
+        bmesh = None  # type: ignore
+        bpy = None
+        MeshDecimator = None  # type: ignore
+        in_blender_sandbox = None  # type: ignore
 
 
 class TestDecimatorPipeline(unittest.TestCase):
@@ -58,6 +66,8 @@ class TestDecimatorPipeline(unittest.TestCase):
     def test_inject_curvature_weights_and_qem_decimate(self) -> None:
         """Verify curvature weight injection populates vertex group and guides QEM decimation."""
         with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
             bm = bmesh.new()
             # Dense UV sphere (32 segments, 16 rings)
             bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=1.0)
@@ -89,7 +99,8 @@ class TestDecimatorPipeline(unittest.TestCase):
                 cleanup_group=False,
             )
 
-            final_poly_count = len(obj.data.polygons)
+            mesh_obj_data: Any = obj.data
+            final_poly_count = len(mesh_obj_data.polygons)
             self.assertLess(final_poly_count, initial_poly_count, "Polygon count must be reduced after decimation.")
             # Should be roughly half
             self.assertLessEqual(final_poly_count, int(initial_poly_count * 0.7))

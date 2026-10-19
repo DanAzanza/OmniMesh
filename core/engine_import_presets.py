@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 try:
     from .pbr_presets import BasePresetManager
@@ -122,7 +125,7 @@ def save_engine_import_preset(preset_data: dict[str, Any], custom_id: Optional[s
 
 def duplicate_engine_import_preset(source_id: str, new_name: Optional[str] = None) -> str:
     """Duplicates an engine import preset into a user custom preset."""
-    return EngineImportPresetManager.duplicate_preset(source_id, new_name=new_name)
+    return EngineImportPresetManager.duplicate_preset(source_id, new_name=new_name or "")
 
 
 def delete_engine_import_preset(preset_id: str) -> bool:

@@ -2,26 +2,30 @@
 OmniMesh Multi-Engine Interaction Volumes & Clickspot Subsystem.
 Spawns non-blocking trigger geometry (Box, Sphere, Cylinder) into isolated
 collection {AssetName}_Interactions under {AssetName}_Config, with multi-engine
-export tags for MSFS MouseRects, Unreal Engine Overlap Triggers, Unity MeshTriggers,
-and Godot Area3D nodes.
+export tags for MSFS MouseRects, Unreal Engine Overlap Triggers, and Unity MeshTriggers.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    Matrix = None
-    Vector = None
+else:
+    try:
+        import bmesh
+        import bpy
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        Matrix = None
+        Vector = None
 
 try:
     from .hierarchy import get_or_create_engine_import_collection
@@ -105,7 +109,7 @@ def create_interaction_volume(
             else:
                 # Default Box
                 bmesh.ops.create_cube(bm, size=1.0)
-                bmesh.ops.scale(bm, vec=(sx, sy, sz), verts=bm.verts)
+                bmesh.ops.scale(bm, vec=(sx, sy, sz), verts=list(bm.verts))
             bm.to_mesh(mesh_data)
         finally:
             bm.free()

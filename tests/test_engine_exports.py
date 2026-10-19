@@ -4,7 +4,6 @@ Validates export artifact schemas and companion scripts across:
 - Microsoft Flight Simulator 2024 (ModelInfo XML Schema, descending minSize to 0.0, glTF validity)
 - Unreal Engine 5 (FBX LODGroup & UCX collision hierarchy, live ingest payload)
 - Unity 6 (Postprocessor C# generation, LODGroup setup)
-- Godot 4 (Post-import GDScript generation, -convcolonly naming)
 
 Tier 1: Static schema and artifact validation without external engine binaries.
 Tier 2: Live engine integration tests (skipped if engine executables are missing).

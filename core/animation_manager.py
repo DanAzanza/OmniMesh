@@ -9,17 +9,21 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.types import Action, Object
-except ImportError:
-    bpy = None
-    Action = object
-    Object = object
+else:
+    try:
+        import bpy
+        from bpy.types import Action, Object
+    except ImportError:
+        bpy = None
+        Action = object
+        Object = object
 
 try:
     from .animations import AnimationRigSanitizer

@@ -5,19 +5,27 @@ Blender 4.2+ and 5.2 LTS Compatible.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import unittest
 
-try:
+if TYPE_CHECKING:
     import bpy
     from core.pivot import PivotPreservationEngine
     from mathutils import Matrix, Vector
     from tests.in_blender.fixtures import in_blender_sandbox
-except ImportError:
-    bpy = None
-    PivotPreservationEngine = None  # type: ignore
-    Matrix = None  # type: ignore
-    Vector = None  # type: ignore
-    in_blender_sandbox = None  # type: ignore
+else:
+    try:
+        import bpy
+        from core.pivot import PivotPreservationEngine
+        from mathutils import Matrix, Vector
+        from tests.in_blender.fixtures import in_blender_sandbox
+    except ImportError:
+        bpy = None
+        PivotPreservationEngine = None  # type: ignore
+        Matrix = None  # type: ignore
+        Vector = None  # type: ignore
+        in_blender_sandbox = None  # type: ignore
 
 
 class TestPivotPipeline(unittest.TestCase):
@@ -85,6 +93,7 @@ class TestPivotPipeline(unittest.TestCase):
             # Clone pivot for LOD1
             cloned_pivot = PivotPreservationEngine.clone_pivot_empty(pivot, tgt_coll, tier_idx=1, base_name="SM_Hero")
             self.assertIsNotNone(cloned_pivot)
+            assert cloned_pivot is not None
             self.assertIn(cloned_pivot.name, tgt_coll.objects)
             self.assertTrue(cloned_pivot.get("is_pivot", False))
 
@@ -113,10 +122,10 @@ class TestPivotPipeline(unittest.TestCase):
     def test_transform_vertex_and_normal_to_pivot_space(self) -> None:
         """Verify mathematical coordinate transformation from mesh local space to offset pivot space."""
         mesh_obj = bpy.data.objects.new("DummyMesh", None)
-        mesh_obj.matrix_world = Matrix.Translation(Vector((2.0, 0.0, 0.0)))
+        mesh_obj.matrix_world = Matrix.Translation((2.0, 0.0, 0.0))
 
         pivot_obj = bpy.data.objects.new("DummyPivot", None)
-        pivot_obj.matrix_world = Matrix.Translation(Vector((1.0, 0.0, 0.0)))
+        pivot_obj.matrix_world = Matrix.Translation((1.0, 0.0, 0.0))
 
         local_vert = Vector((0.0, 1.0, 0.0))
         # local_vert world pos = (2, 1, 0). Pivot world pos = (1, 0, 0).

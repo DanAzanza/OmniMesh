@@ -7,6 +7,7 @@ from __future__ import annotations
 import concurrent.futures
 import os
 import tempfile
+from typing import Any, cast
 import numpy as np
 from PIL import Image
 
@@ -398,7 +399,7 @@ def test_write_png_direct_8bit_and_16bit():
             assert bit_depth_byte == 16
 
         # Invalid array
-        assert write_png_direct(os.path.join(tmpdir, "invalid.png"), None) is False
+        assert write_png_direct(os.path.join(tmpdir, "invalid.png"), cast(Any, None)) is False
 
 
 def test_pack_material_preset_ue5():

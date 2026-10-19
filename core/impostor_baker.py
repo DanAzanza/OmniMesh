@@ -16,24 +16,29 @@ import logging
 import math
 import os
 import tempfile
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
     import mathutils
     from mathutils import Matrix, Vector
-except ImportError:
-    bpy = None
-    mathutils = None
-    Matrix = None  # type: ignore
+else:
     try:
-        from .impostor_math import Vector
-    except (ImportError, ValueError):
-        from core.impostor_math import Vector
+        import bpy
+        import mathutils
+        from mathutils import Matrix, Vector
+    except ImportError:
+        bpy = None
+        mathutils = None
+        Matrix = None  # type: ignore
+        try:
+            from .impostor_math import Vector
+        except (ImportError, ValueError):
+            from core.impostor_math import Vector
 
 
 try:
@@ -81,18 +86,21 @@ class EphemeralBakeSceneGuard:
             else ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES")
         )
 
+        render: Any = self.bake_scene.render
+        cycles: Any = getattr(self.bake_scene, "cycles", None)
+        eevee: Any = getattr(self.bake_scene, "eevee", None)
         for eng in preferred:
             try:
-                self.bake_scene.render.engine = eng
-                if self.bake_scene.render.engine == eng:
-                    if eng == "CYCLES" and hasattr(self.bake_scene, "cycles"):
-                        self.bake_scene.cycles.samples = 1
-                        self.bake_scene.cycles.max_bounces = 0
-                        self.bake_scene.cycles.diffuse_bounces = 0
-                        self.bake_scene.cycles.glossy_bounces = 0
-                        self.bake_scene.cycles.device = "CPU"
-                    elif hasattr(self.bake_scene, "eevee") and hasattr(self.bake_scene.eevee, "taa_render_samples"):
-                        self.bake_scene.eevee.taa_render_samples = 1
+                render.engine = eng
+                if render.engine == eng:
+                    if eng == "CYCLES" and cycles:
+                        cycles.samples = 1
+                        cycles.max_bounces = 0
+                        cycles.diffuse_bounces = 0
+                        cycles.glossy_bounces = 0
+                        cycles.device = "CPU"
+                    elif eevee and hasattr(eevee, "taa_render_samples"):
+                        eevee.taa_render_samples = 1
                     break
             except (TypeError, ValueError, AttributeError) as eng_err:
                 logger.debug("Render engine %s not available: %s", eng, eng_err)
@@ -177,7 +185,7 @@ class ImpostorCameraRig:
         cp = math.cos(pitch_rad)
         offset = Vector((dist * cp * math.sin(angle_rad), -dist * cp * math.cos(angle_rad), dist * math.sin(pitch_rad)))
         cam_obj.location = Vector(center) + offset
-        dir_vec = Vector(center) - Vector(cam_obj.location)
+        dir_vec = Vector(center) - cam_obj.location
         if dir_vec.length > 1e-6:
             rot_quat = dir_vec.to_track_quat("-Z", "Y")
             cam_obj.rotation_euler = rot_quat.to_euler()
@@ -441,7 +449,9 @@ class ImpostorAtlasBaker:
                         try:
                             if getattr(bpy.context, "window", None) and hasattr(bpy.context, "temp_override"):
                                 try:
-                                    with bpy.context.temp_override(scene=bake_scene, window=bpy.context.window):
+                                    with cast(Any, bpy.context).temp_override(
+                                        scene=bake_scene, window=bpy.context.window
+                                    ):
                                         bpy.ops.render.render(animation=True, scene=bake_scene.name)
                                 except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
                                     logger.debug("Render temp_override fallback: %s", exc)
@@ -459,7 +469,8 @@ class ImpostorAtlasBaker:
                             frame_file = f"{chan_prefix}{frame_idx:04d}.png"
                             if os.path.exists(frame_file):
                                 img = bpy.data.images.load(frame_file)
-                                w, h = img.size
+                                sz: Any = img.size
+                                w, h = int(sz[0]), int(sz[1])
                                 arr = np.empty(w * h * 4, dtype=np.float32)
                                 img.pixels.foreach_get(arr)
                                 bpy.data.images.remove(img, do_unlink=True)
@@ -660,18 +671,18 @@ class ImpostorAtlasBaker:
 
         # Create temporary bake images
         res = atlas_resolution
-        img_diff = bpy.data.images.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
+        img_diff: Any = bpy.data.images.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
         img_diff.colorspace_settings.name = "sRGB"
         img_diff.generated_color = (0.0, 0.0, 0.0, 0.0)
 
-        img_norm = bpy.data.images.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
+        img_norm: Any = bpy.data.images.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
         img_norm.colorspace_settings.name = "Non-Color"
         img_norm.generated_color = (0.5, 0.5, 1.0, 0.0)
 
-        img_rough = bpy.data.images.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
+        img_rough: Any = bpy.data.images.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
         img_rough.colorspace_settings.name = "Non-Color"
 
-        img_ao = bpy.data.images.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
+        img_ao: Any = bpy.data.images.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
         img_ao.colorspace_settings.name = "Non-Color"
 
         mat = (
@@ -684,8 +695,10 @@ class ImpostorAtlasBaker:
             target_impostor.data.materials.append(mat)
 
         mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        bake_slot = nodes.new("ShaderNodeTexImage")
+        if not mat.node_tree:
+            raise ImpostorBakeError("Target impostor material has no node tree.")
+        nodes: Any = mat.node_tree.nodes
+        bake_slot: Any = nodes.new("ShaderNodeTexImage")
         nodes.active = bake_slot
 
         try:
@@ -730,9 +743,9 @@ class ImpostorAtlasBaker:
             orm_pix[:, :, 1] = rough_pix.reshape((res, res, 4))[:, :, 0]
             orm_pix[:, :, 3] = base_pix.reshape((res, res, 4))[:, :, 3]
 
-            img_orm = bpy.data.images.new(f"__om_orm_{base_name}", width=res, height=res, alpha=True)
+            img_orm: Any = bpy.data.images.new(f"__om_orm_{base_name}", width=res, height=res, alpha=True)
             img_orm.colorspace_settings.name = "Non-Color"
-            img_orm.pixels.foreach_set(orm_pix.flatten())
+            cast(Any, img_orm.pixels).foreach_set(orm_pix.flatten())
             orm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_ORM.png")
             img_orm.filepath_raw = orm_path
             img_orm.file_format = "PNG"

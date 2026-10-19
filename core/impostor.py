@@ -7,30 +7,38 @@ Provides:
 - Camera-Space Tangent normal encoding with OpenGL (+Y) and DirectX (-Y) orientation
 - Vectorized morphological gutter dilation to eliminate dark fringe mipmap bleeding
 - Billboard Mesh Builder: Cross-Quads (+), Star-Quads (*), and Single-Quad Octahedral cards
-- Multi-Engine Material and Exporter Configuration (MSFS 2024, UE5, Unity 6, Godot 4)
+- Multi-Engine Material and Exporter Configuration (MSFS 2024, UE5, Unity 6)
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import Any, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple, cast
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     import mathutils
     from mathutils import Vector
-except ImportError:
-    bpy = None
-    bmesh = None
-    mathutils = None
+else:
+    try:
+        import bmesh
+        import bpy
+        import mathutils
+        from mathutils import Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        mathutils = None
 
 try:
+    from .exceptions import ImpostorBakeError
     from .impostor_math import ImpostorMath, Vector
 except (ImportError, ValueError):
+    from core.exceptions import ImpostorBakeError
     from core.impostor_math import ImpostorMath, Vector
 
 __all__ = [
@@ -111,10 +119,10 @@ class ImpostorMeshBuilder:
             p_tl = center_pt - hw * u_dir + hh * v_dir
 
             # Forward Face (+normal)
-            v1 = bm.verts.new(p_bl)
-            v2 = bm.verts.new(p_br)
-            v3 = bm.verts.new(p_tr)
-            v4 = bm.verts.new(p_tl)
+            v1 = bm.verts.new((p_bl.x, p_bl.y, p_bl.z))
+            v2 = bm.verts.new((p_br.x, p_br.y, p_br.z))
+            v3 = bm.verts.new((p_tr.x, p_tr.y, p_tr.z))
+            v4 = bm.verts.new((p_tl.x, p_tl.y, p_tl.z))
             f_fwd = bm.faces.new((v1, v2, v3, v4))
             f_fwd.loops[0][uv_layer].uv = (0.0, 0.0)
             f_fwd.loops[1][uv_layer].uv = (w, 0.0)
@@ -122,10 +130,10 @@ class ImpostorMeshBuilder:
             f_fwd.loops[3][uv_layer].uv = (0.0, h)
 
             # Reverse Face (-normal)
-            v5 = bm.verts.new(p_br)
-            v6 = bm.verts.new(p_bl)
-            v7 = bm.verts.new(p_tl)
-            v8 = bm.verts.new(p_tr)
+            v5 = bm.verts.new((p_br.x, p_br.y, p_br.z))
+            v6 = bm.verts.new((p_bl.x, p_bl.y, p_bl.z))
+            v7 = bm.verts.new((p_tl.x, p_tl.y, p_tl.z))
+            v8 = bm.verts.new((p_tr.x, p_tr.y, p_tr.z))
             f_rev = bm.faces.new((v5, v6, v7, v8))
             f_rev.loops[0][uv_layer].uv = (0.0, 0.0)
             f_rev.loops[1][uv_layer].uv = (w, 0.0)
@@ -215,7 +223,7 @@ class ImpostorMeshBuilder:
         else:
             poly_pts = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
 
-        verts = [bm.verts.new(Vector((cx + px, cy, cz + pz))) for px, pz in poly_pts]
+        verts = [bm.verts.new((cx + px, cy, cz + pz)) for px, pz in poly_pts]
         face = bm.faces.new(verts)
 
         for loop, (px, pz) in zip(face.loops, poly_pts, strict=True):
@@ -262,8 +270,10 @@ class ImpostorManager:
             mat = bpy.data.materials.new(name=mat_name)
 
         mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        links = mat.node_tree.links
+        if not mat.node_tree:
+            raise ImpostorBakeError("Impostor material has no node tree.")
+        nodes: Any = mat.node_tree.nodes
+        links: Any = mat.node_tree.links
 
         # Configure material transparency & two-sided
         if hasattr(mat, "surface_render_method"):
@@ -340,7 +350,7 @@ class ImpostorManager:
                 links.new(tex_orm.outputs["Alpha"], node_invert.inputs["Color"])
                 links.new(node_invert.outputs["Color"], node_bsdf.inputs["Roughness"])
         else:
-            # Standard ORM (UE5 / Godot / MSFS): R=AO, G=Roughness, B=Metallic
+            # Standard ORM (UE5 / MSFS): R=AO, G=Roughness, B=Metallic
             if "Roughness" in node_bsdf.inputs:
                 links.new(node_separate.outputs["Green"], node_bsdf.inputs["Roughness"])
             if "Metallic" in node_bsdf.inputs:
@@ -365,7 +375,7 @@ class ImpostorManager:
         if base_color_path and os.path.exists(base_color_path):
             tex_base = nodes.get("Tex_BaseColor")
             if tex_base and getattr(tex_base, "type", "") == "TEX_IMAGE":
-                img = bpy.data.images.load(base_color_path)
+                img: Any = bpy.data.images.load(base_color_path)
                 tex_base.image = img
                 if hasattr(img, "colorspace_settings"):
                     img.colorspace_settings.name = "sRGB"
@@ -373,7 +383,7 @@ class ImpostorManager:
         if normal_path and os.path.exists(normal_path):
             tex_norm = nodes.get("Tex_Normal")
             if tex_norm and getattr(tex_norm, "type", "") == "TEX_IMAGE":
-                img = bpy.data.images.load(normal_path)
+                img: Any = bpy.data.images.load(normal_path)
                 tex_norm.image = img
                 if hasattr(img, "colorspace_settings"):
                     img.colorspace_settings.name = "Non-Color"
@@ -381,7 +391,7 @@ class ImpostorManager:
         if orm_path and os.path.exists(orm_path):
             tex_orm = nodes.get("Tex_ORM")
             if tex_orm and getattr(tex_orm, "type", "") == "TEX_IMAGE":
-                img = bpy.data.images.load(orm_path)
+                img: Any = bpy.data.images.load(orm_path)
                 tex_orm.image = img
                 if hasattr(img, "colorspace_settings"):
                     img.colorspace_settings.name = "Non-Color"
@@ -474,7 +484,7 @@ class ImpostorManager:
             # Assign Impostor PBR Material
             mat = cls.create_impostor_material(base_name, target_engine=target_engine, is_two_sided=True)
             if mat:
-                impostor_obj.data.materials.append(mat)
+                cast(Any, impostor_obj.data).materials.append(mat)
 
             target_coll.objects.link(impostor_obj)
 

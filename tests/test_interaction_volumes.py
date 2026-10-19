@@ -6,6 +6,7 @@ collection hierarchy routing, and non-blocking physics semantics.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 
@@ -50,15 +51,16 @@ class MockCollection:
     def __init__(self, name: str):
         self.name = name
         self.objects = MagicMock()
-        self.linked_objs: list[any] = []
+        self.linked_objs: list[Any] = []
         self.objects.link.side_effect = self.linked_objs.append
 
 
 class MockObject:
-    def __init__(self, name: str, data: any = None):
+    def __init__(self, name: str, data: Any = None):
         self.name = name
+        self.type: str = "MESH"
         self.data = data
-        self.custom_props: dict[str, any] = {}
+        self.custom_props: dict[str, Any] = {}
         self.display_type = "TEXTURED"
         self.show_wire = False
         self.location = (0.0, 0.0, 0.0)
@@ -67,13 +69,13 @@ class MockObject:
         self.matrix_world = MagicMock()
         self.matrix_parent_inverse = MagicMock()
 
-    def __setitem__(self, key: str, value: any):
+    def __setitem__(self, key: str, value: Any):
         self.custom_props[key] = value
 
     def __getitem__(self, key: str):
         return self.custom_props[key]
 
-    def get(self, key: str, default: any = None):
+    def get(self, key: str, default: Any = None):
         return self.custom_props.get(key, default)
 
 

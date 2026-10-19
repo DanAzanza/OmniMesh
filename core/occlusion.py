@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Set
 
 import numpy as np
 
@@ -17,17 +17,24 @@ from .exceptions import TopologyError
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     import mathutils
     from mathutils import Vector
     from mathutils.bvhtree import BVHTree
-except ImportError:
-    bmesh = None
-    bpy = None
-    mathutils = None
-    BVHTree = None
+else:
+    try:
+        import bmesh
+        import bpy
+        import mathutils
+        from mathutils import Vector
+        from mathutils.bvhtree import BVHTree
+    except ImportError:
+        bmesh = None
+        bpy = None
+        mathutils = None
+        BVHTree = None
 
     class Vector(tuple):  # type: ignore
         """Pure Python 3D vector fallback for standalone headless test environments."""

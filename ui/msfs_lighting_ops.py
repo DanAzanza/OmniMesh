@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 MSFS Lighting Operators for Blender.
 Provides viewport operators for importing, visualizing, and synchronizing
@@ -10,17 +11,22 @@ import logging
 import math
 import os
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-try:
+if TYPE_CHECKING:
     import bpy
     from bpy.props import StringProperty
     from bpy.types import Collection, Object, Operator
-except ImportError:
-    bpy = None
-    Collection = object
-    Object = object
-    Operator = object
+else:
+    try:
+        import bpy
+        from bpy.props import StringProperty
+        from bpy.types import Collection, Object, Operator
+    except ImportError:
+        bpy = None
+        Collection = object
+        Object = object
+        Operator = object
 
     def StringProperty(**kwargs: Any) -> Any:
         return ""
@@ -149,7 +155,7 @@ class OMNIMESH_OT_import_msfs_lights(Operator):
         options={"HIDDEN"},
     )
 
-    def invoke(self, context: Any, event: Any) -> set[str]:
+    def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -165,7 +171,7 @@ class OMNIMESH_OT_import_msfs_lights(Operator):
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -284,7 +290,7 @@ class OMNIMESH_OT_import_msfs_lights(Operator):
         if existing and existing.type == "LIGHT":
             light_obj = existing
             light_obj.name = light_name
-            light_data = light_obj.data
+            light_data: Any = light_obj.data
             if light_data.type != light_data_type:
                 light_data.type = light_data_type
         else:
@@ -355,7 +361,7 @@ class OMNIMESH_OT_export_msfs_lights(Operator):
             props and getattr(props, "msfs_systems_cfg_path", None) and os.path.isfile(props.msfs_systems_cfg_path)
         )
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
 
@@ -409,11 +415,12 @@ class OMNIMESH_OT_export_msfs_lights(Operator):
             if point_id.endswith("_MIRRORED"):
                 base_key = str(obj.get("msfs_key", "lightdef.99")).replace("_mir", "")
                 # Find highest unused index
-                existing_indices = [
-                    int(re.search(r"\d+", r.key).group(0))
-                    for r in config.lines
-                    if r.section == "LIGHTS" and re.search(r"\d+", r.key)
-                ]
+                existing_indices: list[int] = []
+                for r in config.lines:
+                    if r.section == "LIGHTS":
+                        m = re.search(r"\d+", r.key)
+                        if m:
+                            existing_indices.append(int(m.group(0)))
                 next_idx = max(existing_indices) + 1 if existing_indices else len(config.lights)
                 new_key = f"lightdef.{next_idx}"
                 actual_point_id = f"LIGHTS:{new_key}"
@@ -475,7 +482,8 @@ class OMNIMESH_OT_export_msfs_lights(Operator):
             return {"CANCELLED"}
 
         backup_name = os.path.basename(backup_path)
-        props.msfs_spatial_status = f"Synced {len(updated_coords)} lights (Backup: {backup_name})"
+        if props:
+            props.msfs_spatial_status = f"Synced {len(updated_coords)} lights (Backup: {backup_name})"
         self.report(
             {"INFO"},
             f"Synced {len(updated_coords)} lights to {os.path.basename(cfg_path)} (Backup: {backup_name})",

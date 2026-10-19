@@ -5,18 +5,24 @@ Blender 5.2+ Normal Management Module.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-try:
+if TYPE_CHECKING:
     import bpy
     import mathutils
     from mathutils import Vector
     from mathutils.kdtree import KDTree
-except ImportError:
-    bpy = None
-    mathutils = None
-    Vector = None
-    KDTree = None
+else:
+    try:
+        import bpy
+        import mathutils
+        from mathutils import Vector
+        from mathutils.kdtree import KDTree
+    except ImportError:
+        bpy = None
+        mathutils = None
+        Vector = None
+        KDTree = None
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +114,7 @@ class NormalManager:
             if hasattr(bpy.ops.object, "modifier_move_to_index"):
                 try:
                     if hasattr(bpy.context, "temp_override"):
-                        with bpy.context.temp_override(active_object=lod_obj, object=lod_obj):
+                        with cast(Any, bpy.context).temp_override(active_object=lod_obj, object=lod_obj):
                             bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
                     elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
                         bpy.context.view_layer.objects.active = lod_obj
@@ -117,7 +123,9 @@ class NormalManager:
                     logger.debug("Failed moving DATA_TRANSFER modifier to index 0: %s", exc)
 
             if hasattr(bpy.context, "temp_override"):
-                with bpy.context.temp_override(active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj]):
+                with cast(Any, bpy.context).temp_override(
+                    active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj]
+                ):
                     bpy.ops.object.modifier_apply(modifier=dt_mod.name)
             elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
                 bpy.context.view_layer.objects.active = lod_obj

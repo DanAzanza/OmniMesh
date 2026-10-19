@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=none
 """
 OmniMesh Spatial Chunking & HLOD Generation Operators.
 Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
@@ -10,18 +11,23 @@ Features:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bmesh
     import bpy
     from bpy.types import Operator
-except ImportError:
-    bpy = None
-    bmesh = None
-    Operator = object
+else:
+    try:
+        import bmesh
+        import bpy
+        from bpy.types import Operator
+    except ImportError:
+        bpy = None
+        bmesh = None
+        Operator = object
 
 try:
     from ..core.chunking import HLODClusterMerger, MeshChunkSlicer, SpatialGridSpec
@@ -50,7 +56,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and get_selected_mesh_objects(context))
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 
@@ -275,7 +281,7 @@ class LOD_OT_voxel_scan_cleanup(Operator):
     def poll(cls, context: Any) -> bool:
         return bool(context and context.active_object and getattr(context.active_object, "type", "") == "MESH")
 
-    def execute(self, context: Any) -> set[str]:
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 
@@ -291,7 +297,7 @@ class LOD_OT_voxel_scan_cleanup(Operator):
                 obj.data.remesh_voxel_size = voxel_size
                 obj.data.remesh_mode = "VOXEL"
                 if hasattr(bpy.context, "temp_override"):
-                    with bpy.context.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                    with cast(Any, bpy.context).temp_override(active_object=obj, object=obj, selected_objects=[obj]):
                         bpy.ops.object.voxel_remesh()
                 elif hasattr(bpy.context, "view_layer") and hasattr(bpy.context.view_layer, "objects"):
                     bpy.context.view_layer.objects.active = obj

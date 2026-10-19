@@ -6,17 +6,22 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, List, Tuple
+from typing import TYPE_CHECKING, Any, List, Tuple
 
 import numpy as np
 
-try:
+if TYPE_CHECKING:
     import bmesh
     from mathutils import Vector
     from mathutils.bvhtree import BVHTree
-except ImportError:
-    bmesh = None  # type: ignore
-    BVHTree = None  # type: ignore
+else:
+    try:
+        import bmesh
+        from mathutils import Vector
+        from mathutils.bvhtree import BVHTree
+    except ImportError:
+        bmesh = None  # type: ignore
+        BVHTree = None  # type: ignore
 
     class Vector(list):  # type: ignore
         def __init__(self, iterable: Any):
@@ -174,24 +179,28 @@ class CollisionDecomposer:
                 if rel_s2 < 1e-3:
                     # Planar 2D sheet detected: extrude along tertiary normal axis vh[2]
                     normal = Vector(vh[2]).normalized()
+                    offset = normal * effective_thickness
+                    offset_vec = (offset.x, offset.y, offset.z)
                     if bm.faces:
                         res_ext = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
                         verts_to_move = [v for v in res_ext["geom"] if isinstance(v, bmesh.types.BMVert)]
-                        bmesh.ops.translate(bm, vec=normal * effective_thickness, verts=verts_to_move)
+                        bmesh.ops.translate(bm, vec=offset_vec, verts=verts_to_move)
                     else:
                         bmesh.ops.extrude_vert_indiv(bm, verts=bm.verts[:])
-                        bmesh.ops.translate(bm, vec=normal * effective_thickness, verts=bm.verts[:])
+                        bmesh.ops.translate(bm, vec=offset_vec, verts=bm.verts[:])
 
                     # If also 1D collinear needle: extrude along secondary axis vh[1]
                     if rel_s1 < 1e-3:
                         normal_sec = Vector(vh[1]).normalized()
+                        offset_sec = normal_sec * effective_thickness
+                        offset_sec_vec = (offset_sec.x, offset_sec.y, offset_sec.z)
                         if bm.faces:
                             res_ext2 = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
                             verts_to_move2 = [v for v in res_ext2["geom"] if isinstance(v, bmesh.types.BMVert)]
-                            bmesh.ops.translate(bm, vec=normal_sec * effective_thickness, verts=verts_to_move2)
+                            bmesh.ops.translate(bm, vec=offset_sec_vec, verts=verts_to_move2)
                         else:
                             bmesh.ops.extrude_vert_indiv(bm, verts=bm.verts[:])
-                            bmesh.ops.translate(bm, vec=normal_sec * effective_thickness, verts=bm.verts[:])
+                            bmesh.ops.translate(bm, vec=offset_sec_vec, verts=bm.verts[:])
             except (np.linalg.LinAlgError, RuntimeError, ValueError) as exc:
                 logger.debug("Planar extrusion fallback: %s", exc)
 
@@ -216,14 +225,14 @@ class CollisionDecomposer:
     @staticmethod
     def _purge_hull_interior_geom(bm: Any, to_delete: list[Any]) -> None:
         """Two-pass deletion of interior faces and unused vertices to ensure clean BVH indexing."""
-        faces_to_del = [f for f in to_delete if bmesh and isinstance(f, bmesh.types.BMFace) and f.is_valid]
+        faces_to_del: list[Any] = [f for f in to_delete if bmesh and isinstance(f, bmesh.types.BMFace) and f.is_valid]
         if faces_to_del:
             try:
                 bmesh.ops.delete(bm, geom=faces_to_del, context="FACES_ONLY")
             except BMESH_OP_ERRORS as exc:
                 logger.debug("Interior face purge bypassed: %s", exc)
 
-        verts_to_del = [v for v in to_delete if bmesh and isinstance(v, bmesh.types.BMVert) and v.is_valid]
+        verts_to_del: list[Any] = [v for v in to_delete if bmesh and isinstance(v, bmesh.types.BMVert) and v.is_valid]
         if verts_to_del:
             try:
                 bmesh.ops.delete(bm, geom=verts_to_del, context="VERTS")
