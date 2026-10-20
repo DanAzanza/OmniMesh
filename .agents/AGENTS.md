@@ -6,8 +6,13 @@
 * **Constructive Sparring & Counterproposals**: Proactively suggest proven engineering alternatives, identify performance bottlenecks, and challenge edge-case assumptions respectfully.
 * **Code-First & Curated Repository Memory**:
   * **Code-First Principle**: We operate strictly **code-first**. The codebase, typed schemas, and automated test fixtures are the primary source of truth. Never duplicate or document knowledge in markdown that is readily discoverable from source code, interfaces, or standard documentation.
-  * **Strict Knowledge Separation**: `AGENTS.md` remains strictly universal and repository-agnostic. Reserve [`.agents/KNOWLEDGE.md`](.agents/KNOWLEDGE.md) as the exclusive target for all project-specific, domain-specific, and platform-specific information (verification commands, commit scopes, hardware limits, and non-obvious runtime gotchas that cannot be inferred from source code alone).
-  * **Curated Persistence**: Propose new additions to [`.agents/KNOWLEDGE.md`](.agents/KNOWLEDGE.md) as a concise summary for user review before writing them, rather than appending unvetted debug logs silently.
+  * **Strict Knowledge Separation & Modular Memory Protocol**:
+    * `AGENTS.md` remains strictly universal and repository-agnostic across all projects.
+    * Project-specific rules, operational contracts, and platform quirks are decoupled into modular memory documents inside `.agents/` (or repository documentation roots):
+      * **Project Knowledge (`PROJECT.md` or `KNOWLEDGE.md`)**: The authoritative target for project-specific operational requirements, central verification commands, commit scopes, architectural boundaries, and custom schemas.
+      * **Platform & Runtime Knowledge (`<DOMAIN>_KNOWLEDGE.md`, e.g. `BLENDER_KNOWLEDGE.md`, `UNREAL_KNOWLEDGE.md`)**: The dedicated target for non-obvious runtime quirks, framework traps, third-party C/API invariants, and hardware limits that cannot be inferred from source code alone.
+    * AI assistants operating in this repository must discover and consult these modular knowledge files upon initialization or when touching their respective domains.
+  * **Curated Persistence**: Propose new additions to the appropriate modular knowledge document (`PROJECT.md` for project architecture/gates, or `<DOMAIN>_KNOWLEDGE.md` for platform/runtime quirks) as a concise summary for user review before writing them, rather than appending unvetted debug logs silently.
 
 ---
 
@@ -27,6 +32,7 @@
   * Every claim in documentation, README files, or release notes—including performance benchmarks, hardware execution models, test counts, and compliance assertions—must be backed by reproducible scripts, benchmark harnesses, or automated test fixtures in the repository.
   * Speculative metrics, unbacked accuracy percentages (e.g. claiming benchmark figures without an in-repo evaluation dataset and evaluation script), and misleading technical branding are strictly prohibited.
   * Badges, type-checker modes, and linter levels advertised in documentation must strictly match active configuration files (`pyproject.toml`, CI workflows).
+  * Maintain volatile metrics (such as exact test counts or coverage percentages) at a single authoritative location (e.g. CI badges or command output references) rather than manually duplicating them across prose sections where they drift out of sync.
 * **Mandatory Negative & Boundary Testing**:
   * Test suites must never assert happy paths alone. Every newly introduced feature or hardened boundary must test explicit failure modes:
     * Negative security assertions (unauthorized requests return 401/403, missing or invalid tokens fail, path traversal is rejected).
@@ -122,7 +128,7 @@ When formulating Git commit messages, adhere strictly to the following standards
   * Limited to **50 characters or fewer**.
   * Capitalized initial letter; no trailing period.
   * Written strictly in the **imperative mood** (e.g., "Fix", "Add", "Refactor", never "Fixed" or "Adds").
-  * Prefixed with the target component or scope in brackets (refer to [`.agents/KNOWLEDGE.md`](.agents/KNOWLEDGE.md) for repository-specific component tags).
+  * Prefixed with the target component or scope in brackets (refer to the project knowledge file, e.g. [`.agents/PROJECT.md`](PROJECT.md) or `KNOWLEDGE.md`, for repository-specific component tags).
 * **Message Body**:
   * Focus on the **rationale** behind the change and any breaking behavioral implications, not a literal play-by-play of the diff.
 * **Output Format**: When asked solely to draft a commit message (or once the Section 7 Pre-Commit Audit has already passed), return solely the raw commit message text without conversational preamble or meta-commentary.
@@ -132,7 +138,7 @@ When formulating Git commit messages, adhere strictly to the following standards
 ## 7. Quality Gate & Pre-Commit Audit
 Before any commit or push operation is executed (or when the user requests a commit/pre-commit check), you MUST execute this sequence in full:
 
-* **CI Parity Gate**: Execute the project's central verification script (as documented in [`.agents/KNOWLEDGE.md`](.agents/KNOWLEDGE.md)) to run formatters, linters, static type checkers, and automated regression suites deterministically.
+* **CI Parity Gate**: Execute the project's central verification script (as documented in the project knowledge file, e.g. [`.agents/PROJECT.md`](PROJECT.md) or `KNOWLEDGE.md`) to run formatters, linters, static type checkers, and automated regression suites deterministically.
 * **Mandatory Adversarial Subagent Audit (`pre_commit_auditor`)**:
   * Before finalizing a commit, always run an isolated audit pass against the current `git diff` and modified files.
   * When subagent tools are available (`invoke_subagent`), you MUST spawn a fresh subagent (`TypeName: "research"` or `"self"`, `Role: "Pre-Commit Auditor (pre_commit_auditor)"`) rather than self-certifying in the main thread.
@@ -148,7 +154,7 @@ Before any commit or push operation is executed (or when the user requests a com
 ## 8. Security, Data Privacy & Repository Hygiene
 * **Zero Secret & Privacy Leakage**: Never commit real credentials, access tokens, API keys, private certificates, or confidential data. All test cases must use synthetic, procedurally generated mock data.
 * **Fail-Closed Security Defaults & Untrusted Boundary**:
-  * All authentication, authorization, and validation controls must fail closed (deny by default if tokens, configs, or states are missing, corrupted, or unspecified) without testing backdoors or debug overrides in production handlers.
+  * All authentication, authorization, capability pre-flight checks, and validation controls must fail closed (deny by default if tokens, configs, node capabilities, or states are missing, corrupted, or unqueryable) without testing backdoors or debug overrides in production handlers. Pre-flight verification routines must explicitly fail or warn when inspection endpoints fail, rather than silently passing.
   * Localhost endpoints cannot be assumed trusted or single-user; multi-user environments (terminal servers, containers, shared hosts) expose local ports to all users on the host.
   * Confine and validate external or server-returned file paths against allowed root directory boundaries (e.g. using `path.resolve().is_relative_to(root)` before reading, writing, or unlinking files).
   * Never interpolate untrusted external inputs into shell command lines. Pass parameters strictly via environment variables, files, or structured argument vectors.

@@ -1,7 +1,6 @@
 # AI Agent Instructions
 
-All core engineering protocols, behavioral standards, and quality gates for this repository are documented in:
+All engineering protocols, behavioral standards, and quality gates for this repository are defined in:
 * **Workflow & Engineering Protocol**: .agents/AGENTS.md
-* **Domain Quirks & Verification Commands**: .agents/KNOWLEDGE.md
 
-Please read and follow these files strictly when assisting with this project.
+Please read and follow .agents/AGENTS.md strictly when assisting with this project. It defines the modular memory discovery protocol for project specifications and platform knowledge inside .agents/.
