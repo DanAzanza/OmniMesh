@@ -1,4 +1,10 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 import tempfile
 from typing import Any
@@ -8,7 +14,7 @@ from exporters.engine_export import AssetMeshResolver, AssetExportPayload
 from exporters.msfs_export import MSFSExporter
 
 
-class MockObject:
+class MockObject(_MockBase):
     def __init__(self, name: str, obj_type: str = "MESH"):
         self.name = name
         self.type = obj_type
@@ -31,7 +37,7 @@ class MockObject:
         return default
 
 
-class MockChildrenDict:
+class MockChildrenDict(_MockBase):
     def __init__(self, colls: list[Any]):
         self._colls = {c.name: c for c in colls}
 
@@ -45,14 +51,14 @@ class MockChildrenDict:
         return key in self._colls
 
 
-class MockCollection:
+class MockCollection(_MockBase):
     def __init__(self, name: str):
         self.name = name
         self.objects: list[Any] = []
         self.children = MockChildrenDict([])
 
 
-class MockCollectionDict:
+class MockCollectionDict(_MockBase):
     def __init__(self, colls: list[MockCollection]):
         self._colls = {c.name: c for c in colls}
 

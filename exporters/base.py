@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    import bpy
 
 try:
     from ..core.exceptions import ExportPipelineError
@@ -26,7 +29,7 @@ class EngineExporterBase(abc.ABC):
     @abc.abstractmethod
     def export_asset(
         cls,
-        context: Any,
+        context: Optional[bpy.types.Context],
         export_dir: str,
         asset_name: str,
         **kwargs: Any,

@@ -112,10 +112,10 @@ class AssetCollectionOptions:
 
 
 def configure_game_scene_settings(
-    scene: Any,
+    scene: bpy.types.Scene | None,
     options: SceneStandardOptions | None = None,
     *,
-    context: Any = None,
+    context: bpy.types.Context | None = None,
 ) -> dict[str, Any]:
     """
     Configures Blender scene and viewport parameters to game engine development standards.
@@ -134,9 +134,10 @@ def configure_game_scene_settings(
     # 1. Metric Unit Standards
     if hasattr(scene, "unit_settings"):
         try:
-            scene.unit_settings.system = "METRIC"
-            scene.unit_settings.scale_length = float(opts.unit_scale)
-            scene.unit_settings.length_unit = opts.length_unit
+            unit_settings: Any = scene.unit_settings
+            unit_settings.system = "METRIC"
+            unit_settings.scale_length = float(opts.unit_scale)
+            unit_settings.length_unit = opts.length_unit
         except (AttributeError, TypeError, ValueError) as exc:
             logger.debug("Could not set unit_settings: %s", exc)
 
@@ -151,7 +152,7 @@ def configure_game_scene_settings(
     result["scene_configured"] = True
 
     # 3. Viewport Shading, Clipping & Overlay Inspections (Safely traversed)
-    ctx = context or (getattr(bpy, "context", None) if bpy else None)
+    ctx = context
     wm = getattr(ctx, "window_manager", None) if ctx else None
     viewports_count = 0
 
@@ -211,7 +212,7 @@ def _apply_viewport_space_settings(
 
 
 def setup_asset_collections(
-    context: Any,
+    context: bpy.types.Context | None,
     asset_name: str,
     options: AssetCollectionOptions | None = None,
     *,
@@ -300,9 +301,9 @@ def setup_asset_collections(
 
 
 def assign_objects_to_asset_hierarchy(
-    objects: list[Any],
+    objects: list[bpy.types.Object],
     collections_map: dict[str, Any],
-    scene: Any = None,
+    scene: bpy.types.Scene | None = None,
     *,
     unlink_from_others: bool = True,
 ) -> dict[str, Any]:

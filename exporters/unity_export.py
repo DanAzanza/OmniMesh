@@ -33,7 +33,7 @@ class UnityExporter(EngineExporterBase):
     @classmethod
     def export_asset(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         export_dir: str,
         asset_name: str,
         **kwargs: Any,
@@ -54,7 +54,7 @@ class UnityExporter(EngineExporterBase):
         if hasattr(bpy.ops.object, "mode_set") and getattr(context, "mode", "") != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
-            except Exception as exc:
+            except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
         export_objects: list[Any] = []
@@ -133,7 +133,7 @@ class UnityExporter(EngineExporterBase):
             for c_obj, orig_name in orig_collider_names.items():
                 try:
                     c_obj.name = orig_name
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore collider name for %s: %s", getattr(c_obj, "name", "obj"), exc)
 
             # Restore original hide states
@@ -142,7 +142,7 @@ class UnityExporter(EngineExporterBase):
                     obj.hide_viewport = hv
                     if hasattr(obj, "hide_set") and vl:
                         obj.hide_set(hg, view_layer=vl)
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
@@ -154,5 +154,5 @@ class UnityExporter(EngineExporterBase):
                             o.select_set(True)
                     if vl and hasattr(vl, "objects") and orig_active:
                         vl.objects.active = orig_active
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore selection state: %s", exc)

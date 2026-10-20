@@ -1,4 +1,10 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -6,7 +12,7 @@ from unittest.mock import MagicMock, patch
 from ui.msfs_migration_ops import OMNIMESH_OT_convert_asobo_hierarchy
 
 
-class MockCollection:
+class MockCollection(_MockBase):
     def __init__(self, name: str):
         self.name = name
         self.objects: list[Any] = []
@@ -21,7 +27,7 @@ class MockCollection:
             self.objects.remove(obj)
 
 
-class MockObject:
+class MockObject(_MockBase):
     def __init__(self, name: str, obj_type: str = "MESH"):
         self.name = name
         self.type = obj_type

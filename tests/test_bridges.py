@@ -16,7 +16,7 @@ def test_bridge_manager_registry():
     assert BridgeManager.get_bridge("UE5") is UnrealLiveBridge
     assert BridgeManager.get_bridge("UNITY_6") is UnityLiveBridge
     assert BridgeManager.get_bridge("MSFS_2024") is MSFS2024LiveBridge
-    assert BridgeManager.get_bridge("GODOT_4") is None
+    assert BridgeManager.get_bridge("UNSUPPORTED_ENGINE") is None
     assert BridgeManager.get_bridge("UNKNOWN_ENGINE") is None
 
 

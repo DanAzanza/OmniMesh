@@ -10,16 +10,19 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-from typing import Any, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from .base import EngineBridgeBase
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 
 class UnityLiveBridge(EngineBridgeBase):
@@ -240,7 +243,7 @@ class UnityLiveBridge(EngineBridgeBase):
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
-        extra_options: Any = None,
+        extra_options: Optional[dict[str, object]] = None,
     ) -> Tuple[bool, str]:
         """Headless sync of exported package to Unity project."""
         target_dir = project_dir
@@ -330,7 +333,7 @@ class UnityLiveBridge(EngineBridgeBase):
     @classmethod
     def sync_asset(
         cls,
-        context: Any,
+        context: Optional[bpy.types.Context],
         export_dir: str,
         asset_name: str,
         project_dir: str = "",

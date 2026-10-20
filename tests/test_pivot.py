@@ -1,4 +1,10 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -7,7 +13,7 @@ from core.pivot import PivotPreservationEngine
 from exporters.msfs_export import MSFSExporter
 
 
-class DummyObject:
+class DummyObject(_MockBase):
     def __init__(self, name: str, obj_type: str = "EMPTY", is_pivot: bool = False, is_socket: bool = False):
         self.name = name
         self.type = obj_type
@@ -19,7 +25,7 @@ class DummyObject:
         return self._custom_props.get(key, default)
 
 
-class DummyCollection:
+class DummyCollection(_MockBase):
     def __init__(self, name: str, objects: list[DummyObject]):
         self.name = name
         self.objects = objects

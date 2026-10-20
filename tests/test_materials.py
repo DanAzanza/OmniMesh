@@ -3,6 +3,12 @@ Unit tests for OmniMesh Material Optimization, Cleanup & Slot Consolidation Modu
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from unittest.mock import MagicMock
 import numpy as np
@@ -17,31 +23,31 @@ from core.materials import (
 )
 
 
-class DummyPolygon:
+class DummyPolygon(_MockBase):
     def __init__(self, material_index: int, area: float):
         self.material_index = material_index
         self.area = area
 
 
-class DummyMaterial:
+class DummyMaterial(_MockBase):
     def __init__(self, name: str):
         self.name = name
         self.diffuse_color = (0.8, 0.8, 0.8, 1.0)
         self.node_tree = None
 
 
-class DummyMaterialSlot:
+class DummyMaterialSlot(_MockBase):
     def __init__(self, material: DummyMaterial | None = None):
         self.material = material
 
 
-class DummyMeshData:
+class DummyMeshData(_MockBase):
     def __init__(self, polygons: list[DummyPolygon]):
         self.polygons = polygons
         self.materials = []
 
 
-class DummyMeshObject:
+class DummyMeshObject(_MockBase):
     def __init__(self, material_slots: list[DummyMaterialSlot], polygons: list[DummyPolygon]):
         self.type = "MESH"
         self.material_slots = material_slots

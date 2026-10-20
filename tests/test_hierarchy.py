@@ -3,13 +3,19 @@ Unit tests for OmniMesh Hierarchy & Multi-Mesh Consolidation Module.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any, cast
 
 from core.hierarchy import MeshMergeEngine, get_rest_world_matrix_for_static
 
 
-class DummyBone:
+class DummyBone(_MockBase):
     def __init__(self, name: str, matrix_local: Any = None):
         self.name = name
         self.matrix_local = matrix_local or [
@@ -20,19 +26,19 @@ class DummyBone:
         ]
 
 
-class DummyArmatureData:
+class DummyArmatureData(_MockBase):
     def __init__(self, bones: dict[str, DummyBone]):
         self.bones = bones
 
 
-class DummyArmature:
+class DummyArmature(_MockBase):
     def __init__(self, bones: dict[str, DummyBone]):
         self.type = "ARMATURE"
         self.data = DummyArmatureData(bones)
         self.matrix_world = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
 
 
-class DummyObject:
+class DummyObject(_MockBase):
     def __init__(self, matrix_world: Any):
         self.type = "MESH"
         self.matrix_world = matrix_world
@@ -67,4 +73,4 @@ def test_get_rest_world_matrix_for_static_missing_bone():
 def test_consolidate_and_merge_meshes_null_or_empty():
     assert MeshMergeEngine.consolidate_and_merge_meshes([], "Merged") is None
     assert MeshMergeEngine.consolidate_and_merge_meshes(cast(Any, None), "Merged") is None
-    assert MeshMergeEngine.consolidate_and_merge_meshes([None, object()], "Merged") is None
+    assert MeshMergeEngine.consolidate_and_merge_meshes(cast(Any, [None, object()]), "Merged") is None

@@ -399,14 +399,14 @@ class ImpostorManager:
     @classmethod
     def generate_impostor_for_objects(
         cls,
-        mesh_objs: List[Any],
+        mesh_objs: List[bpy.types.Object],
         base_name: str,
         mode: str = "ORTHO_3_AXES",
         target_engine: str = "UE5",
         target_collection_name: str = "",
         atlas_resolution: int = 2048,
-        scene: Any = None,
-        context: Any = None,
+        scene: bpy.types.Scene | None = None,
+        context: bpy.types.Context | None = None,
     ) -> Any:
         """
         Constructs and links the Impostor billboard object in Blender.
@@ -415,7 +415,7 @@ class ImpostorManager:
         if not bpy or not mesh_objs:
             return None
 
-        ctx = context or getattr(bpy, "context", None)
+        ctx = context
         sc = (
             scene
             or getattr(ctx, "scene", None)
@@ -435,7 +435,8 @@ class ImpostorManager:
             if hasattr(obj, "bound_box") and obj.bound_box:
                 all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
             elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
-                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
+                obj_data: Any = obj.data
+                all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
         if not all_coords:
             return None
 

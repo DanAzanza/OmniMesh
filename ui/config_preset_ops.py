@@ -191,7 +191,7 @@ class OMNIMESH_OT_delete_config_preset(Operator):
         cfg_props = getattr(props, "config_presets", None) if props else None
         curr_id = getattr(cfg_props, "config_preset", "") if cfg_props else ""
 
-        # Safe fallback reassignment before deletion (KNOWLEDGE.md §1.7)
+        # Safe fallback reassignment before deletion (BLENDER_KNOWLEDGE.md §3)
         if cfg_props:
             cfg_props.config_preset = DEFAULT_CONFIG_PRESET_ID
 

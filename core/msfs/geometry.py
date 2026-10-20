@@ -79,7 +79,7 @@ def is_structural_airframe_object(obj_name: str) -> bool:
 
 def extract_world_vertices_numpy(
     obj: Any,
-    depsgraph: Any | None = None,
+    depsgraph: bpy.types.Depsgraph | None = None,
 ) -> np.ndarray:
     """Extract world-space vertex coordinates of a mesh object using fast NumPy buffers.
 
@@ -310,7 +310,7 @@ def format_class_2_scrape_tokens(
 
 
 def detect_wheel_submeshes(
-    objects: list[Any],
+    objects: list[bpy.types.Object],
 ) -> dict[str, tuple[float, float, float]]:
     """Detects wheel/tire/gear submeshes by name heuristics and calculates tire bottom contact points.
 
@@ -361,7 +361,7 @@ def detect_wheel_submeshes(
                 center_x = (min_x + max_x) * 0.5
                 center_y = (min_y + max_y) * 0.5
                 candidates.append((obj_name, (center_x, center_y, min_z)))
-            except Exception as exc:
+            except (TypeError, ValueError, AttributeError, IndexError) as exc:
                 logger.debug("Bounding box extraction failed for wheel candidate: %s", exc)
 
     if not candidates:

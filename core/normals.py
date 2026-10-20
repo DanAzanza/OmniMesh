@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 class NormalManager:
     @staticmethod
-    def ensure_sharp_edge_attribute(mesh: Any) -> Any:
+    def ensure_sharp_edge_attribute(mesh: bpy.types.Mesh | None) -> Any:
         """
         Ensures the 'sharp_edge' boolean edge attribute exists on the mesh data-block,
         which is required in Blender 4.1+ and 5.x for custom normal and auto-smooth shading.
@@ -48,11 +48,11 @@ class NormalManager:
     @classmethod
     def reproject_custom_split_normals(
         cls,
-        lod_obj: Any,
-        source_lod0: Any,
+        lod_obj: bpy.types.Object | None,
+        source_lod0: bpy.types.Object | None,
         delta_world: float = 0.1,
-        armature_obj: Any = None,
-        context: Any = None,
+        armature_obj: bpy.types.Object | None = None,
+        context: bpy.types.Context | None = None,
     ) -> bool:
         """
         Transfers custom split normals from LOD0 source to decimated LOD using Data Transfer modifier
@@ -87,9 +87,10 @@ class NormalManager:
             arm = lod_obj.find_armature()
 
         orig_pose_pos = None
-        if arm and hasattr(arm, "data") and hasattr(arm.data, "pose_position"):
-            orig_pose_pos = arm.data.pose_position
-            arm.data.pose_position = "REST"
+        arm_data: Any = getattr(arm, "data", None) if arm else None
+        if arm_data and hasattr(arm_data, "pose_position"):
+            orig_pose_pos = arm_data.pose_position
+            arm_data.pose_position = "REST"
 
         mod_name = "__LOD_NORMAL_TRANSFER__"
         dt_mod: Any = None
@@ -115,7 +116,7 @@ class NormalManager:
             return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)
 
         try:
-            ctx = context or getattr(bpy, "context", None)
+            ctx = context
             vl = getattr(ctx, "view_layer", None)
             vl_objects = getattr(vl, "objects", None)
 
@@ -137,8 +138,12 @@ class NormalManager:
             elif vl_objects is not None:
                 vl_objects.active = lod_obj
                 bpy.ops.object.modifier_apply(modifier=dt_mod.name)
-            cls.ensure_sharp_edge_attribute(lod_obj.data)
-            lod_obj.data.update()
+            else:
+                bpy.ops.object.modifier_apply(modifier=dt_mod.name)
+            lod_data: Any = lod_obj.data
+            cls.ensure_sharp_edge_attribute(lod_data)
+            if lod_data and hasattr(lod_data, "update"):
+                lod_data.update()
             return True
         except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("DATA_TRANSFER modifier failed (%s), attempting KDTree normal transfer fallback", exc)
@@ -148,11 +153,13 @@ class NormalManager:
             # Fallback: Spatial KDTree nearest-normal transfer
             return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)
         finally:
-            if arm and orig_pose_pos is not None and hasattr(arm.data, "pose_position"):
-                arm.data.pose_position = orig_pose_pos
+            if arm_data and orig_pose_pos is not None and hasattr(arm_data, "pose_position"):
+                arm_data.pose_position = orig_pose_pos
 
     @classmethod
-    def _kdtree_normal_transfer_fallback(cls, lod_obj: Any, source_lod0: Any) -> bool:
+    def _kdtree_normal_transfer_fallback(
+        cls, lod_obj: bpy.types.Object | None, source_lod0: bpy.types.Object | None
+    ) -> bool:
         """Spatial KDTree nearest-vertex surface normal interpolation fallback in world space."""
         if not KDTree or not lod_obj or not source_lod0:
             return False
@@ -226,6 +233,8 @@ class NormalManager:
             return False
 
     @classmethod
-    def transfer_boundary_loop_normals_kdtree(cls, chunk_obj: Any, source_obj: Any) -> bool:
+    def transfer_boundary_loop_normals_kdtree(
+        cls, chunk_obj: bpy.types.Object | None, source_obj: bpy.types.Object | None
+    ) -> bool:
         """Transfers custom normals to chunk mesh by world-space KDTree sampling from source."""
         return cls._kdtree_normal_transfer_fallback(chunk_obj, source_obj)

@@ -8,18 +8,16 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Optional, Tuple, cast
 import numpy as np
 
-try:
-    from PIL import Image
-except ImportError:
-    Image = None
-
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 logger = logging.getLogger(__name__)
 
@@ -28,87 +26,88 @@ class ShaderTracer:
     """Extracts and traces Principled BSDF socket connections and upstream image datablocks."""
 
     @classmethod
-    def get_material_normal_image(cls, material: Any) -> Optional[Any]:
+    def get_material_normal_image(cls, material: bpy.types.Material | None) -> Optional[bpy.types.Image]:
         """Finds image datablock connected to Principled BSDF Normal socket."""
-        if not material or not getattr(material, "use_nodes", False) or not material.node_tree:
+        if not material or not material.use_nodes or not material.node_tree:
             return None
-        bsdf = next((n for n in material.node_tree.nodes if getattr(n, "type", None) == "BSDF_PRINCIPLED"), None)
+        bsdf = next((n for n in material.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
         if not bsdf or "Normal" not in bsdf.inputs or not bsdf.inputs["Normal"].is_linked:
             return None
 
-        link = bsdf.inputs["Normal"].links[0]
-        from_node = link.from_node
+        norm_links = bsdf.inputs["Normal"].links
+        if not norm_links:
+            return None
+        from_node: Any = norm_links[0].from_node
 
         visited = {id(from_node)}
-        while getattr(from_node, "type", None) == "REROUTE" and from_node.inputs and from_node.inputs[0].is_linked:
+        while from_node and from_node.type == "REROUTE" and from_node.inputs and from_node.inputs[0].is_linked:
             from_node = from_node.inputs[0].links[0].from_node
             if id(from_node) in visited:
                 break
             visited.add(id(from_node))
 
-        if getattr(from_node, "type", None) in ("NORMAL_MAP", "BUMP"):
+        if not from_node:
+            return None
+        if from_node.type in ("NORMAL_MAP", "BUMP"):
             sock = from_node.inputs.get("Color") or from_node.inputs.get("Height")
-            if sock and sock.is_linked:
-                source = sock.links[0].from_node
+            if sock and sock.is_linked and sock.links:
+                source: Any = sock.links[0].from_node
                 visited_reroute = {id(source)}
-                while getattr(source, "type", None) == "REROUTE" and source.inputs and source.inputs[0].is_linked:
+                while source and source.type == "REROUTE" and source.inputs and source.inputs[0].is_linked:
                     source = source.inputs[0].links[0].from_node
                     if id(source) in visited_reroute:
                         break
                     visited_reroute.add(id(source))
-                if getattr(source, "type", None) == "COMBINE_COLOR":
+                if source and source.type == "COMBINE_COLOR":
                     red_sock = source.inputs.get("Red")
                     if red_sock and red_sock.is_linked:
-                        sep = red_sock.links[0].from_node
-                        if getattr(sep, "type", None) == "SEPARATE_COLOR" and sep.inputs["Color"].is_linked:
+                        sep: Any = red_sock.links[0].from_node
+                        if sep and sep.type == "SEPARATE_COLOR" and sep.inputs["Color"].is_linked:
                             source = sep.inputs["Color"].links[0].from_node
-                if getattr(source, "type", None) == "TEX_IMAGE":
-                    return getattr(source, "image", None)
-        elif getattr(from_node, "type", None) == "TEX_IMAGE":
-            return getattr(from_node, "image", None)
+                if source and source.type == "TEX_IMAGE":
+                    return source.image
+        elif from_node.type == "TEX_IMAGE":
+            return from_node.image
         return None
 
     @classmethod
     def trace_upstream_channel(
-        cls, material: Any, socket_name: str
-    ) -> tuple[Optional[Any], int, bool, Optional[float]]:
+        cls, material: bpy.types.Material | None, socket_name: str
+    ) -> tuple[Optional[bpy.types.Image], int, bool, Optional[float]]:
         """
         Traces socket upstream to locate: (image_datablock, channel_idx, is_inverted, default_val).
         Handles BSDF sockets, BaseColor/AO Mix decoupling, SeparateColor, and Math Invert.
         """
-        if not material or not getattr(material, "use_nodes", False) or not material.node_tree:
+        if not material or not material.use_nodes or not material.node_tree:
             return None, 0, False, None
 
-        nodes = getattr(material.node_tree, "nodes", [])
-        bsdf = next((n for n in nodes if getattr(n, "type", None) == "BSDF_PRINCIPLED"), None)
+        nodes = material.node_tree.nodes
+        bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
         if not bsdf:
             return None, 0, False, None
 
         # Special Case: Displacement / Height
         if socket_name in ("Displacement", "Height"):
             out_node = next(
-                (
-                    n
-                    for n in nodes
-                    if getattr(n, "type", None) == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True)
-                ),
+                (n for n in nodes if n.type == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True)),
                 None,
             )
             if not out_node:
-                out_node = next((n for n in nodes if getattr(n, "type", None) == "OUTPUT_MATERIAL"), None)
-            if out_node and "Displacement" in out_node.inputs and out_node.inputs["Displacement"].is_linked:
-                d_curr = out_node.inputs["Displacement"].links[0].from_node
-                if getattr(d_curr, "type", None) == "DISPLACEMENT":
+                out_node = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None)
+            disp_sock = out_node.inputs.get("Displacement") if out_node else None
+            if disp_sock and disp_sock.is_linked and disp_sock.links:
+                d_curr: Any = disp_sock.links[0].from_node
+                if d_curr and d_curr.type == "DISPLACEMENT":
                     h_sock = d_curr.inputs.get("Height")
                     if h_sock and h_sock.is_linked:
                         d_curr = h_sock.links[0].from_node
                 visited_d = {id(d_curr)}
-                while getattr(d_curr, "type", None) == "REROUTE" and d_curr.inputs and d_curr.inputs[0].is_linked:
+                while d_curr and d_curr.type == "REROUTE" and d_curr.inputs and d_curr.inputs[0].is_linked:
                     d_curr = d_curr.inputs[0].links[0].from_node
                     if id(d_curr) in visited_d:
                         break
                     visited_d.add(id(d_curr))
-                if getattr(d_curr, "type", None) == "TEX_IMAGE" and getattr(d_curr, "image", None):
+                if d_curr and d_curr.type == "TEX_IMAGE" and d_curr.image:
                     return d_curr.image, 0, False, 0.0
             return None, 0, False, 0.0
 
@@ -116,10 +115,11 @@ class ShaderTracer:
         if socket_name in ("Ambient Occlusion", "AO", "Occlusion"):
             base_sock = bsdf.inputs.get("Base Color") or bsdf.inputs.get("BaseColor")
             if base_sock and base_sock.is_linked:
-                mix_candidate = base_sock.links[0].from_node
+                mix_candidate: Any = base_sock.links[0].from_node
                 visited_mix = {id(mix_candidate)}
                 while (
-                    getattr(mix_candidate, "type", "") == "REROUTE"
+                    mix_candidate
+                    and mix_candidate.type == "REROUTE"
                     and mix_candidate.inputs
                     and mix_candidate.inputs[0].is_linked
                 ):
@@ -128,7 +128,8 @@ class ShaderTracer:
                         break
                     visited_mix.add(id(mix_candidate))
                 if (
-                    getattr(mix_candidate, "type", "") == "MIX"
+                    mix_candidate
+                    and mix_candidate.type == "MIX"
                     and getattr(mix_candidate, "blend_type", "") == "MULTIPLY"
                 ):
                     # Input B is AO in OmniMesh importer standard
@@ -136,27 +137,29 @@ class ShaderTracer:
                         mix_candidate.inputs[7] if len(mix_candidate.inputs) > 7 else None
                     )
                     if b_sock and b_sock.is_linked:
-                        ao_src = b_sock.links[0].from_node
+                        ao_src: Any = b_sock.links[0].from_node
                         visited_ao = {id(ao_src)}
-                        while getattr(ao_src, "type", "") == "REROUTE" and ao_src.inputs and ao_src.inputs[0].is_linked:
+                        while ao_src and ao_src.type == "REROUTE" and ao_src.inputs and ao_src.inputs[0].is_linked:
                             ao_src = ao_src.inputs[0].links[0].from_node
                             if id(ao_src) in visited_ao:
                                 break
                             visited_ao.add(id(ao_src))
                         ch_idx = 0
-                        if getattr(ao_src, "type", "") == "SEPARATE_COLOR":
+                        if ao_src and ao_src.type == "SEPARATE_COLOR":
                             ch_idx = 0  # Red is AO in ORM
                             if ao_src.inputs["Color"].is_linked:
                                 ao_src = ao_src.inputs["Color"].links[0].from_node
-                        if getattr(ao_src, "type", "") == "TEX_IMAGE" and getattr(ao_src, "image", None):
+                        if ao_src and ao_src.type == "TEX_IMAGE" and ao_src.image:
                             return ao_src.image, ch_idx, False, 1.0
 
             # Fallback for unlinked AO / ORM image nodes in tree
             for node in nodes:
-                if getattr(node, "type", None) == "TEX_IMAGE" and getattr(node, "image", None):
-                    img_n = getattr(node.image, "name", "").lower()
-                    if any(k in img_n for k in ("_ao", "ambient_occlusion", "occlusion", "_orm", "_comp")):
-                        return node.image, 0, False, 1.0
+                if node.type == "TEX_IMAGE":
+                    node_img: Any = getattr(node, "image", None)
+                    if node_img:
+                        img_n = node_img.name.lower()
+                        if any(k in img_n for k in ("_ao", "ambient_occlusion", "occlusion", "_orm", "_comp")):
+                            return node_img, 0, False, 1.0
             return None, 0, False, 1.0
 
         # Regular Socket Lookup with Canonical Aliases
@@ -191,18 +194,18 @@ class ShaderTracer:
                 except (TypeError, ValueError, IndexError) as exc:
                     logger.debug("Default value parse error: %s", exc)
 
-        if not socket or not getattr(socket, "is_linked", False):
+        if not socket or not socket.is_linked:
             return None, 0, False, default_val
 
         # Follow upstream links
         link = socket.links[0]
-        curr = link.from_node
+        curr: Any = link.from_node
         channel_index = 0
         is_inverted = False
         visited = {id(curr)}
 
         # Decouple Base Color from AO Mix node if present
-        if socket_name in ("Base Color", "BaseColor", "Albedo") and getattr(curr, "type", "") == "MIX":
+        if socket_name in ("Base Color", "BaseColor", "Albedo") and curr and curr.type == "MIX":
             if getattr(curr, "blend_type", "") == "MULTIPLY":
                 # Socket A is clean Base Color
                 a_sock = curr.inputs.get("A") or (curr.inputs[6] if len(curr.inputs) > 6 else None)
@@ -210,7 +213,7 @@ class ShaderTracer:
                     curr = a_sock.links[0].from_node
 
         while curr:
-            ntype = getattr(curr, "type", "")
+            ntype = curr.type
             if ntype == "REROUTE" and curr.inputs and curr.inputs[0].is_linked:
                 curr = curr.inputs[0].links[0].from_node
             elif ntype in ("NORMAL_MAP", "BUMP"):
@@ -220,7 +223,7 @@ class ShaderTracer:
                 red_sock = curr.inputs.get("Red")
                 curr = red_sock.links[0].from_node if (red_sock and red_sock.is_linked) else None
             elif ntype == "SEPARATE_COLOR":
-                out_name = getattr(link.from_socket, "name", "")
+                out_name = link.from_socket.name if link.from_socket else ""
                 if out_name == "Green":
                     channel_index = 1
                 elif out_name == "Blue":
@@ -235,7 +238,7 @@ class ShaderTracer:
                 else:
                     break
             elif ntype == "TEX_IMAGE":
-                return getattr(curr, "image", None), channel_index, is_inverted, default_val
+                return curr.image, channel_index, is_inverted, default_val
             else:
                 break
 
@@ -249,7 +252,7 @@ class ShaderTracer:
     @classmethod
     def extract_socket_data(
         cls,
-        material: Any,
+        material: bpy.types.Material | None,
         socket_name: str,
         target_size: Tuple[int, int],
         default_val: float = 0.0,
@@ -288,7 +291,7 @@ class ShaderTracer:
     @classmethod
     def _extract_from_image(
         cls,
-        img: Any,
+        img: bpy.types.Image | None,
         target_size: Tuple[int, int],
         channel_index: int,
         fallback: np.ndarray,
@@ -296,8 +299,10 @@ class ShaderTracer:
         default_nan: float = 0.0,
         apply_srgb_oetf: bool = False,
     ) -> np.ndarray:
-        """Helper to extract a single channel from an image with SIMD/Pillow resizing."""
+        """Helper to extract a single channel from an image with vectorized NumPy bilinear resampling."""
         target_w, target_h = target_size
+        if not img:
+            return fallback
         src_w, src_h = getattr(img, "size", (0, 0))[:2]
         if src_w == 0 or src_h == 0:
             return fallback
@@ -344,22 +349,7 @@ class ShaderTracer:
         del raw_floats
 
         if (src_w, src_h) != (target_w, target_h):
-            if bit_depth == 16 and Image:
-                pil_img = Image.fromarray(extracted, mode="I;16")
-                try:
-                    resized = pil_img.resize((target_w, target_h), resample=Image.Resampling.BILINEAR)
-                    extracted = np.asarray(resized).clip(0, 65535).astype(np.uint16)
-                finally:
-                    pil_img.close()
-            elif Image:
-                pil_img = Image.fromarray(extracted, mode="L")
-                try:
-                    resized = pil_img.resize((target_w, target_h), resample=Image.Resampling.BILINEAR)
-                    extracted = np.asarray(resized)
-                finally:
-                    pil_img.close()
-            else:
-                extracted = cls.resample_channel_bilinear_numpy(extracted, target_w, target_h, bit_depth=bit_depth)
+            extracted = cls.resample_channel_bilinear_numpy(extracted, target_w, target_h, bit_depth=bit_depth)
 
         return extracted
 
@@ -423,12 +413,12 @@ class ShaderTracer:
         return (np.clip(interpolated, 0.0, max_val) + 0.5).astype(dtype)
 
     @classmethod
-    def is_procedural_socket(cls, material: Any, socket_name: str) -> bool:
+    def is_procedural_socket(cls, material: bpy.types.Material | None, socket_name: str) -> bool:
         """Determines if a socket is linked to procedural / non-image shader nodes."""
-        if not material or not getattr(material, "use_nodes", False) or not material.node_tree:
+        if not material or not material.use_nodes or not material.node_tree:
             return False
-        nodes = getattr(material.node_tree, "nodes", [])
-        bsdf = next((n for n in nodes if getattr(n, "type", None) == "BSDF_PRINCIPLED"), None)
+        nodes = material.node_tree.nodes
+        bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
         if not bsdf:
             return False
         sock = bsdf.inputs.get(socket_name)
@@ -437,7 +427,7 @@ class ShaderTracer:
                 sock = bsdf.inputs.get(alias)
                 if sock:
                     break
-        if not sock or not getattr(sock, "is_linked", False):
+        if not sock or not sock.is_linked:
             return False
         img, _, _, _ = cls.trace_upstream_channel(material, socket_name)
         return img is None
@@ -445,23 +435,32 @@ class ShaderTracer:
     @classmethod
     def bake_material_socket(
         cls,
-        material: Any,
+        material: bpy.types.Material | None,
         socket_name: str,
         target_size: Tuple[int, int],
         bit_depth: int = 8,
+        context: Optional[bpy.types.Context] = None,
+        active_obj: Optional[bpy.types.Object] = None,
+        scene: Optional[bpy.types.Scene] = None,
     ) -> Optional[np.ndarray]:
         """Bakes an evaluated shader socket to an image array using Cycles Emission bake."""
-        if not bpy or not material or not getattr(material, "use_nodes", False) or not material.node_tree:
+        if not bpy or not material or not material.use_nodes or not material.node_tree:
             return None
 
-        act_obj = getattr(getattr(bpy, "context", None), "active_object", None)
-        if not act_obj or getattr(act_obj, "type", "") != "MESH":
+        sc = scene or (context.scene if context else None) or (bpy.data.scenes[0] if bpy and bpy.data.scenes else None)
+        act_obj = active_obj or (context.active_object if context else None)
+        if (not act_obj or act_obj.type != "MESH") and sc and sc.objects:
+            for obj in sc.objects:
+                if obj.type == "MESH" and material in getattr(obj.data, "materials", []):
+                    act_obj = obj
+                    break
+        if not act_obj or act_obj.type != "MESH":
             return None
 
         target_w, target_h = max(1, int(target_size[0])), max(1, int(target_size[1]))
         nodes = material.node_tree.nodes
         links = material.node_tree.links
-        bsdf = next((n for n in nodes if getattr(n, "type", None) == "BSDF_PRINCIPLED"), None)
+        bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
         if not bsdf:
             return None
 
@@ -487,12 +486,10 @@ class ShaderTracer:
         if not out_node or "Surface" not in out_node.inputs:
             return None
 
-        surf_sock = out_node.inputs["Surface"]
-        orig_surf_from = surf_sock.links[0].from_socket if surf_sock.is_linked else None
+        surf_sock: Any = out_node.inputs["Surface"]
+        orig_surf_from = surf_sock.links[0].from_socket if (surf_sock.is_linked and surf_sock.links) else None
 
-        scene = getattr(getattr(bpy, "context", None), "scene", None) or (
-            bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None
-        )
+        scene = sc
         if not scene:
             return None
         old_engine = scene.render.engine
@@ -515,7 +512,7 @@ class ShaderTracer:
                     cs.name = "Non-Color"
                 except (TypeError, ValueError, AttributeError) as exc:
                     logger.debug("Setting colorspace Non-Color skipped: %s", exc)
-            tex_node = nodes.new(type="ShaderNodeTexImage")
+            tex_node: Any = nodes.new(type="ShaderNodeTexImage")
             temp_nodes.append(tex_node)
             tex_node.image = temp_img
             nodes.active = tex_node

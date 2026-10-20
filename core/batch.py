@@ -247,7 +247,7 @@ class BatchProcessorEngine:
     @classmethod
     def process_single_asset(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         filepath: str,
         export_base_dir: str,
         target_engine: str = "UE5",
@@ -450,6 +450,7 @@ class BatchProcessorEngine:
                         bit_depth=bit_depth,
                         strategy=strategy,
                         naming_pattern=naming_pattern,
+                        context=context,
                     )
                     if futs:
                         all_tex_futures.extend(futs)
@@ -534,7 +535,7 @@ class BatchProcessorEngine:
         return result
 
     @staticmethod
-    def cleanup_imported_objects(objects: list[Any]) -> None:
+    def cleanup_imported_objects(objects: list[bpy.types.Object]) -> None:
         """Removes objects and their mesh datablocks cleanly from Blender memory."""
         if not bpy:
             return

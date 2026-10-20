@@ -38,7 +38,7 @@ class CollisionManager:
     @classmethod
     def generate_colliders_for_objects(
         cls,
-        mesh_objs: List[Any],
+        mesh_objs: List[bpy.types.Object],
         base_name: str,
         hull_count: int = 4,
         max_verts_per_hull: int = 32,
@@ -46,16 +46,12 @@ class CollisionManager:
         mode: str = "PER_OBJECT",
         target_collection_name: str = "",
         target_engine: str = "",
-        scene: Any = None,
+        scene: bpy.types.Scene | None = None,
     ) -> List[Any]:
         if not bpy or not mesh_objs:
             return []
 
-        sc = (
-            scene
-            or getattr(getattr(bpy, "context", None), "scene", None)
-            or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
-        )
+        sc = scene or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
 
         # Remove pre-existing colliders for clean regeneration first
         cls.remove_colliders_for_objects(mesh_objs, base_name)
@@ -118,7 +114,8 @@ class CollisionManager:
                 for obj in mesh_objs:
                     bm_temp = bmesh.new()
                     try:
-                        bm_temp.from_mesh(obj.data)
+                        obj_mesh: Any = obj.data
+                        bm_temp.from_mesh(obj_mesh)
                         bmesh.ops.transform(bm_temp, matrix=obj.matrix_world, verts=bm_temp.verts[:])
                         temp_m = bpy.data.meshes.new("_om_temp_sub")
                         bm_temp.to_mesh(temp_m)
@@ -228,7 +225,7 @@ class CollisionManager:
         return created_collider_objs
 
     @classmethod
-    def remove_colliders_for_objects(cls, mesh_objs: List[Any], base_name: str) -> int:
+    def remove_colliders_for_objects(cls, mesh_objs: List[bpy.types.Object], base_name: str) -> int:
         """
         Purges existing collider objects and meshes scoped strictly to `{base_name}`.
         Supports standard and UCX (UE5) engine naming prefixes.

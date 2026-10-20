@@ -94,7 +94,7 @@ class MeshSanitizer:
     """
 
     @classmethod
-    def _purge_duplicate_faces(cls, bm: Any) -> int:
+    def _purge_duplicate_faces(cls, bm: bmesh.types.BMesh | None) -> int:
         """
         Detects and removes exact duplicate coplanar faces sharing the same vertex set.
         Purges only if face normals are collinear (dot > 0.999), preserving intentional
@@ -165,7 +165,7 @@ class MeshSanitizer:
 
     @classmethod
     def execute_tier0_pure_hygiene(
-        cls, bm: Any, min_edge_length: float = 1e-7, min_face_area: float = 1e-12
+        cls, bm: bmesh.types.BMesh | None, min_edge_length: float = 1e-7, min_face_area: float = 1e-12
     ) -> Dict[str, int]:
         """
         Tier 0: Pure Geometric Hygiene (Uncritical, safe, always executed).
@@ -200,7 +200,7 @@ class MeshSanitizer:
             # Step A: Zero-area faces
             zero_faces = []
             for f in bm.faces:
-                if getattr(f, "is_valid", False):
+                if f.is_valid:
                     try:
                         if f.calc_area() < max(1e-15, min_face_area):
                             zero_faces.append(f)
@@ -221,7 +221,7 @@ class MeshSanitizer:
             # Step B: Zero-length edges
             zero_edges = []
             for e in bm.edges:
-                if getattr(e, "is_valid", False):
+                if e.is_valid:
                     try:
                         if e.calc_length() < max(1e-12, min_edge_length):
                             zero_edges.append(e)
@@ -243,7 +243,7 @@ class MeshSanitizer:
                     logger.debug("Lookup table ensure error: %s", exc)
 
             # Step C: Wire edges (no linked faces)
-            wire_edges = [e for e in bm.edges if getattr(e, "is_valid", False) and not getattr(e, "link_faces", [])]
+            wire_edges: list[Any] = [e for e in bm.edges if e.is_valid and not e.link_faces]
             if wire_edges:
                 pass_culled += len(wire_edges)
                 total_stats["wire_edges"] += len(wire_edges)
@@ -255,7 +255,7 @@ class MeshSanitizer:
                     logger.debug("Delete wire edges error: %s", exc)
 
             # Step D: Isolated loose vertices (no linked edges)
-            loose_verts = [v for v in bm.verts if getattr(v, "is_valid", False) and not getattr(v, "link_edges", [])]
+            loose_verts: list[Any] = [v for v in bm.verts if v.is_valid and not v.link_edges]
             if loose_verts:
                 pass_culled += len(loose_verts)
                 total_stats["loose_verts"] += len(loose_verts)
@@ -278,7 +278,7 @@ class MeshSanitizer:
     clean_loose_and_degenerates = execute_tier0_pure_hygiene
 
     @staticmethod
-    def merge_doubles_boundary_safe(bm: Any, dist: float = 1e-5) -> int:
+    def merge_doubles_boundary_safe(bm: bmesh.types.BMesh | None, dist: float = 1e-5) -> int:
         """
         Merges coincident vertices within epsilon distance.
         Safely validates vertex table and returns the count of merged vertices.
@@ -307,7 +307,9 @@ class MeshSanitizer:
     execute_tier1_topological_repair = staticmethod(TopologyRepairEngine.execute_tier1_topological_repair)
 
     @staticmethod
-    def run_preflight_inspection(context: Any, mesh_objs: list[Any]) -> dict[str, Any]:
+    def run_preflight_inspection(
+        context: bpy.types.Context | None, mesh_objs: list[bpy.types.Object]
+    ) -> dict[str, Any]:
         """Inspect mesh objects for unapplied scale/rotation, loose topology, degenerates, and materials."""
         if not bpy or not context:
             return {}
@@ -412,7 +414,9 @@ class MeshSanitizer:
         }
 
     @classmethod
-    def execute_tier2_pipeline_guards(cls, bm: Any, normal_recalc_policy: str = "MANIFOLD_ONLY") -> Dict[str, Any]:
+    def execute_tier2_pipeline_guards(
+        cls, bm: bmesh.types.BMesh | None, normal_recalc_policy: str = "MANIFOLD_ONLY"
+    ) -> Dict[str, Any]:
         """
         Tier 2: Pipeline & Normal/Material Guards.
         - MANIFOLD_ONLY (Default): Recalculates outward normals ONLY on strictly closed 2-manifold shells.
@@ -476,7 +480,7 @@ class MeshSanitizer:
     @classmethod
     def sanitize_mesh_full(
         cls,
-        bm: Any,
+        bm: bmesh.types.BMesh | None,
         options: SanitizeOptions | None = None,
     ) -> Dict[str, Any]:
         """

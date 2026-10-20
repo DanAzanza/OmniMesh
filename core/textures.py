@@ -10,15 +10,18 @@ import concurrent.futures
 import logging
 import os
 import re
-from typing import Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 import numpy as np
 
 
-try:
+if TYPE_CHECKING:
     import bpy
-except ImportError:
-    bpy = None
+else:
+    try:
+        import bpy
+    except ImportError:
+        bpy = None
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,7 @@ class TextureChannelPacker:
     @classmethod
     def pack_material_preset(
         cls,
-        material: Any,
+        material: bpy.types.Material | None,
         preset: dict[str, Any],
         export_dir: str,
         asset_name: str = "",
@@ -60,6 +63,7 @@ class TextureChannelPacker:
         bit_depth: int = 8,
         strategy: str = "SMART_AUTO",
         naming_pattern: str = "{material}{suffix}",
+        context: Optional[bpy.types.Context] = None,
     ) -> list[concurrent.futures.Future[bool]]:
         """
         Dynamically packs and exports all enabled PBR maps defined in the active preset.
@@ -87,28 +91,33 @@ class TextureChannelPacker:
 
             # Dominant Resolution Rule: Calculate maximum resolution among linked textures for this map
             found_sizes: list[tuple[int, int]] = []
+
+            def _get_dim(im: Any) -> tuple[int, int]:
+                sz = getattr(im, "size", (0, 0))
+                return (int(sz[0]), int(sz[1]))
+
             if "rgb" in channels:
                 rgb_target = channels["rgb"].get("target", "")
                 if rgb_target == "Normal":
                     n_img = cls.get_material_normal_image(material)
                     if n_img and getattr(n_img, "size", (0, 0))[0] > 0:
-                        found_sizes.append(n_img.size[:2])
+                        found_sizes.append(_get_dim(n_img))
                 else:
                     s_img, _, _, _ = cls.trace_upstream_channel(material, rgb_target)
                     if s_img and getattr(s_img, "size", (0, 0))[0] > 0:
-                        found_sizes.append(s_img.size[:2])
+                        found_sizes.append(_get_dim(s_img))
                 if "a" in channels:
                     a_target = channels["a"].get("target", "")
                     a_img, _, _, _ = cls.trace_upstream_channel(material, a_target)
                     if a_img and getattr(a_img, "size", (0, 0))[0] > 0:
-                        found_sizes.append(a_img.size[:2])
+                        found_sizes.append(_get_dim(a_img))
             else:
                 for ch_key in ("r", "g", "b", "a"):
                     if ch_key in channels:
                         ch_t = channels[ch_key].get("target", "")
                         ch_img, _, _, _ = cls.trace_upstream_channel(material, ch_t)
                         if ch_img and getattr(ch_img, "size", (0, 0))[0] > 0:
-                            found_sizes.append(ch_img.size[:2])
+                            found_sizes.append(_get_dim(ch_img))
 
             if found_sizes and strategy != "BAKE":
                 map_w = max(s[0] for s in found_sizes)
@@ -196,7 +205,9 @@ class TextureChannelPacker:
                         strategy == "SMART_AUTO" and cls.is_procedural_socket(material, rgb_target)
                     )
                     baked_arr = (
-                        cls.bake_material_socket(material, rgb_target, (map_w, map_h), bit_depth=bit_depth)
+                        cls.bake_material_socket(
+                            material, rgb_target, (map_w, map_h), bit_depth=bit_depth, context=context
+                        )
                         if should_bake_rgb
                         else None
                     )
@@ -245,7 +256,9 @@ class TextureChannelPacker:
                             strategy == "SMART_AUTO" and cls.is_procedural_socket(material, target_sock)
                         )
                         baked_arr = (
-                            cls.bake_material_socket(material, target_sock, (map_w, map_h), bit_depth=bit_depth)
+                            cls.bake_material_socket(
+                                material, target_sock, (map_w, map_h), bit_depth=bit_depth, context=context
+                            )
                             if should_bake
                             else None
                         )
@@ -280,7 +293,7 @@ class TextureChannelPacker:
     @classmethod
     def pack_orm_ue5(
         cls,
-        material: Any,
+        material: bpy.types.Material | None,
         output_filepath: str,
         target_size: Tuple[int, int] = (2048, 2048),
     ) -> bool:
@@ -298,7 +311,7 @@ class TextureChannelPacker:
     @classmethod
     def pack_maskmap_unity(
         cls,
-        material: Any,
+        material: bpy.types.Material | None,
         output_filepath: str,
         target_size: Tuple[int, int] = (2048, 2048),
     ) -> bool:
@@ -317,7 +330,7 @@ class TextureChannelPacker:
     @classmethod
     def pack_comp_msfs(
         cls,
-        material: Any,
+        material: bpy.types.Material | None,
         output_filepath: str,
         target_size: Tuple[int, int] = (2048, 2048),
     ) -> bool:
@@ -335,14 +348,15 @@ class TextureChannelPacker:
     @classmethod
     def convert_normal_directx(
         cls,
-        source_img: Any,
+        source_img: bpy.types.Image | None,
         output_filepath: str,
         target_size: Optional[Tuple[int, int]] = None,
     ) -> bool:
         """Converts OpenGL (+Y) Normal map to DirectX (-Y) Normal map."""
         if not source_img or getattr(source_img, "size", (0, 0))[0] == 0:
             return False
-        src_w, src_h = source_img.size[0], source_img.size[1]
+        sz: Any = source_img.size
+        src_w, src_h = int(sz[0]), int(sz[1])
         out_w, out_h = target_size if target_size else (src_w, src_h)
 
         r = cls._extract_from_image(

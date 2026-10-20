@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import gc
 import logging
-from typing import TYPE_CHECKING, Any, Iterator, Optional
+from typing import TYPE_CHECKING, Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class BatchMeshIterator:
 
     def __init__(
         self,
-        objects: list[Any],
+        objects: list[bpy.types.Object],
         target_ratio: float = 0.5,
         preserve_boundaries: bool = True,
         planar_dissolve: bool = True,
@@ -70,7 +70,7 @@ class BatchMeshIterator:
         self.preserve_boundaries = preserve_boundaries
         self.planar_dissolve = planar_dissolve
 
-    def iterate(self, context: Optional[Any] = None) -> Iterator[BatchProgress]:
+    def iterate(self, context: Optional[bpy.types.Context] = None) -> Iterator[BatchProgress]:
         """
         Yields BatchProgress for each mesh processed.
         Performs periodic orphan cleanup and explicit garbage collection.

@@ -373,14 +373,18 @@ def create_octahedral_preview_material(
     return mat
 
 
-def setup_impostor_tracking(proxy_obj: Any, camera_obj: Optional[Any] = None, context: Any = None) -> Optional[Any]:
+def setup_impostor_tracking(
+    proxy_obj: bpy.types.Object | None,
+    camera_obj: Optional[bpy.types.Object] = None,
+    context: bpy.types.Context | None = None,
+) -> Optional[Any]:
     """
     Configures a TRACK_TO constraint on the proxy quad to orient continuously toward the camera.
     """
     if not bpy or not proxy_obj:
         return None
 
-    ctx = context or getattr(bpy, "context", None)
+    ctx = context
     sc = (
         getattr(ctx, "scene", None)
         if ctx
@@ -391,7 +395,7 @@ def setup_impostor_tracking(proxy_obj: Any, camera_obj: Optional[Any] = None, co
         return None
 
     # Find or create TRACK_TO constraint
-    track_c = next((c for c in proxy_obj.constraints if c.type == "TRACK_TO"), None)
+    track_c: Any = next((c for c in proxy_obj.constraints if c.type == "TRACK_TO"), None)
     if not track_c:
         track_c = proxy_obj.constraints.new(type="TRACK_TO")
 
@@ -403,12 +407,12 @@ def setup_impostor_tracking(proxy_obj: Any, camera_obj: Optional[Any] = None, co
 
 
 def setup_preview_turntable(
-    cam_obj: Any,
+    cam_obj: bpy.types.Object | None,
     target_center: Any,
     radius: float,
     height: float,
     num_frames: int = 72,
-    context: Any = None,
+    context: bpy.types.Context | None = None,
 ) -> bool:
     """
     Keyframes an elevated circular camera orbit around target_center over frames 1..num_frames.
@@ -419,7 +423,7 @@ def setup_preview_turntable(
     if not bpy or not cam_obj:
         return False
 
-    ctx = context or getattr(bpy, "context", None)
+    ctx = context
     scene = (
         getattr(ctx, "scene", None)
         if ctx
@@ -463,8 +467,8 @@ def setup_preview_turntable(
 
 
 def setup_impostor_preview_rig(
-    context: Any,
-    mesh_objs: list[Any],
+    context: bpy.types.Context | None,
+    mesh_objs: list[bpy.types.Object],
     base_name: str,
     texture_dir: str,
     mode: str = "SIDE_BY_SIDE",
@@ -477,7 +481,7 @@ def setup_impostor_preview_rig(
     Places all temporary objects in a dedicated '{base_name}_Preview_Rig' collection.
     Never alters the production transforms of mesh_objs.
     """
-    ctx = context or getattr(bpy, "context", None)
+    ctx = context
     scene = (
         getattr(ctx, "scene", None)
         if ctx
@@ -596,7 +600,7 @@ def setup_impostor_preview_rig(
     target_empty.location = cam_obj.location.copy()
 
     # Track constraint on proxy targets the Empty
-    setup_impostor_tracking(proxy_obj, target_empty)
+    setup_impostor_tracking(proxy_obj, target_empty, context=context)
 
     # 7. Setup preview sun light for normal map lighting validation
     sun_name = f"{base_name}_Preview_Sun"
@@ -618,6 +622,7 @@ def setup_impostor_preview_rig(
             radius=cam_dist,
             height=elev_height,
             num_frames=num_frames,
+            context=context,
         )
 
     # Set active camera
@@ -631,7 +636,7 @@ def setup_impostor_preview_rig(
     }
 
 
-def teardown_impostor_preview_rig(context: Any, base_name: str) -> bool:
+def teardown_impostor_preview_rig(context: bpy.types.Context | None, base_name: str) -> bool:
     """
     Cleanly destroys all preview rig elements and removes the '{base_name}_Preview_Rig' collection.
     Restores original camera and removes animation data from mesh objects.
@@ -660,7 +665,7 @@ def teardown_impostor_preview_rig(context: Any, base_name: str) -> bool:
         bpy.data.materials.remove(mat)
 
     # Restore default active camera if possible
-    ctx = context or getattr(bpy, "context", None)
+    ctx = context
     scene = (
         getattr(ctx, "scene", None)
         if ctx

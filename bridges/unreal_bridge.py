@@ -12,7 +12,10 @@ import re
 import socket
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
+
+if TYPE_CHECKING:
+    import bpy
 
 from .base import EngineBridgeBase
 
@@ -300,7 +303,7 @@ class UnrealLiveBridge(EngineBridgeBase):
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
-        extra_options: Any = None,
+        extra_options: Optional[dict[str, object]] = None,
     ) -> Tuple[bool, str]:
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", os.path.basename(str(asset_name))).strip() or "SM_Asset"
         if not export_dir or not os.path.isdir(export_dir):
@@ -353,7 +356,7 @@ class UnrealLiveBridge(EngineBridgeBase):
     @classmethod
     def sync_asset(
         cls,
-        context: Any,
+        context: Optional[bpy.types.Context],
         export_dir: str,
         asset_name: str,
         project_dir: str = "",

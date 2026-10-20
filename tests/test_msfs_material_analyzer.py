@@ -2,10 +2,17 @@
 Unit tests for MSFSMaterialAnalyzer and MaterialProfile.
 """
 
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
+
 from core.material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
 
 
-class MockMaterial:
+class MockMaterial(_MockBase):
     def __init__(self, name: str, custom_props: dict | None = None):
         self.name = name
         self._props = custom_props or {}
@@ -14,7 +21,7 @@ class MockMaterial:
         return self._props.get(key, default)
 
 
-class MockMeshObject:
+class MockMeshObject(_MockBase):
     def __init__(self, name: str, materials: list[MockMaterial]):
         self.name = name
         self.type = "MESH"

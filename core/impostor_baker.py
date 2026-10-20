@@ -41,18 +41,11 @@ else:
             from core.impostor_math import Vector
 
 
-try:
-    from .exceptions import ImpostorBakeError
-    from .impostor_harness import ImpostorShaderHarness
-    from .impostor_math import ImpostorMath
-    from .metrics import compute_bounding_sphere
-    from .png_writer import write_png_direct
-except (ImportError, ValueError):
-    from core.exceptions import ImpostorBakeError
-    from core.impostor_harness import ImpostorShaderHarness
-    from core.impostor_math import ImpostorMath
-    from core.metrics import compute_bounding_sphere
-    from core.png_writer import write_png_direct
+from .exceptions import ImpostorBakeError
+from .impostor_harness import ImpostorShaderHarness
+from .impostor_math import ImpostorMath
+from .metrics import compute_bounding_sphere
+from .png_writer import write_png_direct
 
 
 class EphemeralBakeSceneGuard:
@@ -65,18 +58,15 @@ class EphemeralBakeSceneGuard:
     def __init__(
         self,
         scene_name: str = "OMNIMESH_TEMP_BAKE",
-        orig_scene: Any | None = None,
-        context: Any | None = None,
+        orig_scene: bpy.types.Scene | None = None,
+        context: bpy.types.Context | None = None,
     ):
-        self.temp_scene_name = scene_name
-        self.context = context
-        self.orig_scene = orig_scene
-        self.bake_scene = None
+        self.temp_scene_name, self.context, self.orig_scene, self.bake_scene = scene_name, context, orig_scene, None
 
     def __enter__(self) -> Optional[Any]:
         if not bpy:
             return None
-        ctx = self.context or getattr(bpy, "context", None)
+        ctx = self.context
         if not self.orig_scene:
             self.orig_scene = getattr(ctx, "scene", None) or (
                 bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None
@@ -84,19 +74,14 @@ class EphemeralBakeSceneGuard:
         self.bake_scene = bpy.data.scenes.new(self.temp_scene_name)
 
         # Configure minimal, fast unlit rendering environment
-        render = self.bake_scene.render
-        render.film_transparent = True
-        render.dither_intensity = 0.0
-
-        # Prefer Cycles for headless rendering to avoid Mesa llvmpipe overhead, or EEVEE in GUI
+        render: Any = self.bake_scene.render
+        render.film_transparent, render.dither_intensity = True, 0.0
         is_bg = getattr(bpy.app, "background", False) if bpy else False
         preferred = (
             ("CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")
             if is_bg
             else ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES")
         )
-
-        render: Any = self.bake_scene.render
         cycles: Any = getattr(self.bake_scene, "cycles", None)
         eevee: Any = getattr(self.bake_scene, "eevee", None)
         for eng in preferred:
@@ -104,10 +89,7 @@ class EphemeralBakeSceneGuard:
                 render.engine = eng
                 if render.engine == eng:
                     if eng == "CYCLES" and cycles:
-                        cycles.samples = 1
-                        cycles.max_bounces = 0
-                        cycles.diffuse_bounces = 0
-                        cycles.glossy_bounces = 0
+                        cycles.samples, cycles.max_bounces, cycles.diffuse_bounces, cycles.glossy_bounces = 1, 0, 0, 0
                         cycles.device = "CPU"
                     elif eevee and hasattr(eevee, "taa_render_samples"):
                         eevee.taa_render_samples = 1
@@ -133,7 +115,7 @@ class EphemeralBakeSceneGuard:
         if not bpy:
             return
         try:
-            ctx = self.context or getattr(bpy, "context", None)
+            ctx = self.context
             win = getattr(ctx, "window", None)
             if self.orig_scene and win:
                 win.scene = self.orig_scene
@@ -170,7 +152,7 @@ class ImpostorCameraRig:
     @classmethod
     def setup_camera(
         cls,
-        scene: Any,
+        scene: bpy.types.Scene | None,
         center: Any,
         radius: float,
         ortho_scale: float,
@@ -180,7 +162,7 @@ class ImpostorCameraRig:
         if not bpy or not scene:
             return None
 
-        cam_data = scene.camera.data if scene.camera else bpy.data.cameras.new("OMNIMESH_Bake_Cam")
+        cam_data: Any = scene.camera.data if scene.camera else bpy.data.cameras.new("OMNIMESH_Bake_Cam")
         cam_data.type = "ORTHO"
         cam_data.ortho_scale = ortho_scale
 
@@ -278,7 +260,9 @@ class ImpostorAtlasBaker:
         return atlas
 
     @classmethod
-    def configure_cycles_compute_device(cls, scene: Any, context: Any = None) -> tuple[str, list[str]]:
+    def configure_cycles_compute_device(
+        cls, scene: bpy.types.Scene | None, context: bpy.types.Context | None = None
+    ) -> tuple[str, list[str]]:
         """
         Automatically probes and configures the optimal compute device for Cycles baking.
         Supports NVIDIA (OptiX, CUDA), Apple Silicon (Metal), AMD (HIP), Intel (oneAPI),
@@ -289,7 +273,7 @@ class ImpostorAtlasBaker:
 
         backend_priority = ["OPTIX", "METAL", "HIP", "ONEAPI", "CUDA"]
         try:
-            ctx = context or getattr(bpy, "context", None)
+            ctx = context
             prefs = getattr(ctx, "preferences", None)
             addons = getattr(prefs, "addons", {}) if prefs else {}
             cycles_addon = addons.get("cycles")
@@ -312,7 +296,7 @@ class ImpostorAtlasBaker:
                             if active_devs:
                                 for d in active_devs:
                                     d.use = True
-                                if hasattr(scene, "cycles"):
+                                if scene and hasattr(scene, "cycles") and scene.cycles:
                                     scene.cycles.device = "GPU"
                                 dev_names = [getattr(d, "name", backend) for d in active_devs]
                                 logger.info("Configured Cycles GPU baking: %s (%s)", backend, ", ".join(dev_names))
@@ -324,14 +308,14 @@ class ImpostorAtlasBaker:
         except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
             logger.debug("Failed configuring Cycles compute device: %s", exc)
 
-        if hasattr(scene, "cycles"):
+        if scene and hasattr(scene, "cycles") and scene.cycles:
             scene.cycles.device = "CPU"
         return "CPU", ["CPU"]
 
     @classmethod
     def bake_octahedral_animation_atlas(
         cls,
-        mesh_objs: list[Any],
+        mesh_objs: list[bpy.types.Object],
         base_name: str,
         output_dir: str,
         mode: str = "OCTAHEDRAL_HEMI",
@@ -339,7 +323,7 @@ class ImpostorAtlasBaker:
         target_engine: str = "UE5",
         dilation_iterations: int = 4,
         grid_size: int = 8,
-        context: Any = None,
+        context: bpy.types.Context | None = None,
     ) -> dict[str, str]:
         """
         Bakes an NxN Octahedral Impostor atlas using an ephemeral animation timeline render.
@@ -361,10 +345,11 @@ class ImpostorAtlasBaker:
 
         all_coords: list[Any] = []
         for obj in mesh_objs:
+            obj_data: Any = getattr(obj, "data", None)
             if hasattr(obj, "bound_box") and obj.bound_box:
                 all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
-            elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
-                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
+            elif obj_data and hasattr(obj_data, "vertices"):
+                all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
 
         if not all_coords:
             all_coords = [Vector((-1.0, -1.0, -1.0)), Vector((1.0, 1.0, 1.0))]
@@ -394,44 +379,30 @@ class ImpostorAtlasBaker:
 
             # Keyframe camera orbit across frames 1..total_frames
             for frame_idx in range(1, total_frames + 1):
-                col = (frame_idx - 1) % grid_size
-                row = (frame_idx - 1) // grid_size
-                u = (col + 0.5) / float(grid_size)
-                v = (row + 0.5) / float(grid_size)
-
+                col, row = (frame_idx - 1) % grid_size, (frame_idx - 1) // grid_size
+                u, v = (col + 0.5) / float(grid_size), (row + 0.5) / float(grid_size)
                 dir_vec = fn_vec(u, v)
-                cam_pos = Vector(center) + Vector(dir_vec) * dist
-                cam_obj.location = cam_pos
-
+                cam_obj.location = Vector(center) + Vector(dir_vec) * dist
                 right, up, forward = ImpostorMath.compute_camera_basis(dir_vec)
-                rot_mat = Matrix((right, up, -forward)).transposed()
-                cam_obj.rotation_euler = rot_mat.to_euler()
-
+                cam_obj.rotation_euler = Matrix((right, up, -forward)).transposed().to_euler()
                 cam_obj.keyframe_insert(data_path="location", frame=frame_idx)
                 cam_obj.keyframe_insert(data_path="rotation_euler", frame=frame_idx)
 
-            bake_scene.render.resolution_x = tile_res
-            bake_scene.render.resolution_y = tile_res
+            bake_scene.render.resolution_x, bake_scene.render.resolution_y = tile_res, tile_res
             bake_scene.render.resolution_percentage = 100
-            bake_scene.frame_start = 1
-            bake_scene.frame_end = total_frames
+            bake_scene.frame_start, bake_scene.frame_end = 1, total_frames
 
             # 4 Unlit passes: BaseColor, Normal, Depth, ORM
-            passes = [
-                ("BaseColor", "BASE_COLOR"),
-                ("Normal", "NORMAL"),
-                ("Depth", "DEPTH"),
-                ("ORM", "ORM"),
-            ]
-
+            passes = [("BaseColor", "BASE_COLOR"), ("Normal", "NORMAL"), ("Depth", "DEPTH"), ("ORM", "ORM")]
             raw_tiles: dict[str, dict[tuple[int, int], np.ndarray]] = {pname: {} for pname, _ in passes}
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 for chan_name, harness_layer in passes:
                     orig_materials: list[tuple[Any, list[Any]]] = []
                     for obj in mesh_objs:
-                        if hasattr(obj, "data") and hasattr(obj.data, "materials"):
-                            mats = list(obj.data.materials)
+                        obj_data = getattr(obj, "data", None)
+                        if obj_data and hasattr(obj_data, "materials"):
+                            mats = list(obj_data.materials)
                             orig_materials.append((obj, mats))
                             bake_mats = mats if mats else [None]
                             override_mats = [
@@ -444,17 +415,18 @@ class ImpostorAtlasBaker:
                                 )
                                 for m in bake_mats
                             ]
-                            obj.data.materials.clear()
+                            obj_data.materials.clear()
                             for ov_m in override_mats:
                                 if ov_m:
-                                    obj.data.materials.append(ov_m)
+                                    obj_data.materials.append(ov_m)
 
                     try:
                         chan_prefix = os.path.join(temp_dir, f"{chan_name}_")
                         bake_scene.render.filepath = chan_prefix
-                        bake_scene.render.image_settings.file_format = "PNG"
-                        bake_scene.render.image_settings.color_mode = "RGBA"
-
+                        bake_scene.render.image_settings.file_format, bake_scene.render.image_settings.color_mode = (
+                            "PNG",
+                            "RGBA",
+                        )
                         if hasattr(bake_scene, "view_settings"):
                             try:
                                 bake_scene.view_settings.view_transform = (
@@ -463,7 +435,7 @@ class ImpostorAtlasBaker:
                             except (TypeError, ValueError, AttributeError) as exc:
                                 logger.debug("Failed setting view_transform on bake scene: %s", exc)
 
-                        ctx = context or getattr(bpy, "context", None)
+                        ctx = context
                         win = getattr(ctx, "window", None) if ctx else None
                         try:
                             if win and ctx and hasattr(ctx, "temp_override"):
@@ -481,8 +453,7 @@ class ImpostorAtlasBaker:
                             ) from render_exc
 
                         for frame_idx in range(1, total_frames + 1):
-                            col = (frame_idx - 1) % grid_size
-                            row = (frame_idx - 1) // grid_size
+                            col, row = (frame_idx - 1) % grid_size, (frame_idx - 1) // grid_size
                             frame_file = f"{chan_prefix}{frame_idx:04d}.png"
                             if os.path.exists(frame_file):
                                 img = bpy.data.images.load(frame_file)
@@ -491,10 +462,9 @@ class ImpostorAtlasBaker:
                                 arr = np.empty(w * h * 4, dtype=np.float32)
                                 img.pixels.foreach_get(arr)
                                 bpy.data.images.remove(img, do_unlink=True)
-                                tile_u8 = np.ascontiguousarray(
+                                raw_tiles[chan_name][(col, row)] = np.ascontiguousarray(
                                     (arr.reshape((h, w, 4))[::-1] * 255.0 + 0.5).clip(0, 255).astype(np.uint8)
                                 )
-                                raw_tiles[chan_name][(col, row)] = tile_u8
                     finally:
                         for obj, mats in orig_materials:
                             if hasattr(obj, "data") and hasattr(obj.data, "materials"):
@@ -535,22 +505,16 @@ class ImpostorAtlasBaker:
                         norm_depth = norm_tile
 
                     if dilation_iterations > 0:
-                        base_proc = ImpostorMath.morphological_dilate_channels(
-                            base_tile, opacity_mask, iterations=dilation_iterations
-                        )
-                        norm_proc = ImpostorMath.morphological_dilate_channels(
-                            norm_depth, opacity_mask, iterations=dilation_iterations
-                        )
+                        dilate_fn = ImpostorMath.morphological_dilate_channels
+                        base_proc = dilate_fn(base_tile, opacity_mask, iterations=dilation_iterations)
+                        norm_proc = dilate_fn(norm_depth, opacity_mask, iterations=dilation_iterations)
                         orm_proc = (
-                            ImpostorMath.morphological_dilate_channels(
-                                orm_tile, opacity_mask, iterations=dilation_iterations
-                            )
+                            dilate_fn(orm_tile, opacity_mask, iterations=dilation_iterations)
                             if orm_tile is not None
                             else np.zeros_like(base_tile)
                         )
                     else:
-                        base_proc = base_tile
-                        norm_proc = norm_depth
+                        base_proc, norm_proc = base_tile, norm_depth
                         orm_proc = orm_tile if orm_tile is not None else np.zeros_like(base_tile)
 
                     composed_tiles["BaseColor"].append((base_proc, coord))
@@ -564,9 +528,8 @@ class ImpostorAtlasBaker:
                 ]
 
                 for chan_key, out_fname in output_maps:
-                    tiles = composed_tiles[chan_key]
                     atlas_u8 = cls.compose_atlas_array(
-                        tiles,
+                        composed_tiles[chan_key],
                         grid_cols=grid_size,
                         grid_rows=grid_size,
                         tile_w=tile_res,
@@ -583,10 +546,7 @@ class ImpostorAtlasBaker:
 
             center_tup = (float(center.x), float(center.y), float(center.z))
             guide_text = generate_ue5_setup_guide(
-                base_name=base_name,
-                grid_size=grid_size,
-                sphere_radius=float(radius),
-                sphere_center=center_tup,
+                base_name=base_name, grid_size=grid_size, sphere_radius=float(radius), sphere_center=center_tup
             )
             guide_path = os.path.join(output_dir, f"README_{base_name}_UE5_SETUP.txt")
             with open(guide_path, "w", encoding="utf-8") as gf:
@@ -602,15 +562,15 @@ class ImpostorAtlasBaker:
     @classmethod
     def bake_impostor_textures(
         cls,
-        mesh_objs: list[Any],
+        mesh_objs: list[bpy.types.Object],
         base_name: str,
         output_dir: str,
         mode: str = "14_PLANES",
         atlas_resolution: int = 2048,
         target_engine: str = "UE5",
         dilation_iterations: int = 4,
-        impostor_obj: Optional[Any] = None,
-        context: Any = None,
+        impostor_obj: Optional[bpy.types.Object] = None,
+        context: bpy.types.Context | None = None,
     ) -> dict[str, str]:
         """
         Bakes BaseColor, Tangent Normal, and ORM (AO/Roughness/Metallic) maps using Cycles Selected-to-Active
@@ -648,14 +608,15 @@ class ImpostorAtlasBaker:
         # Calculate bounding dimensions to set ray cast distance
         all_coords = []
         for obj in mesh_objs:
+            obj_data: Any = getattr(obj, "data", None)
             if hasattr(obj, "bound_box") and obj.bound_box:
                 all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
-            elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
-                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
+            elif obj_data and hasattr(obj_data, "vertices"):
+                all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
 
         max_span = max((max(c[i] for c in all_coords) - min(c[i] for c in all_coords) for i in range(3)), default=4.0)
 
-        ctx = context or getattr(bpy, "context", None)
+        ctx = context
         scene = getattr(ctx, "scene", None) or (
             bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None
         )
@@ -686,41 +647,32 @@ class ImpostorAtlasBaker:
         for o in mesh_objs:
             o.select_set(True)
         target_impostor.select_set(True)
-        vl = getattr(ctx, "view_layer", None)
+        vl = getattr(ctx, "view_layer", None) if ctx else None
+        if not vl and scene and hasattr(scene, "view_layers") and len(scene.view_layers) > 0:
+            vl = scene.view_layers[0]
         if vl and hasattr(vl, "objects"):
             vl.objects.active = target_impostor
 
-        # Bake configuration
-        scene.render.bake.use_selected_to_active = True
-        scene.render.bake.cage_extrusion = max(1.0, max_span * 1.0)
-        scene.render.bake.max_ray_distance = max(4.0, max_span * 2.5)
-        scene.render.bake.margin = 4
-        scene.render.bake.target = "IMAGE_TEXTURES"
-
-        # Create temporary bake images
+        # Bake configuration & temporary bake images
+        bk = scene.render.bake
+        bk.use_selected_to_active, bk.margin, bk.target = True, 4, "IMAGE_TEXTURES"
+        bk.cage_extrusion, bk.max_ray_distance = max(1.0, max_span * 1.0), max(4.0, max_span * 2.5)
         res = atlas_resolution
         img_diff: Any = bpy.data.images.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
-        img_diff.colorspace_settings.name = "sRGB"
-        img_diff.generated_color = (0.0, 0.0, 0.0, 0.0)
-
+        img_diff.colorspace_settings.name, img_diff.generated_color = "sRGB", (0.0, 0.0, 0.0, 0.0)
         img_norm: Any = bpy.data.images.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
-        img_norm.colorspace_settings.name = "Non-Color"
-        img_norm.generated_color = (0.5, 0.5, 1.0, 0.0)
-
+        img_norm.colorspace_settings.name, img_norm.generated_color = "Non-Color", (0.5, 0.5, 1.0, 0.0)
         img_rough: Any = bpy.data.images.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
         img_rough.colorspace_settings.name = "Non-Color"
-
         img_ao: Any = bpy.data.images.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
         img_ao.colorspace_settings.name = "Non-Color"
 
-        mat = (
-            target_impostor.data.materials[0]
-            if (hasattr(target_impostor.data, "materials") and target_impostor.data.materials)
-            else None
-        )
+        imp_data: Any = getattr(target_impostor, "data", None)
+        mat = imp_data.materials[0] if (imp_data and hasattr(imp_data, "materials") and imp_data.materials) else None
         if not mat:
             mat = bpy.data.materials.new(name=f"M_{base_name}_Impostor")
-            target_impostor.data.materials.append(mat)
+            if imp_data and hasattr(imp_data, "materials"):
+                imp_data.materials.append(mat)
 
         mat.use_nodes = True
         if not mat.node_tree:
@@ -732,23 +684,18 @@ class ImpostorAtlasBaker:
         try:
             # 1. Bake BaseColor (Diffuse Color pass)
             bake_slot.image = img_diff
-            scene.render.bake.use_pass_direct = False
-            scene.render.bake.use_pass_indirect = False
-            scene.render.bake.use_pass_color = True
+            bk.use_pass_direct, bk.use_pass_indirect, bk.use_pass_color = False, False, True
             bpy.ops.object.bake(type="DIFFUSE")
             base_path = os.path.join(output_dir, f"T_{base_name}_Impostor_BaseColor.png")
-            img_diff.filepath_raw = base_path
-            img_diff.file_format = "PNG"
+            img_diff.filepath_raw, img_diff.file_format = base_path, "PNG"
             img_diff.save()
             results["BaseColor"] = base_path
 
             # 2. Bake Tangent Normal
-            bake_slot.image = img_norm
-            scene.render.bake.normal_space = "TANGENT"
+            bake_slot.image, bk.normal_space = img_norm, "TANGENT"
             bpy.ops.object.bake(type="NORMAL")
             norm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_Normal.png")
-            img_norm.filepath_raw = norm_path
-            img_norm.file_format = "PNG"
+            img_norm.filepath_raw, img_norm.file_format = norm_path, "PNG"
             img_norm.save()
             results["Normal"] = norm_path
 
@@ -775,8 +722,7 @@ class ImpostorAtlasBaker:
             img_orm.colorspace_settings.name = "Non-Color"
             cast(Any, img_orm.pixels).foreach_set(orm_pix.flatten())
             orm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_ORM.png")
-            img_orm.filepath_raw = orm_path
-            img_orm.file_format = "PNG"
+            img_orm.filepath_raw, img_orm.file_format = orm_path, "PNG"
             img_orm.save()
             results["ORM"] = orm_path
 
@@ -798,9 +744,4 @@ class ImpostorAtlasBaker:
         return results
 
 
-__all__ = [
-    "EphemeralBakeSceneGuard",
-    "ImpostorCameraRig",
-    "ImpostorShaderHarness",
-    "ImpostorAtlasBaker",
-]
+__all__ = ["EphemeralBakeSceneGuard", "ImpostorCameraRig", "ImpostorShaderHarness", "ImpostorAtlasBaker"]

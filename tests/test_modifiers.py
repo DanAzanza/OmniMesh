@@ -5,14 +5,21 @@ and apply_all_modifiers_in_place.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 from core.modifiers import ModifierManager
 
 
-class MockModifier:
+class MockModifier(_MockBase):
     def __init__(self, name: str, mod_type: str, show_viewport: bool = True):
         self.name = name
         self.type = mod_type
@@ -26,7 +33,7 @@ class MockModifier:
         self.viewport_resolution: int = 1
 
 
-class MockMesh:
+class MockMesh(_MockBase):
     def __init__(self, name: str = "TestMesh", users: int = 1):
         self.name = name
         self.users = users
@@ -36,7 +43,7 @@ class MockMesh:
         return MockMesh(name=f"{self.name}_copy", users=1)
 
 
-class MockObject:
+class MockObject(_MockBase):
     def __init__(self, name: str = "TestObj", obj_type: str = "MESH"):
         self.name = name
         self.type = obj_type
@@ -47,7 +54,7 @@ class MockObject:
 
 def test_has_unapplied_modifiers_null_or_empty():
     assert not ModifierManager.has_unapplied_modifiers(None)
-    assert not ModifierManager.has_unapplied_modifiers(object())
+    assert not ModifierManager.has_unapplied_modifiers(cast(Any, object()))
 
     obj = MockObject()
     assert not ModifierManager.has_unapplied_modifiers(obj)
@@ -103,7 +110,9 @@ def test_get_evaluated_mesh_with_mocked_depsgraph():
     mock_bpy.context.evaluated_depsgraph_get.return_value = mock_depsgraph
 
     with patch("core.modifiers.bpy", mock_bpy):
-        eval_mesh, returned_eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
+        eval_mesh, returned_eval_obj = ModifierManager.get_evaluated_mesh(
+            obj, preserve_armature=True, context=mock_bpy.context
+        )
 
         assert eval_mesh == eval_mesh_mock
         assert returned_eval_obj == eval_obj_mock
@@ -146,7 +155,7 @@ def test_apply_all_modifiers_in_place_no_modifiers():
 
 def test_sync_viewport_to_render_settings():
     assert ModifierManager.sync_viewport_to_render_settings(None) == 0
-    assert ModifierManager.sync_viewport_to_render_settings(object()) == 0
+    assert ModifierManager.sync_viewport_to_render_settings(cast(Any, object())) == 0
 
     obj = MockObject()
 

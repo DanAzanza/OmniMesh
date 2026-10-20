@@ -10,7 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import bpy
 
 logger = logging.getLogger(__name__)
 
@@ -57,14 +60,14 @@ class MSFSMaterialAnalyzer:
     }
 
     @classmethod
-    def classify_material(cls, mat: Any) -> MaterialProfile:
+    def classify_material(cls, mat: bpy.types.Material | None) -> MaterialProfile:
         """Classifies a Blender Material or mock object into a typed MaterialProfile."""
         mat_name = getattr(mat, "name", "") or "Material"
         name_lower = mat_name.lower()
 
         # 1. Check custom property msfs_material_type (Asobo addon standard)
         type_id = 1
-        if hasattr(mat, "get"):
+        if mat and hasattr(mat, "get"):
             raw_type = mat.get("msfs_material_type")
             if raw_type is not None:
                 try:
@@ -110,7 +113,7 @@ class MSFSMaterialAnalyzer:
         )
 
     @classmethod
-    def analyze_mesh_object(cls, obj: Any) -> list[MaterialProfile]:
+    def analyze_mesh_object(cls, obj: bpy.types.Object | None) -> list[MaterialProfile]:
         """Inspects all material slots on a mesh object and returns their profiles."""
         if not obj or getattr(obj, "type", "") != "MESH":
             return []
@@ -129,13 +132,13 @@ class MSFSMaterialAnalyzer:
         return profiles
 
     @classmethod
-    def is_decal_mesh(cls, obj: Any) -> bool:
+    def is_decal_mesh(cls, obj: bpy.types.Object | None) -> bool:
         """Returns True if the object's primary material is classified as DECAL."""
         profiles = cls.analyze_mesh_object(obj)
         return any(p.kind == MSFSMaterialKind.DECAL for p in profiles)
 
     @classmethod
-    def is_windshield_mesh(cls, obj: Any) -> bool:
+    def is_windshield_mesh(cls, obj: bpy.types.Object | None) -> bool:
         """Returns True if the object's primary material is classified as WINDSHIELD."""
         profiles = cls.analyze_mesh_object(obj)
         return any(p.kind == MSFSMaterialKind.WINDSHIELD for p in profiles)

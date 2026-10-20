@@ -37,9 +37,9 @@ class HLODClusterMerger:
 
     @staticmethod
     def merge_chunks_for_hlod(
-        chunk_objs: list[Any],
+        chunk_objs: list[bpy.types.Object],
         hlod_name: str,
-        target_collection: Any,
+        target_collection: bpy.types.Collection | None,
         weld_dist: float = 0.002,
     ) -> Any:
         """
@@ -74,14 +74,14 @@ class HLODClusterMerger:
             ref_mat_world = valid_chunks[0].matrix_world.copy()
             try:
                 ref_mat_inv = ref_mat_world.inverted()
-            except (ValueError, AttributeError, Exception):
+            except (ValueError, AttributeError, TypeError):
                 ref_mat_inv = Matrix.Identity(4) if Matrix is not None else ref_mat_world
 
             # Ensure merged BMesh has deform layer if any chunk is skinned
             merged_dvert = merged_bm.verts.layers.deform.verify() if master_vg_names else None
 
             for chunk_obj in valid_chunks:
-                chunk_mesh = chunk_obj.data
+                chunk_mesh: Any = chunk_obj.data
                 temp_bm = bmesh.new()
                 try:
                     temp_bm.from_mesh(chunk_mesh)
@@ -166,7 +166,9 @@ class HLODClusterMerger:
                 hlod_mesh.materials.append(mat)
 
             # Link to target collection
-            fallback_coll = getattr(getattr(bpy, "context", None), "collection", None)
+            fallback_coll = target_collection or (
+                bpy.data.scenes[0].collection if bpy and getattr(bpy.data, "scenes", None) else None
+            )
             if target_collection and hasattr(target_collection, "objects"):
                 target_collection.objects.link(hlod_obj)
             elif fallback_coll and hasattr(fallback_coll, "objects"):
@@ -185,14 +187,14 @@ class HLODClusterMerger:
             merged_bm.free()
 
     @staticmethod
-    def _recenter_pivot_stationary(obj: Any) -> None:
+    def _recenter_pivot_stationary(obj: bpy.types.Object | None) -> None:
         """
         Recalculates object origin to its local bounding box center
         while compensating vertex coordinates so world geometry remains stationary.
         """
         if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
             return
-        mesh = obj.data
+        mesh: Any = obj.data
         if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
             return
 

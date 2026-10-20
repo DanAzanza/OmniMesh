@@ -8,6 +8,13 @@ import pytest
 from unittest.mock import MagicMock
 
 from core.exceptions import RiggingError
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    _MockBase: type[Any] = object
+else:
+    _MockBase = object
+
 from core.rigging import (
     KinematicBonePruner,
     WeightSanitizer,
@@ -218,7 +225,7 @@ def test_armature_rest_pose_context_manager():
         def __init__(self, initial_pos="POSE"):
             self.pose_position = initial_pos
 
-    class DummyArmature:
+    class DummyArmature(_MockBase):
         def __init__(self, initial_pos="POSE"):
             self.data = DummyArmatureData(initial_pos)
 
@@ -260,7 +267,7 @@ def test_weight_sanitizer_and_pruner_guards():
         "purged_vgs": 0,
     }
 
-    class NonMesh:
+    class NonMesh(_MockBase):
         type = "CAMERA"
 
     assert WeightSanitizer.normalize_and_clamp_weights(NonMesh()) == {
@@ -277,7 +284,7 @@ def test_weight_sanitizer_raises_rigging_error_on_bmesh_failure(monkeypatch):
     class MockMesh:
         vertices = [1, 2]
 
-    class MockObj:
+    class MockObj(_MockBase):
         type = "MESH"
         name = "CorruptObj"
         data = MockMesh()

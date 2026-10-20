@@ -5,6 +5,12 @@ non-destructive snapshot restoration, and headless execution resilience.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from unittest.mock import MagicMock
 
@@ -14,7 +20,7 @@ from core.simulator import (
 )
 
 
-class MockObject:
+class MockObject(_MockBase):
     """Mock Blender Object with hide_get / hide_set tracking."""
 
     def __init__(self, name: str, poly_count: int = 100, hidden: bool = False):
@@ -35,7 +41,7 @@ class MockObject:
             self.hide_calls.append(state)
 
 
-class MockCollection:
+class MockCollection(_MockBase):
     def __init__(self, name: str, objects: list[MockObject]):
         self.name = name
         self.objects = objects

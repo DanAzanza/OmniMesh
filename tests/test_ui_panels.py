@@ -773,7 +773,7 @@ def test_ui_properties_enums():
     engine_ids = {item[0] for item in TARGET_ENGINE_ITEMS}
     expected_engines = {"MSFS_2024", "UE5", "UNITY_6"}
     assert engine_ids == expected_engines, f"Engine mismatch: {engine_ids} != {expected_engines}"
-    assert "GODOT_4" not in engine_ids
+    assert "UNSUPPORTED_ENGINE" not in engine_ids
 
     # 2. Asset category structural contract
     category_ids = {item[0] for item in ASSET_CATEGORY_ITEMS}

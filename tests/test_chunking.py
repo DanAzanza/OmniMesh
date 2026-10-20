@@ -5,6 +5,12 @@ and HLODClusterMerger material palette mapping.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -19,7 +25,7 @@ from core.decimator import MeshDecimator
 from core.normals import NormalManager
 
 
-class MockVector:
+class MockVector(_MockBase):
     def __init__(self, co: tuple[float, float, float] | list[float]):
         self.x = float(co[0])
         self.y = float(co[1])
@@ -150,7 +156,9 @@ def test_recenter_pivot_stationary_logic():
 
 def test_hlod_cluster_merger_guards():
     assert HLODClusterMerger.merge_chunks_for_hlod([], "Test", None) is None
-    assert HLODClusterMerger.merge_chunks_for_hlod([None], "Test", None) is None
+    from typing import Any, cast
+
+    assert HLODClusterMerger.merge_chunks_for_hlod(cast(Any, [None]), "Test", None) is None
 
 
 def test_lock_chunk_boundaries_guard():

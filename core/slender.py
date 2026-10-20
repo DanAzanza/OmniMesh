@@ -218,7 +218,7 @@ class SlenderFeatureCuller:
     @classmethod
     def cull_slender_features(
         cls,
-        bm: Any,
+        bm: bmesh.types.BMesh | None,
         screen_size_pct: float,
         resolution_y: int = 1080,
         root_radius_m: float = 1.0,

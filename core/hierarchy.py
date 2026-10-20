@@ -45,12 +45,12 @@ class LayerCollectionGuard:
     so depsgraph evaluations and modifier applications succeed cleanly without crashes.
     """
 
-    def __init__(self, view_layer: Any, target_collections: list[Any]):
+    def __init__(self, view_layer: bpy.types.ViewLayer | None, target_collections: list[bpy.types.Collection]):
         self.vl = view_layer
         self.targets = {c.name for c in target_collections if c and hasattr(c, "name")}
         self.saved_states: dict[str, tuple[bool, bool]] = {}
 
-    def _traverse(self, layer_coll: Any) -> bool:
+    def _traverse(self, layer_coll: bpy.types.LayerCollection | None) -> bool:
         if not layer_coll or not hasattr(layer_coll, "collection") or not layer_coll.collection:
             return False
         name = getattr(layer_coll.collection, "name", "")
@@ -76,7 +76,7 @@ class LayerCollectionGuard:
 
         return False
 
-    def _restore(self, layer_coll: Any):
+    def _restore(self, layer_coll: bpy.types.LayerCollection | None):
         if not layer_coll or not hasattr(layer_coll, "collection") or not layer_coll.collection:
             return
         name = getattr(layer_coll.collection, "name", "")
@@ -100,7 +100,9 @@ class LayerCollectionGuard:
             self._restore(self.vl.layer_collection)
 
 
-def get_rest_world_matrix_for_static(static_obj: Any, armature_obj: Any, bone_name: str) -> Any:
+def get_rest_world_matrix_for_static(
+    static_obj: bpy.types.Object | None, armature_obj: bpy.types.Object | None, bone_name: str
+) -> Any:
     """
     Computes the exact World Transform of a static object in the Armature's REST pose,
     bypassing any active Pose Mode or animation transformations.
@@ -111,10 +113,11 @@ def get_rest_world_matrix_for_static(static_obj: Any, armature_obj: Any, bone_na
     def _copy_matrix(m: Any) -> Any:
         return m.copy() if hasattr(m, "copy") else m
 
-    if not armature_obj or not hasattr(armature_obj, "data") or not hasattr(armature_obj.data, "bones"):
+    arm_data: Any = getattr(armature_obj, "data", None)
+    if not armature_obj or not arm_data or not hasattr(arm_data, "bones"):
         return _copy_matrix(static_obj.matrix_world)
 
-    bone = getattr(armature_obj.data, "bones", {}).get(bone_name) if hasattr(armature_obj.data.bones, "get") else None
+    bone = getattr(arm_data, "bones", {}).get(bone_name) if hasattr(arm_data.bones, "get") else None
     if not bone:
         return _copy_matrix(static_obj.matrix_world)
 
@@ -135,10 +138,10 @@ def get_rest_world_matrix_for_static(static_obj: Any, armature_obj: Any, bone_na
 class MeshMergeEngine:
     @staticmethod
     def consolidate_and_merge_meshes(
-        mesh_objs: list[Any],
+        mesh_objs: list[bpy.types.Object],
         output_obj_name: str,
-        armature_obj: Any | None = None,
-        pivot_obj: Any | None = None,
+        armature_obj: bpy.types.Object | None = None,
+        pivot_obj: bpy.types.Object | None = None,
     ) -> Any | None:
         """
         Merges multiple static and skinned meshes into a single optimized draw-call mesh
@@ -150,9 +153,7 @@ class MeshMergeEngine:
             return None
 
         # Filter to valid mesh objects
-        valid_objs = [
-            obj for obj in mesh_objs if obj and getattr(obj, "type", "") == "MESH" and hasattr(obj, "data") and obj.data
-        ]
+        valid_objs = [obj for obj in mesh_objs if obj and obj.type == "MESH" and obj.data]
         if not valid_objs:
             return None
 
@@ -161,7 +162,7 @@ class MeshMergeEngine:
         mat_to_global_idx: dict[Any, int] = {}
 
         for obj in valid_objs:
-            for slot in getattr(obj, "material_slots", []):
+            for slot in obj.material_slots:
                 mat = slot.material
                 if mat and mat not in mat_to_global_idx:
                     mat_to_global_idx[mat] = len(global_materials)
@@ -170,13 +171,13 @@ class MeshMergeEngine:
         # 2. Build Global Unified Vertex Group Palette
         global_group_names: list[str] = []
         for obj in valid_objs:
-            for vg in getattr(obj, "vertex_groups", []):
+            for vg in obj.vertex_groups:
                 if vg.name not in global_group_names:
                     global_group_names.append(vg.name)
 
         # 3. Compute Pivot Space Inversion if Pivot Object exists
         m_pivot_inv = Matrix.Identity(4) if Matrix else None
-        if pivot_obj and hasattr(pivot_obj, "matrix_world") and Matrix:
+        if pivot_obj and Matrix:
             try:
                 m_pivot_inv = pivot_obj.matrix_world.inverted()
             except (ValueError, AttributeError, ReferenceError):
@@ -193,13 +194,13 @@ class MeshMergeEngine:
                 if ModifierManager.has_unapplied_modifiers(obj):
                     eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
 
-                src_mesh = eval_mesh if eval_mesh else obj.data
+                src_mesh: Any = eval_mesh if eval_mesh else obj.data
                 temp_bm = bmesh.new()
                 try:
                     temp_bm.from_mesh(src_mesh)
 
                     # Determine world transformation matrix (respecting Rest Pose if parented to bone)
-                    if armature_obj and getattr(obj, "parent_type", "") == "BONE" and getattr(obj, "parent_bone", ""):
+                    if armature_obj and obj.parent_type == "BONE" and obj.parent_bone:
                         m_world = get_rest_world_matrix_for_static(obj, armature_obj, obj.parent_bone)
                     else:
                         m_world = obj.matrix_world.copy()
@@ -222,7 +223,7 @@ class MeshMergeEngine:
                             logger.debug("Normal transformation failed: %s", exc)
 
                     # Remap Material Indices
-                    obj_mats = [slot.material for slot in getattr(obj, "material_slots", [])]
+                    obj_mats = [slot.material for slot in obj.material_slots]
                     mat_remap: dict[int, int] = {}
                     for idx, mat in enumerate(obj_mats):
                         mat_remap[idx] = mat_to_global_idx.get(mat, 0)
@@ -234,10 +235,9 @@ class MeshMergeEngine:
                         if src_dvert_lay is None and len(temp_bm.verts.layers.deform) > 0:
                             src_dvert_lay = temp_bm.verts.layers.deform[0]
                     vg_map: dict[int, int] = {}
-                    if hasattr(obj, "vertex_groups"):
-                        for vg in obj.vertex_groups:
-                            if vg.name in global_group_names:
-                                vg_map[vg.index] = global_group_names.index(vg.name)
+                    for vg in obj.vertex_groups:
+                        if vg.name in global_group_names:
+                            vg_map[vg.index] = global_group_names.index(vg.name)
 
                     # Append verts into target BMesh
                     vert_map: dict[Any, Any] = {}
@@ -329,7 +329,9 @@ class CollectionCloneDAG:
     """
 
     @classmethod
-    def get_or_create_sibling_collection(cls, root_coll: Any, tier_idx: int, base_name: str, scene: Any = None) -> Any:
+    def get_or_create_sibling_collection(
+        cls, root_coll: bpy.types.Collection | None, tier_idx: int, base_name: str, scene: bpy.types.Scene | None = None
+    ) -> Any:
         """
         Creates or retrieves a sibling collection for LOD tier i (e.g. Model_LOD1).
         """
@@ -360,11 +362,7 @@ class CollectionCloneDAG:
                     break
 
         if not linked:
-            sc = (
-                scene
-                or getattr(getattr(bpy, "context", None), "scene", None)
-                or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
-            )
+            sc = scene or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
             if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
                 sc.collection.children.link(target_coll)
 
@@ -373,12 +371,13 @@ class CollectionCloneDAG:
     @classmethod
     def clone_collection_hierarchy(
         cls,
-        root_coll: Any,
-        target_coll: Any,
+        root_coll: bpy.types.Collection | None,
+        target_coll: bpy.types.Collection | None,
         tier_idx: int,
         base_name: str,
-        armature_obj: Any | None = None,
-        pivot_obj: Any | None = None,
+        armature_obj: bpy.types.Object | None = None,
+        pivot_obj: bpy.types.Object | None = None,
+        context: bpy.types.Context | None = None,
     ) -> dict[str, Any]:
         """
         Builds sibling collection hierarchy for tier_idx:
@@ -400,7 +399,9 @@ class CollectionCloneDAG:
         # 2. Clone Sockets
         tier_sockets = []
         if sockets_src and tier_pivot:
-            tier_sockets = PivotPreservationEngine.reparent_sockets_to_pivot(sockets_src, tier_pivot, target_coll)
+            tier_sockets = PivotPreservationEngine.reparent_sockets_to_pivot(
+                sockets_src, tier_pivot, target_coll, context=context
+            )
 
         return {
             "source_meshes": meshes_src,
@@ -412,9 +413,10 @@ class CollectionCloneDAG:
     @classmethod
     def wrap_loose_objects_into_root_collection(
         cls,
-        objects: list[Any],
+        objects: list[bpy.types.Object],
         base_name: str,
-        scene: Any = None,
+        scene: bpy.types.Scene | None = None,
+        context: bpy.types.Context | None = None,
     ) -> tuple[Any, Any]:
         """
         Auto-wraps loose selected scene objects into a clean root Collection {base_name}
@@ -424,11 +426,7 @@ class CollectionCloneDAG:
         if not bpy or not objects:
             return None, None
 
-        sc = (
-            scene
-            or getattr(getattr(bpy, "context", None), "scene", None)
-            or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
-        )
+        sc = scene or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
 
         coll = bpy.data.collections.get(base_name)
         if not coll:
@@ -465,8 +463,9 @@ class CollectionCloneDAG:
         vert_count = 0
 
         for obj in objects:
-            if hasattr(obj, "data") and getattr(obj, "type", "") == "MESH" and obj.data:
-                for v in obj.data.vertices:
+            obj_data: Any = getattr(obj, "data", None)
+            if getattr(obj, "type", "") == "MESH" and obj_data and hasattr(obj_data, "vertices"):
+                for v in obj_data.vertices:
                     wco = obj.matrix_world @ v.co
                     sum_x += wco.x
                     sum_y += wco.y
@@ -486,8 +485,9 @@ class CollectionCloneDAG:
         pivot_obj["_is_pivot"] = True
         coll.objects.link(pivot_obj)
 
-        ctx = getattr(bpy, "context", None)
-        vl = getattr(ctx, "view_layer", None)
+        vl = getattr(context, "view_layer", None) if context else None
+        if not vl and sc and hasattr(sc, "view_layers") and len(sc.view_layers) > 0:
+            vl = sc.view_layers[0]
         if vl and hasattr(vl, "update"):
             try:
                 vl.update()
@@ -504,7 +504,7 @@ class CollectionCloneDAG:
 
 
 def get_or_create_engine_import_collection(
-    context_or_scene: Any,
+    context_or_scene: bpy.types.Context | bpy.types.Scene | None,
     asset_name: str,
     role: str,
     use_lod0_suffix: bool = True,
@@ -546,17 +546,14 @@ def get_or_create_engine_import_collection(
     elif role.upper() == "VARIANT" or (
         "_" in clean_asset
         and not any(clean_asset.endswith(f"_LOD{n}") for n in range(11))
-        and any(
-            getattr(c, "name", "") != clean_asset and clean_asset.startswith(f"{getattr(c, 'name', '')}_")
-            for c in getattr(scene.collection, "children", [])
-        )
+        and any(c.name != clean_asset and clean_asset.startswith(f"{c.name}_") for c in scene.collection.children)
     ):
         root_col["_omnimesh_role"] = "VARIANT"
         matching_parent = next(
             (
-                getattr(c, "name", "")
-                for c in getattr(scene.collection, "children", [])
-                if getattr(c, "name", "") != clean_asset and clean_asset.startswith(f"{getattr(c, 'name', '')}_")
+                c.name
+                for c in scene.collection.children
+                if c.name != clean_asset and clean_asset.startswith(f"{c.name}_")
             ),
             "",
         )
@@ -661,7 +658,7 @@ def get_or_create_engine_import_collection(
 
 
 def safe_remove_collection_objects(
-    col: Any,
+    col: bpy.types.Collection | None,
     bpy_module: Any = None,
     predicate: Any = None,
 ) -> int:
@@ -695,7 +692,7 @@ def safe_remove_collection_objects(
                     logger.debug("Deselect on removal skipped: %s", exc)
 
             # Capture unshared data block
-            data_to_remove = None
+            data_to_remove: Any = None
             if hasattr(obj, "data") and obj.data:
                 data = obj.data
                 users = getattr(data, "users", 1)

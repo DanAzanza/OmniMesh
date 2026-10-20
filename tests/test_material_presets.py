@@ -5,6 +5,12 @@ EEVEE Next transparency guards, shader preset configuration, and object assignme
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -20,20 +26,20 @@ from core.material_presets import (
 )
 
 
-class MockSocket:
+class MockSocket(_MockBase):
     def __init__(self, name: str, default_val: Any = None):
         self.name = name
         self.default_value = default_val
 
 
-class MockNode:
+class MockNode(_MockBase):
     def __init__(self, node_type: str = "BSDF_PRINCIPLED"):
         self.type = node_type
         self.inputs: dict[str, MockSocket] = {}
         self.outputs: dict[str, MockSocket] = {"BSDF": MockSocket("BSDF")}
 
 
-class MockMaterial:
+class MockMaterial(_MockBase):
     def __init__(self, name: str):
         self.name = name
         self.use_nodes = True

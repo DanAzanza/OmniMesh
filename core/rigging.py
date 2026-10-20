@@ -137,7 +137,7 @@ def normalize_weights_pure(
 
 
 @contextmanager
-def armature_rest_pose_context(armature_obj: Any, context: Any = None):
+def armature_rest_pose_context(armature_obj: bpy.types.Object | None, context: bpy.types.Context | None = None):
     """
     Context manager to safely lock an armature to REST pose during operations
     (decimation, normal transfer, mesh consolidation) and restore the original pose state.
@@ -147,7 +147,7 @@ def armature_rest_pose_context(armature_obj: Any, context: Any = None):
         yield
         return
 
-    ctx = context or getattr(bpy, "context", None)
+    ctx = context
     vl = getattr(ctx, "view_layer", None)
 
     orig_pose_pos = getattr(data, "pose_position", "POSE")
@@ -162,8 +162,9 @@ def armature_rest_pose_context(armature_obj: Any, context: Any = None):
         yield
     finally:
         try:
-            if armature_obj and getattr(armature_obj, "data", None):
-                armature_obj.data.pose_position = orig_pose_pos
+            arm_data_restore: Any = getattr(armature_obj, "data", None) if armature_obj else None
+            if arm_data_restore is not None:
+                arm_data_restore.pose_position = orig_pose_pos
                 if vl and hasattr(vl, "update"):
                     vl.update()
         except (RuntimeError, AttributeError, TypeError) as exc:
@@ -207,7 +208,10 @@ def compute_rest_pose_inverted_matrix(
 class WeightSanitizer:
     @staticmethod
     def normalize_and_clamp_weights(
-        obj: Any, max_influences: int = 4, micro_weight_epsilon: float = 0.01, anchor_vg_name: str = "Root"
+        obj: bpy.types.Object | None,
+        max_influences: int = 4,
+        micro_weight_epsilon: float = 0.01,
+        anchor_vg_name: str = "Root",
     ) -> dict[str, int]:
         """
         Hardens vertex weights for GPU skinning:
@@ -218,20 +222,17 @@ class WeightSanitizer:
         - Safely purges unused vertex groups by name to prevent index-shift corruption.
         - Guarantees BMesh memory safety via try...finally block.
         """
+        if not bpy or not bmesh or not obj or getattr(obj, "type", None) != "MESH":
+            return {"normalized": 0, "singularities_fixed": 0, "purged_vgs": 0}
+        mesh: Any = getattr(obj, "data", None)
         if (
-            not bpy
-            or not bmesh
-            or not obj
-            or getattr(obj, "type", None) != "MESH"
-            or not hasattr(obj, "vertex_groups")
+            not hasattr(obj, "vertex_groups")
             or len(obj.vertex_groups) == 0
-            or not getattr(obj, "data", None)
-            or not hasattr(obj.data, "vertices")
-            or len(obj.data.vertices) == 0
+            or not mesh
+            or not hasattr(mesh, "vertices")
+            or len(mesh.vertices) == 0
         ):
             return {"normalized": 0, "singularities_fixed": 0, "purged_vgs": 0}
-
-        mesh = obj.data
         bm = bmesh.new()
         singularities_fixed = 0
         normalized_count = 0
@@ -281,8 +282,8 @@ class WeightSanitizer:
             bm.to_mesh(mesh)
             mesh.update()
         except (RuntimeError, ValueError, IndexError, ReferenceError, TypeError) as exc:
-            logger.error("Weight normalization failed on '%s': %s", getattr(obj, "name", "unknown"), exc)
-            raise RiggingError(f"Weight normalization failed on '{getattr(obj, 'name', 'unknown')}': {exc}") from exc
+            logger.error("Weight normalization failed on '%s': %s", obj.name, exc)
+            raise RiggingError(f"Weight normalization failed on '{obj.name}': {exc}") from exc
         finally:
             try:
                 bm.free()
@@ -307,11 +308,13 @@ class WeightSanitizer:
                 logger.debug("find_armature failed: %s", exc)
         if not armature and hasattr(obj, "modifiers"):
             for m in obj.modifiers:
-                if getattr(m, "type", "") == "ARMATURE" and getattr(m, "object", None):
-                    armature = m.object
+                m_any: Any = m
+                if m_any.type == "ARMATURE" and getattr(m_any, "object", None):
+                    armature = m_any.object
                     break
-        if armature and hasattr(armature, "data") and hasattr(armature.data, "bones"):
-            protected_bone_names = {b.name for b in armature.data.bones}
+        arm_data_prot: Any = armature.data if armature else None
+        if arm_data_prot and hasattr(arm_data_prot, "bones"):
+            protected_bone_names = {b.name for b in arm_data_prot.bones}
 
         # Collect unused vertex groups first, then safely remove by reference
         purged_vg_count = 0
@@ -323,7 +326,7 @@ class WeightSanitizer:
                 obj.vertex_groups.remove(vg)
                 purged_vg_count += 1
             except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Failed to remove unused vertex group '%s': %s", getattr(vg, "name", "unknown"), exc)
+                logger.debug("Failed to remove unused vertex group '%s': %s", vg.name, exc)
 
         return {
             "normalized": normalized_count,
@@ -336,8 +339,8 @@ class KinematicBonePruner:
     @classmethod
     def prune_kinematic_subtrees(
         cls,
-        lod_obj: Any,
-        armature_obj: Any,
+        lod_obj: bpy.types.Object | None,
+        armature_obj: bpy.types.Object | None,
         screen_distance_m: float,
         fov_v_rad: float,
         resolution_y: int,
@@ -348,24 +351,23 @@ class KinematicBonePruner:
         Collapses bones whose vertex bounding sphere screen diameter < pixel_threshold
         into their immediate parent bone.
         """
+        if not bpy or not lod_obj or not armature_obj or getattr(lod_obj, "type", None) != "MESH":
+            return 0
+        mesh: Any = getattr(lod_obj, "data", None)
+        arm_data: Any = getattr(armature_obj, "data", None)
         if (
-            not bpy
-            or not lod_obj
-            or not armature_obj
-            or getattr(lod_obj, "type", None) != "MESH"
-            or not getattr(lod_obj, "data", None)
-            or not hasattr(lod_obj.data, "vertices")
-            or len(lod_obj.data.vertices) == 0
-            or not hasattr(armature_obj, "data")
-            or not hasattr(armature_obj.data, "bones")
-            or len(armature_obj.data.bones) == 0
+            not mesh
+            or not hasattr(mesh, "vertices")
+            or len(mesh.vertices) == 0
+            or not arm_data
+            or not hasattr(arm_data, "bones")
+            or len(arm_data.bones) == 0
         ):
             return 0
 
-        vg_map = {vg.name: vg.index for vg in getattr(lod_obj, "vertex_groups", [])}
-        mesh = lod_obj.data
+        vg_map = {vg.name: vg.index for vg in lod_obj.vertex_groups}
 
-        m_world = getattr(lod_obj, "matrix_world", None)
+        m_world = lod_obj.matrix_world
         if m_world is not None:
             vert_coords = [m_world @ v.co for v in mesh.vertices]
         else:
@@ -377,7 +379,7 @@ class KinematicBonePruner:
                 if g.weight > 0.01 and g.group in bone_verts:
                     bone_verts[g.group].append(vert_coords[v.index])
 
-        bones = armature_obj.data.bones
+        bones = arm_data.bones
         collapsed_bones: set[str] = set()
 
         changed = True
@@ -407,10 +409,10 @@ class KinematicBonePruner:
         while changed:
             changed = False
             for bone in bones:
-                if bone.name in collapsed_bones or not getattr(bone, "parent", None):
+                if bone.name in collapsed_bones or not bone.parent:
                     continue
 
-                active_children = [c for c in getattr(bone, "children", []) if c.name not in collapsed_bones]
+                active_children = [c for c in bone.children if c.name not in collapsed_bones]
                 if len(active_children) > 0:
                     continue
 
@@ -436,7 +438,7 @@ class KinematicBonePruner:
                 angular_diameter = 2.0 * math.atan(radius / safe_dist)
                 screen_px = (angular_diameter / safe_fov) * safe_res_y
 
-                if screen_px < safe_thresh:
+                if screen_px < safe_thresh and bone.parent:
                     parent_name = bone.parent.name
                     cls._transfer_weights(lod_obj, source_name=bone.name, target_name=parent_name)
                     # Update bone_verts and vg_map for hierarchy continuity
@@ -456,8 +458,8 @@ class KinematicBonePruner:
         return total_collapsed
 
     @staticmethod
-    def _transfer_weights(obj: Any, source_name: str, target_name: str):
-        if not bpy or not obj or not getattr(obj, "data", None):
+    def _transfer_weights(obj: bpy.types.Object, source_name: str, target_name: str):
+        if not bpy or not obj or not obj.data:
             return
         src_vg = obj.vertex_groups.get(source_name)
         if not src_vg:
@@ -474,8 +476,8 @@ class KinematicBonePruner:
         src_idx = src_vg.index
         tgt_idx = tgt_vg.index
 
-        mesh = obj.data
-        for v in getattr(mesh, "vertices", []):
+        mesh: Any = obj.data
+        for v in mesh.vertices:
             src_weight = 0.0
             tgt_weight = 0.0
             for g in v.groups:

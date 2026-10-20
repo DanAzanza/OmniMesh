@@ -12,6 +12,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     import bmesh
+    import bpy
     from mathutils import Vector
     from mathutils.bvhtree import BVHTree
 else:
@@ -96,7 +97,7 @@ class CollisionDecomposer:
             return centroid_vec, Vector((0.0, 0.0, 1.0))
 
     @staticmethod
-    def measure_hull_concavity(bm_source: Any, bm_hull: Any) -> float:
+    def measure_hull_concavity(bm_source: bmesh.types.BMesh | None, bm_hull: bmesh.types.BMesh | None) -> float:
         """
         Measures maximum surface deviation between source mesh geometry and its candidate convex hull.
         Uses stratified sampling on large meshes to bound computation time while guaranteeing coverage.
@@ -143,7 +144,7 @@ class CollisionDecomposer:
     @classmethod
     def harden_convex_hull(
         cls,
-        bm: Any,
+        bm: bmesh.types.BMesh | None,
         max_verts: int = 32,
         min_thickness: float = 0.02,
         scale_factor: float = 1.0,
@@ -182,7 +183,8 @@ class CollisionDecomposer:
                     offset = normal * effective_thickness
                     offset_vec = (offset.x, offset.y, offset.z)
                     if bm.faces:
-                        res_ext = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
+                        faces_geom: list[Any] = bm.faces[:]
+                        res_ext = bmesh.ops.extrude_face_region(bm, geom=faces_geom)
                         verts_to_move = [v for v in res_ext["geom"] if isinstance(v, bmesh.types.BMVert)]
                         bmesh.ops.translate(bm, vec=offset_vec, verts=verts_to_move)
                     else:
@@ -195,7 +197,8 @@ class CollisionDecomposer:
                         offset_sec = normal_sec * effective_thickness
                         offset_sec_vec = (offset_sec.x, offset_sec.y, offset_sec.z)
                         if bm.faces:
-                            res_ext2 = bmesh.ops.extrude_face_region(bm, geom=bm.faces[:])
+                            faces_geom2: list[Any] = bm.faces[:]
+                            res_ext2 = bmesh.ops.extrude_face_region(bm, geom=faces_geom2)
                             verts_to_move2 = [v for v in res_ext2["geom"] if isinstance(v, bmesh.types.BMVert)]
                             bmesh.ops.translate(bm, vec=offset_sec_vec, verts=verts_to_move2)
                         else:
@@ -206,7 +209,8 @@ class CollisionDecomposer:
 
         # 2. Compute 3D Convex Hull with two-pass internal geometry purge
         try:
-            res_hull = bmesh.ops.convex_hull(bm, input=bm.verts[:], use_existing_faces=False)
+            hull_input: list[Any] = bm.verts[:]
+            res_hull = bmesh.ops.convex_hull(bm, input=hull_input, use_existing_faces=False)
             to_delete = res_hull.get("geom_unused", []) + res_hull.get("geom_interior", [])
             if to_delete:
                 cls._purge_hull_interior_geom(bm, to_delete)
@@ -223,7 +227,7 @@ class CollisionDecomposer:
         return len(bm.verts) >= 4
 
     @staticmethod
-    def _purge_hull_interior_geom(bm: Any, to_delete: list[Any]) -> None:
+    def _purge_hull_interior_geom(bm: bmesh.types.BMesh, to_delete: list[Any]) -> None:
         """Two-pass deletion of interior faces and unused vertices to ensure clean BVH indexing."""
         faces_to_del: list[Any] = [f for f in to_delete if bmesh and isinstance(f, bmesh.types.BMFace) and f.is_valid]
         if faces_to_del:
@@ -240,7 +244,7 @@ class CollisionDecomposer:
                 logger.debug("Interior vert purge bypassed: %s", exc)
 
     @classmethod
-    def _clamp_hull_vertex_budget(cls, bm: Any, max_verts: int = 32) -> None:
+    def _clamp_hull_vertex_budget(cls, bm: bmesh.types.BMesh | None, max_verts: int = 32) -> None:
         """
         Iteratively simplifies convex hull geometry to satisfy physics engine vertex limits.
         """
@@ -275,7 +279,8 @@ class CollisionDecomposer:
             try:
                 bmesh.ops.collapse(bm, edges=[shortest_edge])
                 # Re-compute convex hull to preserve strict outward curvature
-                res = bmesh.ops.convex_hull(bm, input=bm.verts[:], use_existing_faces=False)
+                hull_in: list[Any] = bm.verts[:]
+                res = bmesh.ops.convex_hull(bm, input=hull_in, use_existing_faces=False)
                 to_delete = res.get("geom_unused", []) + res.get("geom_interior", [])
                 if to_delete:
                     cls._purge_hull_interior_geom(bm, to_delete)
@@ -289,11 +294,11 @@ class CollisionDecomposer:
     @classmethod
     def decompose_mesh_to_hulls(
         cls,
-        source_obj: Any = None,
+        source_obj: bpy.types.Object | None = None,
         k_target: int = 4,
         max_verts_per_hull: int = 32,
         concavity_threshold: float = 0.05,
-        bm_source: Any = None,
+        bm_source: bmesh.types.BMesh | None = None,
     ) -> List[Any]:
         """
         Hierarchical Concavity-Driven Convex Decomposition (ACD).
@@ -324,7 +329,8 @@ class CollisionDecomposer:
                 if eval_mesh:
                     bm_master.from_mesh(eval_mesh)
                 else:
-                    bm_master.from_mesh(source_obj.data)
+                    src_mesh: Any = source_obj.data
+                    bm_master.from_mesh(src_mesh)
             except BMESH_OP_ERRORS:
                 bm_master.free()
                 raise

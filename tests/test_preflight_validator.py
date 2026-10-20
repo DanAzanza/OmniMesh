@@ -2,12 +2,19 @@
 Unit tests for PreFlightValidator quality gates.
 """
 
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
+
 from typing import Any
 
 from exporters.engine_export import PreFlightValidator
 
 
-class MockVector:
+class MockVector(_MockBase):
     def __init__(self, x=0.0, y=0.0, z=0.0):
         self.x = x
         self.y = y
@@ -25,7 +32,7 @@ class MockVector:
         return (self.x**2 + self.y**2 + self.z**2) ** 0.5
 
 
-class MockScale:
+class MockScale(_MockBase):
     def __init__(self, x=1.0, y=1.0, z=1.0):
         self.x = x
         self.y = y
@@ -35,17 +42,17 @@ class MockScale:
         return iter((self.x, self.y, self.z))
 
 
-class MockMaterialSlot:
+class MockMaterialSlot(_MockBase):
     def __init__(self, material: Any = "Mat"):
         self.material = material
 
 
-class MockMeshData:
+class MockMeshData(_MockBase):
     def __init__(self, poly_count=100):
         self.polygons = [object()] * poly_count
 
 
-class MockObject:
+class MockObject(_MockBase):
     def __init__(self, name="SM_Obj", translation=(0, 0, 0), scale=(1, 1, 1), polys=100, mat_slots=1):
         self.name = name
         self.type = "MESH"
@@ -55,12 +62,12 @@ class MockObject:
         self.material_slots = [MockMaterialSlot(f"Mat_{i}") for i in range(mat_slots)]
 
 
-class MockLODTier:
+class MockLODTier(_MockBase):
     def __init__(self, obj=None):
         self.generated_obj = obj
 
 
-class MockLODToolProps:
+class MockLODToolProps(_MockBase):
     def __init__(self, lod_count=3, export_dir="//Export/"):
         self.lods = []
         self.export_directory = export_dir
@@ -68,7 +75,7 @@ class MockLODToolProps:
         self.export_base_name = "SM_Test"
 
 
-class MockContext:
+class MockContext(_MockBase):
     def __init__(self, props=None):
         self.scene = type("Scene", (), {"lod_tool": props or MockLODToolProps()})()
 

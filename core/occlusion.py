@@ -108,7 +108,7 @@ class RobustTransparencyEvaluator:
     """
 
     @classmethod
-    def is_material_transparent(cls, mat: Any) -> bool:
+    def is_material_transparent(cls, mat: bpy.types.Material | None) -> bool:
         """Determines if a material permits light/view transmission."""
         if not mat:
             return False
@@ -121,15 +121,16 @@ class RobustTransparencyEvaluator:
 
         # If material doesn't use nodes, check diffuse color alpha
         if not getattr(mat, "use_nodes", False) or not getattr(mat, "node_tree", None):
-            if hasattr(mat, "diffuse_color") and len(mat.diffuse_color) >= 4:
-                return float(mat.diffuse_color[3]) < 0.99
+            diff_col: Any = getattr(mat, "diffuse_color", None)
+            if diff_col is not None and len(diff_col) >= 4:
+                return float(diff_col[3]) < 0.99
             return False
 
         # 2. Recursive Node Graph Walker (depth <= 4)
         return cls._evaluate_node_tree(mat.node_tree, depth=0)
 
     @classmethod
-    def _evaluate_node_tree(cls, node_tree: Any, depth: int) -> bool:
+    def _evaluate_node_tree(cls, node_tree: bpy.types.NodeTree | None, depth: int) -> bool:
         if not node_tree or not hasattr(node_tree, "nodes") or depth > 4:
             return False
 
@@ -146,8 +147,9 @@ class RobustTransparencyEvaluator:
                 return True
 
             # Recursively inspect node groups
-            if node_type == "GROUP" and getattr(node, "node_tree", None):
-                if cls._evaluate_node_tree(node.node_tree, depth + 1):
+            sub_tree = getattr(node, "node_tree", None)
+            if node_type == "GROUP" and sub_tree:
+                if cls._evaluate_node_tree(sub_tree, depth + 1):
                     return True
 
             # Inspect Principled BSDF
@@ -175,7 +177,7 @@ class RobustTransparencyEvaluator:
         return False
 
     @staticmethod
-    def fast_sample_image_alpha(img: Any) -> bool:
+    def fast_sample_image_alpha(img: bpy.types.Image | None) -> bool:
         """
         Fast strided C-array alpha evaluation without Python tuple allocations.
         Distinguishes genuine alpha cutouts from opaque 32-bit textures.
@@ -223,8 +225,8 @@ class HardenedOcclusionCuller:
     @classmethod
     def cull_interior_faces(
         cls,
-        obj: Any,
-        bm: Any,
+        obj: bpy.types.Object | None,
+        bm: bmesh.types.BMesh | None,
         ray_density: int = 16,
         evaluate_alpha: bool = True,
         delta_world: float = 0.05,
@@ -379,7 +381,7 @@ class HardenedOcclusionCuller:
         return {"culled_faces": culled_count, "culled_islands": culled_islands_count}
 
     @staticmethod
-    def _find_connected_islands(bm: Any) -> List[List[Any]]:
+    def _find_connected_islands(bm: bmesh.types.BMesh) -> List[List[Any]]:
         """Segments BMesh faces into topologically connected islands."""
         visited: Set[int] = set()
         islands: List[List[Any]] = []

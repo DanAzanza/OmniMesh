@@ -137,6 +137,7 @@ class LOD_OT_pack_pbr_textures(Operator):
                     bit_depth=bit_depth,
                     strategy=strategy,
                     naming_pattern=naming_pattern,
+                    context=context,
                 )
                 if futs:
                     all_futures.extend(futs)

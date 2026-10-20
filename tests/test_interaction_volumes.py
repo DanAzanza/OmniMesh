@@ -5,6 +5,12 @@ collection hierarchy routing, and non-blocking physics semantics.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -47,7 +53,7 @@ def test_engine_interaction_naming_schemes():
 # =============================================================================
 
 
-class MockCollection:
+class MockCollection(_MockBase):
     def __init__(self, name: str):
         self.name = name
         self.objects = MagicMock()
@@ -55,7 +61,7 @@ class MockCollection:
         self.objects.link.side_effect = self.linked_objs.append
 
 
-class MockObject:
+class MockObject(_MockBase):
     def __init__(self, name: str, data: Any = None):
         self.name = name
         self.type: str = "MESH"

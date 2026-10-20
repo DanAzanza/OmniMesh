@@ -56,10 +56,10 @@ def _find_connected_face_fans(vert: Any) -> list[list[Any]]:
 
         while queue:
             curr_face = queue.pop(0)
-            for edge in getattr(curr_face, "edges", []):
-                if vert not in getattr(edge, "verts", []):
+            for edge in curr_face.edges:
+                if vert not in edge.verts:
                     continue
-                for nbr_face in getattr(edge, "link_faces", []):
+                for nbr_face in edge.link_faces:
                     if nbr_face in face_set:
                         face_set.remove(nbr_face)
                         fan.append(nbr_face)
@@ -70,7 +70,7 @@ def _find_connected_face_fans(vert: Any) -> list[list[Any]]:
 
 
 def _remap_fan_to_new_vertex(
-    bm: Any,
+    bm: bmesh.types.BMesh,
     fan: list[Any],
     vert: Any,
     new_vert: Any,
@@ -79,15 +79,15 @@ def _remap_fan_to_new_vertex(
     """Remaps a single face fan from vert to new_vert, preserving UVs and materials."""
     split_count = 0
     for face in fan:
-        if not getattr(face, "is_valid", False):
+        if not face.is_valid:
             continue
         face_verts = list(face.verts)
         if vert not in face_verts:
             continue
         idx = face_verts.index(vert)
         face_verts[idx] = new_vert
-        mat_idx = getattr(face, "material_index", 0)
-        smooth = getattr(face, "smooth", True)
+        mat_idx = face.material_index
+        smooth = face.smooth
 
         saved_uvs: dict[tuple[Any, int], Any] = {}
         for lp_i, lp in enumerate(face.loops):
@@ -123,7 +123,7 @@ def _remap_fan_to_new_vertex(
                     f"Catastrophic topology corruption in {bm}: face deletion occurred during fan remapping, "
                     f"and rollback restoration of original face failed: {rb_exc}"
                 ) from rb_exc
-            if getattr(new_vert, "is_valid", False) and len(getattr(new_vert, "link_faces", [])) == 0:
+            if new_vert.is_valid and len(new_vert.link_faces) == 0:
                 try:
                     bm.verts.remove(new_vert)
                 except BMESH_OP_ERRORS as rm_exc:
@@ -136,7 +136,7 @@ class TopologyRepairEngine:
     """Advanced topological manifold repair, bowtie splitting, and hole sealing."""
 
     @staticmethod
-    def split_bowtie_vertices(bm: Any) -> int:
+    def split_bowtie_vertices(bm: bmesh.types.BMesh | None) -> int:
         """
         Splits non-manifold bowtie vertices (pinch points sharing multiple disconnected face fans)
         into independent vertices, preserving UV layers, deform weights (vertex groups),
@@ -163,7 +163,7 @@ class TopologyRepairEngine:
         )
 
         for vert in list(bm.verts):
-            if not getattr(vert, "is_valid", False) or len(getattr(vert, "link_faces", [])) <= 1:
+            if not vert.is_valid or len(vert.link_faces) <= 1:
                 continue
 
             fans = _find_connected_face_fans(vert)
@@ -179,7 +179,8 @@ class TopologyRepairEngine:
                     orig_weights = {}
 
             for extra_fan in fans[1:]:
-                new_vert = bm.verts.new(vert.co)
+                co: Any = vert.co
+                new_vert = bm.verts.new(co)
                 if dvert_lay and orig_weights:
                     try:
                         dvert = new_vert[dvert_lay]
@@ -202,7 +203,7 @@ class TopologyRepairEngine:
         return split_count
 
     @staticmethod
-    def split_non_manifold_edges(bm: Any) -> int:
+    def split_non_manifold_edges(bm: bmesh.types.BMesh | None) -> int:
         """
         Detects and splits non-manifold edges connected to > 2 faces into separate manifold edges,
         preserving UV layers, deform weights (vertex groups), face attributes, and smoothing.
@@ -216,9 +217,7 @@ class TopologyRepairEngine:
             return 0
 
         split_count = 0
-        non_manifold_edges = [
-            e for e in bm.edges if getattr(e, "is_valid", False) and len(getattr(e, "link_faces", [])) > 2
-        ]
+        non_manifold_edges = [e for e in bm.edges if e.is_valid and len(e.link_faces) > 2]
         if not non_manifold_edges:
             return 0
 
@@ -234,11 +233,11 @@ class TopologyRepairEngine:
         )
 
         for edge in non_manifold_edges:
-            if not getattr(edge, "is_valid", False) or len(getattr(edge, "link_faces", [])) <= 2:
+            if not edge.is_valid or len(edge.link_faces) <= 2:
                 continue
             faces_to_split = list(edge.link_faces)[2:]
             for face in faces_to_split:
-                if not getattr(face, "is_valid", False):
+                if not face.is_valid:
                     continue
                 v1, v2 = edge.verts
                 nv1 = bm.verts.new(v1.co)
@@ -258,8 +257,8 @@ class TopologyRepairEngine:
                         logger.debug("Deform weight copy error in split_non_manifold_edges: %s", exc)
 
                 face_verts = [nv1 if v == v1 else (nv2 if v == v2 else v) for v in face.verts]
-                mat_idx = getattr(face, "material_index", 0)
-                smooth = getattr(face, "smooth", True)
+                mat_idx = face.material_index
+                smooth = face.smooth
 
                 saved_uvs: dict[tuple[Any, int], Any] = {}
                 for lp_i, lp in enumerate(face.loops):
@@ -296,7 +295,7 @@ class TopologyRepairEngine:
                             f"and rollback restoration of original face failed: {rb_exc}"
                         ) from rb_exc
                     for nv in (nv1, nv2):
-                        if getattr(nv, "is_valid", False) and len(getattr(nv, "link_faces", [])) == 0:
+                        if nv.is_valid and len(nv.link_faces) == 0:
                             try:
                                 bm.verts.remove(nv)
                             except BMESH_OP_ERRORS as rm_exc:
@@ -314,7 +313,7 @@ class TopologyRepairEngine:
         return split_count
 
     @classmethod
-    def fill_small_boundary_holes(cls, bm: Any, max_edges: int = 4) -> int:
+    def fill_small_boundary_holes(cls, bm: bmesh.types.BMesh | None, max_edges: int = 4) -> int:
         """
         Detects open boundary loops with <= max_edges, seals them, and executes
         MANDATORY immediate local beauty triangulation to prevent non-planar N-gons.
@@ -327,7 +326,7 @@ class TopologyRepairEngine:
             logger.debug("Lookup table init error in fill_small_boundary_holes: %s", exc)
             return 0
 
-        boundary_edges = [e for e in bm.edges if getattr(e, "is_valid", False) and getattr(e, "is_boundary", False)]
+        boundary_edges = [e for e in bm.edges if e.is_valid and e.is_boundary]
         if not boundary_edges:
             return 0
 
@@ -349,7 +348,7 @@ class TopologyRepairEngine:
         return 0
 
     @classmethod
-    def cull_subpixel_islands(cls, bm: Any, w_crit: float, world_matrix: Any = None) -> int:
+    def cull_subpixel_islands(cls, bm: bmesh.types.BMesh | None, w_crit: float, world_matrix: Any = None) -> int:
         """
         Removes disconnected mesh islands whose bounding diagonal in world space is < w_crit.
         Protects against deleting the entire mesh if all components are small.
@@ -365,7 +364,7 @@ class TopologyRepairEngine:
         if len(bm.faces) == 0:
             return 0
 
-        unvisited = {f for f in bm.faces if getattr(f, "is_valid", False)}
+        unvisited = {f for f in bm.faces if f.is_valid}
         islands = []
 
         while unvisited:
@@ -374,8 +373,8 @@ class TopologyRepairEngine:
             queue = [start]
             while queue:
                 curr = queue.pop(0)
-                for edge in getattr(curr, "edges", []):
-                    for nbr in getattr(edge, "link_faces", []):
+                for edge in curr.edges:
+                    for nbr in edge.link_faces:
                         if nbr in unvisited:
                             unvisited.remove(nbr)
                             island.append(nbr)
@@ -387,7 +386,7 @@ class TopologyRepairEngine:
 
         culled_faces = []
         for island in islands:
-            unique_verts = {v for f in island for v in getattr(f, "verts", [])}
+            unique_verts = {v for f in island for v in f.verts}
             if not unique_verts:
                 continue
 
@@ -427,7 +426,7 @@ class TopologyRepairEngine:
     @classmethod
     def execute_tier1_topological_repair(
         cls,
-        bm: Any,
+        bm: bmesh.types.BMesh | None,
         options: TopologyRepairOptions | None = None,
     ) -> dict[str, int]:
         """
@@ -467,7 +466,7 @@ class TopologyRepairEngine:
         if opts.enable_triangulate_ngons and hasattr(bm, "faces"):
             try:
                 bm.faces.ensure_lookup_table()
-                ngons = [f for f in bm.faces if getattr(f, "is_valid", False) and len(getattr(f, "verts", [])) > 4]
+                ngons = [f for f in bm.faces if f.is_valid and len(f.verts) > 4]
                 if ngons:
                     bmesh.ops.triangulate(bm, faces=ngons, quad_method="BEAUTY", ngon_method="BEAUTY")
                     bm.faces.ensure_lookup_table()

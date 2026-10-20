@@ -57,28 +57,30 @@ class AnimationRigSanitizer:
         return clean or "Anim_Action"
 
     @classmethod
-    def get_deform_bone_names(cls, armature: Any) -> List[str]:
+    def get_deform_bone_names(cls, armature: bpy.types.Object | None) -> List[str]:
         """Returns list of bone names marked for mesh deformation (`use_deform == True`)."""
         if not armature or getattr(armature, "type", None) != "ARMATURE":
             return []
-        if not hasattr(armature, "data") or not hasattr(armature.data, "bones"):
+        arm_data: Any = getattr(armature, "data", None)
+        if not arm_data or not hasattr(arm_data, "bones"):
             return []
-        return [b.name for b in armature.data.bones if getattr(b, "use_deform", True)]
+        return [b.name for b in arm_data.bones if getattr(b, "use_deform", True)]
 
     @classmethod
-    def get_action_fcurves(cls, action: Any) -> List[Any]:
+    def get_action_fcurves(cls, action: bpy.types.Action | None) -> List[Any]:
         """Extracts all F-Curves from an Action, supporting legacy Actions and Blender 5.2+ Slotted/Layered Actions."""
         if not action:
             return []
+        act_any: Any = action
         raw_fcurves = []
-        if hasattr(action, "fcurves") and action.fcurves is not None:
+        if hasattr(act_any, "fcurves") and act_any.fcurves is not None:
             try:
-                raw_fcurves.extend(list(action.fcurves))
+                raw_fcurves.extend(list(act_any.fcurves))
             except (AttributeError, RuntimeError, ReferenceError) as exc:
                 logger.debug("Legacy fcurves extraction skipped: %s", exc)
-        if hasattr(action, "layers"):
+        if hasattr(act_any, "layers"):
             try:
-                for layer in getattr(action, "layers", []):
+                for layer in getattr(act_any, "layers", []):
                     for strip in getattr(layer, "strips", []):
                         for cb in getattr(strip, "channelbags", []):
                             if hasattr(cb, "fcurves") and cb.fcurves is not None:
@@ -97,41 +99,44 @@ class AnimationRigSanitizer:
         return unique_fcurves
 
     @classmethod
-    def create_action_fcurve(cls, action: Any, data_path: str, index: int, slot_name: str = "ArmatureSlot") -> Any:
+    def create_action_fcurve(
+        cls, action: bpy.types.Action | None, data_path: str, index: int, slot_name: str = "ArmatureSlot"
+    ) -> Any:
         """Creates an FCurve on an Action, supporting both legacy Actions and Blender 5.2+ Slotted/Layered Actions."""
         if not action:
             return None
+        act_any: Any = action
 
         # 1. Try legacy action.fcurves.new if available
-        if hasattr(action, "fcurves") and action.fcurves is not None:
+        if hasattr(act_any, "fcurves") and act_any.fcurves is not None:
             try:
-                return action.fcurves.new(data_path=data_path, index=index)
+                return act_any.fcurves.new(data_path=data_path, index=index)
             except (RuntimeError, TypeError, AttributeError) as exc:
                 logger.debug("action.fcurves.new failed, attempting layered fallback: %s", exc)
 
         # 2. Blender 5.2+ Slotted / Layered Actions fallback
-        if hasattr(action, "layers") or hasattr(action, "slots"):
+        if hasattr(act_any, "layers") or hasattr(act_any, "slots"):
             try:
                 slot = None
-                if hasattr(action, "slots"):
-                    if not action.slots:
+                if hasattr(act_any, "slots"):
+                    if not act_any.slots:
                         try:
-                            slot = action.slots.new(id_type="OBJECT", name=slot_name)
+                            slot = act_any.slots.new(id_type="OBJECT", name=slot_name)
                         except TypeError:
                             try:
-                                slot = action.slots.new(name=slot_name)
+                                slot = act_any.slots.new(name=slot_name)
                             except TypeError:
-                                slot = action.slots.new(slot_name)
+                                slot = act_any.slots.new(slot_name)
                     else:
-                        slot = action.slots[0]
+                        slot = act_any.slots[0]
 
-                if not action.layers:
-                    layer = action.layers.new(name="BaseLayer")
+                if not act_any.layers:
+                    layer = act_any.layers.new(name="BaseLayer")
                 else:
-                    layer = action.layers[0]
+                    layer = act_any.layers[0]
 
                 if not layer.strips:
-                    strip = layer.strips.new(type="KEYFRAME")
+                    strip: Any = layer.strips.new(type="KEYFRAME")
                 else:
                     strip = layer.strips[0]
 
@@ -158,7 +163,7 @@ class AnimationRigSanitizer:
         return None
 
     @classmethod
-    def validate_action_bounds(cls, action: Any) -> Dict[str, Any]:
+    def validate_action_bounds(cls, action: bpy.types.Action | None) -> Dict[str, Any]:
         """Validates keyframe boundaries, subframe quantization, and frame bounds."""
         if not action:
             return {"valid": False, "error": "No action provided."}
@@ -208,7 +213,7 @@ class AnimationRigSanitizer:
         }
 
     @classmethod
-    def snap_action_to_integer_frames(cls, action: Any, drift_threshold: float = 0.5) -> int:
+    def snap_action_to_integer_frames(cls, action: bpy.types.Action | None, drift_threshold: float = 0.5) -> int:
         """
         Detects and quantizes drifted subframe keyframes to exact integer frames.
         Adjusts bezier handles proportionally to preserve curve shapes and tangents.
@@ -324,9 +329,9 @@ class AnimationRigSanitizer:
     @classmethod
     def bake_deform_animation(
         cls,
-        context: Any,
-        source_armature: Any,
-        action: Any,
+        context: bpy.types.Context | None,
+        source_armature: bpy.types.Object | None,
+        action: bpy.types.Action | None,
         bake_step: float = 1.0,
         keyframe_reduction_tolerance: float = 0.0,
     ) -> Optional[Any]:
@@ -357,17 +362,20 @@ class AnimationRigSanitizer:
         # Bind action to armature
         if not source_armature.animation_data:
             source_armature.animation_data_create()
-        source_armature.animation_data.action = action
+        if source_armature.animation_data:
+            source_armature.animation_data.action = action
 
         start_f = bounds["start_frame"]
         end_f = bounds["end_frame"]
         step = max(0.01, float(bake_step)) if isinstance(bake_step, (int, float)) and math.isfinite(bake_step) else 1.0
 
         # Ensure all deform pose bones use Quaternion rotation mode
-        for b_name in deform_bones:
-            pb = source_armature.pose.bones.get(b_name)
-            if pb:
-                pb.rotation_mode = "QUATERNION"
+        src_pose = source_armature.pose
+        if src_pose:
+            for b_name in deform_bones:
+                pb = src_pose.bones.get(b_name)
+                if pb:
+                    pb.rotation_mode = "QUATERNION"
 
         # Create clean target action
         clean_name = cls.sanitize_action_name(f"{action.name}_Baked_Deform")
@@ -401,9 +409,13 @@ class AnimationRigSanitizer:
                 scene.frame_set(int(curr_f), subframe=curr_f - int(curr_f))
                 depsgraph = context.evaluated_depsgraph_get()
                 eval_armature = source_armature.evaluated_get(depsgraph)
+                eval_pose = eval_armature.pose
+                if not eval_pose:
+                    curr_f += step
+                    continue
 
                 for b_name in deform_bones:
-                    pose_bone = eval_armature.pose.bones.get(b_name)
+                    pose_bone = eval_pose.bones.get(b_name)
                     if not pose_bone:
                         continue
 
@@ -497,7 +509,7 @@ class AnimationRigSanitizer:
         return baked_action
 
     @classmethod
-    def setup_clean_nla_export(cls, armature: Any, baked_action: Any) -> bool:
+    def setup_clean_nla_export(cls, armature: bpy.types.Object | None, baked_action: bpy.types.Action | None) -> bool:
         """Pushes baked action to a pristine solo NLA track for FBX/glTF multi-engine export."""
         if not bpy or not armature or not baked_action:
             return False

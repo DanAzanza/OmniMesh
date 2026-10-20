@@ -3,6 +3,12 @@ Unit tests for OmniMesh Scene Setup & Asset Hierarchy Module (core/scene_setup.p
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 
@@ -17,40 +23,40 @@ from core.scene_setup import (
 )
 
 
-class DummyUnitSettings:
+class DummyUnitSettings(_MockBase):
     def __init__(self):
         self.system = "NONE"
         self.scale_length = 0.001
         self.length_unit = "NONE"
 
 
-class DummyRender:
+class DummyRender(_MockBase):
     def __init__(self):
         self.fps = 24
         self.fps_base = 1.0
 
 
-class DummyScene:
+class DummyScene(_MockBase):
     def __init__(self):
         self.unit_settings = DummyUnitSettings()
         self.render = DummyRender()
         self.collection = DummyCollection("Scene Collection")
 
 
-class DummyOverlay:
+class DummyOverlay(_MockBase):
     def __init__(self):
         self.show_stats = False
         self.show_face_orientation = False
 
 
-class DummyShading:
+class DummyShading(_MockBase):
     def __init__(self):
         self.show_cavity = False
         self.cavity_type = "SCREEN"
         self.show_backface_culling = False
 
 
-class DummySpaceView3D:
+class DummySpaceView3D(_MockBase):
     def __init__(self):
         self.type = "VIEW_3D"
         self.clip_start = 0.1
@@ -59,34 +65,34 @@ class DummySpaceView3D:
         self.shading = DummyShading()
 
 
-class DummyArea:
+class DummyArea(_MockBase):
     def __init__(self, spaces: list[Any] | None = None):
         self.type = "VIEW_3D"
         self.spaces = spaces if spaces is not None else [DummySpaceView3D()]
 
 
-class DummyScreen:
+class DummyScreen(_MockBase):
     def __init__(self, areas: list[Any] | None = None):
         self.areas = areas if areas is not None else [DummyArea()]
 
 
-class DummyWindow:
+class DummyWindow(_MockBase):
     def __init__(self, screen: Any | None = None):
         self.screen = screen or DummyScreen()
 
 
-class DummyWindowManager:
+class DummyWindowManager(_MockBase):
     def __init__(self, windows: list[Any] | None = None):
         self.windows = windows if windows is not None else [DummyWindow()]
 
 
-class DummyContext:
+class DummyContext(_MockBase):
     def __init__(self, scene: Any | None = None, wm: Any | None = None):
         self.scene = scene or DummyScene()
         self.window_manager = wm or DummyWindowManager()
 
 
-class DummyCollection:
+class DummyCollection(_MockBase):
     def __init__(self, name: str):
         self.name = name
         self.children = DummyCollectionChildren(self)
@@ -104,7 +110,7 @@ class DummyCollection:
         return self._custom_props.get(key, default)
 
 
-class DummyCollectionChildren:
+class DummyCollectionChildren(_MockBase):
     def __init__(self, parent: DummyCollection):
         self.parent = parent
         self._items: dict[str, DummyCollection] = {}
@@ -125,7 +131,7 @@ class DummyCollectionChildren:
         return iter(self._items.values())
 
 
-class DummyCollectionObjects:
+class DummyCollectionObjects(_MockBase):
     def __init__(self, col: DummyCollection):
         self.col = col
         self._objs: dict[str, Any] = {}
@@ -147,7 +153,7 @@ class DummyCollectionObjects:
         return iter(self._objs.values())
 
 
-class DummyObject:
+class DummyObject(_MockBase):
     def __init__(self, name: str, obj_type: str = "MESH", library: Any = None):
         self.name = name
         self.type = obj_type
@@ -155,7 +161,7 @@ class DummyObject:
         self.users_collection: list[DummyCollection] = []
 
 
-class DummyCollectionsDict:
+class DummyCollectionsDict(_MockBase):
     def __init__(self):
         self._cols: dict[str, DummyCollection] = {}
 
@@ -174,12 +180,12 @@ class DummyCollectionsDict:
         return iter(self._cols.values())
 
 
-class DummyBpyData:
+class DummyBpyData(_MockBase):
     def __init__(self):
         self.collections = DummyCollectionsDict()
 
 
-class DummyBpy:
+class DummyBpy(_MockBase):
     def __init__(self):
         self.data = DummyBpyData()
 
@@ -330,7 +336,7 @@ def test_assign_objects_to_asset_hierarchy():
     for obj in [mesh1, mesh2, armature, socket_empty, guide_empty, camera, lib_obj, curve_obj]:
         initial_col.objects.link(obj)
 
-    selected = [mesh1, mesh2, armature, socket_empty, guide_empty, camera, lib_obj, curve_obj]
+    selected: list[Any] = [mesh1, mesh2, armature, socket_empty, guide_empty, camera, lib_obj, curve_obj]
     summary = assign_objects_to_asset_hierarchy(selected, colls, scene=scene, unlink_from_others=True)
 
     # 1. Meshes and Sockets go to LOD0

@@ -11,7 +11,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple
+
+if TYPE_CHECKING:
+    import bpy
 
 from .base import EngineBridgeBase
 
@@ -211,7 +214,7 @@ class MSFS2024LiveBridge(EngineBridgeBase):
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
-        extra_options: Any = None,
+        extra_options: Optional[dict[str, object]] = None,
     ) -> Tuple[bool, str]:
         exe = cls.locate_fspackagetool()
         if not exe:
@@ -240,7 +243,7 @@ class MSFS2024LiveBridge(EngineBridgeBase):
     @classmethod
     def sync_asset(
         cls,
-        context: Any,
+        context: Optional[bpy.types.Context],
         export_dir: str,
         asset_name: str,
         project_dir: str = "",

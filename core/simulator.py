@@ -108,13 +108,15 @@ def evaluate_lod_tier_index_pure(
     return num_tiers - 1
 
 
-def extract_viewport_camera_params(space_3d: Any, region_3d: Any, region: Any, scene: Any) -> tuple[Any, float, bool]:
+def extract_viewport_camera_params(
+    space_3d: Any, region_3d: Any, region: Any, scene: bpy.types.Scene | None
+) -> tuple[Any, float, bool]:
     """
     Extracts camera world position, vertical FOV (rad), and perspective status.
     Supports Perspective Free Viewport, Orthographic Free Viewport, and Scene Camera.
     """
     if not region_3d:
-        if scene and getattr(scene, "camera", None):
+        if scene and scene.camera:
             cam_pos = scene.camera.matrix_world.translation.copy()
         elif Vector:
             cam_pos = Vector((0.0, -5.0, 2.0))
@@ -127,9 +129,9 @@ def extract_viewport_camera_params(space_3d: Any, region_3d: Any, region: Any, s
     # Scene Camera View
     if region_3d.view_perspective == "CAMERA" and getattr(space_3d, "use_local_camera", False) is False:
         cam = getattr(space_3d, "camera", None) or (scene.camera if scene else None)
-        if cam and cam.type == "CAMERA":
+        if cam and cam.type == "CAMERA" and scene:
             cam_pos = cam.matrix_world.translation.copy()
-            cam_data = cam.data
+            cam_data: Any = cam.data
             render = scene.render
             aspect = (render.resolution_x * render.pixel_aspect_x) / max(
                 1.0, (render.resolution_y * render.pixel_aspect_y)
@@ -223,20 +225,21 @@ class LODSimulatorEngine:
     _tracked_assets: dict[str, LODAssetRecord] = {}
 
     @classmethod
-    def index_scene_assets(cls, scene: Any) -> int:
+    def index_scene_assets(cls, scene: bpy.types.Scene | None) -> int:
         if not bpy:
             return 0
         cls._tracked_assets.clear()
 
         default_tiers_pct = [100.0, 50.0, 25.0, 10.0, 5.0, 2.0, 0.5]
-        if hasattr(scene, "lod_tool") and len(scene.lod_tool.lods) > 0:
-            default_tiers_pct = [t.screen_size_pct for t in scene.lod_tool.lods]
+        sc_lod_tool: Any = getattr(scene, "lod_tool", None)
+        if sc_lod_tool is not None and len(sc_lod_tool.lods) > 0:
+            default_tiers_pct = [t.screen_size_pct for t in sc_lod_tool.lods]
 
         # Scope to collections linked to the target scene
         scene_colls: set[Any] = set()
         if scene and hasattr(scene, "collection"):
 
-            def collect_children(p_coll: Any) -> None:
+            def collect_children(p_coll: bpy.types.Collection | None) -> None:
                 scene_colls.add(p_coll)
                 for c in getattr(p_coll, "children", []):
                     collect_children(c)
@@ -300,7 +303,7 @@ class LODSimulatorEngine:
     @classmethod
     def update_simulation_tick(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         cam_pos: Any,
         fov_v_rad: float,
         is_perspective: bool,
@@ -366,7 +369,7 @@ class LODSimulatorEngine:
     _visibility_snapshot: dict[str, bool] = {}
 
     @classmethod
-    def evaluate_distance_scrub(cls, context: Any, distance_m: float) -> dict[str, Any]:
+    def evaluate_distance_scrub(cls, context: bpy.types.Context | None, distance_m: float) -> dict[str, Any]:
         """Evaluates and applies distance-based LOD tier visibility across tracked assets
 
         without requiring an active modal timer loop. Preserves previous visibility state
@@ -477,7 +480,7 @@ class LODSimulatorEngine:
         return primary
 
     @classmethod
-    def reset_distance_scrub(cls, context: Any) -> None:
+    def reset_distance_scrub(cls, context: bpy.types.Context | None) -> None:
         """Restores exact pre-scrub visibility state from snapshot."""
         if not bpy or not context:
             return
@@ -492,7 +495,7 @@ class LODSimulatorEngine:
             cls.restore_all_visibility(context)
 
     @classmethod
-    def restore_all_visibility(cls, context: Any):
+    def restore_all_visibility(cls, context: bpy.types.Context | None):
         if not bpy or not context:
             return
         view_layer = context.view_layer

@@ -11,7 +11,7 @@ import hashlib
 import json
 import logging
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class DeepMaterialHasher:
     """
 
     @classmethod
-    def hash_material(cls, mat: Any) -> str:
+    def hash_material(cls, mat: bpy.types.Material | None) -> str:
         if not mat or not hasattr(mat, "node_tree") or not mat.node_tree:
             diffuse = getattr(mat, "diffuse_color", (0.8, 0.8, 0.8, 1.0))
             if hasattr(diffuse, "__iter__"):
@@ -49,13 +49,13 @@ class DeepMaterialHasher:
         # Find active output material node
         output_node = None
         for n in nodes:
-            if getattr(n, "type", "") == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True):
+            if n.type == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True):
                 output_node = n
                 break
 
         if not output_node:
             for n in nodes:
-                if getattr(n, "type", "") == "OUTPUT_MATERIAL":
+                if n.type == "OUTPUT_MATERIAL":
                     output_node = n
                     break
 
@@ -70,13 +70,13 @@ class DeepMaterialHasher:
 
         while queue:
             curr = queue.pop(0)
-            node_name = str(getattr(curr, "name", id(curr)))
+            node_name = str(curr.name)
             if node_name in visited_nodes:
                 continue
             visited_nodes.add(node_name)
 
             node_data: dict[str, Any] = {
-                "type": str(getattr(curr, "type", "")),
+                "type": str(curr.type),
             }
 
             # Capture node-specific internal properties
@@ -88,21 +88,21 @@ class DeepMaterialHasher:
                 node_data["color_space"] = str(curr.color_space)
             if hasattr(curr, "image") and curr.image:
                 img = curr.image
-                filepath = getattr(img, "filepath", "")
+                filepath = img.filepath
                 if bpy and filepath:
                     try:
                         filepath = bpy.path.abspath(filepath)
                     except (RuntimeError, ValueError, AttributeError) as exc:
                         logger.debug("Failed resolving abspath for image: %s", exc)
-                node_data["image_filepath"] = filepath or getattr(img, "name", "")
-                node_data["image_size"] = list(getattr(img, "size", [0, 0]))
+                node_data["image_filepath"] = filepath or img.name
+                node_data["image_size"] = list(img.size)
                 if hasattr(img, "colorspace_settings"):
-                    node_data["image_colorspace"] = getattr(img.colorspace_settings, "name", "")
+                    node_data["image_colorspace"] = img.colorspace_settings.name
 
             # Capture unlinked input default values
             input_defaults: dict[str, Any] = {}
-            for sock in getattr(curr, "inputs", []):
-                if not getattr(sock, "is_linked", False) and hasattr(sock, "default_value"):
+            for sock in curr.inputs:
+                if not sock.is_linked and hasattr(sock, "default_value"):
                     val = sock.default_value
                     if hasattr(val, "__iter__") and not isinstance(val, (str, bytes)):
                         try:
@@ -117,16 +117,18 @@ class DeepMaterialHasher:
             canonical_nodes.append(node_data)
 
             # Trace incoming links
-            for sock in getattr(curr, "inputs", []):
-                for link in getattr(sock, "links", []):
+            for sock in curr.inputs:
+                for link in sock.links:
                     from_node = link.from_node
-                    from_name = str(getattr(from_node, "name", id(from_node)))
+                    if not from_node:
+                        continue
+                    from_name = str(from_node.name)
                     canonical_links.append(
                         {
-                            "from_type": str(getattr(from_node, "type", "")),
-                            "from_socket": str(getattr(link.from_socket, "name", "")),
-                            "to_type": str(getattr(curr, "type", "")),
-                            "to_socket": str(getattr(sock, "name", "")),
+                            "from_type": str(from_node.type),
+                            "from_socket": str(link.from_socket.name if link.from_socket else ""),
+                            "to_type": str(curr.type),
+                            "to_socket": str(sock.name),
                         }
                     )
                     if from_name not in visited_nodes:
@@ -155,7 +157,7 @@ class HeadlessSlotCompactor:
     @classmethod
     def compact_slots(
         cls,
-        obj: Any,
+        obj: bpy.types.Object | None,
         purge_empty: bool = True,
         deduplicate_identical: bool = True,
     ) -> dict[str, int]:
@@ -165,7 +167,7 @@ class HeadlessSlotCompactor:
         """
         if not obj or not hasattr(obj, "data") or not obj.data:
             return {"slots_removed": 0, "faces_remapped": 0}
-        mesh = obj.data
+        mesh: Any = obj.data
         if not hasattr(mesh, "polygons") or not hasattr(obj, "material_slots"):
             return {"slots_removed": 0, "faces_remapped": 0}
 
@@ -261,16 +263,16 @@ class SemanticTextureAuditor:
     """
 
     @classmethod
-    def is_image_valid(cls, img: Any) -> bool:
+    def is_image_valid(cls, img: bpy.types.Image | None) -> bool:
         if not img:
             return False
-        if getattr(img, "packed_file", None) is not None:
+        if img.packed_file is not None:
             return True
-        if getattr(img, "has_data", False):
+        if img.has_data:
             return True
-        if getattr(img, "source", "") == "GENERATED":
+        if img.source == "GENERATED":
             return True
-        filepath = getattr(img, "filepath", "")
+        filepath = img.filepath
         if not filepath:
             return False
         if bpy:
@@ -282,12 +284,12 @@ class SemanticTextureAuditor:
         return os.path.exists(filepath)
 
     @classmethod
-    def repair_missing_textures_in_material(cls, mat: Any) -> int:
+    def repair_missing_textures_in_material(cls, mat: bpy.types.Material | None) -> int:
         """
         Audits image texture nodes in the material. If an image is broken or missing,
         replaces it with safe socket-specific defaults without corrupting normal vectors.
         """
-        if not mat or not hasattr(mat, "node_tree") or not mat.node_tree:
+        if not mat or not mat.node_tree:
             return 0
 
         nodes = mat.node_tree.nodes
@@ -295,17 +297,17 @@ class SemanticTextureAuditor:
         repaired_nodes = 0
 
         for node in list(nodes):
-            if getattr(node, "type", "") == "TEX_IMAGE":
-                img = getattr(node, "image", None)
+            if node.type == "TEX_IMAGE":
+                img: Any = getattr(node, "image", None)
                 if not cls.is_image_valid(img):
                     # Trace downstream connections (including through demux/mix/math nodes)
                     def resolve_downstream_targets(start_node: Any, visited: set[int]) -> list[tuple[Any, Any, Any]]:
                         resolved = []
-                        for out_s in getattr(start_node, "outputs", []):
-                            for lnk in list(getattr(out_s, "links", [])):
+                        for out_s in start_node.outputs:
+                            for lnk in list(out_s.links):
                                 t_node = lnk.to_node
                                 t_sock = lnk.to_socket
-                                n_type = getattr(t_node, "type", "")
+                                n_type = t_node.type if t_node else ""
                                 if n_type in ("SEPARATE_COLOR", "COMBINE_COLOR", "MIX", "MATH", "NORMAL_MAP"):
                                     if id(t_node) not in visited:
                                         visited.add(id(t_node))
@@ -315,8 +317,8 @@ class SemanticTextureAuditor:
 
                     downstream = resolve_downstream_targets(node, {id(node)})
                     for link, target_sock, target_node in downstream:
-                        sock_name = str(getattr(target_sock, "name", "")).lower()
-                        node_type = getattr(target_node, "type", "")
+                        sock_name = str(target_sock.name if target_sock else "").lower()
+                        node_type = target_node.type if target_node else ""
 
                         if "normal" in sock_name or node_type == "NORMAL_MAP":
                             if link in links:
@@ -346,15 +348,20 @@ class SemanticTextureAuditor:
         return repaired_nodes
 
     @classmethod
-    def remove_orphan_texture_nodes(cls, mat: Any) -> int:
+    def remove_orphan_texture_nodes(cls, mat: bpy.types.Material | None) -> int:
         """Removes dead/disconnected texture image nodes (0 outputs connected)."""
-        if not mat or not hasattr(mat, "node_tree") or not mat.node_tree:
+        if not mat or not mat.node_tree:
             return 0
         nodes = mat.node_tree.nodes
         removed = 0
         for node in list(nodes):
-            if getattr(node, "type", "") == "TEX_IMAGE":
-                is_used = any(len(out.links) > 0 for out in getattr(node, "outputs", []))
+            if node.type == "TEX_IMAGE":
+                is_used = any(
+                    (len(cast(Any, out.links)) > 0)
+                    if getattr(out, "links", None) is not None
+                    else bool(getattr(out, "is_linked", False))
+                    for out in node.outputs
+                )
                 if not is_used:
                     nodes.remove(node)
                     removed += 1
@@ -383,11 +390,11 @@ class MaterialOptimizer:
     PROTECTED_KEYWORDS = ("emissive", "emission", "glass", "decal", "light", "eye", "lamp")
 
     @classmethod
-    def calculate_material_areas(cls, obj: Any) -> dict[int, float]:
+    def calculate_material_areas(cls, obj: bpy.types.Object | None) -> dict[int, float]:
         """Calculates cumulative surface area per material slot index, scaled by matrix_world if available."""
         if not obj or not hasattr(obj, "data") or not obj.data:
             return {}
-        mesh = obj.data
+        mesh: Any = obj.data
         if not hasattr(mesh, "polygons") or not hasattr(obj, "material_slots"):
             return {}
 
@@ -421,7 +428,7 @@ class MaterialOptimizer:
         return max(areas.items(), key=lambda item: item[1])[0]
 
     @classmethod
-    def is_material_protected(cls, mat: Any) -> bool:
+    def is_material_protected(cls, mat: bpy.types.Material | None) -> bool:
         """Determines if a material is semantically protected (e.g. lights, decals, glass)."""
         if not mat:
             return False
@@ -448,7 +455,7 @@ class MaterialOptimizer:
     @classmethod
     def consolidate_micro_materials(
         cls,
-        obj: Any,
+        obj: bpy.types.Object | None,
         area_threshold_pct: float = 0.5,
         protect_semantic_materials: bool = True,
         area_crit: float = 0.0,
@@ -500,24 +507,25 @@ class MaterialOptimizer:
         if not reassigned_slots:
             return {"consolidated_slots": 0, "faces_reassigned": 0}
 
+        mesh_data: Any = obj.data
         bm = bmesh.new()
         faces_reassigned = 0
         try:
-            bm.from_mesh(obj.data)
+            bm.from_mesh(mesh_data)
             bm.faces.ensure_lookup_table()
             for face in bm.faces:
                 if face.material_index in reassigned_slots:
                     face.material_index = dominant_idx
                     faces_reassigned += 1
-            bm.to_mesh(obj.data)
+            bm.to_mesh(mesh_data)
         finally:
             bm.free()
 
-        obj.data.update()
+        mesh_data.update()
         return {"consolidated_slots": len(reassigned_slots), "faces_reassigned": faces_reassigned}
 
     @classmethod
-    def purge_unused_materials(cls, obj: Any) -> dict[str, int]:
+    def purge_unused_materials(cls, obj: bpy.types.Object | None) -> dict[str, int]:
         """
         Compacts and removes unassigned/empty material slots from the target object.
         """
@@ -583,7 +591,7 @@ class MaterialOptimizer:
         return len(orphans)
 
     @classmethod
-    def clean_orphan_shader_nodes(cls, mat: Any | None = None) -> int:
+    def clean_orphan_shader_nodes(cls, mat: bpy.types.Material | None = None) -> int:
         """Removes disconnected or orphan texture nodes from target material or all scene materials."""
         if mat is not None:
             return SemanticTextureAuditor.remove_orphan_texture_nodes(mat)
@@ -596,7 +604,7 @@ class MaterialOptimizer:
     @classmethod
     def clean_materials_full(
         cls,
-        mesh_objs: list[Any],
+        mesh_objs: list[bpy.types.Object],
         options: MaterialCleanOptions | None = None,
     ) -> dict[str, Any]:
         """

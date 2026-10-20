@@ -6,6 +6,12 @@ boilerplate proliferation across test modules.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 import math
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -19,7 +25,7 @@ import pytest
 # ==============================================================================
 
 
-class MockVector:
+class MockVector(_MockBase):
     """Mock Blender/mathutils 3D Vector."""
 
     def __init__(self, x: float | Tuple[float, float, float] | List[float] = 0.0, y: float = 0.0, z: float = 0.0):
@@ -94,7 +100,7 @@ class MockVector:
 # ==============================================================================
 
 
-class MockSocket:
+class MockSocket(_MockBase):
     """Mock Blender NodeSocket with default values, link support, and connection state."""
 
     def __init__(self, default_value: Any = 0.0, linked_node: Optional[Any] = None, name: str = "Socket"):
@@ -111,7 +117,7 @@ class MockSocket:
             self.links = [MockLink(linked_node)]
 
 
-class MockShaderNode:
+class MockShaderNode(_MockBase):
     """Mock Blender ShaderNode (BSDF, TexImage, NormalMap, Reroute)."""
 
     def __init__(self, node_type: str = "BSDF_PRINCIPLED", name: str = "Node", inputs: Optional[Dict[str, Any]] = None):
@@ -121,7 +127,7 @@ class MockShaderNode:
         self.image: Optional[Any] = None
 
 
-class MockImage:
+class MockImage(_MockBase):
     """Mock Blender Image datablock with fast vectorized foreach_get pixel buffer."""
 
     def __init__(self, size: Tuple[int, int] = (64, 64), name: str = "T_MockImage", fill_val: float = 0.5):
@@ -149,7 +155,7 @@ class MockImage:
         return PixelsWrapper(raw)
 
 
-class MockMaterial:
+class MockMaterial(_MockBase):
     """Mock Blender Material datablock with Principled BSDF node tree."""
 
     def __init__(self, name: str = "M_MockMaterial", use_nodes: bool = True):
@@ -181,7 +187,7 @@ class MockMaterial:
 # ==============================================================================
 
 
-class MockPolygon:
+class MockPolygon(_MockBase):
     """Mock Blender MeshPolygon with area and material index."""
 
     def __init__(self, material_index: int = 0, area: float = 1.0):
@@ -189,14 +195,14 @@ class MockPolygon:
         self.area = area
 
 
-class MockMaterialSlot:
+class MockMaterialSlot(_MockBase):
     """Mock Blender MaterialSlot."""
 
     def __init__(self, material: Optional[MockMaterial] = None):
         self.material = material
 
 
-class MockMeshObject:
+class MockMeshObject(_MockBase):
     """Standard Mock Blender Mesh Object with polygons, material slots, and visibility."""
 
     def __init__(
@@ -239,7 +245,7 @@ class MockMeshObject:
         self.custom_props[key] = val
 
 
-class MockCollection:
+class MockCollection(_MockBase):
     """Mock Blender Collection with object list and hierarchical children."""
 
     def __init__(self, name: str = "Collection"):

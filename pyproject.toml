@@ -20,9 +20,6 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-acceleration = [
-    "Pillow>=9.0.0",
-]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.1.0",
@@ -52,6 +49,7 @@ ignore = ["E501", "E402", "S603", "S607"]
 pythonpath = ["."]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+addopts = "--ignore=tests/in_blender"
 
 [tool.pyright]
 include = ["core", "ui", "exporters", "bridges", "tests"]

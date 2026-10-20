@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 from core.normals import NormalManager
@@ -22,7 +23,7 @@ def test_ensure_sharp_edge_attribute():
 def test_reproject_custom_split_normals_null_or_identical():
     assert NormalManager.reproject_custom_split_normals(None, None) is False
 
-    dummy_obj = object()
+    dummy_obj: Any = object()
     assert NormalManager.reproject_custom_split_normals(dummy_obj, dummy_obj) is False
 
 
@@ -66,5 +67,5 @@ def test_reproject_custom_split_normals_context_decoupled():
     NormalManager.reproject_custom_split_normals(mock_tgt, mock_src, context=mock_context)
     # None context passed
     NormalManager.reproject_custom_split_normals(mock_tgt, mock_src, context=None)
-    assert NormalManager._kdtree_normal_transfer_fallback(object(), None) is False
-    assert NormalManager._kdtree_normal_transfer_fallback(None, object()) is False
+    assert NormalManager._kdtree_normal_transfer_fallback(cast(Any, object()), None) is False
+    assert NormalManager._kdtree_normal_transfer_fallback(None, cast(Any, object())) is False

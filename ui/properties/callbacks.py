@@ -357,10 +357,6 @@ def restore_preset_state_on_load(dummy: Any = None) -> None:
                 lod_preset_data = LODPresetManager.get_preset(lod_to_set)
                 sync_preset_tiers_from_preset(props, lod_preset_data)
 
-            # Auto-migrate legacy GODOT_4 target engine to UE5
-            if hasattr(props, "target_engine") and getattr(props, "target_engine", "") == "GODOT_4":
-                props.target_engine = "UE5"
-
             # Auto-migrate legacy MSFS 2020 target version to MSFS 2024
             if hasattr(props, "msfs_target_version") and getattr(props, "msfs_target_version", "") == "2020":
                 props.msfs_target_version = "2024"

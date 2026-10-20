@@ -30,8 +30,12 @@ else:
 from .msfs.project_scanner import MSFSProjectManifest
 
 
-def find_layer_collection(layer_coll: Any, target_coll: Any) -> Optional[Any]:
+def find_layer_collection(
+    layer_coll: bpy.types.LayerCollection | None, target_coll: bpy.types.Collection | None
+) -> Optional[Any]:
     """Recursively traverses the LayerCollection hierarchy to find the one matching target_coll."""
+    if not layer_coll or not target_coll:
+        return None
     if layer_coll.collection == target_coll:
         return layer_coll
     for child in layer_coll.children:
@@ -50,7 +54,7 @@ except (ImportError, ValueError):
         get_or_create_engine_import_collection = None
 
 
-def classify_imported_mesh_node(obj: Any, is_interior: bool = False) -> str:
+def classify_imported_mesh_node(obj: bpy.types.Object | None, is_interior: bool = False) -> str:
     """Classifies an imported mesh node into 'RENDER_MESH', 'PHYSICS_COLLIDER', or 'INTERACTION_VOLUME'.
 
     Disambiguates airframe crash hulls from cockpit clickspots using name patterns, material shaders,
@@ -78,8 +82,9 @@ def classify_imported_mesh_node(obj: Any, is_interior: bool = False) -> str:
 
     is_collision_named = name_lower.startswith("collision_")
     is_invisible_mat = False
-    if hasattr(obj, "data") and obj.data and hasattr(obj.data, "materials"):
-        mats = [m for m in obj.data.materials if m]
+    obj_data: Any = getattr(obj, "data", None)
+    if obj_data and hasattr(obj_data, "materials"):
+        mats = [m for m in obj_data.materials if m]
         if mats and all(m.get("_omnimesh_invisible") or m.get("msfs_material_type") == 12 for m in mats):
             is_invisible_mat = True
 
@@ -111,9 +116,9 @@ class GLTFAssemblyEngine:
     @classmethod
     def import_gltf_into_collection(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         gltf_path: Path | str,
-        target_collection: Any,
+        target_collection: bpy.types.Collection | None,
         asset_name: str = "",
         is_interior: bool = False,
     ) -> list[Any]:
@@ -193,7 +198,7 @@ class GLTFAssemblyEngine:
                 obj.show_wire = True
                 obj["_omnimesh_role"] = "COLLIDER"
                 obj["_is_collider"] = True
-            else:
+            elif target_collection is not None:
                 if obj.name not in target_collection.objects:
                     target_collection.objects.link(obj)
 
@@ -229,7 +234,7 @@ class GLTFAssemblyEngine:
         return new_objects
 
     @classmethod
-    def deduplicate_materials(cls, objects: list[Any]) -> int:
+    def deduplicate_materials(cls, objects: list[bpy.types.Object]) -> int:
         """Detects duplicated material datablocks (e.g. Fuselage.001) across imported objects,
 
         remaps them to canonical base materials (Fuselage), and cleans up unreferenced duplicates.
@@ -273,8 +278,8 @@ class GLTFAssemblyEngine:
     @classmethod
     def retarget_armatures_to_master(
         cls,
-        master_armature: Optional[Any],
-        lod_objects: list[Any],
+        master_armature: Optional[bpy.types.Object],
+        lod_objects: list[bpy.types.Object],
     ) -> int:
         """Retargets ARMATURE modifiers on LOD mesh objects to the Master Rig (LOD0 Armature)
 
@@ -296,9 +301,10 @@ class GLTFAssemblyEngine:
                     obj.parent = master_armature
                 if hasattr(obj, "modifiers"):
                     for mod in obj.modifiers:
-                        if mod.type == "ARMATURE" and mod.object and mod.object != master_armature:
-                            redundant_armatures.add(mod.object)
-                            mod.object = master_armature
+                        mod_any: Any = mod
+                        if mod_any.type == "ARMATURE" and mod_any.object and mod_any.object != master_armature:
+                            redundant_armatures.add(mod_any.object)
+                            mod_any.object = master_armature
                             retargeted_count += 1
 
         # Safely remove redundant armatures and clean orphan datablocks
@@ -315,12 +321,12 @@ class GLTFAssemblyEngine:
         return retargeted_count
 
 
-def count_mesh_triangles(mesh_obj: Any) -> int:
+def count_mesh_triangles(mesh_obj: bpy.types.Object | None) -> int:
     """Calculates total triangle count for a mesh object."""
     if not mesh_obj or mesh_obj.type != "MESH" or not hasattr(mesh_obj, "data"):
         return 0
     try:
-        mesh = mesh_obj.data
+        mesh: Any = mesh_obj.data
         if hasattr(mesh, "calc_loop_triangles"):
             mesh.calc_loop_triangles()
             return len(mesh.loop_triangles)
@@ -330,7 +336,7 @@ def count_mesh_triangles(mesh_obj: Any) -> int:
 
 
 def bind_manifest_to_omnimesh(
-    context: Any,
+    context: bpy.types.Context | None,
     manifest: MSFSProjectManifest,
     lod_mesh_map: dict[int, list[Any]],
 ) -> None:

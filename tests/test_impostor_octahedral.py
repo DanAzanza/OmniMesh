@@ -89,7 +89,7 @@ def test_companion_shader_generation_and_export():
 
         assert "UNITY" in exported
         assert "UE5" in exported
-        assert "GODOT" not in exported
+        assert set(exported.keys()) == {"UNITY", "UE5"}
 
         # Verify Unity HLSL
         unity_file = exported["UNITY"]

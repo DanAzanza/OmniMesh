@@ -7,7 +7,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .exceptions import DecimationError
 
@@ -31,7 +31,7 @@ UV_SEAM_EPSILON: float = 1e-4
 
 
 @contextlib.contextmanager
-def temporary_vertex_group(obj: Any, group_name: str):
+def temporary_vertex_group(obj: bpy.types.Object | None, group_name: str):
     """
     RAII context manager guaranteeing clean removal of temporary vertex groups upon completion or exception.
     """
@@ -50,7 +50,7 @@ def temporary_vertex_group(obj: Any, group_name: str):
 class MeshDecimator:
     @staticmethod
     def tag_boundaries_and_uv_seams(
-        bm: Any,
+        bm: bmesh.types.BMesh | None,
         pin_uv_seams: bool = True,
         pin_material_borders: bool = True,
         pin_sharp_edges: bool = True,
@@ -150,7 +150,7 @@ class MeshDecimator:
         return pinned_vert_indices
 
     @staticmethod
-    def apply_planar_limited_dissolve(bm: Any, angle_limit_rad: float):
+    def apply_planar_limited_dissolve(bm: bmesh.types.BMesh | None, angle_limit_rad: float):
         """
         Executes coplanar face decimation up to angle_limit_rad, preserving seams, sharp marks,
         and material boundaries.
@@ -188,7 +188,10 @@ class MeshDecimator:
 
     @staticmethod
     def inject_curvature_weights(
-        obj: Any, bm: Any, pinned_vert_indices: set[int], group_name: str = "OmniMesh_Protection"
+        obj: bpy.types.Object | None,
+        bm: bmesh.types.BMesh | None,
+        pinned_vert_indices: set[int],
+        group_name: str = "OmniMesh_Protection",
     ):
         """
         Computes maximum dihedral angle across link edges for each vertex and writes weights
@@ -320,7 +323,7 @@ class MeshDecimator:
                 logger.debug("Error assigning deform weight: %s", exc)
 
     @staticmethod
-    def lock_chunk_boundaries(obj: Any, group_name: str = "OMNIMESH_SEAM_LOCKED") -> set[int]:
+    def lock_chunk_boundaries(obj: bpy.types.Object | None, group_name: str = "OMNIMESH_SEAM_LOCKED") -> set[int]:
         """
         Identifies and tags all open boundary vertices into the specified vertex group with weight 1.0.
         Returns set of tagged vertex indices.
@@ -329,7 +332,7 @@ class MeshDecimator:
         if not obj or obj.type != "MESH" or not obj.data:
             return tagged_indices
 
-        mesh = obj.data
+        mesh = cast(bpy.types.Mesh, obj.data)
         if not mesh.edges or not mesh.vertices:
             return tagged_indices
 
@@ -356,13 +359,13 @@ class MeshDecimator:
 
     @staticmethod
     def execute_decimate_qem(
-        obj: Any,
+        obj: bpy.types.Object | None,
         target_ratio: float,
         use_curvature_weight: bool = True,
         group_name: str = "OmniMesh_Protection",
         vertex_group_factor: float = 0.5,
         cleanup_group: bool = True,
-        context: Any = None,
+        context: bpy.types.Context | None = None,
     ):
         """
         Applies quadric error metric (QEM) edge collapse decimation to the target mesh object.
@@ -384,8 +387,8 @@ class MeshDecimator:
         if not bpy:
             return
 
-        ctx = context if context is not None else getattr(bpy, "context", None)
-        dec_mod = obj.modifiers.new(name="OmniMesh_Decimate", type="DECIMATE")
+        ctx = context
+        dec_mod = cast(bpy.types.DecimateModifier, obj.modifiers.new(name="OmniMesh_Decimate", type="DECIMATE"))
         orig_armature_states: dict[Any, bool] = {}
         try:
             dec_mod.decimate_type = "COLLAPSE"
@@ -406,16 +409,18 @@ class MeshDecimator:
             if hasattr(bpy.ops.object, "modifier_move_to_index"):
                 try:
                     if ctx and hasattr(ctx, "temp_override"):
-                        with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                        with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                             bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
                 except (RuntimeError, ValueError, AttributeError) as exc:
                     logger.debug("Modifier move to index 0 skipped: %s", exc)
 
             if ctx and hasattr(ctx, "temp_override"):
-                with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                     bpy.ops.object.modifier_apply(modifier=dec_mod.name)
             elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
                 ctx.view_layer.objects.active = obj
+                bpy.ops.object.modifier_apply(modifier=dec_mod.name)
+            else:
                 bpy.ops.object.modifier_apply(modifier=dec_mod.name)
         except (RuntimeError, ValueError, AttributeError) as exc:
             obj_name = getattr(obj, "name", "Unnamed")
@@ -440,15 +445,16 @@ class MeshDecimator:
                     obj.vertex_groups.remove(vg)
 
     @staticmethod
-    def reset_shape_keys_to_basis(obj: Any) -> None:
+    def reset_shape_keys_to_basis(obj: bpy.types.Object | None) -> None:
         """
         Resets all shape key evaluation values to 0.0 (neutral Basis pose).
         Prevents deformed geometry during LOD decimation or normal reprojection.
         """
-        if not obj or not obj.data or not obj.data.shape_keys:
+        shape_keys = getattr(getattr(obj, "data", None), "shape_keys", None)
+        if not obj or not shape_keys:
             return
 
-        key_blocks = getattr(obj.data.shape_keys, "key_blocks", [])
+        key_blocks = getattr(shape_keys, "key_blocks", [])
         for kb in key_blocks:
             try:
                 kb.value = 0.0
@@ -456,12 +462,12 @@ class MeshDecimator:
                 logger.debug("Failed resetting shape key value: %s", exc)
 
     @classmethod
-    def purge_all_shape_keys(cls, obj: Any, context: Any = None) -> None:
+    def purge_all_shape_keys(cls, obj: bpy.types.Object | None, context: bpy.types.Context | None = None) -> None:
         """
         Purges all shape keys from the target mesh datablock.
-        Strictly guarantees key blocks are reset to 0.0 before removal (KNOWLEDGE.md §3).
+        Strictly guarantees key blocks are reset to 0.0 before removal (BLENDER_KNOWLEDGE.md §4).
         """
-        if not obj or not obj.data or not obj.data.shape_keys:
+        if not obj or not getattr(getattr(obj, "data", None), "shape_keys", None):
             return
         if not bpy:
             return
@@ -470,10 +476,10 @@ class MeshDecimator:
         cls.reset_shape_keys_to_basis(obj)
 
         # 2. Remove all shape keys cleanly
-        ctx = context if context is not None else getattr(bpy, "context", None)
+        ctx = context
         try:
             if ctx and hasattr(ctx, "temp_override"):
-                with ctx.temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                     if hasattr(obj, "shape_key_clear"):
                         obj.shape_key_clear()
                     bpy.ops.object.shape_key_remove(all=True)
@@ -486,7 +492,9 @@ class MeshDecimator:
             logger.debug("Shape key purge bypassed: %s", exc)
 
     @classmethod
-    def prepare_and_clean_shape_keys(cls, obj: Any, purge: bool = False, context: Any = None) -> None:
+    def prepare_and_clean_shape_keys(
+        cls, obj: bpy.types.Object | None, purge: bool = False, context: bpy.types.Context | None = None
+    ) -> None:
         """
         Backward-compatible dispatcher: resets shape keys to Basis, or purges completely if purge is True.
         """

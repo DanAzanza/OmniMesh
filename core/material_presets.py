@@ -28,7 +28,7 @@ else:
 
 
 def set_principled_socket(
-    node: Any,
+    node: Node | None,
     name_v1: str,
     name_v2: str,
     value: Any,
@@ -51,7 +51,7 @@ def set_principled_socket(
 
 
 def configure_material_transparency(
-    mat: Any,
+    mat: Material | None,
     mode: str = "BLEND",
     shadow: str = "NONE",
 ) -> None:
@@ -76,7 +76,7 @@ def configure_material_transparency(
             pass
 
 
-def get_or_create_principled_node(mat: Any) -> Optional[Any]:
+def get_or_create_principled_node(mat: Material | None) -> Optional[Any]:
     """Retrieves or creates the primary Principled BSDF node in a material node tree."""
     if not mat or not hasattr(mat, "node_tree") or not mat.node_tree:
         return None
@@ -203,7 +203,7 @@ def create_or_update_material_preset(
     return mat
 
 
-def assign_material_to_objects(mat: Any, objects: Sequence[Any]) -> int:
+def assign_material_to_objects(mat: Material | None, objects: Sequence[bpy.types.Object]) -> int:
     """Assigns the given material to the primary material slot of all valid mesh objects."""
     if not mat or not objects:
         return 0

@@ -163,7 +163,7 @@ class ConfigPresetSpawner:
     """Instantiates preset configuration objects into standardized collections."""
 
     @classmethod
-    def _parent_to_datum(cls, obj: Any, datum_obj: Any) -> None:
+    def _parent_to_datum(cls, obj: Any, datum_obj: bpy.types.Object | None) -> None:
         """Safely parents obj to datum_obj preserving world transform."""
         if not datum_obj or obj == datum_obj:
             return
@@ -179,7 +179,7 @@ class ConfigPresetSpawner:
         cls,
         _bpy: Any,
         asset_name: str,
-        spatial_col: Any,
+        spatial_col: bpy.types.Collection | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> tuple[Any, int]:
@@ -210,8 +210,8 @@ class ConfigPresetSpawner:
         _bpy: Any,
         asset_name: str,
         items: list[dict[str, Any]],
-        spatial_col: Any,
-        datum_obj: Any,
+        spatial_col: bpy.types.Collection | None,
+        datum_obj: bpy.types.Object | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
         detected_wheels: dict[str, tuple[float, float, float]] | None = None,
@@ -281,8 +281,8 @@ class ConfigPresetSpawner:
         _bpy: Any,
         asset_name: str,
         items: list[dict[str, Any]],
-        spatial_col: Any,
-        datum_obj: Any,
+        spatial_col: bpy.types.Collection | None,
+        datum_obj: bpy.types.Object | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
@@ -320,8 +320,8 @@ class ConfigPresetSpawner:
         _bpy: Any,
         asset_name: str,
         items: list[dict[str, Any]],
-        spatial_col: Any,
-        datum_obj: Any,
+        spatial_col: bpy.types.Collection | None,
+        datum_obj: bpy.types.Object | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
@@ -359,8 +359,8 @@ class ConfigPresetSpawner:
         _bpy: Any,
         asset_name: str,
         items: list[dict[str, Any]],
-        spatial_col: Any,
-        datum_obj: Any,
+        spatial_col: bpy.types.Collection | None,
+        datum_obj: bpy.types.Object | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
@@ -396,7 +396,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_interactions(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         asset_name: str,
         items: list[dict[str, Any]],
     ) -> int:
@@ -426,7 +426,7 @@ class ConfigPresetSpawner:
         _bpy: Any,
         asset_name: str,
         items: list[dict[str, Any]],
-        lights_col: Any,
+        lights_col: bpy.types.Collection | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
@@ -472,7 +472,7 @@ class ConfigPresetSpawner:
         _bpy: Any,
         asset_name: str,
         items: list[dict[str, Any]],
-        cameras_col: Any,
+        cameras_col: bpy.types.Collection | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
@@ -536,7 +536,7 @@ class ConfigPresetSpawner:
     @classmethod
     def spawn_preset_objects(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         asset_name: str,
         preset_data: dict[str, Any],
         cfg_props: Any = None,

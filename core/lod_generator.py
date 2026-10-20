@@ -95,7 +95,7 @@ def _count_triangles(mesh_data: Any) -> int:
         return len(polys)
 
 
-def _compute_lod0_stats(mesh_objs: list[Any]) -> tuple[int, int]:
+def _compute_lod0_stats(mesh_objs: list[bpy.types.Object]) -> tuple[int, int]:
     """Calculates initial triangle count and material slot count for LOD0."""
     tier_tris = 0
     tier_mats = sum(len(obj.material_slots) for obj in mesh_objs if hasattr(obj, "material_slots"))
@@ -116,40 +116,40 @@ def _compute_lod0_stats(mesh_objs: list[Any]) -> tuple[int, int]:
 
 
 def _process_merged_tier(
-    tier_coll: Any,
+    tier_coll: bpy.types.Collection | None,
     tier: Any,
     tier_idx: int,
     base_name: str,
-    mesh_objs: list[Any],
-    armature_obj: Any,
-    tier_pivot: Any,
+    mesh_objs: list[bpy.types.Object],
+    armature_obj: bpy.types.Object | None,
+    tier_pivot: bpy.types.Object | None,
     tolerances: dict[str, Any],
     props: Any,
     render: Any,
     radius: float,
     fov_v: float,
     max_influences: int,
-    ref_merged_obj: Any = None,
-    context: Any = None,
+    ref_merged_obj: bpy.types.Object | None = None,
+    context: bpy.types.Context | None = None,
 ) -> tuple[int, int, int, Any]:
     """Processes a merged LOD tier, combining meshes and applying decimation pipeline."""
     merged_name = f"{base_name}_LOD{tier_idx}"
     existing = bpy.data.objects.get(merged_name)
     if existing and existing not in mesh_objs:
-        old_mesh = getattr(existing, "data", None)
+        old_mesh: Any = existing.data
         bpy.data.objects.remove(existing, do_unlink=True)
-        if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+        if old_mesh and old_mesh.users == 0 and hasattr(bpy.data, "meshes"):
             try:
                 bpy.data.meshes.remove(old_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc)
+                logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
 
     tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
         mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
     )
     if not tier_obj:
         raise DecimationError(f"Mesh consolidation failed for {merged_name}.")
-    if tier_obj.name not in tier_coll.objects:
+    if tier_coll and tier_obj.name not in tier_coll.objects:
         tier_coll.objects.link(tier_obj)
 
     culled_slender_count = 0
@@ -192,11 +192,11 @@ def _process_merged_tier(
 
         # Decal vertex protection: pin vertices belonging to decal materials to protect planar fidelity
         if getattr(props, "msfs_preserve_decals", True) and MSFSMaterialAnalyzer:
-            mat_slots = getattr(tier_obj, "material_slots", [])
+            mat_slots = tier_obj.material_slots
             for f in bm.faces:
-                mat_idx = getattr(f, "material_index", 0)
+                mat_idx = f.material_index
                 if 0 <= mat_idx < len(mat_slots):
-                    mat = getattr(mat_slots[mat_idx], "material", None)
+                    mat = mat_slots[mat_idx].material
                     if mat and MSFSMaterialAnalyzer.classify_material(mat).kind == MSFSMaterialKind.DECAL:
                         for v in f.verts:
                             pinned_verts.add(v.index)
@@ -235,7 +235,7 @@ def _process_merged_tier(
     except (RuntimeError, ValueError, AttributeError) as exc:
         logger.warning(
             "Merged custom split normal reprojection failed for '%s' (LOD%d): %s; attempting single-mesh fallback",
-            getattr(tier_obj, "name", ""),
+            tier_obj.name,
             tier_idx,
             exc,
         )
@@ -247,15 +247,15 @@ def _process_merged_tier(
             except (RuntimeError, ValueError, AttributeError) as fb_exc:
                 logger.warning(
                     "Fallback single-mesh normal reprojection also failed for '%s': %s",
-                    getattr(tier_obj, "name", ""),
+                    tier_obj.name,
                     fb_exc,
                 )
     finally:
         if owned_ref and target_ref and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
-            ref_mesh = getattr(target_ref, "data", None)
+            ref_mesh: Any = target_ref.data
             try:
                 bpy.data.objects.remove(target_ref, do_unlink=True)
-                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+                if ref_mesh and ref_mesh.users == 0 and hasattr(bpy.data, "meshes"):
                     bpy.data.meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Cleanup ref_merged_obj exception: %s", exc)
@@ -273,7 +273,7 @@ def _process_merged_tier(
         WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
 
     tier_obj.data.update()
-    actual_tris = _count_triangles(getattr(tier_obj, "data", None))
+    actual_tris = _count_triangles(tier_obj.data)
     actual_mats = len(tier_obj.material_slots)
     if hasattr(tier_obj, "lod_tool"):
         tier_obj.lod_tool.lod_root_object = mesh_objs[0] if mesh_objs else None
@@ -284,21 +284,21 @@ def _process_merged_tier(
 
 
 def _process_unmerged_tier(
-    tier_coll: Any,
+    tier_coll: bpy.types.Collection | None,
     tier: Any,
     tier_idx: int,
     base_name: str,
-    mesh_objs: list[Any],
-    armature_obj: Any,
-    tier_pivot: Any,
-    root_pivot: Any,
+    mesh_objs: list[bpy.types.Object],
+    armature_obj: bpy.types.Object | None,
+    tier_pivot: bpy.types.Object | None,
+    root_pivot: bpy.types.Object | None,
     tolerances: dict[str, Any],
     props: Any,
     render: Any,
     radius: float,
     fov_v: float,
     max_influences: int,
-    context: Any = None,
+    context: bpy.types.Context | None = None,
 ) -> tuple[int, int, int, Any]:
     """Processes an unmerged multi-mesh LOD tier, decimating each object individually."""
     tier_tris = 0
@@ -310,19 +310,23 @@ def _process_unmerged_tier(
         sub_name = f"{source_obj.name}_LOD{tier_idx}" if len(mesh_objs) > 1 else f"{base_name}_LOD{tier_idx}"
         existing = bpy.data.objects.get(sub_name)
         if existing and existing not in mesh_objs and existing != source_obj:
-            old_mesh = getattr(existing, "data", None)
+            old_mesh: Any = existing.data
             bpy.data.objects.remove(existing, do_unlink=True)
-            if old_mesh and getattr(old_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
+            if old_mesh and old_mesh.users == 0 and hasattr(bpy.data, "meshes"):
                 try:
                     bpy.data.meshes.remove(old_mesh)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", "mesh"), exc)
+                    logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
 
-        lod_obj = source_obj.copy()
-        lod_obj.data = source_obj.data.copy()
+        lod_obj: Any = source_obj.copy()
+        src_data: Any = source_obj.data
+        lod_mesh: Any = src_data.copy() if src_data else src_data
+        lod_obj.data = lod_mesh
         lod_obj.name = sub_name
-        lod_obj.data.name = f"{sub_name}_Mesh"
-        tier_coll.objects.link(lod_obj)
+        if lod_obj.data:
+            lod_obj.data.name = f"{sub_name}_Mesh"
+        if tier_coll:
+            tier_coll.objects.link(lod_obj)
 
         if props.purge_shape_keys and tier_idx >= 1:
             MeshDecimator.purge_all_shape_keys(lod_obj, context=context)
@@ -333,8 +337,8 @@ def _process_unmerged_tier(
             is_parent_pivot = (
                 lod_obj.parent is None
                 or (root_pivot and lod_obj.parent == root_pivot)
-                or (root_pivot and getattr(lod_obj.parent, "name", "") == root_pivot.name)
-                or "pivot" in getattr(lod_obj.parent, "name", "").lower()
+                or (root_pivot and lod_obj.parent.name == root_pivot.name)
+                or "pivot" in lod_obj.parent.name.lower()
             )
             if is_parent_pivot:
                 lod_obj.parent = tier_pivot
@@ -432,10 +436,10 @@ def _process_unmerged_tier(
 
 
 def generate_all_lods(
-    context: Any,
+    context: bpy.types.Context | None,
     props: Any,
-    mesh_objs: list[Any],
-    armature_obj: Any = None,
+    mesh_objs: list[bpy.types.Object],
+    armature_obj: bpy.types.Object | None = None,
     base_name: str = "",
     only_out_of_sync: bool = False,
 ) -> tuple[bool, str]:
@@ -465,9 +469,10 @@ def generate_all_lods(
         return False, f"No mesh objects found for asset '{base_name}'."
 
     orig_pose_pos = None
-    if armature_obj and hasattr(armature_obj.data, "pose_position"):
-        orig_pose_pos = armature_obj.data.pose_position
-        armature_obj.data.pose_position = "REST"
+    arm_data: Any = getattr(armature_obj, "data", None) if armature_obj else None
+    if arm_data and hasattr(arm_data, "pose_position"):
+        orig_pose_pos = arm_data.pose_position
+        arm_data.pose_position = "REST"
 
     shared_ref_merged_obj = None
     try:
@@ -491,16 +496,19 @@ def generate_all_lods(
             wrap_objs = list(mesh_objs)
             if armature_obj and armature_obj not in wrap_objs:
                 wrap_objs.append(armature_obj)
-            src_coll, root_pivot = CollectionCloneDAG.wrap_loose_objects_into_root_collection(wrap_objs, base_name)
+            src_coll, root_pivot = CollectionCloneDAG.wrap_loose_objects_into_root_collection(
+                wrap_objs, base_name, scene=context.scene, context=context
+            )
         else:
             root_pivot, _, _, _ = PivotPreservationEngine.identify_pivots_and_sockets(src_coll)
 
         all_coords = []
         for obj in mesh_objs:
+            obj_data: Any = getattr(obj, "data", None)
             if hasattr(obj, "bound_box") and obj.bound_box and Vector is not None:
                 all_coords.extend([obj.matrix_world @ Vector(b) for b in obj.bound_box])
-            elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
-                all_coords.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
+            elif obj_data and hasattr(obj_data, "vertices"):
+                all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
         _, radius = compute_bounding_sphere(all_coords)
 
         render = context.scene.render
@@ -515,7 +523,7 @@ def generate_all_lods(
         # Build Sibling Collections list
         all_tier_collections = [src_coll]
         for i in range(1, len(props.lods)):
-            tier_c = CollectionCloneDAG.get_or_create_sibling_collection(src_coll, i, base_name)
+            tier_c = CollectionCloneDAG.get_or_create_sibling_collection(src_coll, i, base_name, scene=context.scene)
             all_tier_collections.append(tier_c)
 
         updated_tier_count = 0
@@ -544,7 +552,13 @@ def generate_all_lods(
 
                 # Sibling Collection Tier (LOD1..k)
                 dag_info = CollectionCloneDAG.clone_collection_hierarchy(
-                    src_coll, tier_coll, i, base_name, armature_obj=armature_obj, pivot_obj=root_pivot
+                    src_coll,
+                    tier_coll,
+                    i,
+                    base_name,
+                    armature_obj=armature_obj,
+                    pivot_obj=root_pivot,
+                    context=context,
                 )
                 tier_pivot = dag_info.get("pivot")
 
@@ -650,8 +664,8 @@ def generate_all_lods(
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Cleanup shared_ref_merged_obj exception: %s", exc)
 
-        if armature_obj and orig_pose_pos and hasattr(armature_obj.data, "pose_position"):
-            armature_obj.data.pose_position = orig_pose_pos
+        if arm_data and orig_pose_pos and hasattr(arm_data, "pose_position"):
+            arm_data.pose_position = orig_pose_pos
 
 
 __all__ = ["generate_all_lods"]

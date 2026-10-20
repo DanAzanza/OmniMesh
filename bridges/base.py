@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import Any, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
+
+if TYPE_CHECKING:
+    import bpy
 
 try:
     from ..core.exceptions import BridgeConnectionError
@@ -44,7 +47,7 @@ class EngineBridgeBase(abc.ABC):
     @abc.abstractmethod
     def sync_asset(
         cls,
-        context: Any,
+        context: Optional[bpy.types.Context],
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
@@ -60,7 +63,7 @@ class EngineBridgeBase(abc.ABC):
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
-        extra_options: Any = None,
+        extra_options: Optional[dict[str, object]] = None,
     ) -> Tuple[bool, str]:
         """Headless synchronization without Blender UI or context dependencies.
 

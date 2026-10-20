@@ -43,7 +43,7 @@ def _strip_collection_suffixes(name: str) -> str:
     return stem
 
 
-def get_available_asset_names(context: Any) -> list[str]:
+def get_available_asset_names(context: bpy.types.Context | None) -> list[str]:
     """Discovers available asset base names by scanning scene collections."""
     if not bpy or not context:
         return []
@@ -92,7 +92,7 @@ def get_available_asset_names(context: Any) -> list[str]:
     return asset_names
 
 
-def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
+def resolve_effective_asset_name(context: bpy.types.Context | None, props: Any = None) -> str:
     """
     Resolves the active asset name to display or operate on:
     1. If props.active_asset is set and != 'AUTO' and != 'NONE': returns props.active_asset.
@@ -135,7 +135,7 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
     return "Asset"
 
 
-def get_asset_collection(context: Any, asset_name: str) -> Any:
+def get_asset_collection(context: bpy.types.Context | None, asset_name: str) -> Any:
     """Finds the root collection for asset_name (either '{BaseName}' or '{BaseName}_LOD0')."""
     if not bpy or not hasattr(bpy, "data") or not hasattr(bpy.data, "collections") or not asset_name:
         return None
@@ -147,15 +147,16 @@ def get_asset_collection(context: Any, asset_name: str) -> Any:
     return None
 
 
-def get_asset_base_meshes(context: Any, asset_name: str) -> list[Any]:
+def get_asset_base_meshes(context: bpy.types.Context | None, asset_name: str) -> list[Any]:
     """Retrieves all non-collider, non-impostor MESH objects from the root asset collection."""
     coll = get_asset_collection(context, asset_name)
     if not coll:
         selected = getattr(context, "selected_objects", []) if context else []
         meshes = [o for o in selected if getattr(o, "type", "") == "MESH"]
-        if not meshes and getattr(context, "active_object", None):
-            if getattr(context.active_object, "type", "") == "MESH":
-                meshes = [context.active_object]
+        act_obj = getattr(context, "active_object", None) if context else None
+        if not meshes and act_obj:
+            if getattr(act_obj, "type", "") == "MESH":
+                meshes = [act_obj]
         return meshes
 
     meshes = []
@@ -174,7 +175,7 @@ def get_asset_base_meshes(context: Any, asset_name: str) -> list[Any]:
     return meshes
 
 
-def scan_asset_state(context: Any, asset_name: str) -> dict[str, Any]:
+def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict[str, Any]:
     """
     Scans scene collections for existing LODs and geometry for asset_name.
     Returns:

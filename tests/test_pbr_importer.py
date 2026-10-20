@@ -6,7 +6,13 @@ from __future__ import annotations
 
 import os
 import tempfile
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
+
+if TYPE_CHECKING:
+    _MockBase: type[Any] = object
+else:
+    _MockBase = object
 
 from core.pbr_importer import (
     BatchMaterialSlotMatcher,
@@ -91,7 +97,7 @@ def test_batch_material_slot_matcher_longest_prefix():
         def __init__(self, name: str):
             self.name = name
 
-    class DummyObj:
+    class DummyObj(_MockBase):
         def __init__(self, slot_names: list[str]):
             self.material_slots = [DummySlot(n) for n in slot_names]
 
@@ -125,7 +131,7 @@ def test_batch_material_slot_matcher_single_slot_fallback():
         def __init__(self, name: str):
             self.name = name
 
-    class DummyObj:
+    class DummyObj(_MockBase):
         def __init__(self, slot_names: list[str]):
             self.material_slots = [DummySlot(n) for n in slot_names]
 

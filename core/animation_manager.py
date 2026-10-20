@@ -41,7 +41,7 @@ SIMVAR_MAPPINGS: dict[str, str] = {
 }
 
 
-def scan_asset_animations(context: Any, asset_name: str) -> list[dict[str, Any]]:
+def scan_asset_animations(context: bpy.types.Context | None, asset_name: str) -> list[dict[str, Any]]:
     """
     Scans armatures and animated meshes associated with the given asset,
     returning detailed metadata for all actions and NLA tracks.
@@ -52,7 +52,7 @@ def scan_asset_animations(context: Any, asset_name: str) -> list[dict[str, Any]]
     clean_asset = str(asset_name).strip() or "Asset"
     discovered_actions: dict[str, dict[str, Any]] = {}
 
-    target_objects: list[Any] = []
+    target_objects: list[bpy.types.Object] = []
     if hasattr(bpy.data, "collections"):
         root_col = bpy.data.collections.get(clean_asset)
         if root_col and hasattr(root_col, "all_objects"):
@@ -90,8 +90,19 @@ def scan_asset_animations(context: Any, asset_name: str) -> list[dict[str, Any]]
     return list(discovered_actions.values())
 
 
-def _extract_action_info(action: Any, bound_object: Any) -> dict[str, Any]:
+def _extract_action_info(action: bpy.types.Action | None, bound_object: bpy.types.Object | None) -> dict[str, Any]:
     """Extracts frame range, semantic tags, and GUID for an action."""
+    if not action:
+        return {
+            "name": "Action",
+            "sanitized_name": "Action",
+            "start_frame": 0,
+            "end_frame": 100,
+            "length": 100,
+            "category": "GENERIC",
+            "guid": "",
+            "bound_object": getattr(bound_object, "name", ""),
+        }
     raw_name = getattr(action, "name", "Action")
     sanitized = (
         AnimationRigSanitizer.sanitize_action_name(raw_name)

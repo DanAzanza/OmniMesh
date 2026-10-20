@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, cast
 
 from core.batch import BatchProcessorEngine
 from core.batch_worker_process import (
@@ -68,7 +69,7 @@ def test_batch_processor_import_asset_file_guards():
 def test_batch_processor_cleanup_imported_objects():
     # Should not throw on empty/None
     BatchProcessorEngine.cleanup_imported_objects([])
-    BatchProcessorEngine.cleanup_imported_objects([None, object()])
+    BatchProcessorEngine.cleanup_imported_objects(cast(Any, [None, object()]))
 
 
 def test_discover_blend_files_recursive(tmp_path: Path):

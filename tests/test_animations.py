@@ -3,6 +3,12 @@ Unit tests for OmniMesh Animation Rig Sanitizer, Action Validator & Blender 5.2+
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 import math
 import numpy as np
@@ -10,7 +16,7 @@ import numpy as np
 from core.animations import AnimationRigSanitizer, _safe_invert_matrix
 
 
-class DummyKeyframePoint:
+class DummyKeyframePoint(_MockBase):
     def __init__(self, x: float, y: float):
         class Co:
             def __init__(self, x: float, y: float):
@@ -22,7 +28,7 @@ class DummyKeyframePoint:
         self.handle_right = Co(x + 1.0, y)
 
 
-class DummyFCurve:
+class DummyFCurve(_MockBase):
     def __init__(self, data_path: str, key_x_list: list[float], index: int = 0):
         self.data_path = data_path
         self.array_index = index
@@ -38,24 +44,24 @@ class DummyFCurve:
         pass
 
 
-class DummyAction:
+class DummyAction(_MockBase):
     def __init__(self, name: str, fcurves: list[DummyFCurve]):
         self.name = name
         self.fcurves = fcurves
 
 
-class DummyBone:
+class DummyBone(_MockBase):
     def __init__(self, name: str, use_deform: bool = True):
         self.name = name
         self.use_deform = use_deform
 
 
-class DummyArmatureData:
+class DummyArmatureData(_MockBase):
     def __init__(self, bones: list[DummyBone]):
         self.bones = bones
 
 
-class DummyArmature:
+class DummyArmature(_MockBase):
     def __init__(self, bones: list[DummyBone]):
         self.type = "ARMATURE"
         self.data = DummyArmatureData(bones)
@@ -85,9 +91,11 @@ def test_get_deform_bone_names():
 
     # Edge cases
     assert AnimationRigSanitizer.get_deform_bone_names(None) == []
-    assert AnimationRigSanitizer.get_deform_bone_names(object()) == []
+    from typing import Any, cast
 
-    class NonArmature:
+    assert AnimationRigSanitizer.get_deform_bone_names(cast(Any, object())) == []
+
+    class NonArmature(_MockBase):
         type = "MESH"
 
     assert AnimationRigSanitizer.get_deform_bone_names(NonArmature()) == []
@@ -227,7 +235,7 @@ def test_blender_52_slotted_actions():
             self._layers.append(layer)
             return layer
 
-    class DummySlottedAction:
+    class DummySlottedAction(_MockBase):
         def __init__(self, name="Slotted_Action"):
             self.name = name
             self.fcurves = None  # Blender 5.2 layered actions may have None fcurves

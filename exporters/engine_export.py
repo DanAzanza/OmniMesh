@@ -29,15 +29,17 @@ class AssetExportPayload:
     """Strongly typed export payload for an asset adhering to Variante A Collection Rules."""
 
     asset_name: str
-    lod_tiers: dict[int, list[Any]]  # 0 -> [LOD0 meshes], 1 -> [LOD1 meshes], ..., k -> [Impostor]
-    collider_objects: list[Any] = field(default_factory=list)
-    impostor_object: Optional[Any] = None
-    armature_obj: Optional[Any] = None
+    lod_tiers: dict[int, list[bpy.types.Object]]  # 0 -> [LOD0 meshes], 1 -> [LOD1 meshes], ..., k -> [Impostor]
+    collider_objects: list[bpy.types.Object] = field(default_factory=list)
+    impostor_object: Optional[bpy.types.Object] = None
+    armature_obj: Optional[bpy.types.Object] = None
     is_skeletal: bool = False
     has_impostor_tier: bool = False
     role: str = "MODEL_ROOT"  # "MODEL_ROOT", "INTERIOR", or "VARIANT"
     parent_asset_name: Optional[str] = None
-    attachment_nodes: list[Any] = field(default_factory=list)  # ATTACH_POINT_, fx_, eye_ empties for LOD0 glTF export
+    attachment_nodes: list[bpy.types.Object] = field(
+        default_factory=list
+    )  # ATTACH_POINT_, fx_, eye_ empties for LOD0 glTF export
 
 
 class AssetMeshResolver:
@@ -51,7 +53,7 @@ class AssetMeshResolver:
     """
 
     @classmethod
-    def resolve_payload(cls, context: Any, asset_name: str) -> AssetExportPayload:
+    def resolve_payload(cls, context: bpy.types.Context | None, asset_name: str) -> AssetExportPayload:
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
         props = getattr(context.scene, "lod_tool", None) if (context and hasattr(context, "scene")) else None
 
@@ -67,7 +69,7 @@ class AssetMeshResolver:
         armature_obj = None
         has_impostor_tier = False
 
-        def is_valid_lod_mesh(obj: Any) -> bool:
+        def is_valid_lod_mesh(obj: bpy.types.Object | None) -> bool:
             if not obj or getattr(obj, "type", "") != "MESH":
                 return False
             name = getattr(obj, "name", "")
@@ -308,7 +310,7 @@ class AssetMeshResolver:
         )
 
 
-def resolve_export_asset_name(context: Any, props: Any = None) -> str:
+def resolve_export_asset_name(context: bpy.types.Context | None, props: Any = None) -> str:
     """Resolves the unified asset name for preflight validation and engine export."""
     if not props and context and hasattr(context, "scene"):
         props = getattr(context.scene, "lod_tool", None)
@@ -322,7 +324,7 @@ def resolve_export_asset_name(context: Any, props: Any = None) -> str:
             from core.asset_scanner import resolve_effective_asset_name
 
         raw_name = resolve_effective_asset_name(context, props)
-    except Exception as e:
+    except (ImportError, AttributeError, TypeError, ValueError) as e:
         logger.debug("Failed resolving effective asset name: %s", e)
     if not raw_name or raw_name in ("AUTO", "NONE", "Asset"):
         raw_name = getattr(props, "export_base_name", "").strip() if props else ""
@@ -331,7 +333,7 @@ def resolve_export_asset_name(context: Any, props: Any = None) -> str:
 
 class PreFlightValidator:
     @staticmethod
-    def run_checks(context: Any) -> list[str]:
+    def run_checks(context: bpy.types.Context | None) -> list[str]:
         if not context or not getattr(context, "scene", None):
             return ["Blender context not available."]
         props = getattr(context.scene, "lod_tool", None)
@@ -361,12 +363,9 @@ class PreFlightValidator:
         # Empty geometry check
         for i in range(len(props.lods)):
             for obj in payload.lod_tiers.get(i, []):
-                if (
-                    getattr(obj, "type", "") == "MESH"
-                    and getattr(obj, "data", None)
-                    and hasattr(obj.data, "polygons")
-                    and len(obj.data.polygons) == 0
-                ):
+                mesh_data = getattr(obj, "data", None)
+                polys = getattr(mesh_data, "polygons", None)
+                if getattr(obj, "type", "") == "MESH" and polys is not None and len(polys) == 0:
                     errors.append(f"LOD{i} ('{obj.name}') has 0 polygons (empty geometry).")
 
         # Pivot / origin matching (single-object tiers)

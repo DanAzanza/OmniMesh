@@ -1,9 +1,9 @@
 """Static Architecture & Clean Code Compliance Auditor for OmniMesh.
 
-Validates AGENTS.md and KNOWLEDGE.md architectural invariants:
-1. Zero direct bpy.context leaks in core/ and exporters/ (must use explicit injection or safe getattr fallback).
+Validates AGENTS.md, PROJECT.md, and BLENDER_KNOWLEDGE.md architectural invariants:
+1. Zero direct or obfuscated bpy.context leaks in core/ and exporters/ (must use explicit injection).
 2. Zero deprecated Blender API patterns (e.g., shadow_method, blend_method='CLIP').
-3. Zero silent bare except/pass exception swallowing in business logic.
+3. Zero silent bare except/pass or generic exception swallowing in business logic.
 4. Clean code hygiene (no commented-out dead code blocks).
 """
 
@@ -46,7 +46,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         if len(lines) > 750:
             violations["file_length_over_750"].append((rel_path, len(lines)))
 
-        # 2. Deprecated Blender APIs / Invariants from KNOWLEDGE.md (only in core, ui, exporters)
+        # 2. Deprecated Blender APIs / Invariants from BLENDER_KNOWLEDGE.md (only in core, ui, exporters)
         if not rel_path.startswith("scripts/") and not rel_path.startswith("tests/"):
             if "shadow_method" in content:
                 violations["deprecated_blender_apis"].append((rel_path, "shadow_method found"))
@@ -81,17 +81,56 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         is_core_or_exporter = rel_path.startswith("core/") or rel_path.startswith("exporters/")
 
         for node in ast.walk(tree):
-            # Check for direct bpy.context access in core/ and exporters/
+            # Check for direct bpy.context, from bpy import context, or getattr(..., "context") in core/ and exporters/
             if is_core_or_exporter and isinstance(node, ast.Attribute):
-                if isinstance(node.value, ast.Name) and node.value.id == "bpy" and node.attr == "context":
-                    violations["context_leak_in_core_exporters"].append((rel_path, node.lineno, "bpy.context"))
+                if isinstance(node.value, ast.Name) and node.value.id in ("bpy", "_bpy") and node.attr == "context":
+                    violations["context_leak_in_core_exporters"].append(
+                        (rel_path, node.lineno, f"{node.value.id}.context")
+                    )
 
-            # Generic except: pass / except Exception: pass in domain modules
+            if is_core_or_exporter and isinstance(node, ast.ImportFrom):
+                if node.module == "bpy" and any(alias.name == "context" for alias in node.names):
+                    violations["context_leak_in_core_exporters"].append(
+                        (rel_path, node.lineno, "from bpy import context")
+                    )
+
+            if is_core_or_exporter and isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == "getattr":
+                    if len(node.args) >= 2:
+                        second_arg = node.args[1]
+                        if isinstance(second_arg, ast.Constant) and second_arg.value == "context":
+                            violations["context_leak_in_core_exporters"].append(
+                                (rel_path, node.lineno, 'getattr(..., "context")')
+                            )
+
+            # Generic except: pass / except Exception: pass or log-only swallowing in domain modules
             if is_core_or_exporter and isinstance(node, ast.ExceptHandler):
-                if len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
-                    exc_name = "bare" if node.type is None else ast.unparse(node.type)
-                    if exc_name in ("bare", "Exception", "BaseException"):
-                        violations["bare_except_pass"].append((rel_path, node.lineno, exc_name))
+                caught_names: list[str] = []
+                if node.type is None:
+                    caught_names.append("bare")
+                elif isinstance(node.type, ast.Name):
+                    caught_names.append(node.type.id)
+                elif isinstance(node.type, ast.Tuple):
+                    for elt in node.type.elts:
+                        if isinstance(elt, ast.Name):
+                            caught_names.append(elt.id)
+                        else:
+                            caught_names.append(ast.unparse(elt))
+                else:
+                    caught_names.append(ast.unparse(node.type))
+
+                broad_matches = [n for n in caught_names if n in ("bare", "Exception", "BaseException")]
+                if broad_matches and len(node.body) == 1:
+                    stmt = node.body[0]
+                    is_pass = isinstance(stmt, ast.Pass)
+                    is_log_only = (
+                        isinstance(stmt, ast.Expr)
+                        and isinstance(stmt.value, ast.Call)
+                        and ast.unparse(stmt.value.func).startswith(("logger.", "log.", "logging."))
+                    )
+                    if is_pass or is_log_only:
+                        kind = "pass" if is_pass else "log-only"
+                        violations["bare_except_pass"].append((rel_path, node.lineno, f"{broad_matches[0]} ({kind})"))
 
     return violations
 
@@ -102,8 +141,8 @@ def main() -> int:
     args = parser.parse_args()
 
     violations = scan_repository()
-    critical_categories = ["context_leak_in_core_exporters", "deprecated_blender_apis"]
-    warning_categories = ["bare_except_pass", "commented_out_code_blocks"]
+    critical_categories = ["context_leak_in_core_exporters", "deprecated_blender_apis", "bare_except_pass"]
+    warning_categories = ["commented_out_code_blocks"]
 
     has_critical = any(len(violations.get(cat, [])) > 0 for cat in critical_categories)
     has_warning = any(len(violations.get(cat, [])) > 0 for cat in warning_categories)

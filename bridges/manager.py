@@ -5,7 +5,10 @@ OmniMesh Bridge Manager & Engine Router.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Type
+
+if TYPE_CHECKING:
+    import bpy
 
 from .base import EngineBridgeBase
 from .msfs_bridge import MSFS2024LiveBridge
@@ -56,7 +59,7 @@ class BridgeManager:
     @classmethod
     def sync_asset(
         cls,
-        context: Any,
+        context: Optional[bpy.types.Context],
         target_engine: str,
         export_dir: str,
         asset_name: str,
@@ -79,7 +82,7 @@ class BridgeManager:
         export_dir: str,
         asset_name: str,
         project_dir: str = "",
-        extra_options: Any = None,
+        extra_options: Optional[dict[str, object]] = None,
     ) -> Tuple[bool, str]:
         """Synchronizes asset in headless/worker-thread mode without Blender context."""
         bridge = cls.get_bridge(target_engine)

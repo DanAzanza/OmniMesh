@@ -55,7 +55,7 @@ class OCIOColorSpaceResolver:
     DATA_FALLBACKS = ["Non-Color", "Raw", "Generic Data", "Utility - Raw", "Linear Rec.709"]
 
     @classmethod
-    def apply_colorspace(cls, image: Any, is_data: bool, is_float: bool = False) -> None:
+    def apply_colorspace(cls, image: bpy.types.Image | None, is_data: bool, is_float: bool = False) -> None:
         """Safely assigns the color space to a Blender image datablock."""
         if not image or not hasattr(image, "colorspace_settings"):
             return
@@ -70,10 +70,11 @@ class OCIOColorSpaceResolver:
 
         target_chain = cls.DATA_FALLBACKS if is_data else (cls.LINEAR_FALLBACKS if is_float else cls.COLOR_FALLBACKS)
 
+        cs_settings: Any = image.colorspace_settings
         for candidate in target_chain:
             if not available_spaces or candidate in available_spaces:
                 try:
-                    image.colorspace_settings.name = candidate
+                    cs_settings.name = candidate
                     return
                 except (TypeError, ValueError):
                     continue
@@ -199,7 +200,7 @@ class ShaderGraphBuilder:
     @classmethod
     def build_pbr_graph(
         cls,
-        material: Any,
+        material: bpy.types.Material | None,
         texture_map: dict[str, str],
         preset: Optional[dict[str, Any]] = None,
         preserve_existing: bool = False,
@@ -218,8 +219,10 @@ class ShaderGraphBuilder:
 
         material.use_nodes = True
         nt = material.node_tree
-        nodes = nt.nodes
-        links = nt.links
+        if not nt:
+            return False
+        nodes: Any = nt.nodes
+        links: Any = nt.links
 
         # 1. Locate or create Output Material node
         output_node = next((n for n in nodes if getattr(n, "type", "") == "OUTPUT_MATERIAL"), None)
@@ -499,7 +502,7 @@ class BatchMaterialSlotMatcher:
 
     @classmethod
     def match_directory_to_slots(
-        cls, obj: Any, folder_path: str, preset: Optional[dict[str, Any]] = None
+        cls, obj: bpy.types.Object | None, folder_path: str, preset: Optional[dict[str, Any]] = None
     ) -> dict[str, dict[str, str]]:
         """
         Returns a mapping of material_name -> {map_id: filepath} using active preset.

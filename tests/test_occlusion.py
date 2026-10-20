@@ -3,6 +3,12 @@ Unit tests for OmniMesh Occlusion & Interior Geometry Removal Engine with Materi
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 import math
 from typing import Any
@@ -12,21 +18,21 @@ import numpy as np
 from core.occlusion import HardenedOcclusionCuller, RobustTransparencyEvaluator, Vector
 
 
-class DummySocket:
+class DummySocket(_MockBase):
     def __init__(self, default_value: Any = 1.0, is_linked: bool = False, links: list[Any] | None = None):
         self.default_value = default_value
         self.is_linked = is_linked
         self.links = links or []
 
 
-class DummyNode:
+class DummyNode(_MockBase):
     def __init__(self, node_type: str, inputs: dict[str, Any] | None = None, image: Any = None):
         self.type = node_type
         self.inputs = inputs or {}
         self.image = image
 
 
-class DummyImage:
+class DummyImage(_MockBase):
     def __init__(self, width: int = 16, height: int = 16, channels: int = 4, alpha_values: np.ndarray | None = None):
         self.size = (width, height)
         self.channels = channels
@@ -49,12 +55,12 @@ class DummyImage:
         self.pixels = PixelsProxy(self._pixels)
 
 
-class DummyNodeTree:
+class DummyNodeTree(_MockBase):
     def __init__(self, nodes: list[Any]):
         self.nodes = nodes
 
 
-class DummyMaterial:
+class DummyMaterial(_MockBase):
     def __init__(
         self,
         name: str = "Material",

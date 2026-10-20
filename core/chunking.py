@@ -72,7 +72,7 @@ class SpatialGridSpec:
     @classmethod
     def from_object(
         cls,
-        obj: Any,
+        obj: bpy.types.Object | None,
         cell_size_meters: float = 32.0,
         split_z: bool = False,
         z_cell_size: float = 32.0,
@@ -233,10 +233,10 @@ class MeshChunkSlicer:
 
     @staticmethod
     def slice_and_partition(
-        source_obj: Any,
+        source_obj: bpy.types.Object | None,
         grid_spec: SpatialGridSpec,
         base_name: str,
-        target_collection: Any,
+        target_collection: bpy.types.Collection | None,
         weld_dist: float = 1e-5,
         partitioning_mode: str = "UNIFORM_GRID",
         target_cluster_polys: int = 50000,
@@ -274,12 +274,12 @@ class MeshChunkSlicer:
                 p_local = mat_inv @ p_world
                 n_local = (mat_world_trans_3x3 @ n_world).normalized()
 
-                geom = bm.faces[:] + bm.edges[:] + bm.verts[:]
+                geom: list[Any] = bm.faces[:] + bm.edges[:] + bm.verts[:]
                 bmesh.ops.bisect_plane(
                     bm,
                     geom=geom,
-                    plane_co=p_local,
-                    plane_no=n_local,
+                    plane_co=(p_local.x, p_local.y, p_local.z),
+                    plane_no=(n_local.x, n_local.y, n_local.z),
                     dist=1e-5,
                     clear_inner=False,
                     clear_outer=False,
@@ -296,8 +296,8 @@ class MeshChunkSlicer:
                 bmesh.ops.bisect_plane(
                     bm,
                     geom=geom,
-                    plane_co=p_local,
-                    plane_no=n_local,
+                    plane_co=(p_local.x, p_local.y, p_local.z),
+                    plane_no=(n_local.x, n_local.y, n_local.z),
                     dist=1e-5,
                     clear_inner=False,
                     clear_outer=False,
@@ -315,8 +315,8 @@ class MeshChunkSlicer:
                     bmesh.ops.bisect_plane(
                         bm,
                         geom=geom,
-                        plane_co=p_local,
-                        plane_no=n_local,
+                        plane_co=(p_local.x, p_local.y, p_local.z),
+                        plane_no=(n_local.x, n_local.y, n_local.z),
                         dist=1e-5,
                         clear_inner=False,
                         clear_outer=False,
@@ -357,7 +357,7 @@ class MeshChunkSlicer:
                     chunk_groups[c_suffix] = face_indices
 
             # 8. Extract each non-empty group into a distinct Blender mesh object
-            created_chunk_objs: list[Any] = []
+            created_chunk_objs: list[bpy.types.Object] = []
             for chunk_suffix, face_indices in sorted(chunk_groups.items()):
                 if not face_indices:
                     continue
@@ -383,11 +383,11 @@ class MeshChunkSlicer:
 
     @staticmethod
     def _extract_single_chunk(
-        source_obj: Any,
-        bm_sliced: Any,
+        source_obj: bpy.types.Object,
+        bm_sliced: bmesh.types.BMesh,
         face_indices: list[int],
         chunk_name: str,
-        target_collection: Any,
+        target_collection: bpy.types.Collection | None,
         grid_spec: SpatialGridSpec,
     ) -> Any:
         """Extracts specified face indices from sliced BMesh into an independent mesh object."""
@@ -474,11 +474,14 @@ class MeshChunkSlicer:
             chunk_obj.matrix_world = source_obj.matrix_world.copy()
 
             # Assign matching materials (preserving global slots)
-            for mat in source_obj.data.materials:
+            src_data: Any = source_obj.data
+            for mat in getattr(src_data, "materials", []):
                 chunk_mesh.materials.append(mat)
 
             # Link to collection
-            fallback_coll = getattr(getattr(bpy, "context", None), "collection", None)
+            fallback_coll = target_collection or (
+                bpy.data.scenes[0].collection if bpy and getattr(bpy.data, "scenes", None) else None
+            )
             if target_collection and hasattr(target_collection, "objects"):
                 target_collection.objects.link(chunk_obj)
             elif fallback_coll and hasattr(fallback_coll, "objects"):
@@ -504,14 +507,14 @@ class MeshChunkSlicer:
             chunk_bm.free()
 
     @staticmethod
-    def _recenter_pivot_stationary(obj: Any) -> None:
+    def _recenter_pivot_stationary(obj: bpy.types.Object | None) -> None:
         """
         Recalculates object origin to its local bounding box center
         while compensating vertex coordinates so world geometry remains stationary.
         """
         if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
             return
-        mesh = obj.data
+        mesh: Any = obj.data
         if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
             return
 

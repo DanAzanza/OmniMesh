@@ -5,6 +5,12 @@ support for multi-model packages (exterior, interior, variants), and transaction
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 import os
 from typing import Any
@@ -18,7 +24,7 @@ from exporters.ue5_export import UE5Exporter
 from exporters.unity_export import UnityExporter
 
 
-class MockVector:
+class MockVector(_MockBase):
     def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0):
         self.x = x
         self.y = y
@@ -40,7 +46,7 @@ class MockVector:
         return (self.x**2 + self.y**2 + self.z**2) ** 0.5
 
 
-class MockScale:
+class MockScale(_MockBase):
     def __init__(self, x: float = 1.0, y: float = 1.0, z: float = 1.0):
         self.x = x
         self.y = y
@@ -50,7 +56,7 @@ class MockScale:
         return iter((self.x, self.y, self.z))
 
 
-class MockObject:
+class MockObject(_MockBase):
     def __init__(
         self,
         name: str,
@@ -93,7 +99,7 @@ class MockObject:
         return key in self._custom_props
 
 
-class MockCollectionChildren:
+class MockCollectionChildren(_MockBase):
     def __init__(self, owner: MockCollection):
         self._owner = owner
 
@@ -118,7 +124,7 @@ class MockCollectionChildren:
             self._owner.children_list.remove(child)
 
 
-class MockCollectionObjects:
+class MockCollectionObjects(_MockBase):
     def __init__(self, owner: MockCollection):
         self._owner = owner
 
@@ -145,7 +151,7 @@ class MockCollectionObjects:
         return self._owner._objects_list[idx]
 
 
-class MockCollection:
+class MockCollection(_MockBase):
     def __init__(self, name: str):
         self.name = name
         self._objects_list: list[MockObject] = []
@@ -180,7 +186,7 @@ class MockCollection:
             self.children_list.append(child)
 
 
-class MockDataObjects:
+class MockDataObjects(_MockBase):
     def __init__(self, objects: list[MockObject]):
         self._objects = list(objects)
 

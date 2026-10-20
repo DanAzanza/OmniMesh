@@ -217,8 +217,8 @@ def test_bridge_manager_headless_routing(tmp_path: Path):
     assert not ok
     assert "Unity Project Path not configured" in msg
 
-    # Godot dropped - returns unknown engine
-    ok, msg = BridgeManager.sync_asset_headless("GODOT_4", str(export_dir), "Asset")
+    # Unsupported engine rejected
+    ok, msg = BridgeManager.sync_asset_headless("UNSUPPORTED_ENGINE", str(export_dir), "Asset")
     assert not ok
     assert "Unknown target engine" in msg
 

@@ -41,7 +41,7 @@ class ImpostorShaderHarness:
     @classmethod
     def create_unlit_override_material(
         cls,
-        source_mat: Optional[Any],
+        source_mat: Optional[bpy.types.Material],
         channel_layer: str = "BASE_COLOR",
         target_engine: str = "UE5",
         radius: float = 1.0,

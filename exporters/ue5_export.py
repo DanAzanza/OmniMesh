@@ -36,7 +36,7 @@ class UE5Exporter(EngineExporterBase):
     @classmethod
     def export_asset(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         export_dir: str,
         asset_name: str,
         **kwargs: Any,
@@ -57,7 +57,7 @@ class UE5Exporter(EngineExporterBase):
         if hasattr(bpy.ops.object, "mode_set") and getattr(context, "mode", "") != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
-            except Exception as exc:
+            except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
         # Collect ordered export objects (LOD0..N)
@@ -221,35 +221,35 @@ class UE5Exporter(EngineExporterBase):
                     obj.parent = orig_parent
                     if obj in orig_matrices:
                         obj.matrix_world = orig_matrices[obj]
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
                     logger.debug("Restoring object parent failed: %s", exc)
             for c_obj, orig_parent in orig_collider_parents.items():
                 try:
                     c_obj.parent = orig_parent
                     if c_obj in orig_matrices:
                         c_obj.matrix_world = orig_matrices[c_obj]
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
                     logger.debug("Restoring collider parent failed: %s", exc)
 
             # Transactional rollback: remove temporary LODGroup empty if created
             if created_empty and hasattr(bpy.data, "objects") and created_empty.name in bpy.data.objects:
                 try:
                     bpy.data.objects.remove(created_empty, do_unlink=True)
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
                     logger.debug("Removing temporary LODGroup empty failed: %s", exc)
 
             # Restore original collider names in Blender
             for c_obj, orig_name in orig_collider_names.items():
                 try:
                     c_obj.name = orig_name
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
                     logger.debug("Restoring collider name failed: %s", exc)
 
             # Restore original impostor names in Blender
             for imp_obj, orig_name in orig_imp_names.items():
                 try:
                     imp_obj.name = orig_name
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
                     logger.debug("Restoring impostor name failed: %s", exc)
 
             # Restore original hide states
@@ -258,7 +258,7 @@ class UE5Exporter(EngineExporterBase):
                     obj.hide_viewport = hv
                     if hasattr(obj, "hide_set") and vl:
                         obj.hide_set(hg, view_layer=vl)
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
@@ -270,5 +270,5 @@ class UE5Exporter(EngineExporterBase):
                             o.select_set(True)
                     if vl and hasattr(vl, "objects") and orig_active:
                         vl.objects.active = orig_active
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore selection state: %s", exc)

@@ -5,6 +5,12 @@ deterministic GUID generation, and MSFS ModelInfo XML block synthesis.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -23,7 +29,7 @@ from core.animation_manager import (
 # =============================================================================
 
 
-class MockAction:
+class MockAction(_MockBase):
     def __init__(self, name: str, frame_range: tuple[float, float] = (0.0, 120.0)):
         self.name = name
         self.frame_range = frame_range

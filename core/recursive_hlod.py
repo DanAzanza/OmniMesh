@@ -38,7 +38,7 @@ class HierarchicalClusterNode:
 
     cluster_coords: tuple[int, int, int]
     level: int
-    child_objects: list[Any]
+    child_objects: list[bpy.types.Object]
     name: str = ""
 
 
@@ -48,7 +48,7 @@ class RecursiveHLODManager:
     """
 
     @staticmethod
-    def extract_cell_coordinates(obj: Any, grid_spec: Any = None) -> tuple[int, int, int]:
+    def extract_cell_coordinates(obj: bpy.types.Object | None, grid_spec: Any = None) -> tuple[int, int, int]:
         """
         Extracts (ix, iy, iz) discrete grid coordinates from object custom properties,
         object name patterns (e.g. Chunk_X1_Y2_Z0 or Cluster_X0-1_Y0-1), or bounding box centroid.
@@ -100,7 +100,7 @@ class RecursiveHLODManager:
     @classmethod
     def group_chunks_quadtree(
         cls,
-        chunk_objs: list[Any],
+        chunk_objs: list[bpy.types.Object],
         grid_spec: Any = None,
         stride: int = 2,
     ) -> dict[tuple[int, int, int], list[Any]]:
@@ -124,13 +124,13 @@ class RecursiveHLODManager:
         parent_clusters: dict[tuple[int, int, int], list[Any]],
         base_name: str,
         tier_index: int,
-        target_collection: Any,
+        target_collection: bpy.types.Collection | None,
         target_ratio: float = 0.15,
         weld_dist: float = 0.002,
         is_terminal_tier: bool = False,
         use_voxel_shell: bool = False,
         voxel_size: float = 0.5,
-        context: Any = None,
+        context: bpy.types.Context | None = None,
     ) -> list[Any]:
         """
         Merges chunk clusters for a specific HLOD tier, recents pivots stationary,
@@ -214,9 +214,9 @@ class RecursiveHLODManager:
     @classmethod
     def apply_voxel_proxy_shell(
         cls,
-        obj: Any,
+        obj: bpy.types.Object | None,
         voxel_size_m: float = 0.5,
-        context: Any = None,
+        context: bpy.types.Context | None = None,
     ) -> bool:
         """
         Evaluates a watertight voxel remesh modifier via depsgraph (without UI bpy.ops context crash),
@@ -225,7 +225,7 @@ class RecursiveHLODManager:
         if not bpy or not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data"):
             return False
 
-        mesh = obj.data
+        mesh: Any = obj.data
         if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
             return False
 
@@ -239,7 +239,7 @@ class RecursiveHLODManager:
         safe_min_voxel = max(0.01, max_dim / 512.0)
         clamped_voxel_size = max(safe_min_voxel, float(voxel_size_m))
 
-        mod = obj.modifiers.new(name="OMNIMESH_HLOD_REMESH", type="REMESH")
+        mod: Any = obj.modifiers.new(name="OMNIMESH_HLOD_REMESH", type="REMESH")
         mod.mode = "VOXEL"
         mod.voxel_size = clamped_voxel_size
         mod.adaptivity = 0.0
@@ -248,10 +248,7 @@ class RecursiveHLODManager:
             eval_depsgraph = None
             if context and hasattr(context, "evaluated_depsgraph_get"):
                 eval_depsgraph = context.evaluated_depsgraph_get()
-            else:
-                ctx = getattr(bpy, "context", None)
-                if ctx and hasattr(ctx, "evaluated_depsgraph_get"):
-                    eval_depsgraph = ctx.evaluated_depsgraph_get()
+
             if eval_depsgraph:
                 eval_obj = obj.evaluated_get(eval_depsgraph)
                 new_mesh = bpy.data.meshes.new_from_object(
@@ -259,7 +256,7 @@ class RecursiveHLODManager:
                 )
                 obj.modifiers.remove(mod)
 
-                old_mesh = obj.data
+                old_mesh: Any = obj.data
                 obj.data = new_mesh
                 try:
                     bpy.data.meshes.remove(old_mesh)

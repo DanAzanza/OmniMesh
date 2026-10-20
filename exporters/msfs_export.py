@@ -115,7 +115,7 @@ class MSFSExporter(EngineExporterBase):
     @classmethod
     def export_asset(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         export_dir: str,
         asset_name: str,
         **kwargs: Any,
@@ -138,7 +138,7 @@ class MSFSExporter(EngineExporterBase):
         if hasattr(bpy.ops.object, "mode_set") and getattr(context, "mode", "") != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
-            except Exception as exc:
+            except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
         vl = getattr(context, "view_layer", None)
@@ -248,7 +248,7 @@ class MSFSExporter(EngineExporterBase):
                     obj.hide_viewport = hv
                     if hasattr(obj, "hide_set") and vl:
                         obj.hide_set(hg, view_layer=vl)
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
@@ -260,13 +260,13 @@ class MSFSExporter(EngineExporterBase):
                             o.select_set(True)
                     if vl and hasattr(vl, "objects") and orig_active:
                         vl.objects.active = orig_active
-                except Exception as exc:
+                except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore selection state: %s", exc)
 
     @classmethod
     def export_project_package(
         cls,
-        context: Any,
+        context: bpy.types.Context | None,
         export_dir: str,
         base_asset_name: str,
         **kwargs: Any,

@@ -3,6 +3,12 @@ Unit tests for OmniMesh Mesh Sanitizer & 3-Tier Topology Repair Engine.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -12,7 +18,7 @@ from core.sanitizer import MeshSanitizer, SanitizeOptions, Vector
 from core.topology_repair import TopologyRepairOptions
 
 
-class MockSanitizerVert:
+class MockSanitizerVert(_MockBase):
     def __init__(self, index: int, co: tuple[float, float, float] = (0.0, 0.0, 0.0)):
         self.index = index
         self.co = Vector(co)
@@ -25,7 +31,7 @@ class MockSanitizerVert:
         return self._deform_dict
 
 
-class MockSanitizerEdge:
+class MockSanitizerEdge(_MockBase):
     def __init__(self, verts: tuple[MockSanitizerVert, MockSanitizerVert], is_boundary: bool = False):
         self.verts = verts
         self.is_valid = True
@@ -39,7 +45,7 @@ class MockSanitizerEdge:
         return (v0.co - v1.co).length
 
 
-class MockSanitizerUVLoop:
+class MockSanitizerUVLoop(_MockBase):
     def __init__(self, vert: MockSanitizerVert, uv: tuple[float, float] = (0.0, 0.0)):
         self.vert = vert
         self._uv_data = {0: MagicMock(uv=Vector(uv))}
@@ -48,7 +54,7 @@ class MockSanitizerUVLoop:
         return self._uv_data.get(item, MagicMock(uv=Vector((0.0, 0.0))))
 
 
-class MockSanitizerFace:
+class MockSanitizerFace(_MockBase):
     def __init__(
         self,
         verts: list[MockSanitizerVert],

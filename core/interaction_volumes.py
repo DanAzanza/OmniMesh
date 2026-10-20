@@ -57,13 +57,13 @@ def get_engine_interaction_name(asset_name: str, role: str, name: str, engine: s
 
 
 def create_interaction_volume(
-    context: Any,
+    context: bpy.types.Context | None,
     asset_name: str,
     name: str = "Clickspot",
     shape: str = "BOX",
     role: str = "BUTTON",
     size: Sequence[float] = (0.08, 0.08, 0.08),
-    parent_obj: Optional[Any] = None,
+    parent_obj: Optional[bpy.types.Object] = None,
 ) -> Optional[Any]:
     """
     Spawns a lightweight non-blocking interaction trigger volume into {AssetName}_Interactions.

@@ -132,6 +132,7 @@ class LOD_OT_generate_impostor(Operator):
                 target_engine=getattr(props, "target_engine", "UE5"),
                 dilation_iterations=4,
                 impostor_obj=res,
+                context=context,
             )
         except OmniMeshError as bake_err:
             safe_report(self, {"ERROR"}, f"Impostor baking failed: {bake_err}")

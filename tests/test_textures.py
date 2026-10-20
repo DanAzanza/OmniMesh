@@ -3,6 +3,12 @@ Unit tests for OmniMesh PBR Texture Channel Packer, Thread Safety & Normal Map C
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 import concurrent.futures
 import os
@@ -16,7 +22,7 @@ from core.shader_tracer import ShaderTracer
 from core.textures import TextureChannelPacker, TexturePoolManager, write_png_direct
 
 
-class DummySocket:
+class DummySocket(_MockBase):
     def __init__(self, default_value: float | list[float], linked_node: object | None = None):
         self.default_value = default_value
         self.is_linked = linked_node is not None
@@ -30,32 +36,32 @@ class DummySocket:
             self.links = [DummyLink(linked_node)]
 
 
-class DummyTexImageNode:
+class DummyTexImageNode(_MockBase):
     def __init__(self, image: object, name: str = "Image Texture"):
         self.type = "TEX_IMAGE"
         self.image = image
         self.name = name
 
 
-class DummyRerouteNode:
+class DummyRerouteNode(_MockBase):
     def __init__(self, target_node: object | None = None):
         self.type = "REROUTE"
         self.inputs = [DummySocket(0.0, linked_node=target_node)] if target_node else []
 
 
-class DummyNormalMapNode:
+class DummyNormalMapNode(_MockBase):
     def __init__(self, tex_node: object):
         self.type = "NORMAL_MAP"
         self.inputs = {"Color": DummySocket([0.5, 0.5, 1.0, 1.0], linked_node=tex_node)}
 
 
-class DummyBumpNode:
+class DummyBumpNode(_MockBase):
     def __init__(self, tex_node: object):
         self.type = "BUMP"
         self.inputs = {"Height": DummySocket(0.5, linked_node=tex_node)}
 
 
-class DummyBSDFNode:
+class DummyBSDFNode(_MockBase):
     def __init__(self, normal_node: object | None = None):
         self.type = "BSDF_PRINCIPLED"
         self.inputs = {
@@ -67,7 +73,7 @@ class DummyBSDFNode:
         }
 
 
-class DummyNodeTree:
+class DummyNodeTree(_MockBase):
     def __init__(self, nodes: list[object] | None = None, normal_node: object | None = None):
         if nodes is not None:
             self.nodes = nodes
@@ -75,14 +81,14 @@ class DummyNodeTree:
             self.nodes = [DummyBSDFNode(normal_node)]
 
 
-class DummyMaterial:
+class DummyMaterial(_MockBase):
     def __init__(self, normal_node: object | None = None, nodes: list[object] | None = None, use_nodes: bool = True):
         self.name = "M_TestPBR"
         self.use_nodes = use_nodes
         self.node_tree = DummyNodeTree(nodes=nodes, normal_node=normal_node) if use_nodes else None
 
 
-class DummyImage:
+class DummyImage(_MockBase):
     def __init__(self, size: tuple[int, int] = (64, 64), name: str = "T_Texture", fill_val: float = 0.5):
         self.size = size
         self.name = name
@@ -217,7 +223,7 @@ def test_pack_comp_msfs():
 
 
 def test_convert_normal_directx():
-    class DummyNormalImage:
+    class DummyNormalImage(_MockBase):
         def __init__(self):
             self.size = (64, 64)
             self.name = "T_Normal"
@@ -258,7 +264,7 @@ def test_convert_normal_directx():
 
 
 def test_convert_normal_directx_nan_inf_sanitization():
-    class CorruptNormalImage:
+    class CorruptNormalImage(_MockBase):
         def __init__(self):
             self.size = (32, 32)
             self.name = "T_Corrupt_Normal"
@@ -704,10 +710,10 @@ def test_pure_numpy_bilinear_resampler_accuracy():
     assert abs(int(res_16[0, 0]) - 32 * 257) <= 1
 
 
-def test_shader_tracer_pillow_absent_fallback_parity(monkeypatch):
+def test_shader_tracer_pillow_absent_fallback_parity():
     """
-    Verify that when Pillow is absent (Image = None, as in standard Blender 5.x),
-    _extract_from_image executes the high-precision pure-NumPy bilinear resampler smoothly.
+    Verify that _extract_from_image executes the high-precision pure-NumPy bilinear resampler
+    directly with zero external Pillow dependency.
     """
     from unittest.mock import MagicMock
 
@@ -720,9 +726,6 @@ def test_shader_tracer_pillow_absent_fallback_parity(monkeypatch):
     img_mock.pixels.foreach_get = lambda buf: np.copyto(buf, raw)
 
     fallback = np.zeros((2, 2), dtype=np.uint8)
-
-    # Force Pillow to None (simulating native Blender environment)
-    monkeypatch.setattr("core.shader_tracer.Image", None)
 
     out_numpy = ShaderTracer._extract_from_image(img_mock, (2, 2), 0, fallback, bit_depth=8, apply_srgb_oetf=False)
     assert out_numpy.shape == (2, 2)

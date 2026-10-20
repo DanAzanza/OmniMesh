@@ -3,6 +3,12 @@ Unit tests for OmniMesh Decimation & Simplification Engine.
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING as _TC, Any as _Any
+
+if _TC:
+    _MockBase: type[_Any] = object
+else:
+    _MockBase = object
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -11,7 +17,7 @@ from core.decimator import MeshDecimator
 from core.lod_generator import generate_all_lods
 
 
-class MockVert:
+class MockVert(_MockBase):
     def __init__(self, index: int, co: tuple[float, float, float] = (0.0, 0.0, 0.0)):
         self.index = index
         self.co = co
@@ -24,7 +30,7 @@ class MockVert:
         return self._deform_dict
 
 
-class MockEdge:
+class MockEdge(_MockBase):
     def __init__(
         self, verts: tuple[MockVert, MockVert], is_boundary: bool = False, seam: bool = False, smooth: bool = True
     ):
@@ -38,7 +44,7 @@ class MockEdge:
             v.link_edges.append(self)
 
 
-class MockUVLoop:
+class MockUVLoop(_MockBase):
     def __init__(self, vert: MockVert, uv: tuple[float, float] = (0.0, 0.0)):
         self.vert = vert
         self._uv_data = {0: MagicMock(uv=uv)}
@@ -47,7 +53,7 @@ class MockUVLoop:
         return self._uv_data.get(item, MagicMock(uv=(0.0, 0.0)))
 
 
-class MockFace:
+class MockFace(_MockBase):
     def __init__(
         self, verts: list[MockVert], material_index: int = 0, normal: tuple[float, float, float] = (0.0, 0.0, 1.0)
     ):
@@ -62,7 +68,7 @@ class MockFace:
             v.link_faces.append(self)
 
 
-class MockBMesh:
+class MockBMesh(_MockBase):
     def __init__(self, verts: list[MockVert], edges: list[MockEdge], faces: list[MockFace]):
         self.verts = MagicMock()
         self.verts.__iter__ = lambda self: iter(verts)
