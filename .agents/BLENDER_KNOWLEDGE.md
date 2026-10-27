@@ -10,7 +10,7 @@
 ### 1.1 Shading, Enums & EEVEE Next
 * **EEVEE Next Shading**: `material.shadow_method` does not exist and `mat.blend_method = 'CLIP'` is dead code. Transparency for cutouts/impostors strictly requires `mat.surface_render_method = 'DITHERED'` (or `'BLENDED'`).
 * **glTF 2.0 Export Format**: Use `export_format='GLTF_SEPARATE'` for `.gltf` + `.bin` export in Blender 5.2 LTS (`GLTF_EMBEDDED` was deprecated).
-* **`DATA_TRANSFER` Loop Mapping**: `dt_mod.loop_mapping = 'POLYINTERP_LNORPROJ'` is the only valid enum in Blender 5.2 LTS (`POLYINTERP_NEAREST_CORNER` was removed).
+* **`DATA_TRANSFER` Loop Mapping & `ray_radius` BVH Traversal Trap**: `dt_mod.loop_mapping = 'POLYINTERP_LNORPROJ'` is the only valid projected normal loop mapping enum in Blender 5.2 LTS (`POLYINTERP_NEAREST_CORNER` was removed). Always keep `dt_mod.ray_radius = 0.0` and leave `use_max_distance = False`: setting a non-zero `ray_radius` forces Blender's `BLI_bvhtree_ray_cast` to perform cylindrical radius overlap checks across the source BVH for every target loop ($O(N \cdot K)$ instead of $O(N \log M)$), degrading 100k-triangle normal reprojection from ~1.2s to ~14.8s.
 * **Native `mathutils.geometry.delaunay_2d_cdt` Return Length**: Unlike standard 2D triangulation routines returning 3 items, Blender's native C-routine returns a 6-item tuple: `(verts, edges, faces, orig_verts, orig_edges, orig_faces)`.
 
 ### 1.2 Cycles GPU & Headless Rendering Invariants

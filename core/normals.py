@@ -107,7 +107,7 @@ class NormalManager:
                 dt_mod.loop_mapping = "POLYINTERP_LNORPROJ"
                 d = max(1e-4, delta_world)
                 dt_mod.max_distance = max(2.0 * d, 0.05)
-                dt_mod.ray_radius = max(d, 0.02)
+                dt_mod.ray_radius = 0.0
             except (RuntimeError, ValueError, AttributeError) as exc:
                 logger.debug("Failed to initialize DATA_TRANSFER modifier: %s", exc)
                 return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)

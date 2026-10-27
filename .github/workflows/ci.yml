@@ -45,6 +45,9 @@ jobs:
       - name: Run Pyright Type Checker
         run: python -m pyright .
 
+      - name: Run Architecture & Invariant Compliance Audit
+        run: python scripts/audit_architecture.py --strict
+
       - name: Run Pytest Test Suite with Coverage
         run: python -m pytest --cov=core --cov=exporters --cov=ui --cov=bridges --cov-report=term-missing -v
 

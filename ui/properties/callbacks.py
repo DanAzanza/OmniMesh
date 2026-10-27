@@ -50,6 +50,29 @@ ENGINE_TO_FACTORY_PRESET: dict[str, str] = {
     "MSFS_2024": "msfs_2024_comp",
 }
 
+_PERSISTENT_PIPELINE_KEYS: tuple[str, ...] = (
+    "pbr_import_directory",
+    "export_directory",
+    "pbr_import_path_mode",
+    "pbr_import_ao_mode",
+    "pbr_import_preserve_existing",
+    "engine_project_path",
+    "enable_live_sync",
+    "batch_mode",
+    "batch_source_directory",
+)
+
+
+def _persist_pipeline_prop(self: Any, prop_name: str, default: Any) -> None:
+    """Shared helper persisting a pipeline property change when not inside state restoration."""
+    if StateRestorationGuard.is_active():
+        return
+    val = getattr(self, prop_name, default)
+    try:
+        set_pipeline_setting(prop_name, val)
+    except Exception as exc:
+        logger.debug("Persist %s: %s", prop_name, exc)
+
 
 def update_bridge_status_cached(self: Any, context: Any) -> None:
     """Non-blocking status update hook for project directory changes."""
@@ -123,7 +146,6 @@ def on_export_preset_updated(self: Any, context: Any) -> None:
     if not export_preset_id:
         return
 
-    # Persist choice across Blender restarts
     PBRExportPresetManager.set_last_active_preset(export_preset_id)
 
     if PresetSyncGuard.is_locked():
@@ -180,7 +202,6 @@ def _handle_cow_export_setting(self: Any, context: Any, override_key: str, new_v
         return
 
     if PBRExportPresetManager.is_builtin(preset_id):
-        # Built-in factory preset -> Duplicate with override in atomic transaction
         new_id = PBRExportPresetManager.duplicate_preset(preset_id, overrides={override_key: new_value})
         with PresetSyncGuard():
             self.pbr_export_preset = new_id
@@ -188,7 +209,6 @@ def _handle_cow_export_setting(self: Any, context: Any, override_key: str, new_v
                 self.pbr_preset = new_id
         PBRExportPresetManager.set_last_active_preset(new_id)
     else:
-        # Existing user custom preset -> Persist directly to disk
         try:
             pdata = copy.deepcopy(PBRExportPresetManager.get_preset(preset_id))
             pdata[override_key] = new_value
@@ -213,33 +233,18 @@ def on_export_naming_updated(self: Any, context: Any) -> None:
 
 
 def on_import_directory_updated(self: Any, _context: Any) -> None:
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "pbr_import_directory", "")
-    try:
-        set_pipeline_setting("pbr_import_directory", val)
-    except Exception as exc:
-        logger.debug("Persist import directory: %s", exc)
+    _persist_pipeline_prop(self, "pbr_import_directory", "")
 
 
 def on_import_path_mode_updated(self: Any, _context: Any) -> None:
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "pbr_import_path_mode", "RELATIVE")
-    try:
-        set_pipeline_setting("pbr_import_path_mode", val)
-    except Exception as exc:
-        logger.debug("Persist path mode: %s", exc)
+    _persist_pipeline_prop(self, "pbr_import_path_mode", "RELATIVE")
 
 
 def on_export_directory_updated(self: Any, context: Any) -> None:
     if StateRestorationGuard.is_active():
         return
     val = getattr(self, "export_directory", "")
-    try:
-        set_pipeline_setting("export_directory", val)
-    except Exception as exc:
-        logger.debug("Persist export directory: %s", exc)
+    _persist_pipeline_prop(self, "export_directory", "")
 
     try:
         try:
@@ -257,64 +262,28 @@ def on_export_directory_updated(self: Any, context: Any) -> None:
 
 
 def on_import_ao_mode_updated(self: Any, _context: Any) -> None:
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "pbr_import_ao_mode", "MULTIPLY")
-    try:
-        set_pipeline_setting("pbr_import_ao_mode", val)
-    except Exception as exc:
-        logger.debug("Persist AO mode: %s", exc)
+    _persist_pipeline_prop(self, "pbr_import_ao_mode", "MULTIPLY")
 
 
 def on_import_preserve_updated(self: Any, _context: Any) -> None:
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "pbr_import_preserve_existing", False)
-    try:
-        set_pipeline_setting("pbr_import_preserve_existing", val)
-    except Exception as exc:
-        logger.debug("Persist preserve existing: %s", exc)
+    _persist_pipeline_prop(self, "pbr_import_preserve_existing", False)
 
 
 def on_engine_project_path_updated(self: Any, context: Any) -> None:
     update_bridge_status_cached(self, context)
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "engine_project_path", "")
-    try:
-        set_pipeline_setting("engine_project_path", val)
-    except Exception as exc:
-        logger.debug("Persist engine project path: %s", exc)
+    _persist_pipeline_prop(self, "engine_project_path", "")
 
 
 def on_enable_live_sync_updated(self: Any, _context: Any) -> None:
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "enable_live_sync", True)
-    try:
-        set_pipeline_setting("enable_live_sync", val)
-    except Exception as exc:
-        logger.debug("Persist enable live sync: %s", exc)
+    _persist_pipeline_prop(self, "enable_live_sync", True)
 
 
 def on_batch_mode_updated(self: Any, _context: Any) -> None:
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "batch_mode", False)
-    try:
-        set_pipeline_setting("batch_mode", val)
-    except Exception as exc:
-        logger.debug("Persist batch mode: %s", exc)
+    _persist_pipeline_prop(self, "batch_mode", False)
 
 
 def on_batch_source_updated(self: Any, _context: Any) -> None:
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "batch_source_directory", "")
-    try:
-        set_pipeline_setting("batch_source_directory", val)
-    except Exception as exc:
-        logger.debug("Persist batch source: %s", exc)
+    _persist_pipeline_prop(self, "batch_source_directory", "")
 
 
 def restore_preset_state_on_load(dummy: Any = None) -> None:
@@ -357,32 +326,15 @@ def restore_preset_state_on_load(dummy: Any = None) -> None:
                 lod_preset_data = LODPresetManager.get_preset(lod_to_set)
                 sync_preset_tiers_from_preset(props, lod_preset_data)
 
-            # Auto-migrate legacy MSFS 2020 target version to MSFS 2024
             if hasattr(props, "msfs_target_version") and getattr(props, "msfs_target_version", "") == "2020":
                 props.msfs_target_version = "2024"
             msfs_cfg = getattr(props, "msfs_cfg", None)
             if msfs_cfg and hasattr(msfs_cfg, "target_version") and getattr(msfs_cfg, "target_version", "") == "2020":
                 msfs_cfg.target_version = "2024"
 
-            # Hydrate persistent preferences
-            if "pbr_import_directory" in state and hasattr(props, "pbr_import_directory"):
-                props.pbr_import_directory = state["pbr_import_directory"]
-            if "export_directory" in state and hasattr(props, "export_directory"):
-                props.export_directory = state["export_directory"]
-            if "pbr_import_path_mode" in state and hasattr(props, "pbr_import_path_mode"):
-                props.pbr_import_path_mode = state["pbr_import_path_mode"]
-            if "pbr_import_ao_mode" in state and hasattr(props, "pbr_import_ao_mode"):
-                props.pbr_import_ao_mode = state["pbr_import_ao_mode"]
-            if "pbr_import_preserve_existing" in state and hasattr(props, "pbr_import_preserve_existing"):
-                props.pbr_import_preserve_existing = state["pbr_import_preserve_existing"]
-            if "engine_project_path" in state and hasattr(props, "engine_project_path"):
-                props.engine_project_path = state["engine_project_path"]
-            if "enable_live_sync" in state and hasattr(props, "enable_live_sync"):
-                props.enable_live_sync = state["enable_live_sync"]
-            if "batch_mode" in state and hasattr(props, "batch_mode"):
-                props.batch_mode = state["batch_mode"]
-            if "batch_source_directory" in state and hasattr(props, "batch_source_directory"):
-                props.batch_source_directory = state["batch_source_directory"]
+            for key in _PERSISTENT_PIPELINE_KEYS:
+                if key in state and hasattr(props, key):
+                    setattr(props, key, state[key])
 
 
 if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "handlers"):
@@ -438,15 +390,7 @@ def on_active_asset_updated(props: Any, context: Any) -> None:
 
 
 def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "", ignore_cache: bool = False) -> None:
-    """Projects preset LOD tiers onto props.lods based on the resolved asset and preset definition.
-
-    Inspects current scene state:
-    - Tier 0 is marked SOURCE (read-only baseline).
-    - If sibling collections exist in the scene, compares targets with last baked values:
-      sets BAKED if matching, or OUT_OF_SYNC if modified.
-    - If collection does not exist in the scene, sets PLANNED.
-    Restores cached tier state if previously tuned by user.
-    """
+    """Projects preset LOD tiers onto props.lods based on the resolved asset and preset definition."""
     if not props:
         return
 
@@ -457,7 +401,6 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "", 
     base_meshes = get_asset_base_meshes(ctx, asset_name) if (ctx and asset_name) else []
     existing_lods = get_asset_existing_lods(ctx, asset_name) if (ctx and asset_name) else {}
 
-    # Calculate bounding envelope & metrics
     all_coords = []
     base_tris = 0
     total_mat_slots = 0
@@ -546,7 +489,6 @@ def project_preset_tiers(props: Any, context: Any = None, asset_name: str = "", 
         item.distance_m = dist
         item.mat_slots_count = total_mat_slots if i < 2 else max(1, total_mat_slots - (i - 1))
 
-        # State detection
         if i == 0:
             item.state = "SOURCE"
             item.actual_tris = base_tris
@@ -664,13 +606,7 @@ def on_engine_import_preset_updated(self: Any, context: Any) -> None:
 
 def on_engine_import_directory_updated(self: Any, _context: Any) -> None:
     """Persists engine import directory path across sessions."""
-    if StateRestorationGuard.is_active():
-        return
-    val = getattr(self, "engine_import_directory", "")
-    try:
-        set_pipeline_setting("engine_import_directory", val)
-    except Exception as exc:
-        logger.debug("Persist engine import directory: %s", exc)
+    _persist_pipeline_prop(self, "engine_import_directory", "")
 
 
 def on_active_lod_index_updated(self: Any, context: Any) -> None:

@@ -142,7 +142,7 @@ def main() -> int:
 
     violations = scan_repository()
     critical_categories = ["context_leak_in_core_exporters", "deprecated_blender_apis", "bare_except_pass"]
-    warning_categories = ["commented_out_code_blocks"]
+    warning_categories = ["commented_out_code_blocks", "file_length_over_750"]
 
     has_critical = any(len(violations.get(cat, [])) > 0 for cat in critical_categories)
     has_warning = any(len(violations.get(cat, [])) > 0 for cat in warning_categories)

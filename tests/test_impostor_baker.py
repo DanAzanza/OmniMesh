@@ -158,3 +158,28 @@ def test_ue5_setup_guide_generation():
     assert "Pixel Depth Offset = Normal.A * 5.0000" in guide
     assert "TC_Default" in guide
     assert "Normalmap (TC_Normalmap / BC5)" in guide
+
+
+def test_impostor_rig_guard_cleanup_on_exception(monkeypatch):
+    """Verify EphemeralBakeSceneGuard and ImpostorCameraRig clean up temporary data blocks even on failure."""
+    from unittest.mock import MagicMock
+
+    import core.impostor_rig as rig_mod
+
+    assert rig_mod.EphemeralBakeSceneGuard is EphemeralBakeSceneGuard
+    assert rig_mod.ImpostorCameraRig is ImpostorCameraRig
+
+    mock_bpy = MagicMock()
+    mock_scene = MagicMock(name="TempBakeScene")
+    mock_bpy.data.scenes.new.return_value = mock_scene
+    monkeypatch.setattr(rig_mod, "bpy", mock_bpy)
+
+    guard = EphemeralBakeSceneGuard("BakeSceneTest")
+    try:
+        with guard as sc:
+            assert sc == mock_scene
+            raise RuntimeError("Simulated bake crash")
+    except RuntimeError:
+        pass
+
+    mock_bpy.data.scenes.remove.assert_called_once_with(mock_scene, do_unlink=True)

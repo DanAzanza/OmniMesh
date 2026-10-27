@@ -6,38 +6,9 @@ Attached to Scene (for project-wide pipeline globals) and Object (for per-asset 
 
 from typing import TYPE_CHECKING, Any
 
+from . import callbacks, enums
 from .animation_properties import OMNIMESH_AnimationSettings
-from .callbacks import (
-    get_engine_import_preset_items,
-    get_lod_preset_items,
-    get_pbr_export_preset_items,
-    get_pbr_import_preset_items,
-    on_active_asset_updated,
-    on_active_lod_index_updated,
-    on_batch_mode_updated,
-    on_batch_source_updated,
-    on_enable_live_sync_updated,
-    on_engine_import_directory_updated,
-    on_engine_import_preset_updated,
-    on_engine_project_path_updated,
-    on_export_bit_depth_updated,
-    on_export_directory_updated,
-    on_export_naming_updated,
-    on_export_preset_updated,
-    on_export_strategy_updated,
-    on_import_ao_mode_updated,
-    on_import_directory_updated,
-    on_import_path_mode_updated,
-    on_import_preserve_updated,
-    on_import_preset_updated,
-    on_legacy_preset_updated,
-    on_lod_budget_mode_updated,
-    on_lod_preset_updated,
-    on_target_engine_updated,
-    on_virtual_distance_updated,
-)
 from .config_properties import OMNIMESH_ConfigPresetSettings
-from . import enums
 from .interaction_properties import OMNIMESH_InteractionSettings
 from .lod_properties import (
     LODLevelItem,
@@ -114,7 +85,7 @@ class LODToolSettings(PropertyGroup):
         name="Asset Collection",
         items=get_asset_enum_items,
         description="Target root asset collection for LOD configuration and generation",
-        update=lambda self, context: on_active_asset_updated(self, context),
+        update=lambda self, context: callbacks.on_active_asset_updated(self, context),
     )
     preserve_pivot_empty: BoolProperty(
         name="Preserve Pivot Empty",
@@ -157,7 +128,7 @@ class LODToolSettings(PropertyGroup):
         items=enums.TARGET_ENGINE_ITEMS,
         default="MSFS_2024",
         description="Target engine determines naming conventions, metadata hierarchy, and export formats",
-        update=on_target_engine_updated,
+        update=callbacks.on_target_engine_updated,
     )
 
     # Asset Category Presets
@@ -234,9 +205,9 @@ class LODToolSettings(PropertyGroup):
     # PBR Texture Set Importer Settings
     pbr_import_preset: EnumProperty(
         name="Import Preset",
-        items=get_pbr_import_preset_items,
+        items=callbacks.get_pbr_import_preset_items,
         description="Active PBR texture set template matching incoming source texture conventions",
-        update=on_import_preset_updated,
+        update=callbacks.on_import_preset_updated,
     )
     pbr_active_maps: CollectionProperty(type=PBRMapItem)
     pbr_active_map_index: IntProperty(name="Active Map Index", default=0, min=0)
@@ -246,34 +217,34 @@ class LODToolSettings(PropertyGroup):
         subtype="DIR_PATH",
         default="//Textures/",
         description="Source directory containing PBR textures to import",
-        update=on_import_directory_updated,
+        update=callbacks.on_import_directory_updated,
     )
     pbr_import_path_mode: EnumProperty(
         name="Path Mode",
         items=enums.PBR_IMPORT_PATH_MODE_ITEMS,
         default="RELATIVE",
         description="Whether imported textures use relative (//) or absolute paths",
-        update=on_import_path_mode_updated,
+        update=callbacks.on_import_path_mode_updated,
     )
     is_state_restored: BoolProperty(name="State Restored", default=False)
     pbr_preset: EnumProperty(
         name="Preset",
-        items=get_pbr_export_preset_items,
+        items=callbacks.get_pbr_export_preset_items,
         description="Active PBR texture set template (Legacy alias for export preset)",
-        update=on_legacy_preset_updated,
+        update=callbacks.on_legacy_preset_updated,
     )
     pbr_import_ao_mode: EnumProperty(
         name="AO Mode",
         items=enums.PBR_IMPORT_AO_MODE_ITEMS,
         default="MULTIPLY",
         description="How Ambient Occlusion maps are wired into the shader graph",
-        update=on_import_ao_mode_updated,
+        update=callbacks.on_import_ao_mode_updated,
     )
     pbr_import_preserve_existing: BoolProperty(
         name="Preserve Existing Nodes",
         default=False,
         description="Preserve existing non-PBR shader nodes in material when importing texture sets",
-        update=on_import_preserve_updated,
+        update=callbacks.on_import_preserve_updated,
     )
     last_pbr_import_summary: StringProperty(name="PBR Import Summary", default="")
 
@@ -487,9 +458,9 @@ class LODToolSettings(PropertyGroup):
     )
     pbr_export_preset: EnumProperty(
         name="Export Profile",
-        items=get_pbr_export_preset_items,
+        items=callbacks.get_pbr_export_preset_items,
         description="Unified engine export preset determining target engine, channel packing, and naming",
-        update=on_export_preset_updated,
+        update=callbacks.on_export_preset_updated,
     )
     pbr_export_active_maps: CollectionProperty(type=PBRExportMapItem)
     pbr_export_active_map_index: IntProperty(name="Active Export Map Index", default=0, min=0)
@@ -499,20 +470,20 @@ class LODToolSettings(PropertyGroup):
         items=enums.PBR_EXPORT_TEXTURE_STRATEGY_ITEMS,
         default="SMART_AUTO",
         description="PBR texture export processing pipeline strategy",
-        update=on_export_strategy_updated,
+        update=callbacks.on_export_strategy_updated,
     )
     pbr_export_naming_pattern: StringProperty(
         name="Naming Pattern",
         default="{material}{suffix}",
         description="Naming pattern for exported textures ({asset}, {material}, {suffix})",
-        update=on_export_naming_updated,
+        update=callbacks.on_export_naming_updated,
     )
     pbr_export_bit_depth: EnumProperty(
         name="Bit Depth",
         items=enums.PBR_EXPORT_BIT_DEPTH_ITEMS,
         default="8",
         description="PNG channel depth for exported texture maps",
-        update=on_export_bit_depth_updated,
+        update=callbacks.on_export_bit_depth_updated,
     )
     bake_animations: BoolProperty(
         name="Bake Deform Rig Animations",
@@ -548,7 +519,7 @@ class LODToolSettings(PropertyGroup):
         min=0.0,
         max=5000.0,
         precision=2,
-        update=lambda self, context: on_virtual_distance_updated(self, context),
+        update=lambda self, context: callbacks.on_virtual_distance_updated(self, context),
     )
     last_scrub_status: StringProperty(name="Scrub Status", default="")
     show_viewport_hud: BoolProperty(
@@ -567,16 +538,16 @@ class LODToolSettings(PropertyGroup):
     )
     lod_preset: EnumProperty(
         name="LOD Preset",
-        items=get_lod_preset_items,
+        items=callbacks.get_lod_preset_items,
         description="Active LOD tier configuration template determining screen coverage and tri reduction curves",
-        update=on_lod_preset_updated,
+        update=callbacks.on_lod_preset_updated,
     )
     lod_preset_budget_mode: EnumProperty(
         name="Budget Mode",
         items=enums.LOD_PRESET_BUDGET_MODE_ITEMS,
         default="PERCENTAGE",
         description="Whether target budgets are specified as relative percentages or absolute triangle counts",
-        update=on_lod_budget_mode_updated,
+        update=callbacks.on_lod_budget_mode_updated,
     )
     lod_preset_active_tiers: CollectionProperty(type=LODPresetTierItem)
     lod_preset_active_tier_index: IntProperty(name="Active Preset Tier Index", default=0, min=0)
@@ -586,14 +557,14 @@ class LODToolSettings(PropertyGroup):
     active_lod_index: IntProperty(
         name="Active LOD Selection",
         default=0,
-        update=on_active_lod_index_updated,
+        update=callbacks.on_active_lod_index_updated,
     )
     export_directory: StringProperty(
         name="Export Directory",
         subtype="DIR_PATH",
         default="//Export/",
         description="Destination folder for exported engine packages",
-        update=on_export_directory_updated,
+        update=callbacks.on_export_directory_updated,
     )
     export_base_name: StringProperty(name="Asset Base Name", default="")
 
@@ -603,13 +574,13 @@ class LODToolSettings(PropertyGroup):
         subtype="DIR_PATH",
         default="",
         description="Root path to active Unreal, Unity, or MSFS Community project folder",
-        update=on_engine_project_path_updated,
+        update=callbacks.on_engine_project_path_updated,
     )
     enable_live_sync: BoolProperty(
         name="Live Sync on Export",
         default=True,
         description="Automatically trigger engine re-import or compile package upon export",
-        update=on_enable_live_sync_updated,
+        update=callbacks.on_enable_live_sync_updated,
     )
     bridge_status_text: StringProperty(
         name="Bridge Status", default="Bridge Ready", description="Cached status report from engine bridge"
@@ -638,14 +609,14 @@ class LODToolSettings(PropertyGroup):
         name="Batch Export (.blend files)",
         default=False,
         description="Batch-process all .blend files in a source directory with mirrored folder hierarchy",
-        update=on_batch_mode_updated,
+        update=callbacks.on_batch_mode_updated,
     )
     batch_source_directory: StringProperty(
         name="Source Folder",
         subtype="DIR_PATH",
         default="",
         description="Directory containing .blend assets to process in batch",
-        update=on_batch_source_updated,
+        update=callbacks.on_batch_source_updated,
     )
     batch_export_directory: StringProperty(
         name="Export Folder",
@@ -712,19 +683,18 @@ class LODToolSettings(PropertyGroup):
     msfs_calculated_cg_height_ft: FloatProperty(name="Static CG Height (ft)", default=0.0, precision=3)
 
     # Engine / Project Importer Properties
-
     engine_import_preset: EnumProperty(
         name="Engine Import Preset",
-        items=get_engine_import_preset_items,
+        items=callbacks.get_engine_import_preset_items,
         description="Active import template",
-        update=on_engine_import_preset_updated,
+        update=callbacks.on_engine_import_preset_updated,
     )
     engine_import_directory: StringProperty(
         name="Engine Project Path",
         subtype="DIR_PATH",
         default="",
         description="Root folder of project to ingest",
-        update=on_engine_import_directory_updated,
+        update=callbacks.on_engine_import_directory_updated,
     )
     engine_import_geometry: BoolProperty(name="Import Geometry & LODs", default=True)
     engine_import_spatial: BoolProperty(name="Import Spatial Markers", default=True)

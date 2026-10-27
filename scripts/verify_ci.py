@@ -86,7 +86,7 @@ def main() -> int:
 
     audit_script = os.path.join(os.path.dirname(__file__), "audit_architecture.py")
     if os.path.exists(audit_script):
-        if not run_command([sys.executable, audit_script], "Architecture & Invariant Compliance Audit"):
+        if not run_command([sys.executable, audit_script, "--strict"], "Architecture & Invariant Compliance Audit"):
             return 1
 
     pytest_cmd = [

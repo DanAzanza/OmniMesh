@@ -68,3 +68,13 @@ def test_audit_catches_bare_and_log_only_except_swallowing(tmp_path: Path) -> No
     assert len(swallowed) == 2
     assert swallowed[0][2] == "Exception (pass)"
     assert swallowed[1][2] == "Exception (log-only)"
+
+
+def test_audit_catches_file_length_over_750(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True)
+    oversized_lines = "\n".join(f"x_{i} = {i}" for i in range(755))
+    (core_dir / "oversized.py").write_text(oversized_lines + "\n", encoding="utf-8")
+
+    violations = scan_repository(tmp_path)
+    assert violations["file_length_over_750"] == [("core/oversized.py", 755)]
