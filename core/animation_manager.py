@@ -8,21 +8,23 @@ ensuring clean cross-engine export (glTF/FBX) and deterministic MSFS ModelInfo X
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import TYPE_CHECKING, Any, Optional
+import uuid
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
-    from bpy.types import Action, Object
+    from bpy.types import Action, BlendData, Context, Object
 else:
     try:
         import bpy
-        from bpy.types import Action, Object
+        from bpy.types import Action, BlendData, Context, Object
     except ImportError:
         bpy = None
         Action = object
+        BlendData = object
+        Context = object
         Object = object
 
 try:
@@ -41,28 +43,70 @@ SIMVAR_MAPPINGS: dict[str, str] = {
 }
 
 
-def scan_asset_animations(context: bpy.types.Context | None, asset_name: str) -> list[dict[str, Any]]:
+def _iter_candidate_blend_data(
+    context: Context | None = None,
+    blend_data: BlendData | None = None,
+) -> list[BlendData]:
+    """Returns ordered candidate BlendData sources (explicit blend_data -> context.blend_data -> module bpy.data)."""
+    candidates: list[BlendData] = []
+    if blend_data is not None:
+        candidates.append(blend_data)
+    if context is not None:
+        ctx_data = getattr(context, "blend_data", None)
+        if ctx_data is not None and ctx_data not in candidates:
+            candidates.append(ctx_data)
+    mod_data = getattr(bpy, "data", None) if bpy is not None else None
+    if mod_data is not None and mod_data not in candidates:
+        candidates.append(mod_data)
+    return candidates
+
+
+def scan_asset_animations(
+    context: Context | None,
+    asset_name: str,
+    blend_data: BlendData | None = None,
+) -> list[dict[str, Any]]:
     """
     Scans armatures and animated meshes associated with the given asset,
     returning detailed metadata for all actions and NLA tracks.
     """
-    if not bpy:
+    candidates = _iter_candidate_blend_data(context, blend_data)
+    if not candidates:
         return []
 
     clean_asset = str(asset_name).strip() or "Asset"
     discovered_actions: dict[str, dict[str, Any]] = {}
 
-    target_objects: list[bpy.types.Object] = []
-    if hasattr(bpy.data, "collections"):
-        root_col = bpy.data.collections.get(clean_asset)
-        if root_col and hasattr(root_col, "all_objects"):
-            target_objects = list(root_col.all_objects)
+    target_objects: list[Object] = []
+    for data_src in candidates:
+        colls = getattr(data_src, "collections", None)
+        if colls is not None and hasattr(colls, "get"):
+            root_col = colls.get(clean_asset)
+            all_objs = getattr(root_col, "all_objects", None) if root_col is not None else None
+            if isinstance(all_objs, (list, tuple)) and all_objs:
+                target_objects = list(all_objs)
+                break
+            elif all_objs is not None and not isinstance(all_objs, (list, tuple)):
+                try:
+                    objs_list = list(all_objs)
+                    if objs_list:
+                        target_objects = objs_list
+                        break
+                except TypeError:
+                    pass
 
-    if not target_objects and hasattr(bpy.data, "objects"):
-        for obj in bpy.data.objects:
-            o_name = getattr(obj, "name", "")
-            if o_name == clean_asset or o_name.startswith(f"{clean_asset}_"):
-                target_objects.append(obj)
+    if not target_objects:
+        for data_src in candidates:
+            objs = getattr(data_src, "objects", None)
+            if objs:
+                matched = [
+                    obj
+                    for obj in objs
+                    if getattr(obj, "name", "") == clean_asset or getattr(obj, "name", "").startswith(f"{clean_asset}_")
+                ]
+                if matched:
+                    target_objects = matched
+                    break
 
     for obj in target_objects:
         anim_data = getattr(obj, "animation_data", None)
@@ -70,8 +114,8 @@ def scan_asset_animations(context: bpy.types.Context | None, asset_name: str) ->
             continue
 
         # 1. Active Action
-        if getattr(anim_data, "action", None):
-            act = anim_data.action
+        act = getattr(anim_data, "action", None)
+        if act is not None:
             act_name = getattr(act, "name", "")
             if act_name and act_name not in discovered_actions:
                 discovered_actions[act_name] = _extract_action_info(act, obj)
@@ -82,7 +126,7 @@ def scan_asset_animations(context: bpy.types.Context | None, asset_name: str) ->
             for track in nla_tracks:
                 for strip in getattr(track, "strips", []):
                     strip_act = getattr(strip, "action", None)
-                    if strip_act:
+                    if strip_act is not None:
                         s_name = getattr(strip_act, "name", "")
                         if s_name and s_name not in discovered_actions:
                             discovered_actions[s_name] = _extract_action_info(strip_act, obj)
@@ -90,7 +134,7 @@ def scan_asset_animations(context: bpy.types.Context | None, asset_name: str) ->
     return list(discovered_actions.values())
 
 
-def _extract_action_info(action: bpy.types.Action | None, bound_object: bpy.types.Object | None) -> dict[str, Any]:
+def _extract_action_info(action: Action | None, bound_object: Object | None) -> dict[str, Any]:
     """Extracts frame range, semantic tags, and GUID for an action."""
     if not action:
         return {
@@ -104,24 +148,20 @@ def _extract_action_info(action: bpy.types.Action | None, bound_object: bpy.type
             "bound_object": getattr(bound_object, "name", ""),
         }
     raw_name = getattr(action, "name", "Action")
-    sanitized = (
-        AnimationRigSanitizer.sanitize_action_name(raw_name)
-        if hasattr(AnimationRigSanitizer, "sanitize_action_name")
-        else raw_name
-    )
+    sanitized = AnimationRigSanitizer.sanitize_action_name(raw_name)
 
     frame_range = getattr(action, "frame_range", (0.0, 100.0))
     start_frame = int(round(frame_range[0]))
     end_frame = int(round(frame_range[1]))
     length = max(1, end_frame - start_frame)
 
-    category = getattr(action, "get", lambda *_: "GENERIC")("_omnimesh_category", "GENERIC")
-    guid = getattr(action, "get", lambda *_: "")("_omnimesh_guid", "")
+    act_any: Any = action
+    category = act_any.get("_omnimesh_category", "GENERIC") if hasattr(act_any, "get") else "GENERIC"
+    guid = act_any.get("_omnimesh_guid", "") if hasattr(act_any, "get") else ""
     if not guid:
-        # Deterministic UUID based on action name
         guid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"omnimesh.anim.{sanitized}"))
         try:
-            action["_omnimesh_guid"] = guid
+            act_any["_omnimesh_guid"] = guid
         except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Could not cache _omnimesh_guid on action: %s", exc)
 
@@ -137,12 +177,24 @@ def _extract_action_info(action: bpy.types.Action | None, bound_object: bpy.type
     }
 
 
-def tag_action_category(action_name: str, category: str, custom_guid: Optional[str] = None) -> bool:
+def tag_action_category(
+    action_name: str,
+    category: str,
+    custom_guid: Optional[str] = None,
+    blend_data: BlendData | None = None,
+    context: Context | None = None,
+) -> bool:
     """Assigns semantic category and optional custom GUID to a Blender action."""
-    if not bpy or not hasattr(bpy.data, "actions"):
-        return False
+    candidates = _iter_candidate_blend_data(context, blend_data)
+    act: Any = None
+    for data_src in candidates:
+        actions = getattr(data_src, "actions", None)
+        if actions is not None and hasattr(actions, "get"):
+            found = actions.get(action_name)
+            if found is not None:
+                act = found
+                break
 
-    act = bpy.data.actions.get(action_name)
     if not act:
         return False
 
@@ -152,11 +204,7 @@ def tag_action_category(action_name: str, category: str, custom_guid: Optional[s
     if custom_guid:
         act["_omnimesh_guid"] = str(custom_guid).strip()
     elif "_omnimesh_guid" not in act:
-        sanitized = (
-            AnimationRigSanitizer.sanitize_action_name(action_name)
-            if hasattr(AnimationRigSanitizer, "sanitize_action_name")
-            else action_name
-        )
+        sanitized = AnimationRigSanitizer.sanitize_action_name(action_name)
         act["_omnimesh_guid"] = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"omnimesh.anim.{sanitized}"))
 
     return True

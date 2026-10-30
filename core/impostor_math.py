@@ -5,80 +5,28 @@ Blender-independent: operates with native math, NumPy, and mathutils.Vector (or 
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Tuple, cast
+from typing import TYPE_CHECKING, Tuple, cast
 
 import numpy as np
+
+from .compat import Vector
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from mathutils import Vector
+    from mathutils import Vector as MathVector
 else:
-    try:
-        from mathutils import Vector
-    except ImportError:
-
-        class Vector(tuple):  # type: ignore
-            """Fallback Vector for headless testing."""
-
-            def __new__(cls, coords: Any) -> Vector:
-                return super().__new__(cls, tuple(float(x) for x in coords))
-
-            @property
-            def x(self) -> float:
-                return self[0]
-
-            @property
-            def y(self) -> float:
-                return self[1]
-
-            @property
-            def z(self) -> float:
-                return self[2]
-
-            @property
-            def length(self) -> float:
-                return math.sqrt(self[0] * self[0] + self[1] * self[1] + self[2] * self[2])
-
-            def normalized(self) -> Vector:
-                l_val = self.length
-                if l_val < 1e-9:
-                    return Vector((0.0, 0.0, 0.0))
-                return Vector((self[0] / l_val, self[1] / l_val, self[2] / l_val))
-
-            def dot(self, o: Any) -> float:
-                return self[0] * o[0] + self[1] * o[1] + self[2] * o[2]
-
-            def cross(self, o: Any) -> Vector:
-                return Vector(
-                    (self[1] * o[2] - self[2] * o[1], self[2] * o[0] - self[0] * o[2], self[0] * o[1] - self[1] * o[0])
-                )
-
-            def __neg__(self) -> Vector:
-                return Vector((-self[0], -self[1], -self[2]))
-
-            def __sub__(self, o: Any) -> Vector:
-                return Vector((self[0] - o[0], self[1] - o[1], self[2] - o[2]))
-
-            def __add__(self, o: Any) -> Vector:
-                return Vector((self[0] + o[0], self[1] + o[1], self[2] + o[2]))
-
-            def __mul__(self, scalar: Any) -> Vector:
-                s = float(scalar)
-                return Vector((self[0] * s, self[1] * s, self[2] * s))
-
-            def __rmul__(self, scalar: Any) -> Vector:
-                s = float(scalar)
-                return Vector((self[0] * s, self[1] * s, self[2] * s))
+    MathVector = Vector
 
 
 class ImpostorMath:
     """Mathematical foundations for spherical/octahedral directional mappings."""
 
     @staticmethod
-    def hemi_octahedral_to_vector(u: float, v: float) -> Any:
+    def hemi_octahedral_to_vector(u: float, v: float) -> Vector:
         """
         Maps 2D normalized UV coords [0, 1]^2 to upper-hemisphere 3D unit direction vector (Z >= 0).
         """
@@ -93,7 +41,7 @@ class ImpostorMath:
         return vec.normalized()
 
     @staticmethod
-    def vector_to_hemi_octahedral(vec: Any) -> Tuple[float, float]:
+    def vector_to_hemi_octahedral(vec: Sequence[float] | Vector) -> Tuple[float, float]:
         """
         Projects 3D unit direction vector (Z >= 0) to 2D normalized UV coords [0, 1]^2.
         Guards against nadir singularity when |x| + |y| + z < 1e-9 by falling back to horizon (0.5, 0.0).
@@ -111,7 +59,7 @@ class ImpostorMath:
         return max(0.0, min(1.0, u)), max(0.0, min(1.0, v))
 
     @staticmethod
-    def full_octahedral_to_vector(u: float, v: float) -> Any:
+    def full_octahedral_to_vector(u: float, v: float) -> Vector:
         """
         Maps 2D normalized UV coords [0, 1]^2 to full 3D sphere unit direction vector.
         """
@@ -132,7 +80,7 @@ class ImpostorMath:
         return vec.normalized()
 
     @staticmethod
-    def vector_to_full_octahedral(vec: Any) -> Tuple[float, float]:
+    def vector_to_full_octahedral(vec: Sequence[float] | Vector) -> Tuple[float, float]:
         """
         Projects 3D unit direction vector across full sphere to 2D normalized UV coords [0, 1]^2.
         """
@@ -156,12 +104,12 @@ class ImpostorMath:
         return max(0.0, min(1.0, u)), max(0.0, min(1.0, v))
 
     @staticmethod
-    def compute_camera_basis(dir_vec: Any) -> Tuple[Any, Any, Any]:
+    def compute_camera_basis(dir_vec: Sequence[float] | Vector) -> Tuple[Vector, Vector, Vector]:
         """
         Computes an orthonormal camera basis (right, up, forward) for a camera positioned
         at dir_vec looking toward origin, immune to polar singularity.
         """
-        d = Vector(dir_vec).normalized()
+        d = Vector((dir_vec[0], dir_vec[1], dir_vec[2])).normalized()
         forward = -d
 
         # World up is +Z in Blender
@@ -177,10 +125,10 @@ class ImpostorMath:
 
     @staticmethod
     def compute_camera_space_tangent_normal(
-        n_world: Any,
-        cam_right: Any,
-        cam_up: Any,
-        cam_forward: Any,
+        n_world: Sequence[float] | Vector,
+        cam_right: Sequence[float] | Vector,
+        cam_up: Sequence[float] | Vector,
+        cam_forward: Sequence[float] | Vector,
         flip_green: bool = False,
     ) -> Tuple[float, float, float]:
         """

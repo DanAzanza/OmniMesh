@@ -12,44 +12,21 @@ from typing import TYPE_CHECKING, Any, Callable
 
 logger = logging.getLogger(__name__)
 
+try:
+    from ..compat import Vector
+except (ImportError, ValueError):
+    from core.compat import Vector
+
 if TYPE_CHECKING:
     import bpy
-    from mathutils import Euler, Vector
+    from mathutils import Euler
 else:
     try:
         import bpy
-        from mathutils import Euler, Vector
+        from mathutils import Euler
     except ImportError:
         bpy = None
         Euler = None
-
-        class Vector(tuple):  # type: ignore[no-redef]
-            def __new__(cls, coords):
-                return super().__new__(cls, (float(c) for c in coords))
-
-            @property
-            def x(self) -> float:
-                return self[0]
-
-            @property
-            def y(self) -> float:
-                return self[1]
-
-            @property
-            def z(self) -> float:
-                return self[2]
-
-            def __add__(self, other):
-                return Vector((self[0] + other[0], self[1] + other[1], self[2] + other[2]))
-
-            def __sub__(self, other):
-                return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
-
-            def __mul__(self, scalar):
-                return Vector((self[0] * scalar, self[1] * scalar, self[2] * scalar))
-
-            def __rmul__(self, scalar):
-                return Vector((self[0] * scalar, self[1] * scalar, self[2] * scalar))
 
 
 def compute_preset_anchor_position(
@@ -163,7 +140,7 @@ class ConfigPresetSpawner:
     """Instantiates preset configuration objects into standardized collections."""
 
     @classmethod
-    def _parent_to_datum(cls, obj: Any, datum_obj: bpy.types.Object | None) -> None:
+    def _parent_to_datum(cls, obj: bpy.types.Object, datum_obj: bpy.types.Object | None) -> None:
         """Safely parents obj to datum_obj preserving world transform."""
         if not datum_obj or obj == datum_obj:
             return
@@ -177,13 +154,14 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_datum_if_missing(
         cls,
-        _bpy: Any,
+        _bpy_in: object,
         asset_name: str,
         spatial_col: bpy.types.Collection | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
-    ) -> tuple[Any, int]:
+    ) -> tuple[bpy.types.Object, int]:
         """Ensures the datum reference empty exists in spatial_col."""
+        _bpy: Any = _bpy_in
         datum_id = "WEIGHT_AND_BALANCE:reference_datum_position"
         for o in getattr(spatial_col, "objects", []):
             if o.get("msfs_id") == datum_id:
@@ -207,7 +185,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_spatial_points(
         cls,
-        _bpy: Any,
+        _bpy_in: object,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -217,6 +195,7 @@ class ConfigPresetSpawner:
         detected_wheels: dict[str, tuple[float, float, float]] | None = None,
     ) -> int:
         """Spawns spatial contact points and markers, snapping wheel contact points to detected tire bottoms."""
+        _bpy: Any = _bpy_in
         count = 0
         datum_id = "WEIGHT_AND_BALANCE:reference_datum_position"
         for item in items:
@@ -278,7 +257,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_exits(
         cls,
-        _bpy: Any,
+        _bpy_in: object,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -287,6 +266,7 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns aircraft exits from preset."""
+        _bpy: Any = _bpy_in
         count = 0
         for item in items:
             item_id = item.get("id", "")
@@ -317,7 +297,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_engines(
         cls,
-        _bpy: Any,
+        _bpy_in: object,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -326,6 +306,7 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns engine markers from preset."""
+        _bpy: Any = _bpy_in
         count = 0
         for item in items:
             item_id = item.get("id", "")
@@ -356,7 +337,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_station_loads(
         cls,
-        _bpy: Any,
+        _bpy_in: object,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -365,6 +346,7 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns payload station loads from preset."""
+        _bpy: Any = _bpy_in
         count = 0
         for item in items:
             item_id = item.get("id", "")
@@ -423,7 +405,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_lights(
         cls,
-        _bpy: Any,
+        _bpy_in: object,
         asset_name: str,
         items: list[dict[str, Any]],
         lights_col: bpy.types.Collection | None,
@@ -431,6 +413,7 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns lighting objects from preset."""
+        _bpy: Any = _bpy_in
         count = 0
         for item in items:
             item_id = item.get("id", "")
@@ -469,7 +452,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_cameras(
         cls,
-        _bpy: Any,
+        _bpy_in: object,
         asset_name: str,
         items: list[dict[str, Any]],
         cameras_col: bpy.types.Collection | None,
@@ -477,6 +460,7 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns cameras and ensures eyepoint marker exists."""
+        _bpy: Any = _bpy_in
         count = 0
         eyepoint_id = "CAMERAS:eyepoint"
         eyepoint_obj = None
@@ -539,17 +523,21 @@ class ConfigPresetSpawner:
         context: bpy.types.Context | None,
         asset_name: str,
         preset_data: dict[str, Any],
-        cfg_props: Any = None,
+        cfg_props: object = None,
         *,
-        bpy_module: Any = None,
-        get_base_meshes_fn: Callable[[Any, str], list[Any]] | None = None,
-        get_import_collection_fn: Callable[[Any, str, str], Any] | None = None,
+        bpy_module: object = None,
+        get_base_meshes_fn: Callable[[bpy.types.Context | None, str], list[bpy.types.Object]] | None = None,
+        get_import_collection_fn: Callable[
+            [bpy.types.Context | bpy.types.Scene | None, str, str],
+            bpy.types.Collection | None,
+        ]
+        | None = None,
     ) -> int:
         """
         Coordinates full instantiation of all missing config markers from preset.
         Returns total count of newly created objects.
         """
-        _bpy = bpy_module or bpy
+        _bpy: Any = bpy_module or bpy
         if not _bpy or not context:
             return 0
 
@@ -559,7 +547,7 @@ class ConfigPresetSpawner:
                 from ui.utils import get_asset_base_meshes as mesh_fn
             except (ImportError, ValueError):
 
-                def _empty_mesh_fn(_c: Any, _a: Any) -> list[Any]:
+                def _empty_mesh_fn(_c: bpy.types.Context | None, _a: str) -> list[bpy.types.Object]:
                     return []
 
                 mesh_fn = _empty_mesh_fn
@@ -628,7 +616,7 @@ class ConfigPresetSpawner:
         # SMART REPLACE: Cleanly remove existing objects in enabled categories before spawning
         if spatial_col:
 
-            def _spatial_predicate(o: Any) -> bool:
+            def _spatial_predicate(o: bpy.types.Object) -> bool:
                 m_type = str(o.get("msfs_type", "") if hasattr(o, "get") else "")
                 m_sec = str(o.get("msfs_section", "") if hasattr(o, "get") else "")
                 if inc_spatial and (

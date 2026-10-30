@@ -58,7 +58,7 @@ class ConfigPresetManager(BasePresetManager):
         return base
 
     @classmethod
-    def validate_preset_schema(cls, data: Any) -> Optional[dict[str, Any]]:
+    def validate_preset_schema(cls, data: object) -> Optional[dict[str, Any]]:
         """Validates config preset dictionary structure against schema rules."""
         if not isinstance(data, dict):
             return None

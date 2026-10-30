@@ -7,9 +7,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
 
 from .exceptions import RiggingError
 
@@ -31,30 +30,7 @@ else:
 logger = logging.getLogger(__name__)
 
 
-def _safe_invert_matrix(mat: Any) -> Any:
-    """Safely inverts a transform matrix, guarding against singular / zero-determinant matrices."""
-    if mat is None:
-        return None
-    if hasattr(mat, "inverted"):
-        try:
-            if hasattr(mat, "determinant"):
-                det = mat.determinant()
-                if not math.isfinite(det) or abs(det) < 1e-8:
-                    logger.warning("Singular matrix detected in inversion (det=%s). Returning fallback identity.", det)
-                    if Matrix is not None:
-                        return Matrix.Identity(4)
-                    if hasattr(mat, "arr") and isinstance(getattr(mat, "arr", None), np.ndarray):
-                        return type(mat)(np.eye(mat.arr.shape[0]))
-                    return mat.copy() if hasattr(mat, "copy") else mat
-            return mat.inverted()
-        except (ValueError, AttributeError, RuntimeError) as exc:
-            logger.warning("Matrix inversion failed (%s). Returning fallback identity.", exc)
-            if Matrix is not None:
-                return Matrix.Identity(4)
-            if hasattr(mat, "arr") and isinstance(getattr(mat, "arr", None), np.ndarray):
-                return type(mat)(np.eye(mat.arr.shape[0]))
-            return mat.copy() if hasattr(mat, "copy") else mat
-    return mat
+from .compat import MatrixLike, safe_invert_matrix as _safe_invert_matrix
 
 
 def normalize_weights_pure(
@@ -172,12 +148,12 @@ def armature_rest_pose_context(armature_obj: bpy.types.Object | None, context: b
 
 
 def compute_rest_pose_inverted_matrix(
-    armature_world: Any,
-    bone_rest_local: Any,
-    prop_parent_inverse: Any,
-    prop_basis: Any,
-    target_mesh_rest_world: Any = None,
-) -> Any:
+    armature_world: Matrix | MatrixLike | None,
+    bone_rest_local: Matrix | MatrixLike | None,
+    prop_parent_inverse: Matrix | MatrixLike | None,
+    prop_basis: Matrix | MatrixLike | None,
+    target_mesh_rest_world: Matrix | MatrixLike | None = None,
+) -> Matrix | MatrixLike | None:
     """
     Computes the exact World/Local Transform of a static object in the Armature's REST pose.
     M_{S -> M_rest} = M_{M_rest_world}^-1 @ M_{Arm_world} @ M_{B_bone_local} @ M_{S_parent_inv} @ M_{S_basis}
@@ -187,7 +163,12 @@ def compute_rest_pose_inverted_matrix(
         return target_mesh_rest_world or armature_world
 
     try:
-        rest_world = armature_world @ bone_rest_local @ prop_parent_inverse @ prop_basis
+        rest_world: Any = (
+            cast(Any, armature_world)
+            @ cast(Any, bone_rest_local)
+            @ cast(Any, prop_parent_inverse)
+            @ cast(Any, prop_basis)
+        )
     except (ValueError, TypeError, AttributeError) as exc:
         logger.error("Matrix multiplication failed in compute_rest_pose_inverted_matrix: %s", exc)
         return target_mesh_rest_world or armature_world
@@ -196,7 +177,7 @@ def compute_rest_pose_inverted_matrix(
         inverted_target = _safe_invert_matrix(target_mesh_rest_world)
         if inverted_target is not None:
             try:
-                return inverted_target @ rest_world
+                return cast(Any, inverted_target) @ rest_world
             except (ValueError, TypeError, AttributeError) as exc:
                 logger.error("Failed to multiply inverted target mesh matrix: %s", exc)
                 return rest_world

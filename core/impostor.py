@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Tuple, cast
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,12 @@ class ImpostorMeshBuilder:
     @classmethod
     def build_intersecting_quads(
         cls,
-        coords: Optional[List[Any]] = None,
+        coords: Optional[Sequence[Sequence[float] | Vector]] = None,
         min_coords: Tuple[float, float, float] = (-1.0, -1.0, -1.0),
         max_coords: Tuple[float, float, float] = (1.0, 1.0, 1.0),
         padding_pct: float = 0.02,
         include_diagonals: bool = True,
-    ) -> Any:
+    ) -> bmesh.types.BMesh | None:
         """
         Constructs intersecting billboard quads centered at object origin:
         - 3 Axial Planes (Front/Back, Right/Left, Top/Bottom) -> 6 faces
@@ -86,7 +86,7 @@ class ImpostorMeshBuilder:
         ]
 
         pts = (
-            [Vector(c) for c in coords]
+            [Vector((c[0], c[1], c[2])) for c in coords]
             if coords
             else [
                 Vector((x, y, z))
@@ -155,7 +155,7 @@ class ImpostorMeshBuilder:
         dim_y: float = 0.0,
         center_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
         ortho_scale: float = 0.0,
-    ) -> Any:
+    ) -> bmesh.types.BMesh | None:
         """Compatibility wrapper building 6 intersecting quads."""
         hw_x = (dim_x if dim_x > 1e-4 else width) * 0.5
         hw_y = (dim_y if dim_y > 1e-4 else width) * 0.5
@@ -167,12 +167,12 @@ class ImpostorMeshBuilder:
     @classmethod
     def build_octahedral_cutout_polygon(
         cls,
-        coords: Optional[List[Any]] = None,
+        coords: Optional[Sequence[Sequence[float] | Vector]] = None,
         min_coords: Tuple[float, float, float] = (-1.0, -1.0, -1.0),
         max_coords: Tuple[float, float, float] = (1.0, 1.0, 1.0),
         padding_pct: float = 0.04,
         bevel_pct: float = 0.25,
-    ) -> Any:
+    ) -> bmesh.types.BMesh | None:
         """
         Constructs an 8-vertex cut-out convex polygon (octagon) facing -Y, centered at bounds.
         Eliminates 30-40% of transparent pixel fillrate overdraw compared to a square quad.
@@ -237,14 +237,44 @@ class ImpostorMeshBuilder:
         return bm
 
     @classmethod
-    def build_star_quads(cls, *args: Any, **kwargs: Any) -> Any:
+    def build_star_quads(
+        cls,
+        width: float = 2.0,
+        height: float = 2.0,
+        ground_z: float = 0.0,
+        dim_x: float = 0.0,
+        dim_y: float = 0.0,
+        center_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+        ortho_scale: float = 0.0,
+    ) -> bmesh.types.BMesh | None:
         """Compatibility fallback delegating to build_cross_quads."""
-        return cls.build_cross_quads(*args, **kwargs)
+        return cls.build_cross_quads(
+            width=width,
+            height=height,
+            ground_z=ground_z,
+            dim_x=dim_x,
+            dim_y=dim_y,
+            center_offset=center_offset,
+            ortho_scale=ortho_scale,
+        )
 
     @classmethod
-    def build_single_camera_quad(cls, *args: Any, **kwargs: Any) -> Any:
+    def build_single_camera_quad(
+        cls,
+        coords: Optional[Sequence[Sequence[float] | Vector]] = None,
+        min_coords: Tuple[float, float, float] = (-1.0, -1.0, -1.0),
+        max_coords: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+        padding_pct: float = 0.04,
+        bevel_pct: float = 0.25,
+    ) -> bmesh.types.BMesh | None:
         """Constructs a single planar quad or cutout octagon for Octahedral Impostor cards."""
-        return cls.build_octahedral_cutout_polygon(*args, **kwargs)
+        return cls.build_octahedral_cutout_polygon(
+            coords=coords,
+            min_coords=min_coords,
+            max_coords=max_coords,
+            padding_pct=padding_pct,
+            bevel_pct=bevel_pct,
+        )
 
 
 class ImpostorManager:
@@ -256,7 +286,7 @@ class ImpostorManager:
         base_name: str,
         target_engine: str = "UE5",
         is_two_sided: bool = True,
-    ) -> Any:
+    ) -> bpy.types.Material | None:
         """
         Creates or updates a dedicated PBR Impostor Material in Blender.
         Configures Alpha Clip transparency, two-sided shading, and texture slot nodes.
@@ -361,7 +391,7 @@ class ImpostorManager:
     @classmethod
     def bind_baked_textures_to_material(
         cls,
-        mat: Any,
+        mat: bpy.types.Material | None,
         base_color_path: str = "",
         normal_path: str = "",
         orm_path: str = "",
@@ -407,7 +437,7 @@ class ImpostorManager:
         atlas_resolution: int = 2048,
         scene: bpy.types.Scene | None = None,
         context: bpy.types.Context | None = None,
-    ) -> Any:
+    ) -> bpy.types.Object | None:
         """
         Constructs and links the Impostor billboard object in Blender.
         Assigns the Impostor PBR material and places it in the target LOD collection.
@@ -482,6 +512,7 @@ class ImpostorManager:
         finally:
             bm.free()
 
+        impostor_created = False
         try:
             impostor_obj = bpy.data.objects.new(impostor_name, impostor_mesh)
             impostor_obj.location = Vector((0.0, 0.0, 0.0))
@@ -538,15 +569,20 @@ class ImpostorManager:
                 dim_y,
                 height,
             )
+            impostor_created = True
             return impostor_obj
-        except Exception as exc:
-            logger.error("Failed creating impostor object: %s", exc)
-            if impostor_mesh and bpy and hasattr(bpy, "data") and bpy.data.meshes.get(impostor_mesh.name):
+        finally:
+            if (
+                not impostor_created
+                and impostor_mesh
+                and bpy
+                and hasattr(bpy, "data")
+                and bpy.data.meshes.get(impostor_mesh.name)
+            ):
                 try:
                     bpy.data.meshes.remove(impostor_mesh)
                 except (RuntimeError, ReferenceError, AttributeError) as clean_exc:
-                    logger.debug("Failed removing impostor mesh in error handler: %s", clean_exc)
-            raise
+                    logger.debug("Failed removing impostor mesh in cleanup handler: %s", clean_exc)
 
 
 def resolve_impostor_export_dir(raw_dir: str = "", default_subfolder: str = "Textures") -> str:

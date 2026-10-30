@@ -31,7 +31,7 @@ def set_principled_socket(
     node: Node | None,
     name_v1: str,
     name_v2: str,
-    value: Any,
+    value: float | int | Sequence[float],
 ) -> bool:
     """
     Safely assigns a socket value on Principled BSDF supporting both v1 (Blender < 4.0)
@@ -76,7 +76,7 @@ def configure_material_transparency(
             pass
 
 
-def get_or_create_principled_node(mat: Material | None) -> Optional[Any]:
+def get_or_create_principled_node(mat: Material | None) -> Optional[Node]:
     """Retrieves or creates the primary Principled BSDF node in a material node tree."""
     if not mat or not hasattr(mat, "node_tree") or not mat.node_tree:
         return None
@@ -107,7 +107,7 @@ def create_or_update_material_preset(
     roughness: float = 0.4,
     metallic: float = 0.0,
     emission_strength: float = 5.0,
-) -> Any:
+) -> Material | None:
     """
     Creates or updates a Blender Material datablock configured according to the selected preset.
 

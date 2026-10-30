@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 import numpy as np
 
@@ -78,7 +78,7 @@ def is_structural_airframe_object(obj_name: str) -> bool:
 
 
 def extract_world_vertices_numpy(
-    obj: Any,
+    obj: bpy.types.Object | Sequence[bpy.types.Object] | None,
     depsgraph: bpy.types.Depsgraph | None = None,
 ) -> np.ndarray:
     """Extract world-space vertex coordinates of a mesh object using fast NumPy buffers.
@@ -89,17 +89,18 @@ def extract_world_vertices_numpy(
     if isinstance(obj, (list, tuple)):
         return collect_airframe_vertices(list(obj), depsgraph=depsgraph, filter_non_structural=False)
 
-    if not hasattr(obj, "type") or getattr(obj, "type", "") != "MESH" or not getattr(obj, "data", None):
+    if obj is None or not hasattr(obj, "type") or getattr(obj, "type", "") != "MESH" or not getattr(obj, "data", None):
         return np.empty((0, 3), dtype=np.float32)
 
-    eval_obj = obj.evaluated_get(depsgraph) if depsgraph is not None else obj
-    eval_mesh = None
+    obj_any: Any = obj
+    eval_obj: Any = obj_any.evaluated_get(depsgraph) if depsgraph is not None else obj_any
+    eval_mesh: Any = None
 
     try:
         # If depsgraph is supplied, create evaluated mesh copy with modifier stack
         if depsgraph is not None:
             eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=False, depsgraph=depsgraph)
-            mesh_data = eval_mesh
+            mesh_data: Any = eval_mesh
         else:
             mesh_data = eval_obj.data
 

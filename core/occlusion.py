@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Dict, List, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Set, cast
 
 import numpy as np
 
+from .compat import Vector
 from .exceptions import TopologyError
 
 logger = logging.getLogger(__name__)
@@ -21,79 +22,18 @@ if TYPE_CHECKING:
     import bmesh
     import bpy
     import mathutils
-    from mathutils import Vector
     from mathutils.bvhtree import BVHTree
 else:
     try:
         import bmesh
         import bpy
         import mathutils
-        from mathutils import Vector
         from mathutils.bvhtree import BVHTree
     except ImportError:
         bmesh = None
         bpy = None
         mathutils = None
         BVHTree = None
-
-    class Vector(tuple):  # type: ignore
-        """Pure Python 3D vector fallback for standalone headless test environments."""
-
-        def __new__(cls, coords: Any) -> Vector:
-            return super().__new__(cls, tuple(float(x) for x in coords))
-
-        @property
-        def x(self) -> float:
-            return self[0]
-
-        @property
-        def y(self) -> float:
-            return self[1]
-
-        @property
-        def z(self) -> float:
-            return self[2]
-
-        @property
-        def length(self) -> float:
-            return math.sqrt(self[0] * self[0] + self[1] * self[1] + self[2] * self[2])
-
-        @property
-        def length_squared(self) -> float:
-            return self[0] * self[0] + self[1] * self[1] + self[2] * self[2]
-
-        def normalized(self) -> Vector:
-            l_val = self.length
-            if l_val < 1e-9:
-                return Vector((0.0, 0.0, 0.0))
-            return Vector((self[0] / l_val, self[1] / l_val, self[2] / l_val))
-
-        def dot(self, other: Any) -> float:
-            return self[0] * other[0] + self[1] * other[1] + self[2] * other[2]
-
-        def cross(self, other: Any) -> Vector:
-            return Vector(
-                (
-                    self[1] * other[2] - self[2] * other[1],
-                    self[2] * other[0] - self[0] * other[2],
-                    self[0] * other[1] - self[1] * other[0],
-                )
-            )
-
-        def __add__(self, other: Any) -> Vector:
-            return Vector((self[0] + other[0], self[1] + other[1], self[2] + other[2]))
-
-        def __sub__(self, other: Any) -> Vector:
-            return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
-
-        def __mul__(self, scalar: Any) -> Vector:
-            return Vector((self[0] * float(scalar), self[1] * float(scalar), self[2] * float(scalar)))
-
-        def __rmul__(self, scalar: Any) -> Vector:
-            return self.__mul__(scalar)
-
-        def __truediv__(self, scalar: Any) -> Vector:
-            return Vector((self[0] / float(scalar), self[1] / float(scalar), self[2] / float(scalar)))
 
 
 from .metrics import compute_bounding_sphere
@@ -300,7 +240,9 @@ class HardenedOcclusionCuller:
 
         # Pass A: Fibonacci Exterior Ingress (Backface-Filtered)
         num_views = max(16, min(64, ray_density * 2))
-        viewpoints = cls._generate_fibonacci_sphere(center, radius * 1.6, num_views)
+        center_v = Vector((center[0], center[1], center[2]))
+
+        viewpoints = cls._generate_fibonacci_sphere(center_v, radius * 1.6, num_views)
 
         for view_pos in viewpoints:
             for face in bm.faces:
@@ -339,7 +281,7 @@ class HardenedOcclusionCuller:
                 hit_loc, _, hit_idx, _ = bvh_opaque.ray_cast(origin, r_dir)
 
                 # If ray escapes past bounding sphere without hitting opaque geometry
-                if hit_idx is None or (hit_loc - origin).length > (2.0 * radius):
+                if hit_idx is None or hit_loc is None or (hit_loc - origin).length > (2.0 * radius):
                     visible_face_indices.add(face.index)
                     break
 
@@ -381,10 +323,10 @@ class HardenedOcclusionCuller:
         return {"culled_faces": culled_count, "culled_islands": culled_islands_count}
 
     @staticmethod
-    def _find_connected_islands(bm: bmesh.types.BMesh) -> List[List[Any]]:
+    def _find_connected_islands(bm: bmesh.types.BMesh) -> List[List[bmesh.types.BMFace]]:
         """Segments BMesh faces into topologically connected islands."""
         visited: Set[int] = set()
-        islands: List[List[Any]] = []
+        islands: List[List[bmesh.types.BMFace]] = []
         for face in bm.faces:
             if face.index in visited:
                 continue
@@ -403,7 +345,7 @@ class HardenedOcclusionCuller:
         return islands
 
     @staticmethod
-    def _generate_fibonacci_sphere(center: Any, radius: float, num_pts: int) -> List[Any]:
+    def _generate_fibonacci_sphere(center: Vector, radius: float, num_pts: int) -> List[Vector]:
         """Generates uniformly distributed viewpoints on a bounding sphere."""
         points = []
         phi = math.pi * (math.sqrt(5.0) - 1.0)
@@ -417,7 +359,7 @@ class HardenedOcclusionCuller:
         return points
 
     @staticmethod
-    def _stratified_hemisphere_dirs(normal: Any, count: int) -> List[Any]:
+    def _stratified_hemisphere_dirs(normal: Vector, count: int) -> List[Vector]:
         """Generates cosine-weighted stratified hemisphere directions oriented along normal."""
         l_sq = getattr(normal, "length_squared", None)
         if l_sq is None:
@@ -428,8 +370,8 @@ class HardenedOcclusionCuller:
         dirs = []
         n = normal.normalized()
         up = Vector((0.0, 0.0, 1.0)) if abs(n.z) < 0.9 else Vector((1.0, 0.0, 0.0))
-        tangent = n.cross(up).normalized()
-        bitangent = n.cross(tangent).normalized()
+        tangent = cast(Vector, n.cross(up)).normalized()
+        bitangent = cast(Vector, n.cross(tangent)).normalized()
 
         for i in range(count):
             u = (i + 0.5) / count

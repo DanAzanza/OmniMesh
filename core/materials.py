@@ -301,14 +301,25 @@ class SemanticTextureAuditor:
                 img: Any = getattr(node, "image", None)
                 if not cls.is_image_valid(img):
                     # Trace downstream connections (including through demux/mix/math nodes)
-                    def resolve_downstream_targets(start_node: Any, visited: set[int]) -> list[tuple[Any, Any, Any]]:
+                    def resolve_downstream_targets(
+                        start_node: bpy.types.Node, visited: set[int]
+                    ) -> list[tuple[bpy.types.NodeLink, bpy.types.NodeSocket | None, bpy.types.Node | None]]:
                         resolved = []
                         for out_s in start_node.outputs:
-                            for lnk in list(out_s.links):
+                            out_links = out_s.links
+                            if not out_links:
+                                continue
+                            for lnk in list(out_links):
                                 t_node = lnk.to_node
                                 t_sock = lnk.to_socket
                                 n_type = t_node.type if t_node else ""
-                                if n_type in ("SEPARATE_COLOR", "COMBINE_COLOR", "MIX", "MATH", "NORMAL_MAP"):
+                                if t_node is not None and n_type in (
+                                    "SEPARATE_COLOR",
+                                    "COMBINE_COLOR",
+                                    "MIX",
+                                    "MATH",
+                                    "NORMAL_MAP",
+                                ):
                                     if id(t_node) not in visited:
                                         visited.add(id(t_node))
                                         resolved.extend(resolve_downstream_targets(t_node, visited))
@@ -317,25 +328,26 @@ class SemanticTextureAuditor:
 
                     downstream = resolve_downstream_targets(node, {id(node)})
                     for link, target_sock, target_node in downstream:
-                        sock_name = str(target_sock.name if target_sock else "").lower()
+                        sock_any: Any = target_sock
+                        sock_name = str(sock_any.name if sock_any else "").lower()
                         node_type = target_node.type if target_node else ""
 
                         if "normal" in sock_name or node_type == "NORMAL_MAP":
                             if link in links:
                                 links.remove(link)
                         elif "roughness" in sock_name:
-                            if hasattr(target_sock, "default_value"):
-                                target_sock.default_value = 0.5
+                            if hasattr(sock_any, "default_value"):
+                                sock_any.default_value = 0.5
                             if link in links:
                                 links.remove(link)
                         elif "metallic" in sock_name:
-                            if hasattr(target_sock, "default_value"):
-                                target_sock.default_value = 0.0
+                            if hasattr(sock_any, "default_value"):
+                                sock_any.default_value = 0.0
                             if link in links:
                                 links.remove(link)
                         elif "base color" in sock_name or "color" in sock_name:
-                            if hasattr(target_sock, "default_value"):
-                                target_sock.default_value = (0.8, 0.8, 0.8, 1.0)
+                            if hasattr(sock_any, "default_value"):
+                                sock_any.default_value = (0.8, 0.8, 0.8, 1.0)
                             if link in links:
                                 links.remove(link)
                         else:
@@ -459,7 +471,7 @@ class MaterialOptimizer:
         area_threshold_pct: float = 0.5,
         protect_semantic_materials: bool = True,
         area_crit: float = 0.0,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> dict[str, Any]:
         """
         Reassigns surface regions occupying < area_threshold_pct of total surface area

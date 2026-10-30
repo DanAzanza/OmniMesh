@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ class SpatialGridSpec:
             z_cut_planes=z_planes,
         )
 
-    def get_cell_index(self, world_co: tuple[float, float, float] | Any) -> tuple[int, int, int]:
+    def get_cell_index(self, world_co: Sequence[float] | Vector) -> tuple[int, int, int]:
         """Calculates discrete integer cell bucket coordinates (ix, iy, iz) for a world point."""
         min_x, min_y, min_z = self.min_corner
         ix = int((world_co[0] - min_x) / self.cell_size_x) if self.cell_size_x > 1e-5 else 0
@@ -240,7 +240,7 @@ class MeshChunkSlicer:
         weld_dist: float = 1e-5,
         partitioning_mode: str = "UNIFORM_GRID",
         target_cluster_polys: int = 50000,
-    ) -> list[Any]:
+    ) -> list[bpy.types.Object]:
         """
         Slices source mesh along grid planes using BMesh, extracts non-empty cell chunks,
         re-centers local pivots, marks boundary seams, and transfers exact split normals.
@@ -389,7 +389,7 @@ class MeshChunkSlicer:
         chunk_name: str,
         target_collection: bpy.types.Collection | None,
         grid_spec: SpatialGridSpec,
-    ) -> Any:
+    ) -> bpy.types.Object | None:
         """Extracts specified face indices from sliced BMesh into an independent mesh object."""
         if not bpy or not bmesh:
             return None

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from .chunk_merger import HLODClusterMerger
+from .chunking import SpatialGridSpec
 from .decimator import MeshDecimator
 
 if TYPE_CHECKING:
@@ -48,7 +49,9 @@ class RecursiveHLODManager:
     """
 
     @staticmethod
-    def extract_cell_coordinates(obj: bpy.types.Object | None, grid_spec: Any = None) -> tuple[int, int, int]:
+    def extract_cell_coordinates(
+        obj: bpy.types.Object | None, grid_spec: SpatialGridSpec | None = None
+    ) -> tuple[int, int, int]:
         """
         Extracts (ix, iy, iz) discrete grid coordinates from object custom properties,
         object name patterns (e.g. Chunk_X1_Y2_Z0 or Cluster_X0-1_Y0-1), or bounding box centroid.
@@ -101,9 +104,9 @@ class RecursiveHLODManager:
     def group_chunks_quadtree(
         cls,
         chunk_objs: list[bpy.types.Object],
-        grid_spec: Any = None,
+        grid_spec: SpatialGridSpec | None = None,
         stride: int = 2,
-    ) -> dict[tuple[int, int, int], list[Any]]:
+    ) -> dict[tuple[int, int, int], list[bpy.types.Object]]:
         """
         Groups chunk meshes into 2x2 (or 2x2x2) parent clusters using normalized stride-2 reduction.
         Handles non-power-of-two (odd) grid dimensions gracefully.
@@ -121,7 +124,7 @@ class RecursiveHLODManager:
     @classmethod
     def build_hierarchical_tier(
         cls,
-        parent_clusters: dict[tuple[int, int, int], list[Any]],
+        parent_clusters: dict[tuple[int, int, int], list[bpy.types.Object]],
         base_name: str,
         tier_index: int,
         target_collection: bpy.types.Collection | None,
@@ -131,7 +134,7 @@ class RecursiveHLODManager:
         use_voxel_shell: bool = False,
         voxel_size: float = 0.5,
         context: bpy.types.Context | None = None,
-    ) -> list[Any]:
+    ) -> list[bpy.types.Object]:
         """
         Merges chunk clusters for a specific HLOD tier, recents pivots stationary,
         decimates, and optionally seals into a voxel shell on terminal tier.

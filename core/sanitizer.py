@@ -40,47 +40,15 @@ if TYPE_CHECKING:
     import bmesh
     import bpy
     import mathutils
-    from mathutils import Vector
 else:
     try:
         import bmesh
         import bpy
         import mathutils
-        from mathutils import Vector
     except ImportError:
         bpy = None
         bmesh = None
         mathutils = None
-
-    class Vector(tuple):  # type: ignore
-        """Fallback Vector for headless unit tests."""
-
-        def __new__(cls, coords: Any) -> Vector:
-            return super().__new__(cls, tuple(float(x) for x in coords))
-
-        @property
-        def x(self) -> float:
-            return self[0]
-
-        @property
-        def y(self) -> float:
-            return self[1]
-
-        @property
-        def z(self) -> float:
-            return self[2]
-
-        @property
-        def length(self) -> float:
-            import math
-
-            return math.sqrt(self[0] * self[0] + self[1] * self[1] + self[2] * self[2])
-
-        def dot(self, other: Any) -> float:
-            return self[0] * other[0] + self[1] * other[1] + self[2] * other[2]
-
-        def __sub__(self, other: Any) -> Vector:
-            return Vector((self[0] - other[0], self[1] - other[1], self[2] - other[2]))
 
 
 BMESH_INSPECTION_ERRORS = (AttributeError, KeyError, IndexError, ValueError, TypeError, ReferenceError)

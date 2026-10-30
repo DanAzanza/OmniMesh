@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 class NormalManager:
     @staticmethod
-    def ensure_sharp_edge_attribute(mesh: bpy.types.Mesh | None) -> Any:
+    def ensure_sharp_edge_attribute(mesh: bpy.types.Mesh | None) -> bpy.types.Attribute | None:
         """
         Ensures the 'sharp_edge' boolean edge attribute exists on the mesh data-block,
         which is required in Blender 4.1+ and 5.x for custom normal and auto-smooth shading.

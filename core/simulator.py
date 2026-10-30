@@ -5,7 +5,7 @@ Core Engine for Live Viewport LOD Simulator & Camera Distance Evaluation.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 if TYPE_CHECKING:
     import bpy
@@ -21,7 +21,9 @@ else:
 
 
 def calculate_effective_distance_pure(
-    cam_pos: tuple[float, float, float] | Any, center: tuple[float, float, float] | Any, radius: float
+    cam_pos: Sequence[float] | Vector | object,
+    center: Sequence[float] | Vector | object,
+    radius: float,
 ) -> float:
     """
     Near-point conservative distance solver:
@@ -109,12 +111,18 @@ def evaluate_lod_tier_index_pure(
 
 
 def extract_viewport_camera_params(
-    space_3d: Any, region_3d: Any, region: Any, scene: bpy.types.Scene | None
-) -> tuple[Any, float, bool]:
+    space_3d_in: bpy.types.SpaceView3D | object | None,
+    region_3d_in: bpy.types.RegionView3D | object | None,
+    region_in: bpy.types.Region | object | None,
+    scene: bpy.types.Scene | None,
+) -> tuple[Vector | tuple[float, float, float], float, bool]:
     """
     Extracts camera world position, vertical FOV (rad), and perspective status.
     Supports Perspective Free Viewport, Orthographic Free Viewport, and Scene Camera.
     """
+    space_3d: Any = space_3d_in
+    region_3d: Any = region_3d_in
+    region: Any = region_in
     if not region_3d:
         if scene and scene.camera:
             cam_pos = scene.camera.matrix_world.translation.copy()
@@ -304,7 +312,7 @@ class LODSimulatorEngine:
     def update_simulation_tick(
         cls,
         context: bpy.types.Context | None,
-        cam_pos: Any,
+        cam_pos: Sequence[float] | Vector | object,
         fov_v_rad: float,
         is_perspective: bool,
         virtual_override_pct: float | None = None,
@@ -326,8 +334,8 @@ class LODSimulatorEngine:
                 eff_dist = record.radius / max(0.001, (virtual_override_pct / 100.0) * math.tan(fov_v_rad / 2.0))
                 screen_pct = virtual_override_pct
             else:
-                c = record.center
-                cp = cam_pos
+                c: Any = record.center
+                cp: Any = cam_pos
                 d_eff = calculate_effective_distance_pure((cp.x, cp.y, cp.z), (c.x, c.y, c.z), record.radius)
                 eff_dist = d_eff
 

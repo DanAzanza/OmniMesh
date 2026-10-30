@@ -6,7 +6,12 @@ Provides projection solvers, PCA bounding extents, and coupled SSE tolerances.
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Sequence
+
+try:
+    from .compat import Vector
+except (ImportError, ValueError):
+    from core.compat import Vector
 
 try:
     import mathutils
@@ -38,7 +43,9 @@ def compute_vertical_fov(camera_angle_rad: float, aspect_ratio: float, sensor_fi
         return 2.0 * math.atan(max(1e-4, tan_v))
 
 
-def compute_bounding_sphere(coords: list[Any]) -> tuple[Any, float]:
+def compute_bounding_sphere(
+    coords: Sequence[Sequence[float] | Vector | None],
+) -> tuple[Vector | tuple[float, float, float], float]:
     """
     Computes the bounding sphere center and radius for a collection of 3D points.
     Uses symmetric AABB extents to prevent dense vertex clusters (e.g. cockpits/bevels)

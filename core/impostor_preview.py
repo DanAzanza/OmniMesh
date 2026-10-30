@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ else:
         Matrix = None  # type: ignore
 
 
-def safe_load_image(filepath: str) -> Optional[Any]:
+def safe_load_image(filepath: str) -> Optional[bpy.types.Image]:
     """
     Loads an image from filepath while preventing duplicate datablocks in Blender.
     Re-uses existing image if already loaded with matching absolute path.
@@ -65,7 +65,7 @@ def create_octahedral_preview_material(
     orm_path: Optional[str] = None,
     grid_size: int = 8,
     target_engine: str = "UE5",
-) -> Optional[Any]:
+) -> Optional[bpy.types.Material]:
     """
     Constructs a native Blender Shader Node material that evaluates the upper-hemisphere
     octahedral projection dynamically on the GPU in real-time.
@@ -317,8 +317,8 @@ def create_octahedral_preview_material(
     if normal_path and os.path.exists(normal_path):
         norm_img = safe_load_image(normal_path)
         if norm_img:
-            if hasattr(norm_img, "colorspace_settings"):
-                norm_img.colorspace_settings.name = "Non-Color"
+            if hasattr(norm_img, "colorspace_settings") and norm_img.colorspace_settings:
+                cast(Any, norm_img.colorspace_settings).name = "Non-Color"
 
             tex_norm = nodes.new(type="ShaderNodeTexImage")
             tex_norm.image = norm_img
@@ -354,8 +354,8 @@ def create_octahedral_preview_material(
     if orm_path and os.path.exists(orm_path):
         orm_img = safe_load_image(orm_path)
         if orm_img:
-            if hasattr(orm_img, "colorspace_settings"):
-                orm_img.colorspace_settings.name = "Non-Color"
+            if hasattr(orm_img, "colorspace_settings") and orm_img.colorspace_settings:
+                cast(Any, orm_img.colorspace_settings).name = "Non-Color"
 
             tex_orm = nodes.new(type="ShaderNodeTexImage")
             tex_orm.image = orm_img
@@ -377,7 +377,7 @@ def setup_impostor_tracking(
     proxy_obj: bpy.types.Object | None,
     camera_obj: Optional[bpy.types.Object] = None,
     context: bpy.types.Context | None = None,
-) -> Optional[Any]:
+) -> Optional[bpy.types.Constraint]:
     """
     Configures a TRACK_TO constraint on the proxy quad to orient continuously toward the camera.
     """
@@ -408,7 +408,7 @@ def setup_impostor_tracking(
 
 def setup_preview_turntable(
     cam_obj: bpy.types.Object | None,
-    target_center: Any,
+    target_center: Sequence[float] | Vector,
     radius: float,
     height: float,
     num_frames: int = 72,
@@ -437,7 +437,7 @@ def setup_preview_turntable(
     if cam_obj.animation_data:
         cam_obj.animation_data_clear()
 
-    center_vec = Vector(target_center) if Vector else target_center
+    center_vec: Any = Vector((target_center[0], target_center[1], target_center[2])) if Vector else target_center
 
     for f in range(1, num_frames + 1):
         scene.frame_set(f)
@@ -446,7 +446,7 @@ def setup_preview_turntable(
         cam_y = center_vec[1] - radius * math.cos(angle)
         cam_z = center_vec[2] + height
 
-        cam_loc = Vector((cam_x, cam_y, cam_z)) if Vector else (cam_x, cam_y, cam_z)
+        cam_loc: Any = Vector((cam_x, cam_y, cam_z)) if Vector else (cam_x, cam_y, cam_z)
         cam_obj.location = cam_loc
 
         dir_vec = center_vec - cam_loc

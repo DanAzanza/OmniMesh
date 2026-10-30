@@ -107,6 +107,35 @@ def test_tag_action_category(monkeypatch):
     assert mock_act["_omnimesh_guid"] != guid1
 
 
+def test_blend_data_injection_without_global_bpy_data(monkeypatch):
+    """Verify scan_asset_animations and tag_action_category resolve explicit blend_data without global bpy.data."""
+    flap_act = MockAction("Flap_Deploy", (0.0, 90.0))
+    armature = MagicMock()
+    armature.name = "Wing_Armature"
+    armature.animation_data.action = flap_act
+    armature.animation_data.nla_tracks = []
+
+    root_coll = MagicMock()
+    root_coll.all_objects = [armature]
+
+    injected_blend_data = MagicMock()
+    injected_blend_data.collections.get.side_effect = lambda name: root_coll if name == "Aircraft" else None
+    injected_blend_data.actions.get.side_effect = lambda name: flap_act if name == "Flap_Deploy" else None
+
+    # Disable global bpy.data access completely
+    monkeypatch.setattr(am, "bpy", None)
+
+    actions = scan_asset_animations(None, "Aircraft", blend_data=injected_blend_data)
+    assert len(actions) == 1
+    assert actions[0]["name"] == "Flap_Deploy"
+    assert actions[0]["length"] == 90
+
+    tagged = tag_action_category("Flap_Deploy", "FLIGHT_CONTROL", blend_data=injected_blend_data)
+    assert tagged is True
+    assert flap_act["_omnimesh_category"] == "FLIGHT_CONTROL"
+    assert tag_action_category("Missing_Action", "CUSTOM", blend_data=injected_blend_data) is False
+
+
 # =============================================================================
 # MSFS MODELINFO XML GENERATION TESTS
 # =============================================================================

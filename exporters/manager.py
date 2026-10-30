@@ -5,7 +5,7 @@ OmniMesh Exporter Manager & Master Engine Dispatcher.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     import bpy
@@ -47,7 +47,7 @@ class ExporterManager:
         target_engine: str,
         export_dir: str,
         asset_name: str,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> tuple[bool, str]:
         """Dispatches export request to the registered engine exporter."""
         exporter = cls.get_exporter(target_engine)
@@ -57,7 +57,7 @@ class ExporterManager:
         try:
             # Support full project package option for MSFS 2024
             if target_engine == "MSFS_2024" and kwargs.get("full_package", True) and issubclass(exporter, MSFSExporter):
-                pkg_base = kwargs.get("package_name") or asset_name
+                pkg_base = str(kwargs.get("package_name") or asset_name)
                 return exporter.export_project_package(context, export_dir, pkg_base, **kwargs)
 
             return exporter.export_asset(context, export_dir, asset_name, **kwargs)

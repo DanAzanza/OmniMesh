@@ -183,7 +183,7 @@ def configure_game_scene_settings(
 
 
 def _apply_viewport_space_settings(
-    space: Any,
+    space_in: bpy.types.SpaceView3D | object,
     *,
     clip_start: float,
     clip_end: float,
@@ -192,6 +192,7 @@ def _apply_viewport_space_settings(
     enable_backface_culling: bool,
 ) -> None:
     """Applies clipping and overlay/shading options to a single SpaceView3D instance."""
+    space: Any = space_in
     if hasattr(space, "clip_start"):
         space.clip_start = float(clip_start)
     if hasattr(space, "clip_end"):
@@ -216,7 +217,7 @@ def setup_asset_collections(
     asset_name: str,
     options: AssetCollectionOptions | None = None,
     *,
-    bpy_module: Any = None,
+    bpy_module: object = None,
 ) -> dict[str, Any]:
     """
     Creates or retrieves the standardized OmniMesh asset collection hierarchy:
@@ -227,7 +228,7 @@ def setup_asset_collections(
             ├── {AssetName}_Helpers (COLOR_03)
             └── {AssetName}_Config (COLOR_06) [Optional]
     """
-    _bpy = bpy_module or bpy
+    _bpy: Any = bpy_module or bpy
     if not _bpy or not context:
         return {}
 
@@ -257,7 +258,7 @@ def setup_asset_collections(
     collections["root"] = root_col
 
     # Helper function for nested sub-collections
-    def _ensure_sub_collection(role_key: str, sub_name: str) -> Any:
+    def _ensure_sub_collection(role_key: str, sub_name: str) -> bpy.types.Collection | None:
         sub_col = _bpy.data.collections.get(sub_name)
         if not sub_col:
             sub_col = _bpy.data.collections.new(sub_name)

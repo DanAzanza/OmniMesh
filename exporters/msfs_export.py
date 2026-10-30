@@ -9,6 +9,11 @@ Features:
 
 from __future__ import annotations
 
+try:
+    from ..core.exceptions import OmniMeshError
+except (ImportError, ValueError):
+    from core.exceptions import OmniMeshError
+
 import logging
 import os
 import re
@@ -118,7 +123,7 @@ class MSFSExporter(EngineExporterBase):
         context: bpy.types.Context | None,
         export_dir: str,
         asset_name: str,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> tuple[bool, str]:
         if not bpy or not context:
             return False, "Blender bpy not available."
@@ -208,7 +213,17 @@ class MSFSExporter(EngineExporterBase):
                         export_animations=True,
                     )
                     exported_tiers += 1
-                except Exception as e:
+                except (
+                    OmniMeshError,
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    AttributeError,
+                    LookupError,
+                    OSError,
+                    ReferenceError,
+                    ZeroDivisionError,
+                ) as e:
                     return False, f"Failed to export glTF for LOD{i}: {str(e)}"
 
             if exported_tiers == 0:
@@ -269,7 +284,7 @@ class MSFSExporter(EngineExporterBase):
         context: bpy.types.Context | None,
         export_dir: str,
         base_asset_name: str,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> tuple[bool, str]:
         """Exports a complete multi-model aircraft package adhering to MSFS SDK layout."""
         if not bpy or not context:

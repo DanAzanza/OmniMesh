@@ -46,7 +46,7 @@ class ImpostorShaderHarness:
         target_engine: str = "UE5",
         radius: float = 1.0,
         cam_distance: float = 2.5,
-    ) -> Optional[Any]:
+    ) -> Optional[bpy.types.Material]:
         """
         Creates an ephemeral unlit material for baking a specific PBR or depth pass.
         Preserves alpha cutouts from the source material across all passes.
@@ -186,18 +186,18 @@ class ImpostorShaderHarness:
 
     @staticmethod
     def _duplicate_link_to_target(
-        link: Any,
-        target_nodes: Any,
-        target_links: Any,
-        target_socket: Any,
+        link: bpy.types.NodeLink,
+        target_nodes: bpy.types.Nodes,
+        target_links: bpy.types.NodeLinks,
+        target_socket: bpy.types.NodeSocket,
     ) -> None:
         """Duplicates an upstream texture node to feed unlit emission or cutout alpha sockets."""
-        from_node = link.from_node
+        from_node: Any = link.from_node
         if getattr(from_node, "type", "") == "TEX_IMAGE" and getattr(from_node, "image", None):
-            tex = target_nodes.new(type="ShaderNodeTexImage")
+            tex: Any = target_nodes.new(type="ShaderNodeTexImage")
             tex.image = from_node.image
             tex.location = (-250, 0)
-            from_socket_name = link.from_socket.name
+            from_socket_name = link.from_socket.name if link.from_socket else "Color"
             if from_socket_name in tex.outputs:
                 target_links.new(tex.outputs[from_socket_name], target_socket)
             elif "Alpha" in getattr(target_socket, "name", "") and "Alpha" in tex.outputs:

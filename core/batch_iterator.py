@@ -10,6 +10,8 @@ Provides:
 
 from __future__ import annotations
 
+from .exceptions import OmniMeshError
+
 from dataclasses import dataclass
 import gc
 import logging
@@ -138,7 +140,17 @@ class BatchMeshIterator:
                     success=True,
                 )
 
-            except Exception as exc:
+            except (
+                OmniMeshError,
+                RuntimeError,
+                ValueError,
+                TypeError,
+                AttributeError,
+                LookupError,
+                OSError,
+                ReferenceError,
+                ZeroDivisionError,
+            ) as exc:
                 logger.warning("Batch processing failed on mesh '%s': %s", name, exc)
                 yield BatchProgress(
                     index=idx + 1,

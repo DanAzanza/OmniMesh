@@ -92,7 +92,7 @@ class TextureChannelPacker:
             # Dominant Resolution Rule: Calculate maximum resolution among linked textures for this map
             found_sizes: list[tuple[int, int]] = []
 
-            def _get_dim(im: Any) -> tuple[int, int]:
+            def _get_dim(im: bpy.types.Image | object | None) -> tuple[int, int]:
                 sz = getattr(im, "size", (0, 0))
                 return (int(sz[0]), int(sz[1]))
 

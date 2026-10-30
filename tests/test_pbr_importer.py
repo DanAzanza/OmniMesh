@@ -170,12 +170,12 @@ def test_ocio_colorspace_resolver_safe_mock():
 def test_get_mix_rgba_socket_duplicate_names_guard():
     """Verify get_mix_rgba_socket avoids returning Float sockets with identical names 'A' / 'B'."""
 
-    class DummySocket:
+    class DummySocket(_MockBase):
         def __init__(self, name: str, sock_type: str):
             self.name = name
             self.type = sock_type
 
-    class DummyMixNode:
+    class DummyMixNode(_MockBase):
         def __init__(self):
             self.inputs = [
                 DummySocket("Factor", "VALUE"),

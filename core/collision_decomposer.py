@@ -6,61 +6,24 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, List, Tuple
 
 import numpy as np
 
+from .compat import Vector
+
 if TYPE_CHECKING:
     import bmesh
     import bpy
-    from mathutils import Vector
     from mathutils.bvhtree import BVHTree
 else:
     try:
         import bmesh
-        from mathutils import Vector
         from mathutils.bvhtree import BVHTree
     except ImportError:
-        bmesh = None  # type: ignore
-        BVHTree = None  # type: ignore
-
-    class Vector(list):  # type: ignore
-        def __init__(self, iterable: Any):
-            super().__init__([float(x) for x in iterable])
-
-        @property
-        def x(self) -> float:
-            return self[0]
-
-        @property
-        def y(self) -> float:
-            return self[1]
-
-        @property
-        def z(self) -> float:
-            return self[2]
-
-        @property
-        def length(self) -> float:
-            return float(math.sqrt(self[0] ** 2 + self[1] ** 2 + self[2] ** 2))
-
-        def normalized(self) -> Vector:
-            v_len = self.length
-            if v_len < 1e-8:
-                return Vector((0.0, 0.0, 1.0))
-            return Vector((self[0] / v_len, self[1] / v_len, self[2] / v_len))
-
-        def __mul__(self, scalar: Any) -> Vector:
-            return Vector((self[0] * float(scalar), self[1] * float(scalar), self[2] * float(scalar)))
-
-        def __rmul__(self, scalar: Any) -> Vector:
-            return self.__mul__(scalar)
-
-        def __truediv__(self, scalar: Any) -> Vector:
-            return Vector((self[0] / float(scalar), self[1] / float(scalar), self[2] / float(scalar)))
-
-        def __neg__(self) -> Vector:
-            return Vector((-self[0], -self[1], -self[2]))
+        bmesh = None  # type: ignore[assignment]
+        BVHTree = None  # type: ignore[assignment]
 
 
 logger = logging.getLogger(__name__)
@@ -74,7 +37,7 @@ class CollisionDecomposer:
     """
 
     @staticmethod
-    def compute_pca_splitting_plane(coords: np.ndarray) -> Tuple[Any, Any]:
+    def compute_pca_splitting_plane(coords: np.ndarray) -> Tuple[Vector, Vector]:
         """
         Calculates geometric centroid and primary principal axis (normal) via SVD.
         """
@@ -91,6 +54,8 @@ class CollisionDecomposer:
         try:
             _, _, vh = np.linalg.svd(centered)
             normal_vec = Vector(vh[0]).normalized()
+            if normal_vec.length < 1e-8:
+                normal_vec = Vector((0.0, 0.0, 1.0))
             return centroid_vec, normal_vec
         except (np.linalg.LinAlgError, ValueError) as exc:
             logger.debug("SVD decomposition fallback: %s", exc)
@@ -227,7 +192,7 @@ class CollisionDecomposer:
         return len(bm.verts) >= 4
 
     @staticmethod
-    def _purge_hull_interior_geom(bm: bmesh.types.BMesh, to_delete: list[Any]) -> None:
+    def _purge_hull_interior_geom(bm: bmesh.types.BMesh, to_delete: Sequence[object]) -> None:
         """Two-pass deletion of interior faces and unused vertices to ensure clean BVH indexing."""
         faces_to_del: list[Any] = [f for f in to_delete if bmesh and isinstance(f, bmesh.types.BMFace) and f.is_valid]
         if faces_to_del:
@@ -299,7 +264,7 @@ class CollisionDecomposer:
         max_verts_per_hull: int = 32,
         concavity_threshold: float = 0.05,
         bm_source: bmesh.types.BMesh | None = None,
-    ) -> List[Any]:
+    ) -> List[bmesh.types.BMesh]:
         """
         Hierarchical Concavity-Driven Convex Decomposition (ACD).
         Returns list of hardened BMesh objects representing convex collision hulls.
@@ -352,7 +317,7 @@ class CollisionDecomposer:
 
         concavity_cache: dict[int, float] = {}
 
-        def _get_concavity(cl: Any) -> float:
+        def _get_concavity(cl: bmesh.types.BMesh) -> float:
             c_key = id(cl)
             if c_key in concavity_cache:
                 return concavity_cache[c_key]
@@ -361,7 +326,8 @@ class CollisionDecomposer:
                 return 0.0
             bm_test = cl.copy()
             try:
-                res_hull = bmesh.ops.convex_hull(bm_test, input=bm_test.verts[:], use_existing_faces=False)
+                hull_input: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = list(bm_test.verts)
+                res_hull = bmesh.ops.convex_hull(bm_test, input=hull_input, use_existing_faces=False)
                 to_del = res_hull.get("geom_unused", []) + res_hull.get("geom_interior", [])
                 if to_del:
                     cls._purge_hull_interior_geom(bm_test, to_del)
@@ -372,6 +338,7 @@ class CollisionDecomposer:
             finally:
                 bm_test.free()
 
+        decomposition_succeeded = False
         try:
             while (len(clusters) + len(completed_clusters)) < k_target:
                 worst_idx = -1
@@ -390,6 +357,9 @@ class CollisionDecomposer:
                 concavity_cache.pop(id(target_cluster), None)
                 coords = np.array([v.co for v in target_cluster.verts], dtype=np.float64)
                 split_origin, split_normal = cls.compute_pca_splitting_plane(coords)
+                origin_co = (split_origin.x, split_origin.y, split_origin.z)
+                normal_pos = (split_normal.x, split_normal.y, split_normal.z)
+                normal_neg = (-split_normal.x, -split_normal.y, -split_normal.z)
 
                 child_a = target_cluster.copy()
                 child_b = target_cluster.copy()
@@ -398,16 +368,16 @@ class CollisionDecomposer:
                 bmesh.ops.bisect_plane(
                     child_a,
                     geom=child_a.verts[:] + child_a.edges[:] + child_a.faces[:],
-                    plane_co=split_origin,
-                    plane_no=split_normal,
+                    plane_co=origin_co,
+                    plane_no=normal_pos,
                     clear_outer=True,
                 )
                 # Slice child B (inverted plane normal)
                 bmesh.ops.bisect_plane(
                     child_b,
                     geom=child_b.verts[:] + child_b.edges[:] + child_b.faces[:],
-                    plane_co=split_origin,
-                    plane_no=-split_normal,
+                    plane_co=origin_co,
+                    plane_no=normal_neg,
                     clear_outer=True,
                 )
 
@@ -443,27 +413,28 @@ class CollisionDecomposer:
 
             # Transfer ownership of successfully created final_hulls
             clusters = []
+            decomposition_succeeded = True
             return final_hulls
 
-        except Exception:
-            if child_a is not None:
-                try:
-                    child_a.free()
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed freeing child_a BMesh: %s", exc)
-            if child_b is not None:
-                try:
-                    child_b.free()
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed freeing child_b BMesh: %s", exc)
-            if target_cluster is not None:
-                try:
-                    target_cluster.free()
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed freeing target_cluster BMesh: %s", exc)
-            for c in clusters + completed_clusters:
-                try:
-                    c.free()
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed freeing cluster BMesh: %s", exc)
-            raise
+        finally:
+            if not decomposition_succeeded:
+                if child_a is not None:
+                    try:
+                        child_a.free()
+                    except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        logger.debug("Failed freeing child_a BMesh: %s", exc)
+                if child_b is not None:
+                    try:
+                        child_b.free()
+                    except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        logger.debug("Failed freeing child_b BMesh: %s", exc)
+                if target_cluster is not None:
+                    try:
+                        target_cluster.free()
+                    except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        logger.debug("Failed freeing target_cluster BMesh: %s", exc)
+                for c in clusters + completed_clusters:
+                    try:
+                        c.free()
+                    except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        logger.debug("Failed freeing cluster BMesh: %s", exc)

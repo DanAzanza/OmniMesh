@@ -47,7 +47,7 @@ class CollisionManager:
         target_collection_name: str = "",
         target_engine: str = "",
         scene: bpy.types.Scene | None = None,
-    ) -> List[Any]:
+    ) -> List[bpy.types.Object]:
         if not bpy or not mesh_objs:
             return []
 

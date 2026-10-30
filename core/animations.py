@@ -6,10 +6,17 @@ stripping IK controllers, sanitizing timecodes, and isolating root motion for UE
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import logging
 import math
 import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+from .compat import (
+    ensure_action_fcurve,
+    extract_action_fcurves,
+    safe_invert_matrix as _safe_invert_matrix,
+)
 
 if TYPE_CHECKING:
     import bpy
@@ -25,24 +32,6 @@ else:
         Vector = None
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_invert_matrix(mat: Any) -> Any:
-    """Safely inverts a transform matrix, guarding against singular / zero-determinant matrices."""
-    if mat is None:
-        return None
-    if hasattr(mat, "inverted"):
-        try:
-            if hasattr(mat, "determinant"):
-                det = mat.determinant()
-                if not math.isfinite(det) or abs(det) < 1e-8:
-                    logger.warning("Singular matrix detected during animation inversion (det=%s). Returning copy.", det)
-                    return mat.copy() if hasattr(mat, "copy") else mat
-            return mat.inverted()
-        except (ValueError, AttributeError, RuntimeError) as exc:
-            logger.warning("Animation matrix inversion failed (%s). Returning copy.", exc)
-            return mat.copy() if hasattr(mat, "copy") else mat
-    return mat
 
 
 class AnimationRigSanitizer:
@@ -67,100 +56,16 @@ class AnimationRigSanitizer:
         return [b.name for b in arm_data.bones if getattr(b, "use_deform", True)]
 
     @classmethod
-    def get_action_fcurves(cls, action: bpy.types.Action | None) -> List[Any]:
+    def get_action_fcurves(cls, action: bpy.types.Action | None) -> List[bpy.types.FCurve]:
         """Extracts all F-Curves from an Action, supporting legacy Actions and Blender 5.2+ Slotted/Layered Actions."""
-        if not action:
-            return []
-        act_any: Any = action
-        raw_fcurves = []
-        if hasattr(act_any, "fcurves") and act_any.fcurves is not None:
-            try:
-                raw_fcurves.extend(list(act_any.fcurves))
-            except (AttributeError, RuntimeError, ReferenceError) as exc:
-                logger.debug("Legacy fcurves extraction skipped: %s", exc)
-        if hasattr(act_any, "layers"):
-            try:
-                for layer in getattr(act_any, "layers", []):
-                    for strip in getattr(layer, "strips", []):
-                        for cb in getattr(strip, "channelbags", []):
-                            if hasattr(cb, "fcurves") and cb.fcurves is not None:
-                                raw_fcurves.extend(list(cb.fcurves))
-            except (AttributeError, RuntimeError, ReferenceError) as exc:
-                logger.debug("Layered fcurves extraction skipped: %s", exc)
-
-        # Deduplicate while preserving order using composite data_path and array_index
-        seen = set()
-        unique_fcurves = []
-        for fc in raw_fcurves:
-            fc_key = (getattr(fc, "data_path", ""), getattr(fc, "array_index", 0))
-            if fc_key not in seen:
-                seen.add(fc_key)
-                unique_fcurves.append(fc)
-        return unique_fcurves
+        return extract_action_fcurves(action)
 
     @classmethod
     def create_action_fcurve(
         cls, action: bpy.types.Action | None, data_path: str, index: int, slot_name: str = "ArmatureSlot"
-    ) -> Any:
+    ) -> bpy.types.FCurve | None:
         """Creates an FCurve on an Action, supporting both legacy Actions and Blender 5.2+ Slotted/Layered Actions."""
-        if not action:
-            return None
-        act_any: Any = action
-
-        # 1. Try legacy action.fcurves.new if available
-        if hasattr(act_any, "fcurves") and act_any.fcurves is not None:
-            try:
-                return act_any.fcurves.new(data_path=data_path, index=index)
-            except (RuntimeError, TypeError, AttributeError) as exc:
-                logger.debug("action.fcurves.new failed, attempting layered fallback: %s", exc)
-
-        # 2. Blender 5.2+ Slotted / Layered Actions fallback
-        if hasattr(act_any, "layers") or hasattr(act_any, "slots"):
-            try:
-                slot = None
-                if hasattr(act_any, "slots"):
-                    if not act_any.slots:
-                        try:
-                            slot = act_any.slots.new(id_type="OBJECT", name=slot_name)
-                        except TypeError:
-                            try:
-                                slot = act_any.slots.new(name=slot_name)
-                            except TypeError:
-                                slot = act_any.slots.new(slot_name)
-                    else:
-                        slot = act_any.slots[0]
-
-                if not act_any.layers:
-                    layer = act_any.layers.new(name="BaseLayer")
-                else:
-                    layer = act_any.layers[0]
-
-                if not layer.strips:
-                    strip: Any = layer.strips.new(type="KEYFRAME")
-                else:
-                    strip = layer.strips[0]
-
-                cb = None
-                if hasattr(strip, "channelbag_for_slot") and slot:
-                    cb = strip.channelbag_for_slot(slot)
-
-                if not cb and hasattr(strip, "channelbags"):
-                    for c in strip.channelbags:
-                        if getattr(c, "slot", None) == slot or slot is None:
-                            cb = c
-                            break
-                    if not cb:
-                        if slot:
-                            cb = strip.channelbags.new(slot=slot)
-                        else:
-                            cb = strip.channelbags.new()
-
-                if cb and hasattr(cb, "fcurves"):
-                    return cb.fcurves.new(data_path=data_path, index=index)
-            except (RuntimeError, TypeError, AttributeError) as exc:
-                logger.error("Failed to create slotted FCurve: %s", exc)
-
-        return None
+        return ensure_action_fcurve(action, data_path=data_path, index=index, slot_name=slot_name)
 
     @classmethod
     def validate_action_bounds(cls, action: bpy.types.Action | None) -> Dict[str, Any]:
@@ -301,20 +206,24 @@ class AnimationRigSanitizer:
         return [points[0], points[-1]]
 
     @staticmethod
-    def enforce_quaternion_continuity(rot: Any, prev_rot: Any) -> Any:
+    def enforce_quaternion_continuity(
+        rot: Quaternion | Sequence[float] | None, prev_rot: Quaternion | Sequence[float] | None
+    ) -> Quaternion | Sequence[float] | None:
         """
         Enforces quaternion sign continuity (shortest arc on S^3) between successive frames.
         Flips the quaternion sign if dot(rot, prev_rot) < 0, eliminating 360-degree spin flips.
         """
         if rot is None or prev_rot is None:
             return rot
-        if hasattr(rot, "w") and hasattr(prev_rot, "w"):
-            dot = rot.w * prev_rot.w + rot.x * prev_rot.x + rot.y * prev_rot.y + rot.z * prev_rot.z
+        rot_any: Any = rot
+        prev_any: Any = prev_rot
+        if hasattr(rot_any, "w") and hasattr(prev_any, "w"):
+            dot = rot_any.w * prev_any.w + rot_any.x * prev_any.x + rot_any.y * prev_any.y + rot_any.z * prev_any.z
             if dot < 0.0:
                 if Quaternion:
-                    return Quaternion((-rot.w, -rot.x, -rot.y, -rot.z))
-                elif hasattr(rot, "__iter__"):
-                    return type(rot)([-x for x in rot])
+                    return Quaternion((-rot_any.w, -rot_any.x, -rot_any.y, -rot_any.z))
+                elif hasattr(rot_any, "__iter__"):
+                    return type(rot_any)([-x for x in rot_any])
         elif (
             isinstance(rot, (tuple, list))
             and isinstance(prev_rot, (tuple, list))
@@ -323,7 +232,7 @@ class AnimationRigSanitizer:
         ):
             dot = rot[0] * prev_rot[0] + rot[1] * prev_rot[1] + rot[2] * prev_rot[2] + rot[3] * prev_rot[3]
             if dot < 0.0:
-                return type(rot)([-x for x in rot])
+                return type(rot_any)([-x for x in rot])
         return rot
 
     @classmethod
@@ -334,7 +243,7 @@ class AnimationRigSanitizer:
         action: bpy.types.Action | None,
         bake_step: float = 1.0,
         keyframe_reduction_tolerance: float = 0.0,
-    ) -> Optional[Any]:
+    ) -> Optional[bpy.types.Action]:
         """Bakes evaluated depsgraph world matrices of all deforming bones into a clean FK Action.
 
         Eliminates IK constraints, Spline IK, and Copy Transforms for pristine UE5/Unity export.
@@ -401,6 +310,7 @@ class AnimationRigSanitizer:
 
         # Track previous frame rotations for quaternion sign continuity (prevents 360-degree spin flips)
         prev_rotations: dict[str, Any] = {}
+        bake_succeeded = False
 
         try:
             # Frame-by-frame Depsgraph Evaluation
@@ -447,8 +357,8 @@ class AnimationRigSanitizer:
                         rot.normalize()
 
                     # Enforce quaternion sign continuity (shortest arc on S^3)
-                    rot = cls.enforce_quaternion_continuity(rot, prev_rotations.get(b_name))
-                    prev_rotations[b_name] = rot.copy() if hasattr(rot, "copy") else rot
+                    rot_cont: Any = cls.enforce_quaternion_continuity(rot, prev_rotations.get(b_name))
+                    prev_rotations[b_name] = rot_cont.copy() if hasattr(rot_cont, "copy") else rot_cont
 
                     # Sanitize location
                     safe_loc = [loc[i] if math.isfinite(loc[i]) else 0.0 for i in range(3)]
@@ -457,7 +367,9 @@ class AnimationRigSanitizer:
                         scale[i] if math.isfinite(scale[i]) and abs(scale[i]) > 1e-6 else 1.0 for i in range(3)
                     ]
                     # Sanitize rotation
-                    safe_rot = [rot[i] if math.isfinite(rot[i]) else (1.0 if i == 0 else 0.0) for i in range(4)]
+                    safe_rot = [
+                        rot_cont[i] if math.isfinite(rot_cont[i]) else (1.0 if i == 0 else 0.0) for i in range(4)
+                    ]
 
                     # Add keyframe points
                     for i in range(3):
@@ -494,16 +406,13 @@ class AnimationRigSanitizer:
                         c.update()
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
                         logger.debug("F-Curve update bypassed: %s", exc)
-
-        except Exception as bake_exc:
-            logger.error("Error during animation baking: %s. Cleaning up orphaned action.", bake_exc)
-            if bpy and hasattr(bpy.data, "actions"):
+            bake_succeeded = True
+        finally:
+            if not bake_succeeded and bpy and hasattr(bpy.data, "actions"):
                 try:
                     bpy.data.actions.remove(baked_action, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as clean_exc:
                     logger.debug("Failed removing orphaned action: %s", clean_exc)
-            raise
-        finally:
             scene.frame_set(orig_frame, subframe=orig_subframe)
 
         return baked_action

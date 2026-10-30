@@ -138,8 +138,9 @@ class LOD_OT_generate_impostor(Operator):
             safe_report(self, {"ERROR"}, f"Impostor baking failed: {bake_err}")
             return {"CANCELLED"}
 
-        if baked_maps and hasattr(res, "data") and res.data.materials:
-            imp_mat = res.data.materials[0]
+        res_mesh: Any = getattr(res, "data", None)
+        if baked_maps and res_mesh and res_mesh.materials:
+            imp_mat = res_mesh.materials[0]
             ImpostorManager.bind_baked_textures_to_material(
                 imp_mat,
                 base_color_path=baked_maps.get("BaseColor", ""),

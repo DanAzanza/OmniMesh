@@ -7,7 +7,14 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    _MockBase: type[Any] = object
+
+else:
+    _MockBase = object
 from unittest.mock import MagicMock
 
 import pytest
@@ -352,7 +359,7 @@ def test_smart_replace_and_autofit_geometry(monkeypatch: pytest.MonkeyPatch):
     mock_context = MagicMock()
     mock_bpy = MagicMock()
 
-    class MockMeshObject:
+    class MockMeshObject(_MockBase):
         def __init__(self, name: str, bbox: list[tuple[float, float, float]]):
             self.name = name
             self.type = "MESH"
@@ -375,7 +382,7 @@ def test_smart_replace_and_autofit_geometry(monkeypatch: pytest.MonkeyPatch):
     # Fuselage
     fuselage = MockMeshObject("Fuselage", [(-3.0, -6.0, -0.5), (3.0, 5.0, 2.5)])
 
-    base_meshes = [nose_wheel, left_wheel, right_wheel, fuselage]
+    base_meshes: list[Any] = [nose_wheel, left_wheel, right_wheel, fuselage]
 
     # Mock extract_world_vertices_numpy
     def _mock_extract(obj):
@@ -393,7 +400,7 @@ def test_smart_replace_and_autofit_geometry(monkeypatch: pytest.MonkeyPatch):
     lights_objs: list[Any] = []
     cameras_objs: list[Any] = []
 
-    class MockCol:
+    class MockCol(_MockBase):
         def __init__(self, name: str, o_list: list[Any]):
             self.name = name
             self._list = o_list

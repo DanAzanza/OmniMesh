@@ -8,7 +8,7 @@ export tags for MSFS MouseRects, Unreal Engine Overlap Triggers, and Unity MeshT
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ def create_interaction_volume(
     role: str = "BUTTON",
     size: Sequence[float] = (0.08, 0.08, 0.08),
     parent_obj: Optional[bpy.types.Object] = None,
-) -> Optional[Any]:
+) -> Optional[bpy.types.Object]:
     """
     Spawns a lightweight non-blocking interaction trigger volume into {AssetName}_Interactions.
 

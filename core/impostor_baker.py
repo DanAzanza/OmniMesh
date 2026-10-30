@@ -230,7 +230,7 @@ class ImpostorAtlasBaker:
                 if obj.name not in bake_scene.collection.objects:
                     bake_scene.collection.objects.link(obj)
 
-            cam_obj = ImpostorCameraRig.setup_camera(
+            cam_obj: Any = ImpostorCameraRig.setup_camera(
                 bake_scene, center, radius, ortho_scale, angle_rad=0.0, pitch_rad=0.0
             )
 
@@ -239,9 +239,16 @@ class ImpostorAtlasBaker:
                 col, row = (frame_idx - 1) % grid_size, (frame_idx - 1) // grid_size
                 u, v = (col + 0.5) / float(grid_size), (row + 0.5) / float(grid_size)
                 dir_vec = fn_vec(u, v)
-                cam_obj.location = Vector(center) + Vector(dir_vec) * dist
+                cam_obj.location = (
+                    Vector((center[0], center[1], center[2])) + Vector((dir_vec[0], dir_vec[1], dir_vec[2])) * dist
+                )
                 right, up, forward = ImpostorMath.compute_camera_basis(dir_vec)
-                cam_obj.rotation_euler = Matrix((right, up, -forward)).transposed().to_euler()
+                basis_rows = (
+                    (right.x, right.y, right.z),
+                    (up.x, up.y, up.z),
+                    (-forward.x, -forward.y, -forward.z),
+                )
+                cam_obj.rotation_euler = Matrix(basis_rows).transposed().to_euler()
                 cam_obj.keyframe_insert(data_path="location", frame=frame_idx)
                 cam_obj.keyframe_insert(data_path="rotation_euler", frame=frame_idx)
 
@@ -284,9 +291,9 @@ class ImpostorAtlasBaker:
                             "PNG",
                             "RGBA",
                         )
-                        if hasattr(bake_scene, "view_settings"):
+                        if hasattr(bake_scene, "view_settings") and bake_scene.view_settings:
                             try:
-                                bake_scene.view_settings.view_transform = (
+                                cast(Any, bake_scene.view_settings).view_transform = (
                                     "Standard" if chan_name == "BaseColor" else "Raw"
                                 )
                             except (TypeError, ValueError, AttributeError) as exc:

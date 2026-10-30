@@ -41,7 +41,7 @@ class HLODClusterMerger:
         hlod_name: str,
         target_collection: bpy.types.Collection | None,
         weld_dist: float = 0.002,
-    ) -> Any:
+    ) -> bpy.types.Object | None:
         """
         Combines child chunk objects into a single unified mesh,
         welds seam vertices, consolidates materials, and preserves skeletal vertex groups.

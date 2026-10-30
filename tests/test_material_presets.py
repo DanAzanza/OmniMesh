@@ -137,7 +137,7 @@ def test_create_pbr_standard_preset(monkeypatch):
     mock_bpy.data.materials.new.return_value = mock_mat
     monkeypatch.setattr(mp, "bpy", mock_bpy)
 
-    mat = create_or_update_material_preset(
+    mat: Any = create_or_update_material_preset(
         material_name="Aircraft_Fuselage",
         preset_type="PBR_STANDARD",
         base_color=(0.5, 0.5, 0.5, 1.0),
@@ -159,7 +159,7 @@ def test_create_glass_preset(monkeypatch):
     mock_bpy.data.materials.new.return_value = mock_mat
     monkeypatch.setattr(mp, "bpy", mock_bpy)
 
-    mat = create_or_update_material_preset(
+    mat: Any = create_or_update_material_preset(
         material_name="Cockpit_Canopy",
         preset_type="GLASS_TRANSPARENT",
         roughness=0.05,
@@ -182,11 +182,11 @@ def test_create_decal_and_invisible_presets(monkeypatch):
     mock_bpy.data.materials.new.side_effect = lambda name: mock_mat_decal if "Decal" in name else mock_mat_invis
     monkeypatch.setattr(mp, "bpy", mock_bpy)
 
-    decal = create_or_update_material_preset("Decal", "FLOATING_DECAL")
+    decal: Any = create_or_update_material_preset("Decal", "FLOATING_DECAL")
     assert decal["_omnimesh_decal"] is True
     assert decal["msfs_material_type"] == 2
 
-    invis = create_or_update_material_preset("Invis", "INVISIBLE_COLLIDER")
+    invis: Any = create_or_update_material_preset("Invis", "INVISIBLE_COLLIDER")
     assert invis["_omnimesh_invisible"] is True
     assert invis["msfs_material_type"] == 12
     assert invis.bsdf.inputs["Alpha"].default_value == 0.0
@@ -200,7 +200,7 @@ def test_create_emissive_preset(monkeypatch):
     mock_bpy.data.materials.new.return_value = mock_mat
     monkeypatch.setattr(mp, "bpy", mock_bpy)
 
-    mat = create_or_update_material_preset(
+    mat: Any = create_or_update_material_preset(
         material_name="Warning_Annunciator",
         preset_type="EMISSIVE_LIGHT",
         base_color=(1.0, 0.2, 0.0, 1.0),

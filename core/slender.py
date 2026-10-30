@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class SlenderFeatureCuller:
         return (tau_frac * 2.0 * root_radius_m) / s_frac
 
     @classmethod
-    def analyze_island_geometry(cls, face_group: list[Any]) -> dict[str, float]:
+    def analyze_island_geometry(cls, face_group: Sequence[bmesh.types.BMFace]) -> dict[str, float]:
         """
         Analyzes a connected face island's volume, area, bounding extents, and slenderness.
         Handles both watertight closed shells and open/uncapped cables, tubes, and ribbons.

@@ -11,7 +11,7 @@ Features:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class LayerCollectionGuard:
 
 def get_rest_world_matrix_for_static(
     static_obj: bpy.types.Object | None, armature_obj: bpy.types.Object | None, bone_name: str
-) -> Any:
+) -> Matrix | None:
     """
     Computes the exact World Transform of a static object in the Armature's REST pose,
     bypassing any active Pose Mode or animation transformations.
@@ -110,7 +110,7 @@ def get_rest_world_matrix_for_static(
     if not static_obj or not hasattr(static_obj, "matrix_world"):
         return None
 
-    def _copy_matrix(m: Any) -> Any:
+    def _copy_matrix(m: Matrix) -> Matrix:
         return m.copy() if hasattr(m, "copy") else m
 
     arm_data: Any = getattr(armature_obj, "data", None)
@@ -142,7 +142,7 @@ class MeshMergeEngine:
         output_obj_name: str,
         armature_obj: bpy.types.Object | None = None,
         pivot_obj: bpy.types.Object | None = None,
-    ) -> Any | None:
+    ) -> bpy.types.Object | None:
         """
         Merges multiple static and skinned meshes into a single optimized draw-call mesh
         using pure BMesh data pipelines (Zero bpy.ops calls, zero context dependencies),
@@ -201,13 +201,16 @@ class MeshMergeEngine:
 
                     # Determine world transformation matrix (respecting Rest Pose if parented to bone)
                     if armature_obj and obj.parent_type == "BONE" and obj.parent_bone:
-                        m_world = get_rest_world_matrix_for_static(obj, armature_obj, obj.parent_bone)
+                        m_world: Any = (
+                            get_rest_world_matrix_for_static(obj, armature_obj, obj.parent_bone)
+                            or obj.matrix_world.copy()
+                        )
                     else:
                         m_world = obj.matrix_world.copy()
 
                     # Transform matrix: LocalPivotSpaceMerge
                     if m_pivot_inv and Matrix:
-                        m_transform = m_pivot_inv @ m_world
+                        m_transform: Any = m_pivot_inv @ m_world
                     else:
                         m_transform = m_world
 
@@ -331,7 +334,7 @@ class CollectionCloneDAG:
     @classmethod
     def get_or_create_sibling_collection(
         cls, root_coll: bpy.types.Collection | None, tier_idx: int, base_name: str, scene: bpy.types.Scene | None = None
-    ) -> Any:
+    ) -> bpy.types.Collection | None:
         """
         Creates or retrieves a sibling collection for LOD tier i (e.g. Model_LOD1).
         """
@@ -417,7 +420,7 @@ class CollectionCloneDAG:
         base_name: str,
         scene: bpy.types.Scene | None = None,
         context: bpy.types.Context | None = None,
-    ) -> tuple[Any, Any]:
+    ) -> tuple[bpy.types.Collection | None, bpy.types.Object | None]:
         """
         Auto-wraps loose selected scene objects into a clean root Collection {base_name}
         and instantiates a base Pivot Empty at the bottom center (Z_min) of the bounding box.
@@ -508,8 +511,8 @@ def get_or_create_engine_import_collection(
     asset_name: str,
     role: str,
     use_lod0_suffix: bool = True,
-    bpy_module: Any = None,
-) -> Any | None:
+    bpy_module: object = None,
+) -> bpy.types.Collection | None:
     """Finds or creates a collection adhering to OmniMesh's neutral engine package hierarchy.
 
     Structure:
@@ -522,7 +525,7 @@ def get_or_create_engine_import_collection(
        ├── {AssetName}_LOD1
        └── {AssetName}_LODN
     """
-    _bpy = bpy_module if bpy_module is not None else bpy
+    _bpy: Any = bpy_module if bpy_module is not None else bpy
     if not _bpy or not context_or_scene:
         return None
 
@@ -659,14 +662,14 @@ def get_or_create_engine_import_collection(
 
 def safe_remove_collection_objects(
     col: bpy.types.Collection | None,
-    bpy_module: Any = None,
-    predicate: Any = None,
+    bpy_module: object = None,
+    predicate: Callable[[bpy.types.Object], bool] | None = None,
 ) -> int:
     """
     Safely and cleanly removes objects belonging to a collection and their unshared datablocks.
     Guards against RNA pointer invalidation and collection mutation during iteration.
     """
-    _bpy = bpy_module or bpy
+    _bpy: Any = bpy_module or bpy
     if not col or not hasattr(col, "objects") or not _bpy:
         return 0
 

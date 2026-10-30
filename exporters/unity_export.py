@@ -4,6 +4,11 @@ Unity 6 Exporter for LOD Meshes and Collision Hulls.
 
 from __future__ import annotations
 
+try:
+    from ..core.exceptions import OmniMeshError
+except (ImportError, ValueError):
+    from core.exceptions import OmniMeshError
+
 import logging
 import os
 import re
@@ -36,7 +41,7 @@ class UnityExporter(EngineExporterBase):
         context: bpy.types.Context | None,
         export_dir: str,
         asset_name: str,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> tuple[bool, str]:
         if not bpy or not context:
             return False, "Blender bpy not available."
@@ -127,7 +132,17 @@ class UnityExporter(EngineExporterBase):
                 armature_nodetype="NULL",
             )
             return True, f"Unity FBX package exported to: {fbx_path}"
-        except Exception as e:
+        except (
+            OmniMeshError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            LookupError,
+            OSError,
+            ReferenceError,
+            ZeroDivisionError,
+        ) as e:
             return False, f"Failed to export Unity FBX: {str(e)}"
         finally:
             for c_obj, orig_name in orig_collider_names.items():

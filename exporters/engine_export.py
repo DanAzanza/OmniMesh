@@ -310,12 +310,18 @@ class AssetMeshResolver:
         )
 
 
-def resolve_export_asset_name(context: bpy.types.Context | None, props: Any = None) -> str:
+def resolve_export_asset_name(context: bpy.types.Context | None, props: object = None) -> str:
     """Resolves the unified asset name for preflight validation and engine export."""
-    if not props and context and hasattr(context, "scene"):
-        props = getattr(context.scene, "lod_tool", None)
-    if props and hasattr(props, "active_asset") and props.active_asset and props.active_asset not in ("AUTO", "NONE"):
-        return str(props.active_asset)
+    props_any: Any = props
+    if not props_any and context and hasattr(context, "scene"):
+        props_any = getattr(context.scene, "lod_tool", None)
+    if (
+        props_any
+        and hasattr(props_any, "active_asset")
+        and props_any.active_asset
+        and props_any.active_asset not in ("AUTO", "NONE")
+    ):
+        return str(props_any.active_asset)
     raw_name = ""
     try:
         try:
@@ -323,11 +329,11 @@ def resolve_export_asset_name(context: bpy.types.Context | None, props: Any = No
         except ImportError:
             from core.asset_scanner import resolve_effective_asset_name
 
-        raw_name = resolve_effective_asset_name(context, props)
+        raw_name = resolve_effective_asset_name(context, props_any)
     except (ImportError, AttributeError, TypeError, ValueError) as e:
         logger.debug("Failed resolving effective asset name: %s", e)
     if not raw_name or raw_name in ("AUTO", "NONE", "Asset"):
-        raw_name = getattr(props, "export_base_name", "").strip() if props else ""
+        raw_name = getattr(props_any, "export_base_name", "").strip() if props_any else ""
     return raw_name or "SM_Asset"
 
 

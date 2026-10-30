@@ -78,3 +78,25 @@ def test_audit_catches_file_length_over_750(tmp_path: Path) -> None:
 
     violations = scan_repository(tmp_path)
     assert violations["file_length_over_750"] == [("core/oversized.py", 755)]
+
+
+def test_audit_catches_broad_except_and_any_in_core_signatures(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True)
+    (core_dir / "bad_sig.py").write_text(
+        "from typing import Any\n"
+        "def process_mesh(obj: Any, meta: dict[str, Any]) -> list[Any]:\n"
+        "    try:\n"
+        "        return [obj]\n"
+        "    except Exception as exc:\n"
+        "        raise RuntimeError(str(exc)) from exc\n",
+        encoding="utf-8",
+    )
+
+    violations = scan_repository(tmp_path)
+    assert len(violations["broad_except_in_core_exporters"]) == 1
+    assert violations["broad_except_in_core_exporters"][0][2] == "Exception"
+    sig_violations = violations["any_in_core_exporter_signatures"]
+    assert len(sig_violations) == 2
+    assert "process_mesh(obj: Any)" in str(sig_violations[0][2])
+    assert "process_mesh() -> list[Any]" in str(sig_violations[1][2])

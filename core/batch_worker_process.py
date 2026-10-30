@@ -136,15 +136,16 @@ class BatchWorkerProcessManager:
         if sys.platform == "win32":
             popen_kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
 
+        spawn_succeeded = False
         try:
             proc = subprocess.Popen(cmd, **popen_kwargs)
-        except Exception:
-            if log_file and not log_file.closed:
+            spawn_succeeded = True
+        finally:
+            if not spawn_succeeded and log_file and not log_file.closed:
                 try:
                     log_file.close()
                 except OSError as exc:
                     logger.debug("Failed closing worker log file on spawn error: %s", exc)
-            raise
 
         if log_file is not None:
             proc._om_log_file = log_file  # type: ignore[attr-defined]

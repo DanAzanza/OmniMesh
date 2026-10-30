@@ -41,7 +41,7 @@ def get_pipeline_state() -> dict[str, Any]:
     return BasePresetManager.get_pipeline_state()
 
 
-def set_pipeline_setting(key: str, value: Any) -> None:
+def set_pipeline_setting(key: str, value: object) -> None:
     """Persists a single pipeline setting to user_state.json with atomic replacement."""
     BasePresetManager.set_pipeline_setting(key, value)
 
@@ -119,7 +119,7 @@ class BasePresetManager:
         return {}
 
     @classmethod
-    def set_pipeline_setting(cls, key: str, value: Any) -> None:
+    def set_pipeline_setting(cls, key: str, value: object) -> None:
         """Persists a single pipeline setting to user_state.json with atomic replacement."""
         with cls._get_category_lock():
             sf = cls.get_state_file()
@@ -186,7 +186,7 @@ class BasePresetManager:
         return clean
 
     @classmethod
-    def validate_preset_schema(cls, data: Any) -> Optional[dict[str, Any]]:
+    def validate_preset_schema(cls, data: object) -> Optional[dict[str, Any]]:
         """Validates preset dictionary structure against schema rules."""
         if not isinstance(data, dict):
             return None

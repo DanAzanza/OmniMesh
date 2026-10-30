@@ -6,6 +6,8 @@ modifier evaluation, topological repair, and bone pruning pipeline.
 
 from __future__ import annotations
 
+from .exceptions import OmniMeshError
+
 import logging
 import math
 from typing import TYPE_CHECKING, Any
@@ -64,7 +66,7 @@ except (ImportError, ValueError):
     from core.slender import SlenderFeatureCuller
 
 
-def _count_triangles(mesh_data: Any) -> int:
+def _count_triangles(mesh_data: bpy.types.Mesh | bmesh.types.BMesh | object | None) -> int:
     """Computes true triangle count in O(1) via loop-poly invariant with safe fallbacks."""
     if not mesh_data:
         return 0
@@ -117,22 +119,25 @@ def _compute_lod0_stats(mesh_objs: list[bpy.types.Object]) -> tuple[int, int]:
 
 def _process_merged_tier(
     tier_coll: bpy.types.Collection | None,
-    tier: Any,
+    tier_in: object,
     tier_idx: int,
     base_name: str,
     mesh_objs: list[bpy.types.Object],
     armature_obj: bpy.types.Object | None,
     tier_pivot: bpy.types.Object | None,
     tolerances: dict[str, Any],
-    props: Any,
-    render: Any,
+    props_in: object,
+    render_in: bpy.types.RenderSettings | object,
     radius: float,
     fov_v: float,
     max_influences: int,
     ref_merged_obj: bpy.types.Object | None = None,
     context: bpy.types.Context | None = None,
-) -> tuple[int, int, int, Any]:
+) -> tuple[int, int, int, bpy.types.Object | None]:
     """Processes a merged LOD tier, combining meshes and applying decimation pipeline."""
+    tier: Any = tier_in
+    props: Any = props_in
+    render: Any = render_in
     merged_name = f"{base_name}_LOD{tier_idx}"
     existing = bpy.data.objects.get(merged_name)
     if existing and existing not in mesh_objs:
@@ -152,10 +157,11 @@ def _process_merged_tier(
     if tier_coll and tier_obj.name not in tier_coll.objects:
         tier_coll.objects.link(tier_obj)
 
+    tier_mesh: Any = tier_obj.data
     culled_slender_count = 0
     bm = bmesh.new()
     try:
-        bm.from_mesh(tier_obj.data)
+        bm.from_mesh(tier_mesh)
         MeshSanitizer.sanitize_mesh_full(
             bm,
             options=SanitizeOptions(
@@ -202,7 +208,7 @@ def _process_merged_tier(
                             pinned_verts.add(v.index)
 
         MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
-        bm.to_mesh(tier_obj.data)
+        bm.to_mesh(tier_mesh)
     finally:
         bm.free()
 
@@ -214,7 +220,7 @@ def _process_merged_tier(
         tier_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True, context=context
     )
 
-    tier_obj.data.update()
+    tier_mesh.update()
     MaterialOptimizer.consolidate_micro_materials(
         tier_obj,
         area_crit=tolerances["area_crit"],
@@ -272,20 +278,21 @@ def _process_merged_tier(
             )
         WeightSanitizer.normalize_and_clamp_weights(tier_obj, max_influences=max_influences)
 
-    tier_obj.data.update()
-    actual_tris = _count_triangles(tier_obj.data)
+    tier_mesh.update()
+    actual_tris = _count_triangles(tier_mesh)
     actual_mats = len(tier_obj.material_slots)
-    if hasattr(tier_obj, "lod_tool"):
-        tier_obj.lod_tool.lod_root_object = mesh_objs[0] if mesh_objs else None
-        tier_obj.lod_tool.is_generated_lod = True
-        tier_obj.lod_tool.lod_index = tier_idx
+    tier_obj_any: Any = tier_obj
+    if hasattr(tier_obj_any, "lod_tool"):
+        tier_obj_any.lod_tool.lod_root_object = mesh_objs[0] if mesh_objs else None
+        tier_obj_any.lod_tool.is_generated_lod = True
+        tier_obj_any.lod_tool.lod_index = tier_idx
 
     return actual_tris, actual_mats, culled_slender_count, tier_obj
 
 
 def _process_unmerged_tier(
     tier_coll: bpy.types.Collection | None,
-    tier: Any,
+    tier_in: object,
     tier_idx: int,
     base_name: str,
     mesh_objs: list[bpy.types.Object],
@@ -293,14 +300,17 @@ def _process_unmerged_tier(
     tier_pivot: bpy.types.Object | None,
     root_pivot: bpy.types.Object | None,
     tolerances: dict[str, Any],
-    props: Any,
-    render: Any,
+    props_in: object,
+    render_in: bpy.types.RenderSettings | object,
     radius: float,
     fov_v: float,
     max_influences: int,
     context: bpy.types.Context | None = None,
-) -> tuple[int, int, int, Any]:
+) -> tuple[int, int, int, bpy.types.Object | None]:
     """Processes an unmerged multi-mesh LOD tier, decimating each object individually."""
+    tier: Any = tier_in
+    props: Any = props_in
+    render: Any = render_in
     tier_tris = 0
     tier_mats = 0
     culled_slender_count = 0
@@ -437,7 +447,7 @@ def _process_unmerged_tier(
 
 def generate_all_lods(
     context: bpy.types.Context | None,
-    props: Any,
+    props: object,
     mesh_objs: list[bpy.types.Object],
     armature_obj: bpy.types.Object | None = None,
     base_name: str = "",
@@ -462,6 +472,7 @@ def generate_all_lods(
     Returns:
         tuple[bool, str]: (Success status, descriptive user-facing message).
     """
+    props_any: Any = props
     if not bpy or not context:
         return True, "Blender context not available."
 
@@ -518,19 +529,20 @@ def generate_all_lods(
         aspect_ratio = render.resolution_x / max(1, render.resolution_y)
         fov_v = compute_vertical_fov(cam_angle, aspect_ratio, sensor_fit)
 
-        max_influences = int(props.max_bone_influences)
+        max_influences = int(props_any.max_bone_influences)
 
         # Build Sibling Collections list
-        all_tier_collections = [src_coll]
-        for i in range(1, len(props.lods)):
+        all_tier_collections: list[bpy.types.Collection | None] = [src_coll]
+        for i in range(1, len(props_any.lods)):
             tier_c = CollectionCloneDAG.get_or_create_sibling_collection(src_coll, i, base_name, scene=context.scene)
             all_tier_collections.append(tier_c)
 
         updated_tier_count = 0
+        valid_tier_collections = [c for c in all_tier_collections if c is not None]
 
         # Safe View Layer Scoper
-        with LayerCollectionGuard(context.view_layer, all_tier_collections):
-            for i, tier in enumerate(props.lods):
+        with LayerCollectionGuard(context.view_layer, valid_tier_collections):
+            for i, tier in enumerate(props_any.lods):
                 if i == 0:
                     tier_tris, tier_mats = _compute_lod0_stats(mesh_objs)
                     tier.actual_tris = tier_tris
@@ -563,11 +575,11 @@ def generate_all_lods(
                 tier_pivot = dag_info.get("pivot")
 
                 s_frac = tier.screen_size_pct / 100.0
-                tolerances = compute_coupled_tolerances(radius, s_frac, props.tau_sse, render.resolution_y)
+                tolerances = compute_coupled_tolerances(radius, s_frac, props_any.tau_sse, render.resolution_y)
                 should_merge = i >= 1 and (
-                    getattr(props, "consolidate_hierarchy", False)
-                    or props.hierarchy_mode == "MERGE_ALL"
-                    or (props.hierarchy_mode == "MERGE_AT_TIER" and i >= props.merge_start_tier)
+                    getattr(props_any, "consolidate_hierarchy", False)
+                    or props_any.hierarchy_mode == "MERGE_ALL"
+                    or (props_any.hierarchy_mode == "MERGE_AT_TIER" and i >= props_any.merge_start_tier)
                 )
 
                 if should_merge and len(mesh_objs) > 1:
@@ -583,15 +595,15 @@ def generate_all_lods(
 
                     tris, mats, slender_cull, gen_obj = _process_merged_tier(
                         tier_coll=tier_coll,
-                        tier=tier,
+                        tier_in=tier,
                         tier_idx=i,
                         base_name=base_name,
                         mesh_objs=mesh_objs,
                         armature_obj=armature_obj,
                         tier_pivot=tier_pivot,
                         tolerances=tolerances,
-                        props=props,
-                        render=render,
+                        props_in=props_any,
+                        render_in=render,
                         radius=radius,
                         fov_v=fov_v,
                         max_influences=max_influences,
@@ -601,7 +613,7 @@ def generate_all_lods(
                 else:
                     tris, mats, slender_cull, gen_obj = _process_unmerged_tier(
                         tier_coll=tier_coll,
-                        tier=tier,
+                        tier_in=tier,
                         tier_idx=i,
                         base_name=base_name,
                         mesh_objs=mesh_objs,
@@ -609,15 +621,15 @@ def generate_all_lods(
                         tier_pivot=tier_pivot,
                         root_pivot=root_pivot,
                         tolerances=tolerances,
-                        props=props,
-                        render=render,
+                        props_in=props_any,
+                        render_in=render,
                         radius=radius,
                         fov_v=fov_v,
                         max_influences=max_influences,
                         context=context,
                     )
 
-                props.last_culled_slender_count += slender_cull
+                props_any.last_culled_slender_count += slender_cull
                 tier.actual_tris = tris
                 tier.actual_triangles = tris
                 tier.mat_slots_count = mats
@@ -626,17 +638,17 @@ def generate_all_lods(
                 tier.last_baked_screen_pct = tier.screen_size_pct
                 tier.state = "BAKED"
 
-        if len(props.lods) > 0:
-            base_tris_val = props.lods[0].actual_tris or props.lods[0].target_tris or 1
-            final_tris_val = props.lods[-1].actual_tris or props.lods[-1].target_tris or 1
+        if len(props_any.lods) > 0:
+            base_tris_val = props_any.lods[0].actual_tris or props_any.lods[0].target_tris or 1
+            final_tris_val = props_any.lods[-1].actual_tris or props_any.lods[-1].target_tris or 1
             reduction_pct = max(0.0, (1.0 - final_tris_val / float(base_tris_val)) * 100.0)
 
-            props.last_generated_base_tris = base_tris_val
-            props.last_generated_final_tris = final_tris_val
-            props.last_generated_reduction_pct = reduction_pct
-            props.last_generated_tier_count = len(props.lods)
+            props_any.last_generated_base_tris = base_tris_val
+            props_any.last_generated_final_tris = final_tris_val
+            props_any.last_generated_reduction_pct = reduction_pct
+            props_any.last_generated_tier_count = len(props_any.lods)
 
-        if getattr(props, "enable_impostor_lod", False):
+        if getattr(props_any, "enable_impostor_lod", False):
             try:
                 ops: Any = getattr(bpy, "ops", None)
                 if ops and hasattr(ops.lod_tool, "generate_impostor"):
@@ -647,10 +659,20 @@ def generate_all_lods(
         if only_out_of_sync:
             msg = f"Successfully updated {updated_tier_count} out-of-sync LOD tier(s) for '{base_name}'"
         else:
-            msg = f"Successfully generated {len(props.lods)} Sibling LOD Collections for '{base_name}'"
+            msg = f"Successfully generated {len(props_any.lods)} Sibling LOD Collections for '{base_name}'"
         return True, msg
 
-    except Exception as exc:
+    except (
+        OmniMeshError,
+        RuntimeError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        LookupError,
+        OSError,
+        ReferenceError,
+        ZeroDivisionError,
+    ) as exc:
         logger.error("LOD generation failed: %s", exc, exc_info=True)
         return False, f"LOD generation failed: {exc}"
 

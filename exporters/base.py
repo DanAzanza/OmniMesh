@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     import bpy
@@ -32,7 +32,7 @@ class EngineExporterBase(abc.ABC):
         context: Optional[bpy.types.Context],
         export_dir: str,
         asset_name: str,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> tuple[bool, str]:
         """
         Exports asset and associated LODs/colliders to target engine format.

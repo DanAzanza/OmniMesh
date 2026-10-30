@@ -14,7 +14,8 @@ from typing import Any
 from unittest.mock import MagicMock
 import pytest
 
-from core.sanitizer import MeshSanitizer, SanitizeOptions, Vector
+from core.compat import Vector
+from core.sanitizer import MeshSanitizer, SanitizeOptions
 from core.topology_repair import TopologyRepairOptions
 
 

@@ -17,13 +17,16 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from mathutils import Matrix
 else:
     try:
         import bmesh
         import bpy
+        from mathutils import Matrix
     except ImportError:
         bpy = None
         bmesh = None
+        Matrix = object
 
 BMESH_INSPECTION_ERRORS = (AttributeError, KeyError, IndexError, ValueError, TypeError, ReferenceError)
 BMESH_OP_ERRORS = (RuntimeError, ValueError, IndexError, ReferenceError)
@@ -44,10 +47,10 @@ class TopologyRepairOptions:
     world_matrix: Any = None
 
 
-def _find_connected_face_fans(vert: Any) -> list[list[Any]]:
+def _find_connected_face_fans(vert: bmesh.types.BMVert) -> list[list[bmesh.types.BMFace]]:
     """Partitions the link_faces of a vertex into connected manifold face fans."""
     face_set = set(vert.link_faces)
-    fans: list[list[Any]] = []
+    fans: list[list[bmesh.types.BMFace]] = []
 
     while face_set:
         start_face = face_set.pop()
@@ -71,10 +74,10 @@ def _find_connected_face_fans(vert: Any) -> list[list[Any]]:
 
 def _remap_fan_to_new_vertex(
     bm: bmesh.types.BMesh,
-    fan: list[Any],
-    vert: Any,
-    new_vert: Any,
-    uv_layers: list[Any],
+    fan: list[bmesh.types.BMFace],
+    vert: bmesh.types.BMVert,
+    new_vert: bmesh.types.BMVert,
+    uv_layers: list[bmesh.types.BMLayerItem],
 ) -> int:
     """Remaps a single face fan from vert to new_vert, preserving UVs and materials."""
     split_count = 0
@@ -348,7 +351,9 @@ class TopologyRepairEngine:
         return 0
 
     @classmethod
-    def cull_subpixel_islands(cls, bm: bmesh.types.BMesh | None, w_crit: float, world_matrix: Any = None) -> int:
+    def cull_subpixel_islands(
+        cls, bm: bmesh.types.BMesh | None, w_crit: float, world_matrix: Matrix | None = None
+    ) -> int:
         """
         Removes disconnected mesh islands whose bounding diagonal in world space is < w_crit.
         Protects against deleting the entire mesh if all components are small.

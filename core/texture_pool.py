@@ -6,6 +6,8 @@ and synchronous join barriers with native memory compaction.
 
 from __future__ import annotations
 
+from .exceptions import OmniMeshError
+
 import atexit
 import concurrent.futures
 import ctypes
@@ -76,7 +78,17 @@ class TexturePoolManager:
                     try:
                         res = f.result(timeout=0.01)
                         results.append(bool(res))
-                    except Exception as exc:
+                    except (
+                        OmniMeshError,
+                        RuntimeError,
+                        ValueError,
+                        TypeError,
+                        AttributeError,
+                        LookupError,
+                        OSError,
+                        ReferenceError,
+                        ZeroDivisionError,
+                    ) as exc:
                         logger.error("Texture pool worker raised exception: %s", exc)
                         results.append(False)
                 else:

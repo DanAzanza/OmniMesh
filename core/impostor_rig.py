@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class EphemeralBakeSceneGuard:
     ):
         self.temp_scene_name, self.context, self.orig_scene, self.bake_scene = scene_name, context, orig_scene, None
 
-    def __enter__(self) -> Optional[Any]:
+    def __enter__(self) -> Optional[bpy.types.Scene]:
         if not bpy:
             return None
         ctx = self.context
@@ -91,7 +91,7 @@ class EphemeralBakeSceneGuard:
             win.scene = self.bake_scene
         return self.bake_scene
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
         if not bpy:
             return
         try:
@@ -122,23 +122,23 @@ class ImpostorCameraRig:
     """
 
     @staticmethod
-    def compute_rig_parameters(coords: list[Any]) -> tuple[Any, float, float]:
+    def compute_rig_parameters(coords: Sequence[Sequence[float] | Vector]) -> tuple[Vector, float, float]:
         center, radius = compute_bounding_sphere(coords)
         radius = max(0.25, float(radius))
         # 4% margin ensures grazing silhouette edges are not clipped by orthographic frustum
         ortho_scale = 2.0 * radius * 1.04
-        return center, radius, ortho_scale
+        return Vector((center[0], center[1], center[2])), radius, ortho_scale
 
     @classmethod
     def setup_camera(
         cls,
         scene: bpy.types.Scene | None,
-        center: Any,
+        center: Sequence[float] | Vector,
         radius: float,
         ortho_scale: float,
         angle_rad: float = 0.0,
         pitch_rad: float = 0.0,
-    ) -> Any:
+    ) -> bpy.types.Object | None:
         if not bpy or not scene:
             return None
 
@@ -158,9 +158,10 @@ class ImpostorCameraRig:
             cam_obj = scene.camera
 
         cp = math.cos(pitch_rad)
+        center_v = Vector((center[0], center[1], center[2]))
         offset = Vector((dist * cp * math.sin(angle_rad), -dist * cp * math.cos(angle_rad), dist * math.sin(pitch_rad)))
-        cam_obj.location = Vector(center) + offset
-        dir_vec = Vector(center) - cam_obj.location
+        cam_obj.location = center_v + offset
+        dir_vec = center_v - cam_obj.location
         if dir_vec.length > 1e-6:
             rot_quat = dir_vec.to_track_quat("-Z", "Y")
             cam_obj.rotation_euler = rot_quat.to_euler()

@@ -32,7 +32,7 @@ from .msfs.project_scanner import MSFSProjectManifest
 
 def find_layer_collection(
     layer_coll: bpy.types.LayerCollection | None, target_coll: bpy.types.Collection | None
-) -> Optional[Any]:
+) -> Optional[bpy.types.LayerCollection]:
     """Recursively traverses the LayerCollection hierarchy to find the one matching target_coll."""
     if not layer_coll or not target_coll:
         return None
@@ -121,7 +121,7 @@ class GLTFAssemblyEngine:
         target_collection: bpy.types.Collection | None,
         asset_name: str = "",
         is_interior: bool = False,
-    ) -> list[Any]:
+    ) -> list[bpy.types.Object]:
         """Imports a glTF file into target_collection while strictly isolating created objects.
 
         Unlinks imported objects from unwanted default collections and redirects collision/trigger volumes.

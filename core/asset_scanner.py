@@ -6,7 +6,7 @@ Identifies root asset collections, inspects current scene state, and computes LO
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def get_available_asset_names(context: bpy.types.Context | None) -> list[str]:
     return asset_names
 
 
-def resolve_effective_asset_name(context: bpy.types.Context | None, props: Any = None) -> str:
+def resolve_effective_asset_name(context: bpy.types.Context | None, props: object = None) -> str:
     """
     Resolves the active asset name to display or operate on:
     1. If props.active_asset is set and != 'AUTO' and != 'NONE': returns props.active_asset.
@@ -135,7 +135,7 @@ def resolve_effective_asset_name(context: bpy.types.Context | None, props: Any =
     return "Asset"
 
 
-def get_asset_collection(context: bpy.types.Context | None, asset_name: str) -> Any:
+def get_asset_collection(context: bpy.types.Context | None, asset_name: str) -> bpy.types.Collection | None:
     """Finds the root collection for asset_name (either '{BaseName}' or '{BaseName}_LOD0')."""
     if not bpy or not hasattr(bpy, "data") or not hasattr(bpy.data, "collections") or not asset_name:
         return None
@@ -147,7 +147,7 @@ def get_asset_collection(context: bpy.types.Context | None, asset_name: str) -> 
     return None
 
 
-def get_asset_base_meshes(context: bpy.types.Context | None, asset_name: str) -> list[Any]:
+def get_asset_base_meshes(context: bpy.types.Context | None, asset_name: str) -> list[bpy.types.Object]:
     """Retrieves all non-collider, non-impostor MESH objects from the root asset collection."""
     coll = get_asset_collection(context, asset_name)
     if not coll:
@@ -188,7 +188,7 @@ def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict
     """
     base_meshes = get_asset_base_meshes(context, asset_name)
     base_tris = sum(
-        sum(len(p.vertices) - 2 for p in m.data.polygons)
+        sum(len(cast(Any, p.vertices)) - 2 for p in cast(Any, m.data).polygons)
         for m in base_meshes
         if hasattr(m, "data") and hasattr(m.data, "polygons")
     )

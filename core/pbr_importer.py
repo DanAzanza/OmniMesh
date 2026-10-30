@@ -120,13 +120,13 @@ class ShaderGraphBuilder:
     }
 
     @classmethod
-    def resolve_bsdf_socket(cls, bsdf: Any, target: str) -> Any:
+    def resolve_bsdf_socket(cls, bsdf: bpy.types.Node | None, target: str) -> bpy.types.NodeSocket | None:
         """Resolves target socket across Blender 3.x, 4.x, and 5.2 LTS Principled BSDF v2 aliases."""
         aliases = cls.BSDF_SOCKET_ALIASES.get(target, [target])
         return cls.get_bsdf_socket(bsdf, aliases)
 
     @staticmethod
-    def get_bsdf_socket(bsdf: Any, aliases: list[str]) -> Any:
+    def get_bsdf_socket(bsdf: bpy.types.Node | None, aliases: list[str]) -> bpy.types.NodeSocket | None:
         """Safely queries Principled BSDF inputs across Blender 3.x, 4.x, and 5.x."""
         if not bsdf or not hasattr(bsdf, "inputs"):
             return None
@@ -137,7 +137,9 @@ class ShaderGraphBuilder:
         return None
 
     @staticmethod
-    def get_mix_rgba_socket(mix_node: Any, identifier: str, is_output: bool = False) -> Any:
+    def get_mix_rgba_socket(
+        mix_node: bpy.types.Node, identifier: str, is_output: bool = False
+    ) -> bpy.types.NodeSocket | None:
         """
         Type-safe RGBA socket resolver for ShaderNodeMix across Blender 4.2+ and 5.2 LTS.
         Guards against duplicate socket names where inputs.get('A') returns the Float socket!
@@ -298,9 +300,9 @@ class ShaderGraphBuilder:
         x_post = -150
 
         loaded_tex_nodes: dict[str, Any] = {}
-        loaded_sep_nodes: dict[str, Any] = {}
+        loaded_sep_nodes: dict[Any, Any] = {}
 
-        def get_or_create_tex_node(filepath: str, color_space: str) -> Any:
+        def get_or_create_tex_node(filepath: str, color_space: str) -> bpy.types.Node | None:
             nonlocal y_cursor
             if filepath in loaded_tex_nodes:
                 return loaded_tex_nodes[filepath]
@@ -330,7 +332,7 @@ class ShaderGraphBuilder:
             y_cursor -= cls.NODE_Y_SPACING
             return t_node
 
-        def get_or_create_sep_node(tex_node: Any, y_loc: float) -> Any:
+        def get_or_create_sep_node(tex_node: bpy.types.Node, y_loc: float) -> bpy.types.Node:
             if tex_node in loaded_sep_nodes:
                 return loaded_sep_nodes[tex_node]
             s_node = nodes.new(type="ShaderNodeSeparateColor")
@@ -426,7 +428,7 @@ class ShaderGraphBuilder:
                 dest_sock = None
                 if target in {"Emission Color", "Emission"}:
                     dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
-                    strength_sock = cls.resolve_bsdf_socket(bsdf_node, "Emission Strength")
+                    strength_sock: Any = cls.resolve_bsdf_socket(bsdf_node, "Emission Strength")
                     if strength_sock and not strength_sock.is_linked:
                         strength_sock.default_value = 1.0
                 elif target in {"Alpha", "Opacity"}:

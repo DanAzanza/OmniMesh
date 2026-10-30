@@ -36,6 +36,7 @@ if __package__:
         batch_worker,
         chunking,
         collision,
+        compat,
         config_presets,
         decimator,
         engine_import_presets,
@@ -127,6 +128,7 @@ else:
         batch_worker,
         chunking,
         collision,
+        compat,
         config_presets,
         decimator,
         engine_import_presets,
@@ -220,6 +222,7 @@ if _OMNIMESH_RELOAD:
 
     # 1. Core modules
     for mod in (
+        compat,
         metrics,
         modifiers,
         topology_repair,

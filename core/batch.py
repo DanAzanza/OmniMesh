@@ -7,6 +7,8 @@ and multi-engine packaging with deterministic memory deallocation.
 
 from __future__ import annotations
 
+from .exceptions import OmniMeshError
+
 import concurrent.futures
 import ctypes
 import ctypes.util
@@ -70,15 +72,19 @@ SUPPORTED_EXTENSIONS = (".fbx", ".obj", ".gltf", ".glb")
 class BatchProcessorEngine:
     """Core batch processing engine with high memory isolation and pipeline orchestration."""
 
-    _exporters: ClassVar[dict[str, Callable[[Any, str, str], tuple[bool, str]]]] = {}
+    _exporters: ClassVar[dict[str, Callable[[bpy.types.Context | None, str, str], tuple[bool, str]]]] = {}
 
     @classmethod
-    def register_exporter(cls, engine: str, handler: Callable[[Any, str, str], tuple[bool, str]]) -> None:
+    def register_exporter(
+        cls,
+        engine: str,
+        handler: Callable[[bpy.types.Context | None, str, str], tuple[bool, str]],
+    ) -> None:
         """Registers a serialization handler for a target engine."""
         cls._exporters[engine] = handler
 
     @classmethod
-    def _get_exporter(cls, engine: str) -> Optional[Callable[[Any, str, str], tuple[bool, str]]]:
+    def _get_exporter(cls, engine: str) -> Optional[Callable[[bpy.types.Context | None, str, str], tuple[bool, str]]]:
         """Resolves target engine exporter handler with lazy fallback to avoid circular imports."""
         if engine in cls._exporters:
             return cls._exporters[engine]
@@ -217,7 +223,7 @@ class BatchProcessorEngine:
         )
 
     @classmethod
-    def import_asset_file(cls, filepath: str) -> list[Any]:
+    def import_asset_file(cls, filepath: str) -> list[bpy.types.Object]:
         """Imports 3D model file and returns newly created objects."""
         if not bpy or not os.path.exists(filepath):
             return []
@@ -298,17 +304,18 @@ class BatchProcessorEngine:
             # 1. Sanitize Master Mesh
             initial_tris = 0
             for obj in mesh_objs:
-                if obj.data and hasattr(obj.data, "polygons") and len(obj.data.polygons) > 0:
+                obj_mesh: Any = obj.data
+                if obj_mesh and hasattr(obj_mesh, "polygons") and len(obj_mesh.polygons) > 0:
                     import bmesh
 
                     bm = bmesh.new()
                     try:
-                        bm.from_mesh(obj.data)
+                        bm.from_mesh(obj_mesh)
                         MeshSanitizer.sanitize_mesh_full(bm)
-                        bm.to_mesh(obj.data)
+                        bm.to_mesh(obj_mesh)
                     finally:
                         bm.free()
-                    polys = getattr(obj.data, "polygons", [])
+                    polys = getattr(obj_mesh, "polygons", [])
                     if polys and hasattr(polys[0], "vertices"):
                         initial_tris += sum(max(1, len(p.vertices) - 2) for p in polys)
                     else:
@@ -317,8 +324,9 @@ class BatchProcessorEngine:
 
             # 2. Compute Metric Extents & Tiers
             coords = []
-            if hasattr(primary_obj.data, "vertices"):
-                for v in primary_obj.data.vertices:
+            primary_mesh: Any = primary_obj.data
+            if primary_mesh and hasattr(primary_mesh, "vertices"):
+                for v in primary_mesh.vertices:
                     try:
                         coords.append(
                             primary_obj.matrix_world @ v.co if hasattr(primary_obj.matrix_world, "__matmul__") else v.co
@@ -356,7 +364,7 @@ class BatchProcessorEngine:
 
                 # Duplicate primary mesh for this tier
                 lod_obj_name = f"{base_name}_{tier_name}"
-                lod_mesh = primary_obj.data.copy()
+                lod_mesh = primary_mesh.copy()
                 lod_mesh.name = f"{lod_obj_name}_Mesh"
                 lod_obj = bpy.data.objects.new(lod_obj_name, lod_mesh)
                 lod_obj.matrix_world = primary_obj.matrix_world.copy()
@@ -504,7 +512,17 @@ class BatchProcessorEngine:
             result["success"] = export_ok
             result["message"] = export_msg if export_ok else f"Export failed: {export_msg}"
 
-        except Exception as exc:
+        except (
+            OmniMeshError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            LookupError,
+            OSError,
+            ReferenceError,
+            ZeroDivisionError,
+        ) as exc:
             logger.error("Error during batch processing of '%s': %s", filepath, exc, exc_info=True)
             result["message"] = f"Pipeline exception: {exc}"
         finally:

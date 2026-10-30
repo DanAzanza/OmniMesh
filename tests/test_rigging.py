@@ -168,7 +168,7 @@ def test_compute_rest_pose_inverted_matrix():
     m_parent_inv = MockMatrix(np.eye(4))
     m_basis = MockMatrix(np.eye(4))
 
-    result = compute_rest_pose_inverted_matrix(m_arm_world, m_bone_rest, m_parent_inv, m_basis)
+    result: Any = compute_rest_pose_inverted_matrix(m_arm_world, m_bone_rest, m_parent_inv, m_basis)
     assert np.allclose(result.arr, np.eye(4))
 
     # Target mesh with translation
@@ -176,7 +176,7 @@ def test_compute_rest_pose_inverted_matrix():
     t_mat[0, 3] = 10.0  # translate X by +10
     target_rest = MockMatrix(t_mat)
 
-    res_local = compute_rest_pose_inverted_matrix(
+    res_local: Any = compute_rest_pose_inverted_matrix(
         m_arm_world, m_bone_rest, m_parent_inv, m_basis, target_mesh_rest_world=target_rest
     )
     # Target inverted should have translation X = -10

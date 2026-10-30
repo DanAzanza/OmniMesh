@@ -39,7 +39,12 @@ class PivotPreservationEngine:
     @classmethod
     def identify_pivots_and_sockets(
         cls, collection: bpy.types.Collection | None
-    ) -> tuple[Any | None, list[Any], list[Any], list[Any]]:
+    ) -> tuple[
+        bpy.types.Object | None,
+        list[bpy.types.Object],
+        list[bpy.types.Object],
+        list[bpy.types.Object],
+    ]:
         """
         Scans collection for:
         Returns: (pivot_empty, sockets, meshes, armatures)
@@ -89,7 +94,9 @@ class PivotPreservationEngine:
         return pivot_obj, sockets, meshes, armatures
 
     @classmethod
-    def get_relative_matrix(cls, obj: bpy.types.Object | None, pivot_obj: bpy.types.Object | None) -> Any:
+    def get_relative_matrix(
+        cls, obj: bpy.types.Object | None, pivot_obj: bpy.types.Object | None
+    ) -> Matrix | list[list[int]]:
         """
         Computes the relative transformation matrix from object local space to pivot local space:
         M_relative = M_pivot^-1 * M_obj
@@ -114,13 +121,13 @@ class PivotPreservationEngine:
 
     @classmethod
     def transform_vertex_to_pivot_space(
-        cls, co: Any, obj: bpy.types.Object | None, pivot_obj: bpy.types.Object | None
-    ) -> Any:
+        cls, co: Vector, obj: bpy.types.Object | None, pivot_obj: bpy.types.Object | None
+    ) -> Vector:
         """
         Transforms a vertex coordinate vector from mesh local space to pivot relative space:
         v_pivot = (M_pivot^-1 * M_obj) * v_local
         """
-        rel_matrix = cls.get_relative_matrix(obj, pivot_obj)
+        rel_matrix: Any = cls.get_relative_matrix(obj, pivot_obj)
         if rel_matrix is None:
             return co
         if hasattr(rel_matrix, "__matmul__"):
@@ -129,14 +136,14 @@ class PivotPreservationEngine:
 
     @classmethod
     def transform_normal_to_pivot_space(
-        cls, no: Any, obj: bpy.types.Object | None, pivot_obj: bpy.types.Object | None
-    ) -> Any:
+        cls, no: Vector, obj: bpy.types.Object | None, pivot_obj: bpy.types.Object | None
+    ) -> Vector:
         """
         Transforms a surface normal vector from mesh local space to pivot relative space
         using the inverse-transpose of the 3x3 rotational/scaling component:
         n_pivot = Normalize((M_pivot^-1 * M_obj)_3x3^-T * n_local)
         """
-        rel_matrix = cls.get_relative_matrix(obj, pivot_obj)
+        rel_matrix: Any = cls.get_relative_matrix(obj, pivot_obj)
         if rel_matrix is None:
             return no
 
@@ -155,7 +162,7 @@ class PivotPreservationEngine:
         target_collection: bpy.types.Collection | None,
         tier_idx: int,
         base_name: str,
-    ) -> Any | None:
+    ) -> bpy.types.Object | None:
         """
         Duplicates or creates a matching Pivot Empty in the target LOD collection.
         """
@@ -193,7 +200,7 @@ class PivotPreservationEngine:
         target_pivot: bpy.types.Object | None,
         target_collection: bpy.types.Collection | None,
         context: bpy.types.Context | None = None,
-    ) -> list[Any]:
+    ) -> list[bpy.types.Object]:
         """
         Clones sockets into target collection and parents them to the tier's Pivot Empty
         while strictly preserving their exact world-space locations.

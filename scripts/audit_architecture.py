@@ -3,8 +3,9 @@
 Validates AGENTS.md, PROJECT.md, and BLENDER_KNOWLEDGE.md architectural invariants:
 1. Zero direct or obfuscated bpy.context leaks in core/ and exporters/ (must use explicit injection).
 2. Zero deprecated Blender API patterns (e.g., shadow_method, blend_method='CLIP').
-3. Zero silent bare except/pass or generic exception swallowing in business logic.
-4. Clean code hygiene (no commented-out dead code blocks).
+3. Zero silent bare except/pass, log-only exception swallowing, or broad except Exception in core/ and exporters/.
+4. Zero untyped Any annotations in core/ and exporters/ function signatures (except JSON dict[str, Any] values).
+5. Clean code hygiene (no commented-out dead code blocks, file size <= 750 lines).
 """
 
 from __future__ import annotations
@@ -17,12 +18,29 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _has_non_dict_any(annotation: ast.AST | None) -> bool:
+    """Returns True if an AST annotation contains Any outside of dict/Mapping value parameters."""
+    if annotation is None:
+        return False
+    if isinstance(annotation, ast.Name) and annotation.id == "Any":
+        return True
+    if isinstance(annotation, ast.Subscript):
+        base_str = ast.unparse(annotation.value)
+        if base_str in ("dict", "Dict", "Mapping"):
+            if isinstance(annotation.slice, ast.Tuple) and len(annotation.slice.elts) == 2:
+                return _has_non_dict_any(annotation.slice.elts[0])
+            return False
+    return any(_has_non_dict_any(child) for child in ast.iter_child_nodes(annotation))
+
+
 def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[object, ...]]]:
     root = repo_root or REPO_ROOT
     violations: dict[str, list[tuple[object, ...]]] = {
         "context_leak_in_core_exporters": [],
         "deprecated_blender_apis": [],
         "bare_except_pass": [],
+        "broad_except_in_core_exporters": [],
+        "any_in_core_exporter_signatures": [],
         "commented_out_code_blocks": [],
         "file_length_over_750": [],
     }
@@ -103,7 +121,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
                                 (rel_path, node.lineno, 'getattr(..., "context")')
                             )
 
-            # Generic except: pass / except Exception: pass or log-only swallowing in domain modules
+            # Generic except: pass / except Exception: pass or broad except Exception in domain modules
             if is_core_or_exporter and isinstance(node, ast.ExceptHandler):
                 caught_names: list[str] = []
                 if node.type is None:
@@ -120,17 +138,40 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
                     caught_names.append(ast.unparse(node.type))
 
                 broad_matches = [n for n in caught_names if n in ("bare", "Exception", "BaseException")]
-                if broad_matches and len(node.body) == 1:
-                    stmt = node.body[0]
-                    is_pass = isinstance(stmt, ast.Pass)
-                    is_log_only = (
-                        isinstance(stmt, ast.Expr)
-                        and isinstance(stmt.value, ast.Call)
-                        and ast.unparse(stmt.value.func).startswith(("logger.", "log.", "logging."))
+                if broad_matches:
+                    violations["broad_except_in_core_exporters"].append((rel_path, node.lineno, broad_matches[0]))
+                    if len(node.body) == 1:
+                        stmt = node.body[0]
+                        is_pass = isinstance(stmt, ast.Pass)
+                        is_log_only = (
+                            isinstance(stmt, ast.Expr)
+                            and isinstance(stmt.value, ast.Call)
+                            and ast.unparse(stmt.value.func).startswith(("logger.", "log.", "logging."))
+                        )
+                        if is_pass or is_log_only:
+                            kind = "pass" if is_pass else "log-only"
+                            violations["bare_except_pass"].append(
+                                (rel_path, node.lineno, f"{broad_matches[0]} ({kind})")
+                            )
+
+            # Check for non-dict Any annotations in core/ and exporters/ function signatures (PROJECT.md §0.5)
+            if is_core_or_exporter and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                all_args = (
+                    list(node.args.posonlyargs)
+                    + list(node.args.args)
+                    + list(node.args.kwonlyargs)
+                    + ([node.args.vararg] if node.args.vararg else [])
+                    + ([node.args.kwarg] if node.args.kwarg else [])
+                )
+                for arg in all_args:
+                    if arg.annotation is not None and _has_non_dict_any(arg.annotation):
+                        violations["any_in_core_exporter_signatures"].append(
+                            (rel_path, node.lineno, f"{node.name}({arg.arg}: {ast.unparse(arg.annotation)})")
+                        )
+                if node.returns is not None and _has_non_dict_any(node.returns):
+                    violations["any_in_core_exporter_signatures"].append(
+                        (rel_path, node.lineno, f"{node.name}() -> {ast.unparse(node.returns)}")
                     )
-                    if is_pass or is_log_only:
-                        kind = "pass" if is_pass else "log-only"
-                        violations["bare_except_pass"].append((rel_path, node.lineno, f"{broad_matches[0]} ({kind})"))
 
     return violations
 
@@ -141,7 +182,13 @@ def main() -> int:
     args = parser.parse_args()
 
     violations = scan_repository()
-    critical_categories = ["context_leak_in_core_exporters", "deprecated_blender_apis", "bare_except_pass"]
+    critical_categories = [
+        "context_leak_in_core_exporters",
+        "deprecated_blender_apis",
+        "bare_except_pass",
+        "broad_except_in_core_exporters",
+        "any_in_core_exporter_signatures",
+    ]
     warning_categories = ["commented_out_code_blocks", "file_length_over_750"]
 
     has_critical = any(len(violations.get(cat, [])) > 0 for cat in critical_categories)
