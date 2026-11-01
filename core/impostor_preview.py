@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import math
+from .compat import set_node_prop, set_socket_default_value
 import os
 from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
 
@@ -106,8 +107,8 @@ def create_octahedral_preview_material(
 
     if not mat.node_tree:
         return mat
-    nodes: Any = mat.node_tree.nodes
-    links: Any = mat.node_tree.links
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
     nodes.clear()
 
     # 1. Output & Principled BSDF
@@ -122,29 +123,29 @@ def create_octahedral_preview_material(
     # Using uniform vector eliminates perspective fanning across the billboard quad
     cam_trans = nodes.new(type="ShaderNodeVectorTransform")
     cam_trans.name = "CamWorldPos"
-    cam_trans.vector_type = "POINT"
-    cam_trans.convert_from = "CAMERA"
-    cam_trans.convert_to = "WORLD"
-    cam_trans.inputs["Vector"].default_value = (0.0, 0.0, 0.0)
+    set_node_prop(cam_trans, "vector_type", "POINT")
+    set_node_prop(cam_trans, "convert_from", "CAMERA")
+    set_node_prop(cam_trans, "convert_to", "WORLD")
+    set_socket_default_value(cam_trans.inputs["Vector"], (0.0, 0.0, 0.0))
     cam_trans.location = (-1200, 280)
 
     obj_trans = nodes.new(type="ShaderNodeVectorTransform")
     obj_trans.name = "ObjWorldPos"
-    obj_trans.vector_type = "POINT"
-    obj_trans.convert_from = "OBJECT"
-    obj_trans.convert_to = "WORLD"
-    obj_trans.inputs["Vector"].default_value = (0.0, 0.0, 0.0)
+    set_node_prop(obj_trans, "vector_type", "POINT")
+    set_node_prop(obj_trans, "convert_from", "OBJECT")
+    set_node_prop(obj_trans, "convert_to", "WORLD")
+    set_socket_default_value(obj_trans.inputs["Vector"], (0.0, 0.0, 0.0))
     obj_trans.location = (-1200, 120)
 
     sub_vec = nodes.new(type="ShaderNodeVectorMath")
-    sub_vec.operation = "SUBTRACT"
+    set_node_prop(sub_vec, "operation", "SUBTRACT")
     sub_vec.location = (-1000, 200)
     links.new(cam_trans.outputs["Vector"], sub_vec.inputs[0])
     links.new(obj_trans.outputs["Vector"], sub_vec.inputs[1])
 
     # Normalize view vector
     v_norm = nodes.new(type="ShaderNodeVectorMath")
-    v_norm.operation = "NORMALIZE"
+    set_node_prop(v_norm, "operation", "NORMALIZE")
     v_norm.location = (-820, 200)
     links.new(sub_vec.outputs["Vector"], v_norm.inputs[0])
 
@@ -155,101 +156,101 @@ def create_octahedral_preview_material(
     # 3. Hemi-Octahedral Projection Math
     # denom = abs(X) + abs(Y) + max(Z, 0.001)
     abs_x = nodes.new(type="ShaderNodeMath")
-    abs_x.operation = "ABSOLUTE"
+    set_node_prop(abs_x, "operation", "ABSOLUTE")
     abs_x.location = (-600, 400)
     links.new(sep_v.outputs["X"], abs_x.inputs[0])
 
     abs_y = nodes.new(type="ShaderNodeMath")
-    abs_y.operation = "ABSOLUTE"
+    set_node_prop(abs_y, "operation", "ABSOLUTE")
     abs_y.location = (-600, 250)
     links.new(sep_v.outputs["Y"], abs_y.inputs[0])
 
     max_z = nodes.new(type="ShaderNodeMath")
-    max_z.operation = "MAXIMUM"
-    max_z.inputs[1].default_value = 0.001
+    set_node_prop(max_z, "operation", "MAXIMUM")
+    set_socket_default_value(max_z.inputs[1], 0.001)
     max_z.location = (-600, 100)
     links.new(sep_v.outputs["Z"], max_z.inputs[0])
 
     add_xy = nodes.new(type="ShaderNodeMath")
-    add_xy.operation = "ADD"
+    set_node_prop(add_xy, "operation", "ADD")
     add_xy.location = (-400, 350)
     links.new(abs_x.outputs["Value"], add_xy.inputs[0])
     links.new(abs_y.outputs["Value"], add_xy.inputs[1])
 
     denom = nodes.new(type="ShaderNodeMath")
-    denom.operation = "ADD"
+    set_node_prop(denom, "operation", "ADD")
     denom.location = (-220, 350)
     links.new(add_xy.outputs["Value"], denom.inputs[0])
     links.new(max_z.outputs["Value"], denom.inputs[1])
 
     # nx = X / denom, ny = Y / denom
     nx = nodes.new(type="ShaderNodeMath")
-    nx.operation = "DIVIDE"
+    set_node_prop(nx, "operation", "DIVIDE")
     nx.location = (-40, 400)
     links.new(sep_v.outputs["X"], nx.inputs[0])
     links.new(denom.outputs["Value"], nx.inputs[1])
 
     ny = nodes.new(type="ShaderNodeMath")
-    ny.operation = "DIVIDE"
+    set_node_prop(ny, "operation", "DIVIDE")
     ny.location = (-40, 250)
     links.new(sep_v.outputs["Y"], ny.inputs[0])
     links.new(denom.outputs["Value"], ny.inputs[1])
 
     # u = (nx + ny) * 0.5 + 0.5
     add_nx_ny = nodes.new(type="ShaderNodeMath")
-    add_nx_ny.operation = "ADD"
+    set_node_prop(add_nx_ny, "operation", "ADD")
     add_nx_ny.location = (140, 400)
     links.new(nx.outputs["Value"], add_nx_ny.inputs[0])
     links.new(ny.outputs["Value"], add_nx_ny.inputs[1])
 
     u_coord = nodes.new(type="ShaderNodeMath")
-    u_coord.operation = "MULTIPLY_ADD"
-    u_coord.inputs[1].default_value = 0.5
-    u_coord.inputs[2].default_value = 0.5
+    set_node_prop(u_coord, "operation", "MULTIPLY_ADD")
+    set_socket_default_value(u_coord.inputs[1], 0.5)
+    set_socket_default_value(u_coord.inputs[2], 0.5)
     u_coord.location = (320, 400)
     links.new(add_nx_ny.outputs["Value"], u_coord.inputs[0])
 
     # v = (nx - ny) * 0.5 + 0.5
     sub_nx_ny = nodes.new(type="ShaderNodeMath")
-    sub_nx_ny.operation = "SUBTRACT"
+    set_node_prop(sub_nx_ny, "operation", "SUBTRACT")
     sub_nx_ny.location = (140, 250)
     links.new(nx.outputs["Value"], sub_nx_ny.inputs[0])
     links.new(ny.outputs["Value"], sub_nx_ny.inputs[1])
 
     v_coord = nodes.new(type="ShaderNodeMath")
-    v_coord.operation = "MULTIPLY_ADD"
-    v_coord.inputs[1].default_value = 0.5
-    v_coord.inputs[2].default_value = 0.5
+    set_node_prop(v_coord, "operation", "MULTIPLY_ADD")
+    set_socket_default_value(v_coord.inputs[1], 0.5)
+    set_socket_default_value(v_coord.inputs[2], 0.5)
     v_coord.location = (320, 250)
     links.new(sub_nx_ny.outputs["Value"], v_coord.inputs[0])
 
     # 4. Grid Tile Coordinates: col = floor(u * N), row = floor(v * N)
     clamp_u = nodes.new(type="ShaderNodeMath")
-    clamp_u.operation = "MULTIPLY"
-    clamp_u.inputs[1].default_value = float(grid_size)
+    set_node_prop(clamp_u, "operation", "MULTIPLY")
+    set_socket_default_value(clamp_u.inputs[1], float(grid_size))
     clamp_u.location = (-600, -100)
     links.new(u_coord.outputs["Value"], clamp_u.inputs[0])
 
     col = nodes.new(type="ShaderNodeMath")
-    col.operation = "FLOOR"
+    set_node_prop(col, "operation", "FLOOR")
     col.location = (-400, -100)
     links.new(clamp_u.outputs["Value"], col.inputs[0])
 
     clamp_v = nodes.new(type="ShaderNodeMath")
-    clamp_v.operation = "MULTIPLY"
-    clamp_v.inputs[1].default_value = float(grid_size)
+    set_node_prop(clamp_v, "operation", "MULTIPLY")
+    set_socket_default_value(clamp_v.inputs[1], float(grid_size))
     clamp_v.location = (-600, -250)
     links.new(v_coord.outputs["Value"], clamp_v.inputs[0])
 
     row = nodes.new(type="ShaderNodeMath")
-    row.operation = "FLOOR"
+    set_node_prop(row, "operation", "FLOOR")
     row.location = (-400, -250)
     links.new(clamp_v.outputs["Value"], row.inputs[0])
 
     # Blender UV row convention: (grid_size - 1) - row
     row_blender = nodes.new(type="ShaderNodeMath")
-    row_blender.operation = "SUBTRACT"
-    row_blender.inputs[0].default_value = float(grid_size - 1)
+    set_node_prop(row_blender, "operation", "SUBTRACT")
+    set_socket_default_value(row_blender.inputs[0], float(grid_size - 1))
     row_blender.location = (-220, -250)
     links.new(row.outputs["Value"], row_blender.inputs[1])
 
@@ -261,40 +262,40 @@ def create_octahedral_preview_material(
     links.new(tex_coord.outputs["UV"], sep_uv.inputs["Vector"])
 
     clamp_u_sub = nodes.new(type="ShaderNodeClamp")
-    clamp_u_sub.inputs["Min"].default_value = 0.002
-    clamp_u_sub.inputs["Max"].default_value = 0.998
+    set_socket_default_value(clamp_u_sub.inputs["Min"], 0.002)
+    set_socket_default_value(clamp_u_sub.inputs["Max"], 0.998)
     clamp_u_sub.location = (-220, -400)
     links.new(sep_uv.outputs["X"], clamp_u_sub.inputs["Value"])
 
     clamp_v_sub = nodes.new(type="ShaderNodeClamp")
-    clamp_v_sub.inputs["Min"].default_value = 0.002
-    clamp_v_sub.inputs["Max"].default_value = 0.998
+    set_socket_default_value(clamp_v_sub.inputs["Min"], 0.002)
+    set_socket_default_value(clamp_v_sub.inputs["Max"], 0.998)
     clamp_v_sub.location = (-220, -550)
     links.new(sep_uv.outputs["Y"], clamp_v_sub.inputs["Value"])
 
     # final_u = (uv.x + col) / grid_size
     add_u = nodes.new(type="ShaderNodeMath")
-    add_u.operation = "ADD"
+    set_node_prop(add_u, "operation", "ADD")
     add_u.location = (-40, -100)
     links.new(clamp_u_sub.outputs["Result"], add_u.inputs[0])
     links.new(col.outputs["Value"], add_u.inputs[1])
 
     final_u = nodes.new(type="ShaderNodeMath")
-    final_u.operation = "DIVIDE"
-    final_u.inputs[1].default_value = float(grid_size)
+    set_node_prop(final_u, "operation", "DIVIDE")
+    set_socket_default_value(final_u.inputs[1], float(grid_size))
     final_u.location = (140, -100)
     links.new(add_u.outputs["Value"], final_u.inputs[0])
 
     # final_v = (uv.y + row_blender) / grid_size
     add_v = nodes.new(type="ShaderNodeMath")
-    add_v.operation = "ADD"
+    set_node_prop(add_v, "operation", "ADD")
     add_v.location = (-40, -250)
     links.new(clamp_v_sub.outputs["Result"], add_v.inputs[0])
     links.new(row_blender.outputs["Value"], add_v.inputs[1])
 
     final_v = nodes.new(type="ShaderNodeMath")
-    final_v.operation = "DIVIDE"
-    final_v.inputs[1].default_value = float(grid_size)
+    set_node_prop(final_v, "operation", "DIVIDE")
+    set_socket_default_value(final_v.inputs[1], float(grid_size))
     final_v.location = (140, -250)
     links.new(add_v.outputs["Value"], final_v.inputs[0])
 
@@ -307,7 +308,7 @@ def create_octahedral_preview_material(
     base_img = safe_load_image(base_color_path)
     if base_img:
         tex_base = nodes.new(type="ShaderNodeTexImage")
-        tex_base.image = base_img
+        set_node_prop(tex_base, "image", base_img)
         tex_base.location = (540, 200)
         links.new(comb_uv.outputs["Vector"], tex_base.inputs["Vector"])
         links.new(tex_base.outputs["Color"], bsdf.inputs["Base Color"])
@@ -321,7 +322,7 @@ def create_octahedral_preview_material(
                 cast(Any, norm_img.colorspace_settings).name = "Non-Color"
 
             tex_norm = nodes.new(type="ShaderNodeTexImage")
-            tex_norm.image = norm_img
+            set_node_prop(tex_norm, "image", norm_img)
             tex_norm.location = (540, -150)
             links.new(comb_uv.outputs["Vector"], tex_norm.inputs["Vector"])
 
@@ -333,8 +334,8 @@ def create_octahedral_preview_material(
                 sep_col = nodes.new(type="ShaderNodeSeparateColor")
                 sep_col.location = (700, -150)
                 inv_green = nodes.new(type="ShaderNodeMath")
-                inv_green.operation = "SUBTRACT"
-                inv_green.inputs[0].default_value = 1.0
+                set_node_prop(inv_green, "operation", "SUBTRACT")
+                set_socket_default_value(inv_green.inputs[0], 1.0)
                 inv_green.location = (700, -320)
                 comb_col = nodes.new(type="ShaderNodeCombineColor")
                 comb_col.location = (700, 0)
@@ -358,7 +359,7 @@ def create_octahedral_preview_material(
                 cast(Any, orm_img.colorspace_settings).name = "Non-Color"
 
             tex_orm = nodes.new(type="ShaderNodeTexImage")
-            tex_orm.image = orm_img
+            set_node_prop(tex_orm, "image", orm_img)
             tex_orm.location = (540, -450)
             links.new(comb_uv.outputs["Vector"], tex_orm.inputs["Vector"])
 
@@ -395,9 +396,11 @@ def setup_impostor_tracking(
         return None
 
     # Find or create TRACK_TO constraint
-    track_c: Any = next((c for c in proxy_obj.constraints if c.type == "TRACK_TO"), None)
-    if not track_c:
-        track_c = proxy_obj.constraints.new(type="TRACK_TO")
+    track_c = cast(
+        "bpy.types.TrackToConstraint",
+        next((c for c in proxy_obj.constraints if c.type == "TRACK_TO"), None)
+        or proxy_obj.constraints.new(type="TRACK_TO"),
+    )
 
     track_c.name = "OmniMesh_Preview_Track"
     track_c.target = cam
@@ -437,7 +440,7 @@ def setup_preview_turntable(
     if cam_obj.animation_data:
         cam_obj.animation_data_clear()
 
-    center_vec: Any = Vector((target_center[0], target_center[1], target_center[2])) if Vector else target_center
+    center_vec = Vector((target_center[0], target_center[1], target_center[2])) if Vector else target_center
 
     for f in range(1, num_frames + 1):
         scene.frame_set(f)
@@ -446,10 +449,10 @@ def setup_preview_turntable(
         cam_y = center_vec[1] - radius * math.cos(angle)
         cam_z = center_vec[2] + height
 
-        cam_loc: Any = Vector((cam_x, cam_y, cam_z)) if Vector else (cam_x, cam_y, cam_z)
+        cam_loc = Vector((cam_x, cam_y, cam_z)) if Vector else (cam_x, cam_y, cam_z)
         cam_obj.location = cam_loc
 
-        dir_vec = center_vec - cam_loc
+        dir_vec = cast("Vector", center_vec) - cast("Vector", cam_loc)
         if hasattr(dir_vec, "to_track_quat"):
             cam_obj.rotation_euler = dir_vec.to_track_quat("-Z", "Y").to_euler()
 
@@ -569,7 +572,7 @@ def setup_impostor_preview_rig(
         target_engine=target_engine,
     )
     if preview_mat:
-        proxy_data: Any = proxy_obj.data
+        proxy_data = cast("bpy.types.Mesh", proxy_obj.data)
         proxy_data.materials.clear()
         proxy_data.materials.append(preview_mat)
 
@@ -606,7 +609,7 @@ def setup_impostor_preview_rig(
     sun_name = f"{base_name}_Preview_Sun"
     sun_obj = bpy.data.objects.get(sun_name)
     if not sun_obj:
-        sun_data: Any = bpy.data.lights.new(name=f"{sun_name}_Data", type="SUN")
+        sun_data = cast("bpy.types.SunLight", bpy.data.lights.new(name=f"{sun_name}_Data", type="SUN"))
         sun_data.energy = 3.0
         sun_obj = bpy.data.objects.new(sun_name, sun_data)
         rig_coll.objects.link(sun_obj)

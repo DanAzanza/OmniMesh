@@ -16,7 +16,6 @@ from typing import Any
 from unittest.mock import MagicMock
 
 
-import core.animation_manager as am
 from core.animation_manager import (
     build_msfs_animation_xml_block,
     scan_asset_animations,
@@ -48,8 +47,8 @@ class MockAction(_MockBase):
         return self.custom_props.get(key, default)
 
 
-def test_scan_asset_animations_active_action_and_nla(monkeypatch):
-    """Verify scanning captures both active actions and NLA track strips."""
+def test_scan_asset_animations_active_action_and_nla():
+    """Verify scanning captures both active actions and NLA track strips via explicit blend_data."""
     gear_act = MockAction("Gear_Retract", (0.0, 200.0))
     rudder_act = MockAction("Rudder_Deflection", (0.0, 50.0))
 
@@ -66,12 +65,10 @@ def test_scan_asset_animations_active_action_and_nla(monkeypatch):
     root_coll = MagicMock()
     root_coll.all_objects = [armature]
 
-    mock_bpy = MagicMock()
-    mock_bpy.data.collections.get.return_value = root_coll
-    monkeypatch.setattr(am, "bpy", mock_bpy)
+    blend_data = MagicMock()
+    blend_data.collections.get.return_value = root_coll
 
-    ctx = MagicMock()
-    actions = scan_asset_animations(ctx, "Aircraft")
+    actions = scan_asset_animations(blend_data, "Aircraft")
 
     assert len(actions) == 2
     act_names = [a["name"] for a in actions]
@@ -85,14 +82,13 @@ def test_scan_asset_animations_active_action_and_nla(monkeypatch):
     assert len(gear_info["guid"]) > 0
 
 
-def test_tag_action_category(monkeypatch):
-    """Verify tag_action_category updates semantic category and deterministic GUID."""
+def test_tag_action_category():
+    """Verify tag_action_category updates semantic category and deterministic GUID via explicit blend_data."""
     mock_act = MockAction("Elevator_Trim")
-    mock_bpy = MagicMock()
-    mock_bpy.data.actions.get.side_effect = lambda name: mock_act if name == "Elevator_Trim" else None
-    monkeypatch.setattr(am, "bpy", mock_bpy)
+    blend_data = MagicMock()
+    blend_data.actions.get.side_effect = lambda name: mock_act if name == "Elevator_Trim" else None
 
-    success = tag_action_category("Elevator_Trim", "FLIGHT_CONTROL")
+    success = tag_action_category("Elevator_Trim", "FLIGHT_CONTROL", blend_data)
     assert success is True
     assert mock_act["_omnimesh_category"] == "FLIGHT_CONTROL"
     assert "_omnimesh_guid" in mock_act
@@ -100,15 +96,18 @@ def test_tag_action_category(monkeypatch):
 
     # Assign custom GUID
     success_custom = tag_action_category(
-        "Elevator_Trim", "FLIGHT_CONTROL", custom_guid="11111111-2222-3333-4444-555555555555"
+        "Elevator_Trim",
+        "FLIGHT_CONTROL",
+        blend_data,
+        custom_guid="11111111-2222-3333-4444-555555555555",
     )
     assert success_custom is True
     assert mock_act["_omnimesh_guid"] == "11111111-2222-3333-4444-555555555555"
     assert mock_act["_omnimesh_guid"] != guid1
 
 
-def test_blend_data_injection_without_global_bpy_data(monkeypatch):
-    """Verify scan_asset_animations and tag_action_category resolve explicit blend_data without global bpy.data."""
+def test_blend_data_injection_without_global_bpy_data():
+    """Verify scan_asset_animations and tag_action_category require explicit blend_data and fail closed when None."""
     flap_act = MockAction("Flap_Deploy", (0.0, 90.0))
     armature = MagicMock()
     armature.name = "Wing_Armature"
@@ -122,18 +121,19 @@ def test_blend_data_injection_without_global_bpy_data(monkeypatch):
     injected_blend_data.collections.get.side_effect = lambda name: root_coll if name == "Aircraft" else None
     injected_blend_data.actions.get.side_effect = lambda name: flap_act if name == "Flap_Deploy" else None
 
-    # Disable global bpy.data access completely
-    monkeypatch.setattr(am, "bpy", None)
+    # Negative boundary: missing blend_data fails closed without touching global state
+    assert scan_asset_animations(None, "Aircraft") == []
+    assert tag_action_category("Flap_Deploy", "FLIGHT_CONTROL", None) is False
 
-    actions = scan_asset_animations(None, "Aircraft", blend_data=injected_blend_data)
+    actions = scan_asset_animations(injected_blend_data, "Aircraft")
     assert len(actions) == 1
     assert actions[0]["name"] == "Flap_Deploy"
     assert actions[0]["length"] == 90
 
-    tagged = tag_action_category("Flap_Deploy", "FLIGHT_CONTROL", blend_data=injected_blend_data)
+    tagged = tag_action_category("Flap_Deploy", "FLIGHT_CONTROL", injected_blend_data)
     assert tagged is True
     assert flap_act["_omnimesh_category"] == "FLIGHT_CONTROL"
-    assert tag_action_category("Missing_Action", "CUSTOM", blend_data=injected_blend_data) is False
+    assert tag_action_category("Missing_Action", "CUSTOM", injected_blend_data) is False
 
 
 # =============================================================================

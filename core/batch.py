@@ -292,8 +292,8 @@ class BatchProcessorEngine:
             result["message"] = f"No valid mesh geometry found in '{filepath}'"
             return result
 
-        generated_lod_objs: list[Any] = []
-        coll: Optional[Any] = None
+        generated_lod_objs: list[bpy.types.Object] = []
+        coll: Optional[bpy.types.Collection] = None
 
         try:
             # Primary mesh object selection
@@ -304,7 +304,7 @@ class BatchProcessorEngine:
             # 1. Sanitize Master Mesh
             initial_tris = 0
             for obj in mesh_objs:
-                obj_mesh: Any = obj.data
+                obj_mesh = cast("bpy.types.Mesh | None", obj.data)
                 if obj_mesh and hasattr(obj_mesh, "polygons") and len(obj_mesh.polygons) > 0:
                     import bmesh
 
@@ -324,7 +324,7 @@ class BatchProcessorEngine:
 
             # 2. Compute Metric Extents & Tiers
             coords = []
-            primary_mesh: Any = primary_obj.data
+            primary_mesh = cast("bpy.types.Mesh | None", primary_obj.data)
             if primary_mesh and hasattr(primary_mesh, "vertices"):
                 for v in primary_mesh.vertices:
                     try:
@@ -363,6 +363,8 @@ class BatchProcessorEngine:
                 delta_w = tolerances["delta_world"]
 
                 # Duplicate primary mesh for this tier
+                if primary_mesh is None:
+                    continue
                 lod_obj_name = f"{base_name}_{tier_name}"
                 lod_mesh = primary_mesh.copy()
                 lod_mesh.name = f"{lod_obj_name}_Mesh"
@@ -372,7 +374,7 @@ class BatchProcessorEngine:
                     coll.objects.link(lod_obj)
                 generated_lod_objs.append(lod_obj)
 
-                lod_mesh: Any = lod_obj.data
+                lod_mesh = cast("bpy.types.Mesh | None", lod_obj.data)
 
                 # Decimate geometry
                 if i > 0 and lod_mesh is not None:
@@ -446,7 +448,7 @@ class BatchProcessorEngine:
                 props, "pbr_export_naming_pattern", preset.get("naming_pattern", "{material}{suffix}")
             )
 
-            all_tex_futures: list[Any] = []
+            all_tex_futures: list[concurrent.futures.Future[bool]] = []
             for mat in unique_mats:
                 try:
                     futs = TextureChannelPacker.pack_material_preset(

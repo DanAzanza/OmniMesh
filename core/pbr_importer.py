@@ -16,7 +16,9 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
+
+from .compat import set_node_prop, set_socket_default_value
 
 if TYPE_CHECKING:
     import bpy
@@ -70,11 +72,11 @@ class OCIOColorSpaceResolver:
 
         target_chain = cls.DATA_FALLBACKS if is_data else (cls.LINEAR_FALLBACKS if is_float else cls.COLOR_FALLBACKS)
 
-        cs_settings: Any = image.colorspace_settings
+        cs_settings = image.colorspace_settings
         for candidate in target_chain:
             if not available_spaces or candidate in available_spaces:
                 try:
-                    cs_settings.name = candidate
+                    cs_settings.name = candidate  # type: ignore[assignment]
                     return
                 except (TypeError, ValueError):
                     continue
@@ -223,8 +225,8 @@ class ShaderGraphBuilder:
         nt = material.node_tree
         if not nt:
             return False
-        nodes: Any = nt.nodes
-        links: Any = nt.links
+        nodes = nt.nodes
+        links = nt.links
 
         # 1. Locate or create Output Material node
         output_node = next((n for n in nodes if getattr(n, "type", "") == "OUTPUT_MATERIAL"), None)
@@ -299,8 +301,8 @@ class ShaderGraphBuilder:
         x_proc = -450
         x_post = -150
 
-        loaded_tex_nodes: dict[str, Any] = {}
-        loaded_sep_nodes: dict[Any, Any] = {}
+        loaded_tex_nodes: dict[str, bpy.types.Node] = {}
+        loaded_sep_nodes: dict[bpy.types.Node, bpy.types.Node] = {}
 
         def get_or_create_tex_node(filepath: str, color_space: str) -> bpy.types.Node | None:
             nonlocal y_cursor
@@ -325,7 +327,7 @@ class ShaderGraphBuilder:
             OCIOColorSpaceResolver.apply_colorspace(img, is_data=is_data)
 
             t_node = nodes.new(type="ShaderNodeTexImage")
-            t_node.image = img
+            set_node_prop(t_node, "image", img)
             t_node.location = (x_tex, y_cursor)
             links.new(mapping.outputs["Vector"], t_node.inputs["Vector"])
             loaded_tex_nodes[filepath] = t_node
@@ -382,8 +384,8 @@ class ShaderGraphBuilder:
             # Invert handler (1.0 - x)
             if invert:
                 inv_node = nodes.new(type="ShaderNodeMath")
-                inv_node.operation = "SUBTRACT"
-                inv_node.inputs[0].default_value = 1.0
+                set_node_prop(inv_node, "operation", "SUBTRACT")
+                set_socket_default_value(inv_node.inputs[0], 1.0)
                 inv_node.location = (x_post, t_node.location.y)
                 links.new(source_sock, inv_node.inputs[1])
                 source_sock = inv_node.outputs.get("Value")
@@ -405,8 +407,8 @@ class ShaderGraphBuilder:
                     links.new(source_sock, sep_norm.inputs["Color"])
 
                     inv_green = nodes.new(type="ShaderNodeMath")
-                    inv_green.operation = "SUBTRACT"
-                    inv_green.inputs[0].default_value = 1.0
+                    set_node_prop(inv_green, "operation", "SUBTRACT")
+                    set_socket_default_value(inv_green.inputs[0], 1.0)
                     inv_green.location = (x_proc + 180, t_node.location.y - 60)
                     links.new(sep_norm.outputs["Green"], inv_green.inputs[1])
 
@@ -428,9 +430,11 @@ class ShaderGraphBuilder:
                 dest_sock = None
                 if target in {"Emission Color", "Emission"}:
                     dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
-                    strength_sock: Any = cls.resolve_bsdf_socket(bsdf_node, "Emission Strength")
+                    strength_sock = cast(
+                        "bpy.types.NodeSocketFloat | None", cls.resolve_bsdf_socket(bsdf_node, "Emission Strength")
+                    )
                     if strength_sock and not strength_sock.is_linked:
-                        strength_sock.default_value = 1.0
+                        set_socket_default_value(strength_sock, 1.0)
                 elif target in {"Alpha", "Opacity"}:
                     dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
                     if hasattr(material, "surface_render_method"):
@@ -456,16 +460,16 @@ class ShaderGraphBuilder:
             if base_color_source and ao_source and ao_blend_mode == "MULTIPLY":
                 mix_node = nodes.new(type="ShaderNodeMix")
                 if hasattr(mix_node, "data_type"):
-                    mix_node.data_type = "RGBA"
-                mix_node.blend_type = "MULTIPLY"
+                    set_node_prop(mix_node, "data_type", "RGBA")
+                set_node_prop(mix_node, "blend_type", "MULTIPLY")
                 if hasattr(mix_node, "clamp_result"):
-                    mix_node.clamp_result = True
+                    set_node_prop(mix_node, "clamp_result", True)
                 mix_node.location = (x_post, 600)
 
                 # Set Factor to 1.0 on Value socket
                 for in_s in mix_node.inputs:
                     if getattr(in_s, "name", "") == "Factor" and getattr(in_s, "type", "") == "VALUE":
-                        in_s.default_value = 1.0
+                        set_socket_default_value(in_s, 1.0)
                         break
 
                 col_a = cls.get_mix_rgba_socket(mix_node, "A", is_output=False)

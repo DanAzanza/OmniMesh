@@ -8,7 +8,7 @@ and engine-specific collider naming (UE5, Unity, MSFS).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, List, cast
 
 from .collision_decomposer import CollisionDecomposer
 
@@ -103,18 +103,18 @@ class CollisionManager:
             if props:
                 resolved_engine = getattr(props, "target_engine", "")
 
-        created_collider_objs: List[Any] = []
+        created_collider_objs: List[bpy.types.Object] = []
         hull_index = 1
 
         if mode == "CONSOLIDATED" and len(mesh_objs) > 1:
             # Combine all objects into single temporary BMesh in world coordinates
             bm_unified = bmesh.new()
-            temp_meshes_to_clean: list[Any] = []
+            temp_meshes_to_clean: list[bpy.types.Mesh] = []
             try:
                 for obj in mesh_objs:
                     bm_temp = bmesh.new()
                     try:
-                        obj_mesh: Any = obj.data
+                        obj_mesh = cast("bpy.types.Mesh", obj.data)
                         bm_temp.from_mesh(obj_mesh)
                         bmesh.ops.transform(bm_temp, matrix=obj.matrix_world, verts=bm_temp.verts[:])
                         temp_m = bpy.data.meshes.new("_om_temp_sub")

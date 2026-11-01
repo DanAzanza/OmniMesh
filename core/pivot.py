@@ -11,7 +11,7 @@ Features:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +54,8 @@ class PivotPreservationEngine:
 
         pivot_obj = None
         sockets: list[bpy.types.Object] = []
-        meshes: list[Any] = []
-        armatures: list[Any] = []
+        meshes: list[bpy.types.Object] = []
+        armatures: list[bpy.types.Object] = []
 
         all_objs = getattr(collection, "all_objects", getattr(collection, "objects", []))
 
@@ -127,11 +127,11 @@ class PivotPreservationEngine:
         Transforms a vertex coordinate vector from mesh local space to pivot relative space:
         v_pivot = (M_pivot^-1 * M_obj) * v_local
         """
-        rel_matrix: Any = cls.get_relative_matrix(obj, pivot_obj)
+        rel_matrix = cls.get_relative_matrix(obj, pivot_obj)
         if rel_matrix is None:
             return co
         if hasattr(rel_matrix, "__matmul__"):
-            return rel_matrix @ co
+            return cast("Vector", cast("Matrix", rel_matrix) @ cast("Vector", co))
         return co
 
     @classmethod
@@ -143,12 +143,12 @@ class PivotPreservationEngine:
         using the inverse-transpose of the 3x3 rotational/scaling component:
         n_pivot = Normalize((M_pivot^-1 * M_obj)_3x3^-T * n_local)
         """
-        rel_matrix: Any = cls.get_relative_matrix(obj, pivot_obj)
+        rel_matrix = cls.get_relative_matrix(obj, pivot_obj)
         if rel_matrix is None:
             return no
 
         try:
-            mat3 = rel_matrix.to_3x3()
+            mat3 = cast("Matrix", rel_matrix).to_3x3()
             inv_trans_3x3 = mat3.inverted().transposed()
             transformed_no = inv_trans_3x3 @ no
             return transformed_no.normalized()

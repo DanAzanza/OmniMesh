@@ -138,9 +138,11 @@ def armature_rest_pose_context(armature_obj: bpy.types.Object | None, context: b
         yield
     finally:
         try:
-            arm_data_restore: Any = getattr(armature_obj, "data", None) if armature_obj else None
-            if arm_data_restore is not None:
-                arm_data_restore.pose_position = orig_pose_pos
+            arm_data_restore = cast(
+                "bpy.types.Armature | None", getattr(armature_obj, "data", None) if armature_obj else None
+            )
+            if arm_data_restore is not None and orig_pose_pos is not None:
+                arm_data_restore.pose_position = orig_pose_pos  # type: ignore[assignment]
                 if vl and hasattr(vl, "update"):
                     vl.update()
         except (RuntimeError, AttributeError, TypeError) as exc:
@@ -163,7 +165,7 @@ def compute_rest_pose_inverted_matrix(
         return target_mesh_rest_world or armature_world
 
     try:
-        rest_world: Any = (
+        rest_world = (
             cast(Any, armature_world)
             @ cast(Any, bone_rest_local)
             @ cast(Any, prop_parent_inverse)
@@ -205,7 +207,7 @@ class WeightSanitizer:
         """
         if not bpy or not bmesh or not obj or getattr(obj, "type", None) != "MESH":
             return {"normalized": 0, "singularities_fixed": 0, "purged_vgs": 0}
-        mesh: Any = getattr(obj, "data", None)
+        mesh = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
         if (
             not hasattr(obj, "vertex_groups")
             or len(obj.vertex_groups) == 0
@@ -289,11 +291,12 @@ class WeightSanitizer:
                 logger.debug("find_armature failed: %s", exc)
         if not armature and hasattr(obj, "modifiers"):
             for m in obj.modifiers:
-                m_any: Any = m
-                if m_any.type == "ARMATURE" and getattr(m_any, "object", None):
-                    armature = m_any.object
-                    break
-        arm_data_prot: Any = armature.data if armature else None
+                if m.type == "ARMATURE":
+                    arm_mod = cast("bpy.types.ArmatureModifier", m)
+                    if getattr(arm_mod, "object", None):
+                        armature = arm_mod.object
+                        break
+        arm_data_prot = cast("bpy.types.Armature | None", armature.data if armature else None)
         if arm_data_prot and hasattr(arm_data_prot, "bones"):
             protected_bone_names = {b.name for b in arm_data_prot.bones}
 
@@ -334,8 +337,8 @@ class KinematicBonePruner:
         """
         if not bpy or not lod_obj or not armature_obj or getattr(lod_obj, "type", None) != "MESH":
             return 0
-        mesh: Any = getattr(lod_obj, "data", None)
-        arm_data: Any = getattr(armature_obj, "data", None)
+        mesh = cast("bpy.types.Mesh | None", getattr(lod_obj, "data", None))
+        arm_data = cast("bpy.types.Armature | None", getattr(armature_obj, "data", None))
         if (
             not mesh
             or not hasattr(mesh, "vertices")
@@ -457,7 +460,7 @@ class KinematicBonePruner:
         src_idx = src_vg.index
         tgt_idx = tgt_vg.index
 
-        mesh: Any = obj.data
+        mesh = cast("bpy.types.Mesh", obj.data)
         for v in mesh.vertices:
             src_weight = 0.0
             tgt_weight = 0.0

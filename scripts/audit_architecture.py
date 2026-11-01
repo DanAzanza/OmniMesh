@@ -173,6 +173,14 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
                         (rel_path, node.lineno, f"{node.name}() -> {ast.unparse(node.returns)}")
                     )
 
+            # Check for non-dict Any in annotated variable assignments in core/ and exporters/
+            if is_core_or_exporter and isinstance(node, ast.AnnAssign):
+                if node.annotation is not None and _has_non_dict_any(node.annotation):
+                    target_repr = ast.unparse(node.target) if hasattr(ast, "unparse") else "var"
+                    violations["any_in_core_exporter_signatures"].append(
+                        (rel_path, node.lineno, f"{target_repr}: {ast.unparse(node.annotation)}")
+                    )
+
     return violations
 
 

@@ -37,10 +37,16 @@ class ShaderTracer:
         norm_links = bsdf.inputs["Normal"].links
         if not norm_links:
             return None
-        from_node: Any = norm_links[0].from_node
+        from_node = norm_links[0].from_node
 
         visited = {id(from_node)}
-        while from_node and from_node.type == "REROUTE" and from_node.inputs and from_node.inputs[0].is_linked:
+        while (
+            from_node
+            and from_node.type == "REROUTE"
+            and from_node.inputs
+            and from_node.inputs[0].is_linked
+            and from_node.inputs[0].links
+        ):
             from_node = from_node.inputs[0].links[0].from_node
             if id(from_node) in visited:
                 break
@@ -51,7 +57,7 @@ class ShaderTracer:
         if from_node.type in ("NORMAL_MAP", "BUMP"):
             sock = from_node.inputs.get("Color") or from_node.inputs.get("Height")
             if sock and sock.is_linked and sock.links:
-                source: Any = sock.links[0].from_node
+                source = sock.links[0].from_node
                 visited_reroute = {id(source)}
                 while source and source.type == "REROUTE" and source.inputs and source.inputs[0].is_linked:
                     source = source.inputs[0].links[0].from_node
@@ -61,13 +67,13 @@ class ShaderTracer:
                 if source and source.type == "COMBINE_COLOR":
                     red_sock = source.inputs.get("Red")
                     if red_sock and red_sock.is_linked:
-                        sep: Any = red_sock.links[0].from_node
+                        sep = red_sock.links[0].from_node
                         if sep and sep.type == "SEPARATE_COLOR" and sep.inputs["Color"].is_linked:
                             source = sep.inputs["Color"].links[0].from_node
                 if source and source.type == "TEX_IMAGE":
-                    return source.image
+                    return cast("bpy.types.ShaderNodeTexImage", source).image
         elif from_node.type == "TEX_IMAGE":
-            return from_node.image
+            return cast("bpy.types.ShaderNodeTexImage", from_node).image
         return None
 
     @classmethod
@@ -96,7 +102,7 @@ class ShaderTracer:
                 out_node = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None)
             disp_sock = out_node.inputs.get("Displacement") if out_node else None
             if disp_sock and disp_sock.is_linked and disp_sock.links:
-                d_curr: Any = disp_sock.links[0].from_node
+                d_curr = disp_sock.links[0].from_node
                 if d_curr and d_curr.type == "DISPLACEMENT":
                     h_sock = d_curr.inputs.get("Height")
                     if h_sock and h_sock.is_linked:
@@ -115,7 +121,7 @@ class ShaderTracer:
         if socket_name in ("Ambient Occlusion", "AO", "Occlusion"):
             base_sock = bsdf.inputs.get("Base Color") or bsdf.inputs.get("BaseColor")
             if base_sock and base_sock.is_linked:
-                mix_candidate: Any = base_sock.links[0].from_node
+                mix_candidate = base_sock.links[0].from_node
                 visited_mix = {id(mix_candidate)}
                 while (
                     mix_candidate
@@ -137,7 +143,7 @@ class ShaderTracer:
                         mix_candidate.inputs[7] if len(mix_candidate.inputs) > 7 else None
                     )
                     if b_sock and b_sock.is_linked:
-                        ao_src: Any = b_sock.links[0].from_node
+                        ao_src = b_sock.links[0].from_node
                         visited_ao = {id(ao_src)}
                         while ao_src and ao_src.type == "REROUTE" and ao_src.inputs and ao_src.inputs[0].is_linked:
                             ao_src = ao_src.inputs[0].links[0].from_node
@@ -155,7 +161,7 @@ class ShaderTracer:
             # Fallback for unlinked AO / ORM image nodes in tree
             for node in nodes:
                 if node.type == "TEX_IMAGE":
-                    node_img: Any = getattr(node, "image", None)
+                    node_img = cast("bpy.types.Image | None", getattr(node, "image", None))
                     if node_img:
                         img_n = node_img.name.lower()
                         if any(k in img_n for k in ("_ao", "ambient_occlusion", "occlusion", "_orm", "_comp")):
@@ -199,7 +205,7 @@ class ShaderTracer:
 
         # Follow upstream links
         link = socket.links[0]
-        curr: Any = link.from_node
+        curr = link.from_node
         channel_index = 0
         is_inverted = False
         visited = {id(curr)}
@@ -486,7 +492,7 @@ class ShaderTracer:
         if not out_node or "Surface" not in out_node.inputs:
             return None
 
-        surf_sock: Any = out_node.inputs["Surface"]
+        surf_sock = out_node.inputs["Surface"]
         orig_surf_from = surf_sock.links[0].from_socket if (surf_sock.is_linked and surf_sock.links) else None
 
         scene = sc
@@ -494,7 +500,7 @@ class ShaderTracer:
             return None
         old_engine = scene.render.engine
         old_samples = getattr(getattr(scene, "cycles", None), "samples", 1)
-        temp_nodes: list[Any] = []
+        temp_nodes: list[bpy.types.Node] = []
         temp_img = None
 
         try:
@@ -512,7 +518,7 @@ class ShaderTracer:
                     cs.name = "Non-Color"
                 except (TypeError, ValueError, AttributeError) as exc:
                     logger.debug("Setting colorspace Non-Color skipped: %s", exc)
-            tex_node: Any = nodes.new(type="ShaderNodeTexImage")
+            tex_node = cast("bpy.types.ShaderNodeTexImage", nodes.new(type="ShaderNodeTexImage"))
             temp_nodes.append(tex_node)
             tex_node.image = temp_img
             nodes.active = tex_node

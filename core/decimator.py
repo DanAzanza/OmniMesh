@@ -389,7 +389,7 @@ class MeshDecimator:
 
         ctx = context
         dec_mod = cast(bpy.types.DecimateModifier, obj.modifiers.new(name="OmniMesh_Decimate", type="DECIMATE"))
-        orig_armature_states: dict[Any, bool] = {}
+        orig_armature_states: dict[bpy.types.Modifier, bool] = {}
         try:
             dec_mod.decimate_type = "COLLAPSE"
             dec_mod.ratio = clamped_ratio

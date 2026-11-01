@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ def classify_imported_mesh_node(obj: bpy.types.Object | None, is_interior: bool 
 
     is_collision_named = name_lower.startswith("collision_")
     is_invisible_mat = False
-    obj_data: Any = getattr(obj, "data", None)
+    obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
     if obj_data and hasattr(obj_data, "materials"):
         mats = [m for m in obj_data.materials if m]
         if mats and all(m.get("_omnimesh_invisible") or m.get("msfs_material_type") == 12 for m in mats):
@@ -289,7 +289,7 @@ class GLTFAssemblyEngine:
             return 0
 
         retargeted_count = 0
-        redundant_armatures: set[Any] = set()
+        redundant_armatures: set[bpy.types.Object] = set()
 
         for obj in lod_objects:
             if obj.type == "ARMATURE" and obj != master_armature:
@@ -301,10 +301,11 @@ class GLTFAssemblyEngine:
                     obj.parent = master_armature
                 if hasattr(obj, "modifiers"):
                     for mod in obj.modifiers:
-                        mod_any: Any = mod
-                        if mod_any.type == "ARMATURE" and mod_any.object and mod_any.object != master_armature:
-                            redundant_armatures.add(mod_any.object)
-                            mod_any.object = master_armature
+                        if mod.type == "ARMATURE":
+                            arm_mod = cast("bpy.types.ArmatureModifier", mod)
+                            if arm_mod.object and arm_mod.object != master_armature:
+                                redundant_armatures.add(arm_mod.object)
+                                arm_mod.object = master_armature
                             retargeted_count += 1
 
         # Safely remove redundant armatures and clean orphan datablocks
@@ -326,7 +327,9 @@ def count_mesh_triangles(mesh_obj: bpy.types.Object | None) -> int:
     if not mesh_obj or mesh_obj.type != "MESH" or not hasattr(mesh_obj, "data"):
         return 0
     try:
-        mesh: Any = mesh_obj.data
+        mesh = cast("bpy.types.Mesh | None", mesh_obj.data)
+        if mesh is None:
+            return 0
         if hasattr(mesh, "calc_loop_triangles"):
             mesh.calc_loop_triangles()
             return len(mesh.loop_triangles)

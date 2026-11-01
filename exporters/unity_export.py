@@ -12,7 +12,7 @@ except (ImportError, ValueError):
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class UnityExporter(EngineExporterBase):
             except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
-        export_objects: list[Any] = []
+        export_objects: list[bpy.types.Object] = []
         for tier_idx in sorted(payload.lod_tiers.keys()):
             for obj in payload.lod_tiers[tier_idx]:
                 if obj not in export_objects:
@@ -78,7 +78,7 @@ class UnityExporter(EngineExporterBase):
         vl = getattr(context, "view_layer", None)
         orig_active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
         orig_selected = list(getattr(context, "selected_objects", []))
-        orig_hide_states: dict[Any, tuple[bool, bool]] = {}
+        orig_hide_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
         for o in all_export_items:
             if not o:
                 continue
@@ -86,7 +86,7 @@ class UnityExporter(EngineExporterBase):
             hg = o.hide_get(view_layer=vl) if (hasattr(o, "hide_get") and vl) else hv
             orig_hide_states[o] = (hv, hg)
 
-        orig_collider_names: dict[Any, str] = {}
+        orig_collider_names: dict[bpy.types.Object, str] = {}
         fbx_path = os.path.join(export_dir, f"{clean_name}.fbx")
 
         try:

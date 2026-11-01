@@ -355,7 +355,7 @@ class TextureChannelPacker:
         """Converts OpenGL (+Y) Normal map to DirectX (-Y) Normal map."""
         if not source_img or getattr(source_img, "size", (0, 0))[0] == 0:
             return False
-        sz: Any = source_img.size
+        sz = getattr(source_img, "size", (0, 0))
         src_w, src_h = int(sz[0]), int(sz[1])
         out_w, out_h = target_size if target_size else (src_w, src_h)
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Sequence, cast
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +274,9 @@ class MeshChunkSlicer:
                 p_local = mat_inv @ p_world
                 n_local = (mat_world_trans_3x3 @ n_world).normalized()
 
-                geom: list[Any] = bm.faces[:] + bm.edges[:] + bm.verts[:]
+                geom: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = (
+                    list(bm.faces) + list(bm.edges) + list(bm.verts)
+                )
                 bmesh.ops.bisect_plane(
                     bm,
                     geom=geom,
@@ -402,7 +404,7 @@ class MeshChunkSlicer:
             if not target_faces:
                 return None
 
-            vert_map: dict[Any, Any] = {}
+            vert_map: dict[bmesh.types.BMVert, bmesh.types.BMVert] = {}
             for f in target_faces:
                 for v in f.verts:
                     if v not in vert_map:
@@ -474,7 +476,7 @@ class MeshChunkSlicer:
             chunk_obj.matrix_world = source_obj.matrix_world.copy()
 
             # Assign matching materials (preserving global slots)
-            src_data: Any = source_obj.data
+            src_data = cast("bpy.types.Mesh | None", source_obj.data)
             for mat in getattr(src_data, "materials", []):
                 chunk_mesh.materials.append(mat)
 
@@ -491,7 +493,7 @@ class MeshChunkSlicer:
             MeshChunkSlicer._recenter_pivot_stationary(chunk_obj)
 
             # Transfer loop normals from uncut source mesh
-            mesh_data: Any = chunk_obj.data
+            mesh_data = cast("bpy.types.Mesh | None", chunk_obj.data)
             NormalManager.ensure_sharp_edge_attribute(mesh_data)
             if mesh_data is not None and hasattr(mesh_data, "update"):
                 mesh_data.update()
@@ -514,7 +516,7 @@ class MeshChunkSlicer:
         """
         if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
             return
-        mesh: Any = obj.data
+        mesh = cast("bpy.types.Mesh", obj.data)
         if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
             return
 

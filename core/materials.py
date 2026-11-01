@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import hashlib
 import json
 import logging
+from collections.abc import Iterable
+from .compat import get_socket_default_value, set_socket_default_value
 import os
 from typing import TYPE_CHECKING, Any, cast
 
@@ -64,7 +66,7 @@ class DeepMaterialHasher:
 
         # Traverse reachable nodes from output backwards
         visited_nodes: set[str] = set()
-        queue: list[Any] = [output_node]
+        queue: list[bpy.types.Node] = [output_node]
         canonical_nodes: list[dict[str, Any]] = []
         canonical_links: list[dict[str, Any]] = []
 
@@ -81,13 +83,14 @@ class DeepMaterialHasher:
 
             # Capture node-specific internal properties
             if hasattr(curr, "operation"):
-                node_data["operation"] = str(curr.operation)
+                node_data["operation"] = str(getattr(curr, "operation", ""))
             if hasattr(curr, "blend_type"):
-                node_data["blend_type"] = str(curr.blend_type)
+                node_data["blend_type"] = str(getattr(curr, "blend_type", ""))
             if hasattr(curr, "color_space"):
-                node_data["color_space"] = str(curr.color_space)
-            if hasattr(curr, "image") and curr.image:
-                img = curr.image
+                node_data["color_space"] = str(getattr(curr, "color_space", ""))
+            curr_img = cast("bpy.types.Image | None", getattr(curr, "image", None))
+            if curr_img is not None:
+                img = curr_img
                 filepath = img.filepath
                 if bpy and filepath:
                     try:
@@ -95,16 +98,17 @@ class DeepMaterialHasher:
                     except (RuntimeError, ValueError, AttributeError) as exc:
                         logger.debug("Failed resolving abspath for image: %s", exc)
                 node_data["image_filepath"] = filepath or img.name
-                node_data["image_size"] = list(img.size)
-                if hasattr(img, "colorspace_settings"):
+                sz = getattr(img, "size", (0, 0))
+                node_data["image_size"] = [int(sz[0]), int(sz[1])]
+                if hasattr(img, "colorspace_settings") and img.colorspace_settings:
                     node_data["image_colorspace"] = img.colorspace_settings.name
 
             # Capture unlinked input default values
             input_defaults: dict[str, Any] = {}
             for sock in curr.inputs:
                 if not sock.is_linked and hasattr(sock, "default_value"):
-                    val = sock.default_value
-                    if hasattr(val, "__iter__") and not isinstance(val, (str, bytes)):
+                    val = get_socket_default_value(sock)
+                    if isinstance(val, Iterable) and not isinstance(val, (str, bytes)):
                         try:
                             input_defaults[str(sock.name)] = [round(float(v), 5) for v in val]
                         except (ValueError, TypeError):
@@ -118,7 +122,7 @@ class DeepMaterialHasher:
 
             # Trace incoming links
             for sock in curr.inputs:
-                for link in sock.links:
+                for link in sock.links or ():
                     from_node = link.from_node
                     if not from_node:
                         continue
@@ -167,7 +171,7 @@ class HeadlessSlotCompactor:
         """
         if not obj or not hasattr(obj, "data") or not obj.data:
             return {"slots_removed": 0, "faces_remapped": 0}
-        mesh: Any = obj.data
+        mesh = cast("bpy.types.Mesh", obj.data)
         if not hasattr(mesh, "polygons") or not hasattr(obj, "material_slots"):
             return {"slots_removed": 0, "faces_remapped": 0}
 
@@ -183,8 +187,8 @@ class HeadlessSlotCompactor:
                 used_indices.add(idx)
 
         # 2. Build deterministic compaction & deduplication map
-        new_materials: list[Any] = []
-        mat_to_new_index: dict[Any, int] = {}
+        new_materials: list[bpy.types.Material | None] = []
+        mat_to_new_index: dict[bpy.types.Material, int] = {}
         slot_remap: dict[int, int] = {}
 
         for old_idx in range(num_slots):
@@ -246,7 +250,7 @@ class HeadlessSlotCompactor:
                     mesh.materials.pop(index=idx_to_pop)
                 except TypeError:
                     # Standard Python list accepts positional argument: pop(idx)
-                    mesh.materials.pop(idx_to_pop)
+                    mesh.materials.pop(idx_to_pop)  # type: ignore[call-arg]
         elif hasattr(mesh, "materials"):
             mesh.materials.clear()
             for mat in new_materials:
@@ -298,7 +302,7 @@ class SemanticTextureAuditor:
 
         for node in list(nodes):
             if node.type == "TEX_IMAGE":
-                img: Any = getattr(node, "image", None)
+                img = cast("bpy.types.Image | None", getattr(node, "image", None))
                 if not cls.is_image_valid(img):
                     # Trace downstream connections (including through demux/mix/math nodes)
                     def resolve_downstream_targets(
@@ -328,26 +332,25 @@ class SemanticTextureAuditor:
 
                     downstream = resolve_downstream_targets(node, {id(node)})
                     for link, target_sock, target_node in downstream:
-                        sock_any: Any = target_sock
-                        sock_name = str(sock_any.name if sock_any else "").lower()
+                        sock_name = str(getattr(target_sock, "name", "") if target_sock else "").lower()
                         node_type = target_node.type if target_node else ""
 
                         if "normal" in sock_name or node_type == "NORMAL_MAP":
                             if link in links:
                                 links.remove(link)
                         elif "roughness" in sock_name:
-                            if hasattr(sock_any, "default_value"):
-                                sock_any.default_value = 0.5
+                            if target_sock is not None:
+                                set_socket_default_value(target_sock, 0.5)
                             if link in links:
                                 links.remove(link)
                         elif "metallic" in sock_name:
-                            if hasattr(sock_any, "default_value"):
-                                sock_any.default_value = 0.0
+                            if target_sock is not None:
+                                set_socket_default_value(target_sock, 0.0)
                             if link in links:
                                 links.remove(link)
                         elif "base color" in sock_name or "color" in sock_name:
-                            if hasattr(sock_any, "default_value"):
-                                sock_any.default_value = (0.8, 0.8, 0.8, 1.0)
+                            if target_sock is not None:
+                                set_socket_default_value(target_sock, (0.8, 0.8, 0.8, 1.0))
                             if link in links:
                                 links.remove(link)
                         else:
@@ -406,7 +409,7 @@ class MaterialOptimizer:
         """Calculates cumulative surface area per material slot index, scaled by matrix_world if available."""
         if not obj or not hasattr(obj, "data") or not obj.data:
             return {}
-        mesh: Any = obj.data
+        mesh = cast("bpy.types.Mesh", obj.data)
         if not hasattr(mesh, "polygons") or not hasattr(obj, "material_slots"):
             return {}
 
@@ -519,7 +522,7 @@ class MaterialOptimizer:
         if not reassigned_slots:
             return {"consolidated_slots": 0, "faces_reassigned": 0}
 
-        mesh_data: Any = obj.data
+        mesh_data = cast("bpy.types.Mesh", obj.data)
         bm = bmesh.new()
         faces_reassigned = 0
         try:
@@ -557,7 +560,7 @@ class MaterialOptimizer:
             h = DeepMaterialHasher.hash_material(mat)
             hash_to_materials.setdefault(h, []).append(mat)
 
-        mat_remap: dict[Any, Any] = {}
+        mat_remap: dict[bpy.types.Material, bpy.types.Material] = {}
         merged_count = 0
 
         for cluster in hash_to_materials.values():
@@ -630,7 +633,7 @@ class MaterialOptimizer:
         total_orphan_nodes = 0
 
         # Step 1: Missing texture audit and orphan node cleanup
-        seen_materials: set[Any] = set()
+        seen_materials: set[bpy.types.Material] = set()
         for obj in mesh_objs:
             for slot in getattr(obj, "material_slots", []):
                 mat = slot.material

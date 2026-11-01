@@ -149,7 +149,7 @@ class MSFSExporter(EngineExporterBase):
         vl = getattr(context, "view_layer", None)
         orig_active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
         orig_selected = list(getattr(context, "selected_objects", []))
-        orig_hide_states: dict[Any, tuple[bool, bool]] = {}
+        orig_hide_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
         for tier_objs in payload.lod_tiers.values():
             for o in tier_objs:
                 if not o:

@@ -100,3 +100,22 @@ def test_audit_catches_broad_except_and_any_in_core_signatures(tmp_path: Path) -
     assert len(sig_violations) == 2
     assert "process_mesh(obj: Any)" in str(sig_violations[0][2])
     assert "process_mesh() -> list[Any]" in str(sig_violations[1][2])
+
+
+def test_audit_catches_any_in_local_variable_annotations(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True)
+    (core_dir / "bad_assign.py").write_text(
+        "from typing import Any\n"
+        "def run_stuff():\n"
+        "    x: Any = 123\n"
+        "    y: list[Any] = []\n"
+        "    z: dict[str, Any] = {}\n",
+        encoding="utf-8",
+    )
+
+    violations = scan_repository(tmp_path)
+    sig_violations = violations["any_in_core_exporter_signatures"]
+    assert len(sig_violations) == 2
+    assert "x: Any" in str(sig_violations[0][2])
+    assert "y: list[Any]" in str(sig_violations[1][2])

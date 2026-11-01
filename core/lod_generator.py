@@ -10,7 +10,18 @@ from .exceptions import OmniMeshError
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
+
+class LODSettingsProtocol(Protocol):
+    """Structural protocol for LOD tool settings across UI properties and headless doubles."""
+
+    last_culled_slender_count: int
+    last_generated_base_tris: int
+    last_generated_final_tris: int
+    last_generated_reduction_pct: float
+    last_generated_tier_count: int
+
 
 logger = logging.getLogger(__name__)
 
@@ -135,13 +146,13 @@ def _process_merged_tier(
     context: bpy.types.Context | None = None,
 ) -> tuple[int, int, int, bpy.types.Object | None]:
     """Processes a merged LOD tier, combining meshes and applying decimation pipeline."""
-    tier: Any = tier_in
-    props: Any = props_in
-    render: Any = render_in
+    tier = tier_in
+    props = props_in
+    render = cast("bpy.types.RenderSettings", render_in)
     merged_name = f"{base_name}_LOD{tier_idx}"
     existing = bpy.data.objects.get(merged_name)
     if existing and existing not in mesh_objs:
-        old_mesh: Any = existing.data
+        old_mesh = cast("bpy.types.Mesh | None", existing.data)
         bpy.data.objects.remove(existing, do_unlink=True)
         if old_mesh and old_mesh.users == 0 and hasattr(bpy.data, "meshes"):
             try:
@@ -157,7 +168,7 @@ def _process_merged_tier(
     if tier_coll and tier_obj.name not in tier_coll.objects:
         tier_coll.objects.link(tier_obj)
 
-    tier_mesh: Any = tier_obj.data
+    tier_mesh = cast("bpy.types.Mesh", tier_obj.data)
     culled_slender_count = 0
     bm = bmesh.new()
     try:
@@ -170,13 +181,13 @@ def _process_merged_tier(
             ),
         )
 
-        if props.enable_slender_culling:
+        if getattr(props, "enable_slender_culling", False):
             res_slender = SlenderFeatureCuller.cull_slender_features(
                 bm,
-                screen_size_pct=tier.screen_size_pct,
+                screen_size_pct=float(getattr(tier, "screen_size_pct", 100.0)),
                 resolution_y=render.resolution_y,
                 root_radius_m=radius,
-                tau_sse=props.tau_sse,
+                tau_sse=float(getattr(props, "tau_sse", 1.5)),
             )
             culled_slender_count += res_slender.get("culled_islands", 0)
 
@@ -212,10 +223,11 @@ def _process_merged_tier(
     finally:
         bm.free()
 
-    if props.purge_shape_keys and tier_idx >= 1:
+    if getattr(props, "purge_shape_keys", False) and tier_idx >= 1:
         MeshDecimator.purge_all_shape_keys(tier_obj, context=context)
 
-    qem_ratio = tier.target_tris_pct / 100.0 if getattr(tier, "target_tris_pct", 0.0) > 0.0 else tolerances["qem_ratio"]
+    target_tris_pct = float(getattr(tier, "target_tris_pct", 0.0))
+    qem_ratio = target_tris_pct / 100.0 if target_tris_pct > 0.0 else tolerances["qem_ratio"]
     MeshDecimator.execute_decimate_qem(
         tier_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True, context=context
     )
@@ -258,7 +270,7 @@ def _process_merged_tier(
                 )
     finally:
         if owned_ref and target_ref and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
-            ref_mesh: Any = target_ref.data
+            ref_mesh = cast("bpy.types.Mesh | None", target_ref.data)
             try:
                 bpy.data.objects.remove(target_ref, do_unlink=True)
                 if ref_mesh and ref_mesh.users == 0 and hasattr(bpy.data, "meshes"):
@@ -267,11 +279,11 @@ def _process_merged_tier(
                 logger.debug("Cleanup ref_merged_obj exception: %s", exc)
 
     if armature_obj and len(tier_obj.vertex_groups) > 0:
-        if props.enable_bone_pruning and tier_idx >= 2:
+        if getattr(props, "enable_bone_pruning", False) and tier_idx >= 2:
             KinematicBonePruner.prune_kinematic_subtrees(
                 tier_obj,
                 armature_obj,
-                screen_distance_m=tier.distance_m,
+                screen_distance_m=float(getattr(tier, "distance_m", 10.0)),
                 fov_v_rad=fov_v,
                 resolution_y=render.resolution_y,
                 pixel_threshold=1.5,
@@ -281,11 +293,11 @@ def _process_merged_tier(
     tier_mesh.update()
     actual_tris = _count_triangles(tier_mesh)
     actual_mats = len(tier_obj.material_slots)
-    tier_obj_any: Any = tier_obj
-    if hasattr(tier_obj_any, "lod_tool"):
-        tier_obj_any.lod_tool.lod_root_object = mesh_objs[0] if mesh_objs else None
-        tier_obj_any.lod_tool.is_generated_lod = True
-        tier_obj_any.lod_tool.lod_index = tier_idx
+    lod_tool_meta = getattr(tier_obj, "lod_tool", None)
+    if lod_tool_meta is not None:
+        lod_tool_meta.lod_root_object = mesh_objs[0] if mesh_objs else None
+        lod_tool_meta.is_generated_lod = True
+        lod_tool_meta.lod_index = tier_idx
 
     return actual_tris, actual_mats, culled_slender_count, tier_obj
 
@@ -308,9 +320,9 @@ def _process_unmerged_tier(
     context: bpy.types.Context | None = None,
 ) -> tuple[int, int, int, bpy.types.Object | None]:
     """Processes an unmerged multi-mesh LOD tier, decimating each object individually."""
-    tier: Any = tier_in
-    props: Any = props_in
-    render: Any = render_in
+    tier = tier_in
+    props = props_in
+    render = cast("bpy.types.RenderSettings", render_in)
     tier_tris = 0
     tier_mats = 0
     culled_slender_count = 0
@@ -320,7 +332,7 @@ def _process_unmerged_tier(
         sub_name = f"{source_obj.name}_LOD{tier_idx}" if len(mesh_objs) > 1 else f"{base_name}_LOD{tier_idx}"
         existing = bpy.data.objects.get(sub_name)
         if existing and existing not in mesh_objs and existing != source_obj:
-            old_mesh: Any = existing.data
+            old_mesh = cast("bpy.types.Mesh | None", existing.data)
             bpy.data.objects.remove(existing, do_unlink=True)
             if old_mesh and old_mesh.users == 0 and hasattr(bpy.data, "meshes"):
                 try:
@@ -328,9 +340,9 @@ def _process_unmerged_tier(
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
 
-        lod_obj: Any = source_obj.copy()
-        src_data: Any = source_obj.data
-        lod_mesh: Any = src_data.copy() if src_data else src_data
+        lod_obj = source_obj.copy()
+        src_data = cast("bpy.types.Mesh | None", source_obj.data)
+        lod_mesh = cast("bpy.types.Mesh", src_data.copy() if src_data else src_data)
         lod_obj.data = lod_mesh
         lod_obj.name = sub_name
         if lod_obj.data:
@@ -338,7 +350,7 @@ def _process_unmerged_tier(
         if tier_coll:
             tier_coll.objects.link(lod_obj)
 
-        if props.purge_shape_keys and tier_idx >= 1:
+        if getattr(props, "purge_shape_keys", False) and tier_idx >= 1:
             MeshDecimator.purge_all_shape_keys(lod_obj, context=context)
 
         ModifierManager.apply_all_modifiers_in_place(lod_obj, preserve_armature=True)
@@ -356,7 +368,7 @@ def _process_unmerged_tier(
 
         bm = bmesh.new()
         try:
-            bm.from_mesh(lod_obj.data)
+            bm.from_mesh(lod_mesh)
             MeshSanitizer.sanitize_mesh_full(
                 bm,
                 options=SanitizeOptions(
@@ -365,13 +377,13 @@ def _process_unmerged_tier(
                 ),
             )
 
-            if props.enable_slender_culling:
+            if getattr(props, "enable_slender_culling", False):
                 res_slender = SlenderFeatureCuller.cull_slender_features(
                     bm,
-                    screen_size_pct=tier.screen_size_pct,
+                    screen_size_pct=float(getattr(tier, "screen_size_pct", 100.0)),
                     resolution_y=render.resolution_y,
                     root_radius_m=radius,
-                    tau_sse=props.tau_sse,
+                    tau_sse=float(getattr(props, "tau_sse", 1.5)),
                 )
                 culled_slender_count += res_slender.get("culled_islands", 0)
 
@@ -393,18 +405,17 @@ def _process_unmerged_tier(
                 pin_material_borders=getattr(props, "pin_material_borders", True),
             )
             MeshDecimator.inject_curvature_weights(lod_obj, bm, pinned_verts)
-            bm.to_mesh(lod_obj.data)
+            bm.to_mesh(lod_mesh)
         finally:
             bm.free()
-        lod_obj.data.update()
+        lod_mesh.update()
 
         is_decal = False
         if MSFSMaterialAnalyzer:
             is_decal = MSFSMaterialAnalyzer.is_decal_mesh(source_obj)
 
-        qem_ratio = (
-            tier.target_tris_pct / 100.0 if getattr(tier, "target_tris_pct", 0.0) > 0.0 else tolerances["qem_ratio"]
-        )
+        target_tris_pct = float(getattr(tier, "target_tris_pct", 0.0))
+        qem_ratio = target_tris_pct / 100.0 if target_tris_pct > 0.0 else tolerances["qem_ratio"]
         if is_decal and getattr(props, "msfs_preserve_decals", True):
             qem_ratio = max(qem_ratio, 0.75 if tier_idx <= 2 else 0.5)
 
@@ -415,30 +426,31 @@ def _process_unmerged_tier(
         MaterialOptimizer.consolidate_micro_materials(
             lod_obj,
             area_crit=tolerances["area_crit"],
-            preserve_slot_indexing=props.preserve_slot_indexing,
+            preserve_slot_indexing=bool(getattr(props, "preserve_slot_indexing", True)),
         )
 
         NormalManager.reproject_custom_split_normals(lod_obj, source_obj, tolerances["delta_world"], context=context)
 
         if armature_obj and len(lod_obj.vertex_groups) > 0:
-            if props.enable_bone_pruning and tier_idx >= 2:
+            if getattr(props, "enable_bone_pruning", False) and tier_idx >= 2:
                 KinematicBonePruner.prune_kinematic_subtrees(
                     lod_obj,
                     armature_obj,
-                    screen_distance_m=tier.distance_m,
+                    screen_distance_m=float(getattr(tier, "distance_m", 10.0)),
                     fov_v_rad=fov_v,
                     resolution_y=render.resolution_y,
                     pixel_threshold=1.5,
                 )
             WeightSanitizer.normalize_and_clamp_weights(lod_obj, max_influences=max_influences)
 
-        lod_obj.data.update()
-        tier_tris += _count_triangles(getattr(lod_obj, "data", None))
+        lod_mesh.update()
+        tier_tris += _count_triangles(lod_mesh)
         tier_mats += len(lod_obj.material_slots)
-        if hasattr(lod_obj, "lod_tool"):
-            lod_obj.lod_tool.lod_root_object = source_obj
-            lod_obj.lod_tool.is_generated_lod = True
-            lod_obj.lod_tool.lod_index = tier_idx
+        lod_tool_meta = getattr(lod_obj, "lod_tool", None)
+        if lod_tool_meta is not None:
+            lod_tool_meta.lod_root_object = source_obj
+            lod_tool_meta.is_generated_lod = True
+            lod_tool_meta.lod_index = tier_idx
         if obj_idx == 0:
             first_generated_obj = lod_obj
 
@@ -447,7 +459,7 @@ def _process_unmerged_tier(
 
 def generate_all_lods(
     context: bpy.types.Context | None,
-    props: object,
+    props: LODSettingsProtocol | None,
     mesh_objs: list[bpy.types.Object],
     armature_obj: bpy.types.Object | None = None,
     base_name: str = "",
@@ -472,7 +484,6 @@ def generate_all_lods(
     Returns:
         tuple[bool, str]: (Success status, descriptive user-facing message).
     """
-    props_any: Any = props
     if not bpy or not context:
         return True, "Blender context not available."
 
@@ -480,7 +491,7 @@ def generate_all_lods(
         return False, f"No mesh objects found for asset '{base_name}'."
 
     orig_pose_pos = None
-    arm_data: Any = getattr(armature_obj, "data", None) if armature_obj else None
+    arm_data = cast("bpy.types.Armature | None", getattr(armature_obj, "data", None) if armature_obj else None)
     if arm_data and hasattr(arm_data, "pose_position"):
         orig_pose_pos = arm_data.pose_position
         arm_data.pose_position = "REST"
@@ -515,7 +526,7 @@ def generate_all_lods(
 
         all_coords = []
         for obj in mesh_objs:
-            obj_data: Any = getattr(obj, "data", None)
+            obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
             if hasattr(obj, "bound_box") and obj.bound_box and Vector is not None:
                 all_coords.extend([obj.matrix_world @ Vector(b) for b in obj.bound_box])
             elif obj_data and hasattr(obj_data, "vertices"):
@@ -529,11 +540,12 @@ def generate_all_lods(
         aspect_ratio = render.resolution_x / max(1, render.resolution_y)
         fov_v = compute_vertical_fov(cam_angle, aspect_ratio, sensor_fit)
 
-        max_influences = int(props_any.max_bone_influences)
+        lods_list = getattr(props, "lods", [])
+        max_influences = int(getattr(props, "max_bone_influences", 4))
 
         # Build Sibling Collections list
         all_tier_collections: list[bpy.types.Collection | None] = [src_coll]
-        for i in range(1, len(props_any.lods)):
+        for i in range(1, len(lods_list)):
             tier_c = CollectionCloneDAG.get_or_create_sibling_collection(src_coll, i, base_name, scene=context.scene)
             all_tier_collections.append(tier_c)
 
@@ -542,7 +554,7 @@ def generate_all_lods(
 
         # Safe View Layer Scoper
         with LayerCollectionGuard(context.view_layer, valid_tier_collections):
-            for i, tier in enumerate(props_any.lods):
+            for i, tier in enumerate(lods_list):
                 if i == 0:
                     tier_tris, tier_mats = _compute_lod0_stats(mesh_objs)
                     tier.actual_tris = tier_tris
@@ -575,11 +587,14 @@ def generate_all_lods(
                 tier_pivot = dag_info.get("pivot")
 
                 s_frac = tier.screen_size_pct / 100.0
-                tolerances = compute_coupled_tolerances(radius, s_frac, props_any.tau_sse, render.resolution_y)
+                tolerances = compute_coupled_tolerances(
+                    radius, s_frac, float(getattr(props, "tau_sse", 1.5)), render.resolution_y
+                )
+                hierarchy_mode = getattr(props, "hierarchy_mode", "PRESERVE")
                 should_merge = i >= 1 and (
-                    getattr(props_any, "consolidate_hierarchy", False)
-                    or props_any.hierarchy_mode == "MERGE_ALL"
-                    or (props_any.hierarchy_mode == "MERGE_AT_TIER" and i >= props_any.merge_start_tier)
+                    getattr(props, "consolidate_hierarchy", False)
+                    or hierarchy_mode == "MERGE_ALL"
+                    or (hierarchy_mode == "MERGE_AT_TIER" and i >= int(getattr(props, "merge_start_tier", 1)))
                 )
 
                 if should_merge and len(mesh_objs) > 1:
@@ -602,7 +617,7 @@ def generate_all_lods(
                         armature_obj=armature_obj,
                         tier_pivot=tier_pivot,
                         tolerances=tolerances,
-                        props_in=props_any,
+                        props_in=props,
                         render_in=render,
                         radius=radius,
                         fov_v=fov_v,
@@ -621,7 +636,7 @@ def generate_all_lods(
                         tier_pivot=tier_pivot,
                         root_pivot=root_pivot,
                         tolerances=tolerances,
-                        props_in=props_any,
+                        props_in=props,
                         render_in=render,
                         radius=radius,
                         fov_v=fov_v,
@@ -629,7 +644,8 @@ def generate_all_lods(
                         context=context,
                     )
 
-                props_any.last_culled_slender_count += slender_cull
+                if props is not None:
+                    props.last_culled_slender_count = getattr(props, "last_culled_slender_count", 0) + slender_cull
                 tier.actual_tris = tris
                 tier.actual_triangles = tris
                 tier.mat_slots_count = mats
@@ -638,28 +654,29 @@ def generate_all_lods(
                 tier.last_baked_screen_pct = tier.screen_size_pct
                 tier.state = "BAKED"
 
-        if len(props_any.lods) > 0:
-            base_tris_val = props_any.lods[0].actual_tris or props_any.lods[0].target_tris or 1
-            final_tris_val = props_any.lods[-1].actual_tris or props_any.lods[-1].target_tris or 1
+        if len(lods_list) > 0 and props is not None:
+            base_tris_val = lods_list[0].actual_tris or lods_list[0].target_tris or 1
+            final_tris_val = lods_list[-1].actual_tris or lods_list[-1].target_tris or 1
             reduction_pct = max(0.0, (1.0 - final_tris_val / float(base_tris_val)) * 100.0)
 
-            props_any.last_generated_base_tris = base_tris_val
-            props_any.last_generated_final_tris = final_tris_val
-            props_any.last_generated_reduction_pct = reduction_pct
-            props_any.last_generated_tier_count = len(props_any.lods)
+            props.last_generated_base_tris = base_tris_val
+            props.last_generated_final_tris = final_tris_val
+            props.last_generated_reduction_pct = reduction_pct
+            props.last_generated_tier_count = len(lods_list)
 
-        if getattr(props_any, "enable_impostor_lod", False):
+        if getattr(props, "enable_impostor_lod", False):
             try:
-                ops: Any = getattr(bpy, "ops", None)
-                if ops and hasattr(ops.lod_tool, "generate_impostor"):
-                    ops.lod_tool.generate_impostor()
+                ops = getattr(bpy, "ops", None)
+                lod_ops = getattr(ops, "lod_tool", None) if ops else None
+                if lod_ops and hasattr(lod_ops, "generate_impostor"):
+                    lod_ops.generate_impostor()
             except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.debug("Automatic impostor generation skipped: %s", exc)
 
         if only_out_of_sync:
             msg = f"Successfully updated {updated_tier_count} out-of-sync LOD tier(s) for '{base_name}'"
         else:
-            msg = f"Successfully generated {len(props_any.lods)} Sibling LOD Collections for '{base_name}'"
+            msg = f"Successfully generated {len(lods_list)} Sibling LOD Collections for '{base_name}'"
         return True, msg
 
     except (

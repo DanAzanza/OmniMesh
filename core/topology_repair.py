@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .exceptions import TopologyError
 
@@ -44,7 +44,7 @@ class TopologyRepairOptions:
     enable_triangulate_ngons: bool = False
     enable_cull_micro_islands: bool = False
     island_size_threshold: float = 0.005
-    world_matrix: Any = None
+    world_matrix: Matrix | None = None
 
 
 def _find_connected_face_fans(vert: bmesh.types.BMVert) -> list[list[bmesh.types.BMFace]]:
@@ -92,7 +92,7 @@ def _remap_fan_to_new_vertex(
         mat_idx = face.material_index
         smooth = face.smooth
 
-        saved_uvs: dict[tuple[Any, int], Any] = {}
+        saved_uvs: dict[tuple[bmesh.types.BMLayerItem, int], object] = {}
         for lp_i, lp in enumerate(face.loops):
             for uv_lay in uv_layers:
                 try:
@@ -182,8 +182,7 @@ class TopologyRepairEngine:
                     orig_weights = {}
 
             for extra_fan in fans[1:]:
-                co: Any = vert.co
-                new_vert = bm.verts.new(co)
+                new_vert = bm.verts.new((vert.co.x, vert.co.y, vert.co.z))
                 if dvert_lay and orig_weights:
                     try:
                         dvert = new_vert[dvert_lay]
@@ -263,7 +262,7 @@ class TopologyRepairEngine:
                 mat_idx = face.material_index
                 smooth = face.smooth
 
-                saved_uvs: dict[tuple[Any, int], Any] = {}
+                saved_uvs: dict[tuple[bmesh.types.BMLayerItem, int], object] = {}
                 for lp_i, lp in enumerate(face.loops):
                     for uv_lay in uv_layers:
                         try:

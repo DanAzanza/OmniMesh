@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 import numpy as np
 
@@ -147,16 +147,16 @@ def extract_action_fcurves(action: bpy.types.Action | None) -> list[bpy.types.FC
     """Extracts all F-Curves from an Action, supporting legacy Actions and Blender 5.2+ Slotted/Layered Actions."""
     if not action:
         return []
-    act_any: Any = action
     raw_fcurves: list[bpy.types.FCurve] = []
-    if hasattr(act_any, "fcurves") and act_any.fcurves is not None:
+    legacy_fcurves = cast("bpy.types.ActionChannelbagFCurves | None", getattr(action, "fcurves", None))
+    if legacy_fcurves is not None:
         try:
-            raw_fcurves.extend(list(act_any.fcurves))
+            raw_fcurves.extend(list(legacy_fcurves))
         except (AttributeError, RuntimeError, ReferenceError) as exc:
             logger.debug("Legacy fcurves extraction skipped: %s", exc)
-    if hasattr(act_any, "layers"):
+    if hasattr(action, "layers"):
         try:
-            for layer in getattr(act_any, "layers", []):
+            for layer in getattr(action, "layers", []):
                 for strip in getattr(layer, "strips", []):
                     for cb in getattr(strip, "channelbags", []):
                         if hasattr(cb, "fcurves") and cb.fcurves is not None:
@@ -183,35 +183,39 @@ def ensure_action_fcurve(
     """Creates an FCurve on an Action, supporting both legacy Actions and Blender 5.2+ Slotted/Layered Actions."""
     if not action:
         return None
-    act_any: Any = action
 
-    if hasattr(act_any, "fcurves") and act_any.fcurves is not None:
+    legacy_fcurves = cast("bpy.types.ActionChannelbagFCurves | None", getattr(action, "fcurves", None))
+    if legacy_fcurves is not None:
         try:
-            return act_any.fcurves.new(data_path=data_path, index=index)
+            return legacy_fcurves.new(data_path=data_path, index=index)
         except (RuntimeError, TypeError, AttributeError) as exc:
             logger.debug("action.fcurves.new failed, attempting layered fallback: %s", exc)
 
-    if hasattr(act_any, "layers") or hasattr(act_any, "slots"):
+    if hasattr(action, "layers") or hasattr(action, "slots"):
         try:
             slot = None
-            if hasattr(act_any, "slots"):
-                if not act_any.slots:
+            if hasattr(action, "slots"):
+                if not action.slots:
                     try:
-                        slot = act_any.slots.new(id_type="OBJECT", name=slot_name)
+                        slot = action.slots.new(id_type="OBJECT", name=slot_name)
                     except TypeError:
                         try:
-                            slot = act_any.slots.new(name=slot_name)
+                            slot = action.slots.new(name=slot_name)  # type: ignore[call-arg]
                         except TypeError:
-                            slot = act_any.slots.new(slot_name)
+                            slot = action.slots.new(slot_name)  # type: ignore[call-arg]
                 else:
-                    slot = act_any.slots[0]
+                    slot = action.slots[0]
 
-            layer = act_any.layers.new(name="BaseLayer") if not act_any.layers else act_any.layers[0]
-            strip: Any = layer.strips.new(type="KEYFRAME") if not layer.strips else layer.strips[0]
+            layer = action.layers.new(name="BaseLayer") if not action.layers else action.layers[0]
+            strip = cast(
+                "bpy.types.ActionKeyframeStrip",
+                layer.strips.new(type="KEYFRAME") if not layer.strips else layer.strips[0],
+            )
 
             cb = None
-            if hasattr(strip, "channelbag_for_slot") and slot:
-                cb = strip.channelbag_for_slot(slot)
+            channelbag_fn = getattr(strip, "channelbag_for_slot", None)
+            if callable(channelbag_fn) and slot:
+                cb = cast("bpy.types.ActionChannelbag | None", channelbag_fn(slot))
 
             if not cb and hasattr(strip, "channelbags"):
                 for c in strip.channelbags:
@@ -219,7 +223,7 @@ def ensure_action_fcurve(
                         cb = c
                         break
                 if not cb:
-                    cb = strip.channelbags.new(slot=slot) if slot else strip.channelbags.new()
+                    cb = strip.channelbags.new(slot=slot) if slot else strip.channelbags.new()  # type: ignore[call-arg]
 
             if cb and hasattr(cb, "fcurves"):
                 return cb.fcurves.new(data_path=data_path, index=index)
@@ -229,10 +233,40 @@ def ensure_action_fcurve(
     return None
 
 
+def set_node_prop(node: bpy.types.Node | None, prop_name: str, value: object) -> None:
+    """Safely assigns a dynamic property to a Node across Blender versions and stub definitions."""
+    if node is None:
+        return
+    try:
+        setattr(node, prop_name, value)
+    except (AttributeError, TypeError, ValueError) as exc:
+        logger.debug("Failed setting %s on node %s: %s", prop_name, node, exc)
+
+
+def set_socket_default_value(socket: bpy.types.NodeSocket | None, value: object) -> None:
+    """Safely assigns default_value to a NodeSocket across Blender versions and stub types."""
+    if socket is None:
+        return
+    try:
+        setattr(socket, "default_value", value)  # noqa: B010
+    except (AttributeError, TypeError, ValueError) as exc:
+        logger.debug("Failed to set default_value on socket %s: %s", socket, exc)
+
+
+def get_socket_default_value(socket: bpy.types.NodeSocket | None, fallback: object = 0.0) -> object:
+    """Safely retrieves default_value from a NodeSocket across Blender versions and stub types."""
+    if socket is None:
+        return fallback
+    return getattr(socket, "default_value", fallback)  # noqa: B009
+
+
 __all__ = [
     "MatrixLike",
     "Vector",
     "ensure_action_fcurve",
     "extract_action_fcurves",
+    "get_socket_default_value",
     "safe_invert_matrix",
+    "set_node_prop",
+    "set_socket_default_value",
 ]

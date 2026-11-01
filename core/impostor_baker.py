@@ -200,9 +200,9 @@ class ImpostorAtlasBaker:
         output_dir = resolve_impostor_export_dir(output_dir)
         results: dict[str, str] = {}
 
-        all_coords: list[Any] = []
+        all_coords: list[Vector] = []
         for obj in mesh_objs:
-            obj_data: Any = getattr(obj, "data", None)
+            obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
             if hasattr(obj, "bound_box") and obj.bound_box:
                 all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
             elif obj_data and hasattr(obj_data, "vertices"):
@@ -230,9 +230,11 @@ class ImpostorAtlasBaker:
                 if obj.name not in bake_scene.collection.objects:
                     bake_scene.collection.objects.link(obj)
 
-            cam_obj: Any = ImpostorCameraRig.setup_camera(
+            cam_obj = ImpostorCameraRig.setup_camera(
                 bake_scene, center, radius, ortho_scale, angle_rad=0.0, pitch_rad=0.0
             )
+            if not cam_obj:
+                raise ImpostorBakeError("Failed to initialize bake camera.")
 
             # Keyframe camera orbit across frames 1..total_frames
             for frame_idx in range(1, total_frames + 1):
@@ -262,7 +264,7 @@ class ImpostorAtlasBaker:
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 for chan_name, harness_layer in passes:
-                    orig_materials: list[tuple[Any, list[Any]]] = []
+                    orig_materials: list[tuple[bpy.types.Object, list[bpy.types.Material | None]]] = []
                     for obj in mesh_objs:
                         obj_data = getattr(obj, "data", None)
                         if obj_data and hasattr(obj_data, "materials"):
@@ -321,7 +323,7 @@ class ImpostorAtlasBaker:
                             frame_file = f"{chan_prefix}{frame_idx:04d}.png"
                             if os.path.exists(frame_file):
                                 img = bpy.data.images.load(frame_file)
-                                sz: Any = img.size
+                                sz = getattr(img, "size", (0, 0))
                                 w, h = int(sz[0]), int(sz[1])
                                 arr = np.empty(w * h * 4, dtype=np.float32)
                                 img.pixels.foreach_get(arr)
@@ -331,10 +333,11 @@ class ImpostorAtlasBaker:
                                 )
                     finally:
                         for obj, mats in orig_materials:
-                            if hasattr(obj, "data") and hasattr(obj.data, "materials"):
-                                obj.data.materials.clear()
+                            m_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
+                            if m_data is not None and hasattr(m_data, "materials"):
+                                m_data.materials.clear()
                                 for m in mats:
-                                    obj.data.materials.append(m)
+                                    m_data.materials.append(m)
 
                 # Process, merge Depth into Normal.A, dilate using BaseColor opacity mask
                 composed_tiles: dict[str, list[tuple[np.ndarray, tuple[int, int]]]] = {
@@ -472,7 +475,7 @@ class ImpostorAtlasBaker:
         # Calculate bounding dimensions to set ray cast distance
         all_coords = []
         for obj in mesh_objs:
-            obj_data: Any = getattr(obj, "data", None)
+            obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
             if hasattr(obj, "bound_box") and obj.bound_box:
                 all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
             elif obj_data and hasattr(obj_data, "vertices"):
@@ -500,7 +503,7 @@ class ImpostorAtlasBaker:
         scene.render.film_transparent = True
 
         # Ensure objects are visible in view layer
-        orig_vis: list[tuple[Any, bool]] = []
+        orig_vis: list[tuple[bpy.types.Object, bool]] = []
         for o in mesh_objs + [target_impostor]:
             if hasattr(o, "hide_viewport"):
                 orig_vis.append((o, o.hide_viewport))
@@ -522,16 +525,16 @@ class ImpostorAtlasBaker:
         bk.use_selected_to_active, bk.margin, bk.target = True, 4, "IMAGE_TEXTURES"
         bk.cage_extrusion, bk.max_ray_distance = max(1.0, max_span * 1.0), max(4.0, max_span * 2.5)
         res = atlas_resolution
-        img_diff: Any = bpy.data.images.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
-        img_diff.colorspace_settings.name, img_diff.generated_color = "sRGB", (0.0, 0.0, 0.0, 0.0)
-        img_norm: Any = bpy.data.images.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
-        img_norm.colorspace_settings.name, img_norm.generated_color = "Non-Color", (0.5, 0.5, 1.0, 0.0)
-        img_rough: Any = bpy.data.images.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
-        img_rough.colorspace_settings.name = "Non-Color"
-        img_ao: Any = bpy.data.images.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
-        img_ao.colorspace_settings.name = "Non-Color"
+        img_diff = bpy.data.images.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
+        img_diff.colorspace_settings.name, img_diff.generated_color = "sRGB", (0.0, 0.0, 0.0, 0.0)  # type: ignore[assignment]
+        img_norm = bpy.data.images.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
+        img_norm.colorspace_settings.name, img_norm.generated_color = "Non-Color", (0.5, 0.5, 1.0, 0.0)  # type: ignore[assignment]
+        img_rough = bpy.data.images.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
+        img_rough.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
+        img_ao = bpy.data.images.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
+        img_ao.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
-        imp_data: Any = getattr(target_impostor, "data", None)
+        imp_data = cast("bpy.types.Mesh | None", getattr(target_impostor, "data", None))
         mat = imp_data.materials[0] if (imp_data and hasattr(imp_data, "materials") and imp_data.materials) else None
         if not mat:
             mat = bpy.data.materials.new(name=f"M_{base_name}_Impostor")
@@ -541,8 +544,8 @@ class ImpostorAtlasBaker:
         mat.use_nodes = True
         if not mat.node_tree:
             raise ImpostorBakeError("Target impostor material has no node tree.")
-        nodes: Any = mat.node_tree.nodes
-        bake_slot: Any = nodes.new("ShaderNodeTexImage")
+        nodes = mat.node_tree.nodes
+        bake_slot = cast("bpy.types.ShaderNodeTexImage", nodes.new("ShaderNodeTexImage"))
         nodes.active = bake_slot
 
         try:
@@ -582,8 +585,8 @@ class ImpostorAtlasBaker:
             orm_pix[:, :, 1] = rough_pix.reshape((res, res, 4))[:, :, 0]
             orm_pix[:, :, 3] = base_pix.reshape((res, res, 4))[:, :, 3]
 
-            img_orm: Any = bpy.data.images.new(f"__om_orm_{base_name}", width=res, height=res, alpha=True)
-            img_orm.colorspace_settings.name = "Non-Color"
+            img_orm = bpy.data.images.new(f"__om_orm_{base_name}", width=res, height=res, alpha=True)
+            img_orm.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
             cast(Any, img_orm.pixels).foreach_set(orm_pix.flatten())
             orm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_ORM.png")
             img_orm.filepath_raw, img_orm.file_format = orm_path, "PNG"

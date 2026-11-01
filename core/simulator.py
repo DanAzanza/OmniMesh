@@ -5,7 +5,7 @@ Core Engine for Live Viewport LOD Simulator & Camera Distance Evaluation.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence, cast
 
 if TYPE_CHECKING:
     import bpy
@@ -120,9 +120,9 @@ def extract_viewport_camera_params(
     Extracts camera world position, vertical FOV (rad), and perspective status.
     Supports Perspective Free Viewport, Orthographic Free Viewport, and Scene Camera.
     """
-    space_3d: Any = space_3d_in
-    region_3d: Any = region_3d_in
-    region: Any = region_in
+    space_3d = cast("bpy.types.SpaceView3D | None", space_3d_in)
+    region_3d = cast("bpy.types.RegionView3D | None", region_3d_in)
+    region = cast("bpy.types.Region | None", region_in)
     if not region_3d:
         if scene and scene.camera:
             cam_pos = scene.camera.matrix_world.translation.copy()
@@ -139,7 +139,7 @@ def extract_viewport_camera_params(
         cam = getattr(space_3d, "camera", None) or (scene.camera if scene else None)
         if cam and cam.type == "CAMERA" and scene:
             cam_pos = cam.matrix_world.translation.copy()
-            cam_data: Any = cam.data
+            cam_data = cast("bpy.types.Camera", cam.data)
             render = scene.render
             aspect = (render.resolution_x * render.pixel_aspect_x) / max(
                 1.0, (render.resolution_y * render.pixel_aspect_y)
@@ -179,8 +179,8 @@ class LODAssetRecord:
     def __init__(self, collection_name: str, root_name: str):
         self.collection_name = collection_name
         self.root_name = root_name
-        self.tier_objects: dict[int, list[Any]] = {}
-        self.center: Any = Vector((0, 0, 0)) if Vector else (0.0, 0.0, 0.0)
+        self.tier_objects: dict[int, list[bpy.types.Object]] = {}
+        self.center: Vector | tuple[float, float, float] = Vector((0, 0, 0)) if Vector else (0.0, 0.0, 0.0)
         self.radius: float = 1.0
         self.tier_screen_pcts: list[float] = []
         self.tier_distances: list[float] = []
@@ -239,15 +239,18 @@ class LODSimulatorEngine:
         cls._tracked_assets.clear()
 
         default_tiers_pct = [100.0, 50.0, 25.0, 10.0, 5.0, 2.0, 0.5]
-        sc_lod_tool: Any = getattr(scene, "lod_tool", None)
-        if sc_lod_tool is not None and len(sc_lod_tool.lods) > 0:
-            default_tiers_pct = [t.screen_size_pct for t in sc_lod_tool.lods]
+        sc_lod_tool = getattr(scene, "lod_tool", None)
+        sc_lods = getattr(sc_lod_tool, "lods", []) if sc_lod_tool is not None else []
+        if len(sc_lods) > 0:
+            default_tiers_pct = [float(t.screen_size_pct) for t in sc_lods]
 
         # Scope to collections linked to the target scene
-        scene_colls: set[Any] = set()
+        scene_colls: set[bpy.types.Collection] = set()
         if scene and hasattr(scene, "collection"):
 
             def collect_children(p_coll: bpy.types.Collection | None) -> None:
+                if p_coll is None:
+                    return
                 scene_colls.add(p_coll)
                 for c in getattr(p_coll, "children", []):
                     collect_children(c)
@@ -273,7 +276,9 @@ class LODSimulatorEngine:
                     if l0_objs:
                         record.tier_objects[0] = l0_objs
                         for o in l0_objs:
-                            all_coords.extend([o.matrix_world @ v.co for v in o.data.vertices])
+                            m_d = cast("bpy.types.Mesh | None", o.data)
+                            if m_d is not None:
+                                all_coords.extend([o.matrix_world @ v.co for v in m_d.vertices])
 
                     # LOD 1..k
                     for i in range(1, 8):
@@ -334,8 +339,8 @@ class LODSimulatorEngine:
                 eff_dist = record.radius / max(0.001, (virtual_override_pct / 100.0) * math.tan(fov_v_rad / 2.0))
                 screen_pct = virtual_override_pct
             else:
-                c: Any = record.center
-                cp: Any = cam_pos
+                c = cast("Vector", record.center)
+                cp = cast("Vector", cam_pos)
                 d_eff = calculate_effective_distance_pure((cp.x, cp.y, cp.z), (c.x, c.y, c.z), record.radius)
                 eff_dist = d_eff
 
@@ -360,7 +365,11 @@ class LODSimulatorEngine:
                         obj.hide_set(should_hide, view_layer=view_layer)
 
             active_objs = record.tier_objects.get(target_tier, [])
-            active_tris = sum(len(o.data.polygons) for o in active_objs if o.type == "MESH")
+            active_tris = sum(
+                len(cast("bpy.types.Mesh", o.data).polygons)
+                for o in active_objs
+                if o.type == "MESH" and o.data is not None
+            )
 
             updates.append(
                 {
@@ -459,7 +468,9 @@ class LODSimulatorEngine:
 
             active_objs = record.tier_objects.get(target_tier, [])
             active_tris = sum(
-                len(o.data.polygons) for o in active_objs if hasattr(o, "data") and hasattr(o.data, "polygons")
+                len(cast("bpy.types.Mesh", o.data).polygons)
+                for o in active_objs
+                if hasattr(o, "data") and hasattr(o.data, "polygons")
             )
 
             updates.append(

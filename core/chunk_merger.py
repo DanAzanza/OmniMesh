@@ -8,7 +8,7 @@ material slot unification, and bone-mapped skeletal vertex weight consolidation.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 import math
 
@@ -56,7 +56,7 @@ class HLODClusterMerger:
             return None
 
         # Build master material palette from all chunks to prevent slot aliasing
-        master_materials: list[Any] = []
+        master_materials: list[bpy.types.Material] = []
         for c in valid_chunks:
             for mat in getattr(c.data, "materials", []):
                 if mat and mat not in master_materials:
@@ -81,7 +81,7 @@ class HLODClusterMerger:
             merged_dvert = merged_bm.verts.layers.deform.verify() if master_vg_names else None
 
             for chunk_obj in valid_chunks:
-                chunk_mesh: Any = chunk_obj.data
+                chunk_mesh = cast("bpy.types.Mesh", chunk_obj.data)
                 temp_bm = bmesh.new()
                 try:
                     temp_bm.from_mesh(chunk_mesh)
@@ -194,7 +194,7 @@ class HLODClusterMerger:
         """
         if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
             return
-        mesh: Any = obj.data
+        mesh = cast("bpy.types.Mesh", obj.data)
         if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
             return
 

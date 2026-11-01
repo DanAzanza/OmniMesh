@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import logging
 import math
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 
 from .compat import (
     ensure_action_fcurve,
@@ -50,7 +50,7 @@ class AnimationRigSanitizer:
         """Returns list of bone names marked for mesh deformation (`use_deform == True`)."""
         if not armature or getattr(armature, "type", None) != "ARMATURE":
             return []
-        arm_data: Any = getattr(armature, "data", None)
+        arm_data = cast("bpy.types.Armature | None", getattr(armature, "data", None))
         if not arm_data or not hasattr(arm_data, "bones"):
             return []
         return [b.name for b in arm_data.bones if getattr(b, "use_deform", True)]
@@ -215,15 +215,20 @@ class AnimationRigSanitizer:
         """
         if rot is None or prev_rot is None:
             return rot
-        rot_any: Any = rot
-        prev_any: Any = prev_rot
-        if hasattr(rot_any, "w") and hasattr(prev_any, "w"):
-            dot = rot_any.w * prev_any.w + rot_any.x * prev_any.x + rot_any.y * prev_any.y + rot_any.z * prev_any.z
+        w1 = getattr(rot, "w", None)
+        w2 = getattr(prev_rot, "w", None)
+        if isinstance(w1, (int, float)) and isinstance(w2, (int, float)):
+            x1 = float(getattr(rot, "x", 0.0))
+            y1 = float(getattr(rot, "y", 0.0))
+            z1 = float(getattr(rot, "z", 0.0))
+            x2 = float(getattr(prev_rot, "x", 0.0))
+            y2 = float(getattr(prev_rot, "y", 0.0))
+            z2 = float(getattr(prev_rot, "z", 0.0))
+            dot = w1 * w2 + x1 * x2 + y1 * y2 + z1 * z2
             if dot < 0.0:
                 if Quaternion:
-                    return Quaternion((-rot_any.w, -rot_any.x, -rot_any.y, -rot_any.z))
-                elif hasattr(rot_any, "__iter__"):
-                    return type(rot_any)([-x for x in rot_any])
+                    return Quaternion((-w1, -x1, -y1, -z1))
+                return (-w1, -x1, -y1, -z1)
         elif (
             isinstance(rot, (tuple, list))
             and isinstance(prev_rot, (tuple, list))
@@ -232,7 +237,8 @@ class AnimationRigSanitizer:
         ):
             dot = rot[0] * prev_rot[0] + rot[1] * prev_rot[1] + rot[2] * prev_rot[2] + rot[3] * prev_rot[3]
             if dot < 0.0:
-                return type(rot_any)([-x for x in rot])
+                neg_vals = [-x for x in rot]
+                return tuple(neg_vals) if isinstance(rot, tuple) else neg_vals
         return rot
 
     @classmethod
@@ -291,7 +297,7 @@ class AnimationRigSanitizer:
         baked_action = bpy.data.actions.new(name=clean_name)
 
         # Pre-allocate curve channels
-        curves: Dict[Tuple[str, str, int], Any] = {}
+        curves: Dict[Tuple[str, str, int], bpy.types.FCurve | None] = {}
         for b_name in deform_bones:
             data_path_loc = f'pose.bones["{b_name}"].location'
             data_path_rot = f'pose.bones["{b_name}"].rotation_quaternion'
@@ -309,7 +315,7 @@ class AnimationRigSanitizer:
         orig_subframe = getattr(scene, "frame_subframe", 0.0)
 
         # Track previous frame rotations for quaternion sign continuity (prevents 360-degree spin flips)
-        prev_rotations: dict[str, Any] = {}
+        prev_rotations: dict[str, Quaternion | Sequence[float] | None] = {}
         bake_succeeded = False
 
         try:
@@ -357,8 +363,14 @@ class AnimationRigSanitizer:
                         rot.normalize()
 
                     # Enforce quaternion sign continuity (shortest arc on S^3)
-                    rot_cont: Any = cls.enforce_quaternion_continuity(rot, prev_rotations.get(b_name))
-                    prev_rotations[b_name] = rot_cont.copy() if hasattr(rot_cont, "copy") else rot_cont
+                    rot_cont = cls.enforce_quaternion_continuity(rot, prev_rotations.get(b_name))
+                    if rot_cont is None:
+                        rot_cont = rot
+                    prev_rotations[b_name] = (
+                        rot_cont.copy()
+                        if Quaternion is not None and isinstance(rot_cont, Quaternion)
+                        else tuple(cast("Sequence[float]", rot_cont))
+                    )
 
                     # Sanitize location
                     safe_loc = [loc[i] if math.isfinite(loc[i]) else 0.0 for i in range(3)]

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ class SlenderFeatureCuller:
         max_co = [float("-inf"), float("-inf"), float("-inf")]
 
         # First pass: collect unique vertices, bounding box, and centroid to eliminate translation offsets
-        unique_verts: set[Any] = set()
+        unique_verts: set[bmesh.types.BMVert] = set()
         for f in face_group:
             for v in getattr(f, "verts", []):
                 unique_verts.add(v)
@@ -242,14 +242,14 @@ class SlenderFeatureCuller:
         )
 
         # 1. Extract connected face islands
-        visited_faces: set[Any] = set()
-        islands: list[list[Any]] = []
+        visited_faces: set[bmesh.types.BMFace] = set()
+        islands: list[list[bmesh.types.BMFace]] = []
 
         for f in bm.faces:
             if f in visited_faces:
                 continue
 
-            island: list[Any] = []
+            island: list[bmesh.types.BMFace] = []
             queue = [f]
             visited_faces.add(f)
 
@@ -266,7 +266,7 @@ class SlenderFeatureCuller:
             islands.append(island)
 
         # 2. Evaluate and cull sub-pixel small parts and slender islands
-        culled_faces: list[Any] = []
+        culled_faces: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = []
         culled_islands_count = 0
 
         for island in islands:

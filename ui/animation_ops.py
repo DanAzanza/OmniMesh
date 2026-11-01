@@ -65,7 +65,12 @@ class OMNIMESH_OT_tag_animation(Operator):
         category = getattr(anim_props, "semantic_category", "GENERIC") if anim_props else "GENERIC"
         custom_guid = getattr(anim_props, "custom_guid", "") if anim_props else ""
 
-        ok = tag_action_category(act_name, category, custom_guid if custom_guid else None)
+        ok = tag_action_category(
+            act_name,
+            category,
+            context.blend_data,
+            custom_guid if custom_guid else None,
+        )
         if ok:
             guid = action.get("_omnimesh_guid", "")
             safe_report(self, {"INFO"}, f"Tagged Action '{act_name}' as {category} [GUID: {guid[:8]}...]")
@@ -96,7 +101,7 @@ class OMNIMESH_OT_scan_animations(Operator):
         if not asset_name or asset_name in ("AUTO", "NONE"):
             asset_name = "Asset"
 
-        actions = scan_asset_animations(context, asset_name)
+        actions = scan_asset_animations(context.blend_data, asset_name)
         if not actions:
             safe_report(self, {"INFO"}, f"No animation actions found on asset '{asset_name}'.")
             return {"FINISHED"}

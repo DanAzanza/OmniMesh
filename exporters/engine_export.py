@@ -5,7 +5,7 @@ Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture, Animatio
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import bpy
@@ -63,8 +63,8 @@ class AssetMeshResolver:
         if has_bpy_collections:
             root_col = bpy.data.collections.get(clean_name) or bpy.data.collections.get(f"{clean_name}_LOD0")
 
-        lod_tiers: dict[int, list[Any]] = {}
-        collider_objects: list[Any] = []
+        lod_tiers: dict[int, list[bpy.types.Object]] = {}
+        collider_objects: list[bpy.types.Object] = []
         impostor_object = None
         armature_obj = None
         has_impostor_tier = False
@@ -135,7 +135,7 @@ class AssetMeshResolver:
                     or bpy.data.collections.get(f"x0_{clean_name}")
                 )
 
-            lod0_objs: list[Any] = []
+            lod0_objs: list[bpy.types.Object] = []
             if lod0_col:
                 for obj in getattr(lod0_col, "objects", []):
                     if is_valid_lod_mesh(obj) and obj not in lod0_objs:
@@ -169,7 +169,7 @@ class AssetMeshResolver:
                         if tier_col:
                             break
                 if tier_col:
-                    tier_objs: list[Any] = []
+                    tier_objs: list[bpy.types.Object] = []
                     for obj in getattr(tier_col, "objects", []):
                         if is_valid_lod_mesh(obj) and obj not in tier_objs:
                             tier_objs.append(obj)
@@ -270,7 +270,7 @@ class AssetMeshResolver:
 
         # Discover Attachment Nodes (ATTACH_POINT_, ATTACH_FX_, eye_, socket_)
         # Vital for MSFS glTF LOD0 runtime attachments, cameras, and effect positioning
-        attachment_nodes: list[Any] = []
+        attachment_nodes: list[bpy.types.Object] = []
         if has_bpy_collections and root_col:
             candidate_cols = []
             if hasattr(root_col, "children"):
@@ -312,16 +312,12 @@ class AssetMeshResolver:
 
 def resolve_export_asset_name(context: bpy.types.Context | None, props: object = None) -> str:
     """Resolves the unified asset name for preflight validation and engine export."""
-    props_any: Any = props
-    if not props_any and context and hasattr(context, "scene"):
-        props_any = getattr(context.scene, "lod_tool", None)
-    if (
-        props_any
-        and hasattr(props_any, "active_asset")
-        and props_any.active_asset
-        and props_any.active_asset not in ("AUTO", "NONE")
-    ):
-        return str(props_any.active_asset)
+    props_obj = props
+    if not props_obj and context and hasattr(context, "scene"):
+        props_obj = getattr(context.scene, "lod_tool", None)
+    active_asset = getattr(props_obj, "active_asset", None) if props_obj else None
+    if active_asset and active_asset not in ("AUTO", "NONE"):
+        return str(active_asset)
     raw_name = ""
     try:
         try:
@@ -329,11 +325,11 @@ def resolve_export_asset_name(context: bpy.types.Context | None, props: object =
         except ImportError:
             from core.asset_scanner import resolve_effective_asset_name
 
-        raw_name = resolve_effective_asset_name(context, props_any)
+        raw_name = resolve_effective_asset_name(context, props_obj)
     except (ImportError, AttributeError, TypeError, ValueError) as e:
         logger.debug("Failed resolving effective asset name: %s", e)
     if not raw_name or raw_name in ("AUTO", "NONE", "Asset"):
-        raw_name = getattr(props_any, "export_base_name", "").strip() if props_any else ""
+        raw_name = str(getattr(props_obj, "export_base_name", "")).strip() if props_obj else ""
     return raw_name or "SM_Asset"
 
 

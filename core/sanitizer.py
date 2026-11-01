@@ -33,19 +33,22 @@ class SanitizeOptions:
     enable_triangulate_ngons: bool = False
     enable_cull_micro_islands: bool = False
     normal_recalc_policy: str = "MANIFOLD_ONLY"
-    world_matrix: Any = None
+    world_matrix: Matrix | None = None
 
 
 if TYPE_CHECKING:
     import bmesh
     import bpy
     import mathutils
+    from mathutils import Matrix
 else:
     try:
         import bmesh
         import bpy
         import mathutils
+        from mathutils import Matrix
     except ImportError:
+        Matrix = None
         bpy = None
         bmesh = None
         mathutils = None
@@ -77,7 +80,7 @@ class MeshSanitizer:
             logger.debug("Lookup table init error: %s", exc)
             return 0
 
-        vert_set_to_faces: Dict[frozenset[Any], List[Any]] = {}
+        vert_set_to_faces: Dict[frozenset[bmesh.types.BMVert], List[bmesh.types.BMFace]] = {}
 
         for f in bm.faces:
             if not getattr(f, "is_valid", False):
@@ -87,13 +90,13 @@ class MeshSanitizer:
                 vert_set_to_faces[key] = []
             vert_set_to_faces[key].append(f)
 
-        faces_to_delete: List[Any] = []
+        faces_to_delete: List[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = []
         for _key, face_list in vert_set_to_faces.items():
             if len(face_list) <= 1:
                 continue
 
             # Compare pairs for normal collinearity
-            kept_faces: List[Any] = []
+            kept_faces: List[bmesh.types.BMFace] = []
             for candidate in face_list:
                 is_duplicate = False
                 for kept in kept_faces:
@@ -211,7 +214,9 @@ class MeshSanitizer:
                     logger.debug("Lookup table ensure error: %s", exc)
 
             # Step C: Wire edges (no linked faces)
-            wire_edges: list[Any] = [e for e in bm.edges if e.is_valid and not e.link_faces]
+            wire_edges: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = [
+                e for e in bm.edges if e.is_valid and not e.link_faces
+            ]
             if wire_edges:
                 pass_culled += len(wire_edges)
                 total_stats["wire_edges"] += len(wire_edges)
@@ -223,7 +228,9 @@ class MeshSanitizer:
                     logger.debug("Delete wire edges error: %s", exc)
 
             # Step D: Isolated loose vertices (no linked edges)
-            loose_verts: list[Any] = [v for v in bm.verts if v.is_valid and not v.link_edges]
+            loose_verts: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = [
+                v for v in bm.verts if v.is_valid and not v.link_edges
+            ]
             if loose_verts:
                 pass_culled += len(loose_verts)
                 total_stats["loose_verts"] += len(loose_verts)
@@ -404,12 +411,12 @@ class MeshSanitizer:
 
         if normal_recalc_policy == "MANIFOLD_ONLY":
             # Identify truly closed manifold shells: group connected faces and check if the ENTIRE shell has zero boundary edges
-            visited_faces: set[Any] = set()
-            closed_shells: list[list[Any]] = []
+            visited_faces: set[bmesh.types.BMFace] = set()
+            closed_shells: list[list[bmesh.types.BMFace]] = []
             for face in bm.faces:
                 if face in visited_faces or not getattr(face, "is_valid", False):
                     continue
-                shell: list[Any] = []
+                shell: list[bmesh.types.BMFace] = []
                 queue = [face]
                 visited_faces.add(face)
                 is_closed_shell = True

@@ -87,20 +87,22 @@ class NormalManager:
             arm = lod_obj.find_armature()
 
         orig_pose_pos = None
-        arm_data: Any = getattr(arm, "data", None) if arm else None
+        arm_data = cast("bpy.types.Armature | None", getattr(arm, "data", None) if arm else None)
         if arm_data and hasattr(arm_data, "pose_position"):
             orig_pose_pos = arm_data.pose_position
             arm_data.pose_position = "REST"
 
         mod_name = "__LOD_NORMAL_TRANSFER__"
-        dt_mod: Any = None
+        dt_mod: bpy.types.DataTransferModifier | None = None
         if hasattr(lod_obj, "modifiers"):
             existing_mod = lod_obj.modifiers.get(mod_name)
             if existing_mod:
                 lod_obj.modifiers.remove(existing_mod)
 
             try:
-                dt_mod = lod_obj.modifiers.new(name=mod_name, type="DATA_TRANSFER")
+                dt_mod = cast(
+                    "bpy.types.DataTransferModifier", lod_obj.modifiers.new(name=mod_name, type="DATA_TRANSFER")
+                )
                 dt_mod.object = source_lod0
                 dt_mod.use_loop_data = True
                 dt_mod.data_types_loops = {"CUSTOM_NORMAL"}
@@ -140,7 +142,7 @@ class NormalManager:
                 bpy.ops.object.modifier_apply(modifier=dt_mod.name)
             else:
                 bpy.ops.object.modifier_apply(modifier=dt_mod.name)
-            lod_data: Any = lod_obj.data
+            lod_data = cast("bpy.types.Mesh | None", lod_obj.data)
             cls.ensure_sharp_edge_attribute(lod_data)
             if lod_data and hasattr(lod_data, "update"):
                 lod_data.update()

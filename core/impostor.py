@@ -302,8 +302,8 @@ class ImpostorManager:
         mat.use_nodes = True
         if not mat.node_tree:
             raise ImpostorBakeError("Impostor material has no node tree.")
-        nodes: Any = mat.node_tree.nodes
-        links: Any = mat.node_tree.links
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
 
         # Configure material transparency & two-sided
         if hasattr(mat, "surface_render_method"):
@@ -349,8 +349,9 @@ class ImpostorManager:
         tex_norm.name = "Tex_Normal"
         tex_norm.label = "Normal Map"
         tex_norm.location = (-400, -100)
-        if hasattr(tex_norm, "image") and tex_norm.image:
-            tex_norm.image.colorspace_settings.name = "Non-Color"
+        norm_img = getattr(tex_norm, "image", None)
+        if norm_img and getattr(norm_img, "colorspace_settings", None):
+            norm_img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
         node_norm_map = nodes.new(type="ShaderNodeNormalMap")
         node_norm_map.location = (-150, -100)
@@ -363,8 +364,9 @@ class ImpostorManager:
         tex_orm.name = "Tex_ORM"
         tex_orm.label = "ORM / MaskMap"
         tex_orm.location = (-400, -350)
-        if hasattr(tex_orm, "image") and tex_orm.image:
-            tex_orm.image.colorspace_settings.name = "Non-Color"
+        orm_img = getattr(tex_orm, "image", None)
+        if orm_img and getattr(orm_img, "colorspace_settings", None):
+            orm_img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
         node_separate = nodes.new(type="ShaderNodeSeparateColor")
         node_separate.location = (-150, -350)
@@ -405,26 +407,26 @@ class ImpostorManager:
         if base_color_path and os.path.exists(base_color_path):
             tex_base = nodes.get("Tex_BaseColor")
             if tex_base and getattr(tex_base, "type", "") == "TEX_IMAGE":
-                img: Any = bpy.data.images.load(base_color_path)
-                tex_base.image = img
-                if hasattr(img, "colorspace_settings"):
-                    img.colorspace_settings.name = "sRGB"
+                img = bpy.data.images.load(base_color_path)
+                cast("bpy.types.ShaderNodeTexImage", tex_base).image = img
+                if hasattr(img, "colorspace_settings") and img.colorspace_settings:
+                    img.colorspace_settings.name = "sRGB"  # type: ignore[assignment]
 
         if normal_path and os.path.exists(normal_path):
             tex_norm = nodes.get("Tex_Normal")
             if tex_norm and getattr(tex_norm, "type", "") == "TEX_IMAGE":
-                img: Any = bpy.data.images.load(normal_path)
-                tex_norm.image = img
-                if hasattr(img, "colorspace_settings"):
-                    img.colorspace_settings.name = "Non-Color"
+                img = bpy.data.images.load(normal_path)
+                cast("bpy.types.ShaderNodeTexImage", tex_norm).image = img
+                if hasattr(img, "colorspace_settings") and img.colorspace_settings:
+                    img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
         if orm_path and os.path.exists(orm_path):
             tex_orm = nodes.get("Tex_ORM")
             if tex_orm and getattr(tex_orm, "type", "") == "TEX_IMAGE":
-                img: Any = bpy.data.images.load(orm_path)
-                tex_orm.image = img
-                if hasattr(img, "colorspace_settings"):
-                    img.colorspace_settings.name = "Non-Color"
+                img = bpy.data.images.load(orm_path)
+                cast("bpy.types.ShaderNodeTexImage", tex_orm).image = img
+                if hasattr(img, "colorspace_settings") and img.colorspace_settings:
+                    img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
     @classmethod
     def generate_impostor_for_objects(
@@ -465,7 +467,7 @@ class ImpostorManager:
             if hasattr(obj, "bound_box") and obj.bound_box:
                 all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
             elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
-                obj_data: Any = obj.data
+                obj_data = cast("bpy.types.Mesh", obj.data)
                 all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
         if not all_coords:
             return None

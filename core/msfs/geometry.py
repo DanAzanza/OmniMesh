@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Sequence, cast
 
 import numpy as np
 
@@ -92,18 +92,20 @@ def extract_world_vertices_numpy(
     if obj is None or not hasattr(obj, "type") or getattr(obj, "type", "") != "MESH" or not getattr(obj, "data", None):
         return np.empty((0, 3), dtype=np.float32)
 
-    obj_any: Any = obj
-    eval_obj: Any = obj_any.evaluated_get(depsgraph) if depsgraph is not None else obj_any
-    eval_mesh: Any = None
+    b_obj = cast("bpy.types.Object", obj)
+    eval_obj: bpy.types.Object = b_obj.evaluated_get(depsgraph) if depsgraph is not None else b_obj
+    eval_mesh: bpy.types.Mesh | None = None
 
     try:
         # If depsgraph is supplied, create evaluated mesh copy with modifier stack
         if depsgraph is not None:
             eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=False, depsgraph=depsgraph)
-            mesh_data: Any = eval_mesh
+            mesh_data = eval_mesh
         else:
-            mesh_data = eval_obj.data
+            mesh_data = cast("bpy.types.Mesh | None", eval_obj.data)
 
+        if mesh_data is None:
+            return np.empty((0, 3), dtype=np.float32)
         num_verts = len(mesh_data.vertices)
         if num_verts == 0:
             return np.empty((0, 3), dtype=np.float32)
@@ -302,7 +304,7 @@ def format_class_2_scrape_tokens(
     elif "Fin" in name_tag:
         vert_ft += margin_ft
 
-    tokens: list[Any] = list(SCRAPE_CLASS_2_DEFAULTS)
+    tokens: list[object] = list(SCRAPE_CLASS_2_DEFAULTS)
     tokens[1] = f"{long_ft:.2f}"
     tokens[2] = f"{lat_ft:.2f}"
     tokens[3] = f"{vert_ft:.2f}"

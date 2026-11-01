@@ -11,7 +11,7 @@ Features:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def get_rest_world_matrix_for_static(
     def _copy_matrix(m: Matrix) -> Matrix:
         return m.copy() if hasattr(m, "copy") else m
 
-    arm_data: Any = getattr(armature_obj, "data", None)
+    arm_data = cast("bpy.types.Armature | None", getattr(armature_obj, "data", None))
     if not armature_obj or not arm_data or not hasattr(arm_data, "bones"):
         return _copy_matrix(static_obj.matrix_world)
 
@@ -158,8 +158,8 @@ class MeshMergeEngine:
             return None
 
         # 1. Build Global Unified Material Palette
-        global_materials: list[Any] = []
-        mat_to_global_idx: dict[Any, int] = {}
+        global_materials: list[bpy.types.Material | None] = []
+        mat_to_global_idx: dict[bpy.types.Material | None, int] = {}
 
         for obj in valid_objs:
             for slot in obj.material_slots:
@@ -194,14 +194,14 @@ class MeshMergeEngine:
                 if ModifierManager.has_unapplied_modifiers(obj):
                     eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
 
-                src_mesh: Any = eval_mesh if eval_mesh else obj.data
+                src_mesh = cast("bpy.types.Mesh", eval_mesh if eval_mesh else obj.data)
                 temp_bm = bmesh.new()
                 try:
                     temp_bm.from_mesh(src_mesh)
 
                     # Determine world transformation matrix (respecting Rest Pose if parented to bone)
                     if armature_obj and obj.parent_type == "BONE" and obj.parent_bone:
-                        m_world: Any = (
+                        m_world = (
                             get_rest_world_matrix_for_static(obj, armature_obj, obj.parent_bone)
                             or obj.matrix_world.copy()
                         )
@@ -210,7 +210,7 @@ class MeshMergeEngine:
 
                     # Transform matrix: LocalPivotSpaceMerge
                     if m_pivot_inv and Matrix:
-                        m_transform: Any = m_pivot_inv @ m_world
+                        m_transform = cast("Matrix", m_pivot_inv) @ cast("Matrix", m_world)
                     else:
                         m_transform = m_world
 
@@ -243,7 +243,7 @@ class MeshMergeEngine:
                             vg_map[vg.index] = global_group_names.index(vg.name)
 
                     # Append verts into target BMesh
-                    vert_map: dict[Any, Any] = {}
+                    vert_map: dict[bmesh.types.BMVert, bmesh.types.BMVert] = {}
                     for v in temp_bm.verts:
                         new_v = target_bm.verts.new((v.co.x, v.co.y, v.co.z))
                         new_v.normal = v.normal
@@ -309,7 +309,7 @@ class MeshMergeEngine:
         # Re-attach to Armature if skinned
         if armature_obj:
             merged_obj.parent = armature_obj
-            arm_mod: Any = merged_obj.modifiers.new(name="Armature", type="ARMATURE")
+            arm_mod = cast("bpy.types.ArmatureModifier", merged_obj.modifiers.new(name="Armature", type="ARMATURE"))
             arm_mod.object = armature_obj
             if pivot_obj and hasattr(pivot_obj, "matrix_world"):
                 merged_obj.matrix_world = pivot_obj.matrix_world.copy()
@@ -466,7 +466,7 @@ class CollectionCloneDAG:
         vert_count = 0
 
         for obj in objects:
-            obj_data: Any = getattr(obj, "data", None)
+            obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
             if getattr(obj, "type", "") == "MESH" and obj_data and hasattr(obj_data, "vertices"):
                 for v in obj_data.vertices:
                     wco = obj.matrix_world @ v.co
@@ -525,17 +525,18 @@ def get_or_create_engine_import_collection(
        ├── {AssetName}_LOD1
        └── {AssetName}_LODN
     """
-    _bpy: Any = bpy_module if bpy_module is not None else bpy
+    _bpy = bpy_module if bpy_module is not None else bpy
     if not _bpy or not context_or_scene:
         return None
+    bpy_data = cast("bpy.types.BlendData", getattr(_bpy, "data", None))
 
     clean_asset = asset_name.strip() or "Asset"
     scene = getattr(context_or_scene, "scene", context_or_scene)
 
     # 1. Root Model Collection
-    root_col = _bpy.data.collections.get(clean_asset)
+    root_col = bpy_data.collections.get(clean_asset)
     if not root_col:
-        root_col = _bpy.data.collections.new(clean_asset)
+        root_col = bpy_data.collections.new(clean_asset)
         scene.collection.children.link(root_col)
     elif root_col.name not in scene.collection.children:
         try:
@@ -600,9 +601,9 @@ def get_or_create_engine_import_collection(
     parent_col = root_col
     if role_upper in ("SPATIAL", "LIGHTS", "CAMERAS", "ATTACHMENTS", "INTERACTIONS", "TRIGGERS"):
         config_name = f"{clean_asset}_Config"
-        config_col = _bpy.data.collections.get(config_name)
+        config_col = bpy_data.collections.get(config_name)
         if not config_col:
-            config_col = _bpy.data.collections.new(config_name)
+            config_col = bpy_data.collections.new(config_name)
             config_col["_omnimesh_role"] = "CONFIG"
             root_col.children.link(config_col)
         elif config_col.name not in root_col.children:
@@ -614,7 +615,7 @@ def get_or_create_engine_import_collection(
 
         # Legacy migration: check if sub_col was previously linked under _LOD0
         lod0_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
-        lod0_col = _bpy.data.collections.get(lod0_name)
+        lod0_col = bpy_data.collections.get(lod0_name)
         if lod0_col and hasattr(lod0_col, "children"):
             has_old = False
             old_sub = None
@@ -624,7 +625,7 @@ def get_or_create_engine_import_collection(
                     old_sub = (
                         lod0_col.children.get(sub_name)
                         if hasattr(lod0_col.children, "get")
-                        else _bpy.data.collections.get(sub_name)
+                        else bpy_data.collections.get(sub_name)
                     )
             except (AttributeError, TypeError, ReferenceError):
                 has_old = False
@@ -639,9 +640,9 @@ def get_or_create_engine_import_collection(
                 except (RuntimeError, ReferenceError, AttributeError) as e:
                     logger.debug("Could not unlink legacy subcollection from LOD0: %s", e)
 
-    sub_col = _bpy.data.collections.get(sub_name)
+    sub_col = bpy_data.collections.get(sub_name)
     if not sub_col:
-        sub_col = _bpy.data.collections.new(sub_name)
+        sub_col = bpy_data.collections.new(sub_name)
         parent_col.children.link(sub_col)
     else:
         if sub_col.name not in parent_col.children:
@@ -669,7 +670,7 @@ def safe_remove_collection_objects(
     Safely and cleanly removes objects belonging to a collection and their unshared datablocks.
     Guards against RNA pointer invalidation and collection mutation during iteration.
     """
-    _bpy: Any = bpy_module or bpy
+    _bpy = bpy_module if bpy_module is not None else bpy
     if not col or not hasattr(col, "objects") or not _bpy:
         return 0
 
@@ -695,7 +696,7 @@ def safe_remove_collection_objects(
                     logger.debug("Deselect on removal skipped: %s", exc)
 
             # Capture unshared data block
-            data_to_remove: Any = None
+            data_to_remove: bpy.types.ID | None = None
             if hasattr(obj, "data") and obj.data:
                 data = obj.data
                 users = getattr(data, "users", 1)
@@ -703,19 +704,20 @@ def safe_remove_collection_objects(
                     data_to_remove = data
 
             # Unlink and remove object from bpy.data.objects
-            if hasattr(_bpy, "data") and hasattr(_bpy.data, "objects"):
-                _bpy.data.objects.remove(obj, do_unlink=True)
+            bpy_data = cast("bpy.types.BlendData | None", getattr(_bpy, "data", None))
+            if bpy_data is not None and hasattr(bpy_data, "objects"):
+                bpy_data.objects.remove(obj, do_unlink=True)
                 removed += 1
 
             # Remove orphaned datablock
-            if data_to_remove is not None and hasattr(_bpy, "data"):
+            if data_to_remove is not None and bpy_data is not None:
                 try:
-                    if hasattr(_bpy.data, "meshes") and data_to_remove in _bpy.data.meshes.values():
-                        _bpy.data.meshes.remove(data_to_remove)
-                    elif hasattr(_bpy.data, "lights") and data_to_remove in _bpy.data.lights.values():
-                        _bpy.data.lights.remove(data_to_remove)
-                    elif hasattr(_bpy.data, "cameras") and data_to_remove in _bpy.data.cameras.values():
-                        _bpy.data.cameras.remove(data_to_remove)
+                    if hasattr(bpy_data, "meshes") and data_to_remove in bpy_data.meshes.values():
+                        bpy_data.meshes.remove(cast("bpy.types.Mesh", data_to_remove))
+                    elif hasattr(bpy_data, "lights") and data_to_remove in bpy_data.lights.values():
+                        bpy_data.lights.remove(cast("bpy.types.Light", data_to_remove))
+                    elif hasattr(bpy_data, "cameras") and data_to_remove in bpy_data.cameras.values():
+                        bpy_data.cameras.remove(cast("bpy.types.Camera", data_to_remove))
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Orphaned datablock removal skipped: %s", exc)
         except (ReferenceError, AttributeError, RuntimeError) as exc:

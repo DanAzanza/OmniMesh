@@ -134,10 +134,10 @@ def configure_game_scene_settings(
     # 1. Metric Unit Standards
     if hasattr(scene, "unit_settings"):
         try:
-            unit_settings: Any = scene.unit_settings
+            unit_settings = scene.unit_settings
             unit_settings.system = "METRIC"
             unit_settings.scale_length = float(opts.unit_scale)
-            unit_settings.length_unit = opts.length_unit
+            unit_settings.length_unit = opts.length_unit  # type: ignore[assignment]
         except (AttributeError, TypeError, ValueError) as exc:
             logger.debug("Could not set unit_settings: %s", exc)
 
@@ -192,7 +192,7 @@ def _apply_viewport_space_settings(
     enable_backface_culling: bool,
 ) -> None:
     """Applies clipping and overlay/shading options to a single SpaceView3D instance."""
-    space: Any = space_in
+    space = cast("bpy.types.SpaceView3D", space_in)
     if hasattr(space, "clip_start"):
         space.clip_start = float(clip_start)
     if hasattr(space, "clip_end"):
@@ -228,9 +228,10 @@ def setup_asset_collections(
             ├── {AssetName}_Helpers (COLOR_03)
             └── {AssetName}_Config (COLOR_06) [Optional]
     """
-    _bpy: Any = bpy_module or bpy
+    _bpy = bpy_module if bpy_module is not None else bpy
     if not _bpy or not context:
         return {}
+    bpy_data = cast("bpy.types.BlendData", getattr(_bpy, "data", None))
 
     scene = getattr(context, "scene", None)
     if not scene or not hasattr(scene, "collection"):
@@ -241,9 +242,9 @@ def setup_asset_collections(
     collections: dict[str, Any] = {}
 
     # 1. Root Collection {AssetName}
-    root_col = _bpy.data.collections.get(clean_asset)
+    root_col = bpy_data.collections.get(clean_asset)
     if not root_col:
-        root_col = _bpy.data.collections.new(clean_asset)
+        root_col = bpy_data.collections.new(clean_asset)
         scene.collection.children.link(root_col)
     elif root_col.name not in scene.collection.children:
         try:
@@ -259,9 +260,9 @@ def setup_asset_collections(
 
     # Helper function for nested sub-collections
     def _ensure_sub_collection(role_key: str, sub_name: str) -> bpy.types.Collection | None:
-        sub_col = _bpy.data.collections.get(sub_name)
+        sub_col = bpy_data.collections.get(sub_name)
         if not sub_col:
-            sub_col = _bpy.data.collections.new(sub_name)
+            sub_col = bpy_data.collections.new(sub_name)
             root_col.children.link(sub_col)
         else:
             if sub_col.name not in root_col.children:
@@ -349,7 +350,7 @@ def assign_objects_to_asset_hierarchy(
             continue
 
         obj_type = getattr(obj, "type", "")
-        target_col: Optional[Any] = None
+        target_col: Optional[bpy.types.Collection] = None
         target_category = ""
 
         if obj_type == "MESH":

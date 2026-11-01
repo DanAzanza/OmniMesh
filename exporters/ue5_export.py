@@ -12,7 +12,7 @@ except (ImportError, ValueError):
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class UE5Exporter(EngineExporterBase):
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
         # Collect ordered export objects (LOD0..N)
-        export_objects: list[Any] = []
+        export_objects: list[bpy.types.Object] = []
         for tier_idx in sorted(payload.lod_tiers.keys()):
             for obj in payload.lod_tiers[tier_idx]:
                 if obj not in export_objects:
@@ -83,7 +83,7 @@ class UE5Exporter(EngineExporterBase):
         orig_active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
         orig_selected = list(getattr(context, "selected_objects", []))
         all_export_items = export_objects + collider_objects + ([armature_obj] if armature_obj else [])
-        orig_hide_states: dict[Any, tuple[bool, bool]] = {}
+        orig_hide_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
         for o in all_export_items:
             if not o:
                 continue
@@ -91,11 +91,11 @@ class UE5Exporter(EngineExporterBase):
             hg = o.hide_get(view_layer=vl) if (hasattr(o, "hide_get") and vl) else hv
             orig_hide_states[o] = (hv, hg)
 
-        orig_collider_names: dict[Any, str] = {}
-        orig_imp_names: dict[Any, str] = {}
-        orig_parents: dict[Any, Any] = {obj: obj.parent for obj in export_objects}
-        orig_collider_parents: dict[Any, Any] = {c: c.parent for c in collider_objects}
-        orig_matrices: dict[Any, Any] = {}
+        orig_collider_names: dict[bpy.types.Object, str] = {}
+        orig_imp_names: dict[bpy.types.Object, str] = {}
+        orig_parents: dict[bpy.types.Object, bpy.types.Object | None] = {obj: obj.parent for obj in export_objects}
+        orig_collider_parents: dict[bpy.types.Object, bpy.types.Object | None] = {c: c.parent for c in collider_objects}
+        orig_matrices: dict[bpy.types.Object, mathutils.Matrix] = {}
         created_empty = None
         lod_group_empty = None
 

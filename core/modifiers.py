@@ -53,31 +53,33 @@ class ModifierManager:
         synced_count = 0
         for mod in obj.modifiers:
             mod_synced = False
-            mod_dyn: Any = mod
 
             # 1. Subsurf & Multires: sync render_levels to levels
             if hasattr(mod, "levels") and hasattr(mod, "render_levels"):
-                if mod_dyn.render_levels != mod_dyn.levels:
+                sub_mod = cast("bpy.types.SubsurfModifier", mod)
+                if sub_mod.render_levels != sub_mod.levels:
                     try:
-                        mod_dyn.render_levels = mod_dyn.levels
+                        sub_mod.render_levels = sub_mod.levels
                         mod_synced = True
                     except (TypeError, ValueError, AttributeError) as exc:
                         logger.debug("Could not sync render_levels on %s: %s", mod.name, exc)
 
             # 2. Screw: sync render_steps to steps
             if hasattr(mod, "steps") and hasattr(mod, "render_steps"):
-                if mod_dyn.render_steps != mod_dyn.steps:
+                screw_mod = cast("bpy.types.ScrewModifier", mod)
+                if screw_mod.render_steps != screw_mod.steps:
                     try:
-                        mod_dyn.render_steps = mod_dyn.steps
+                        screw_mod.render_steps = screw_mod.steps
                         mod_synced = True
                     except (TypeError, ValueError, AttributeError) as exc:
                         logger.debug("Could not sync render_steps on %s: %s", mod.name, exc)
 
             # 3. Ocean: sync resolution to viewport_resolution
             if hasattr(mod, "viewport_resolution") and hasattr(mod, "resolution"):
-                if mod_dyn.resolution != mod_dyn.viewport_resolution:
+                ocean_mod = cast("bpy.types.OceanModifier", mod)
+                if ocean_mod.resolution != ocean_mod.viewport_resolution:
                     try:
-                        mod_dyn.resolution = mod_dyn.viewport_resolution
+                        ocean_mod.resolution = ocean_mod.viewport_resolution
                         mod_synced = True
                     except (TypeError, ValueError, AttributeError) as exc:
                         logger.debug("Could not sync ocean resolution on %s: %s", mod.name, exc)
@@ -130,7 +132,7 @@ class ModifierManager:
             return cast(Any, obj.data), None
 
         # Temporarily disable armature modifiers if requested to prevent skin deformation
-        disabled_armatures: list[Any] = []
+        disabled_armatures: list[bpy.types.Modifier] = []
         if preserve_armature and hasattr(obj, "modifiers"):
             for mod in obj.modifiers:
                 if mod.type == "ARMATURE" and mod.show_viewport:

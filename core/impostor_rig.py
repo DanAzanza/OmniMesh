@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence, cast
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class EphemeralBakeSceneGuard:
         self.bake_scene = bpy.data.scenes.new(self.temp_scene_name)
 
         # Configure minimal, fast unlit rendering environment
-        render: Any = self.bake_scene.render
+        render = self.bake_scene.render
         render.film_transparent, render.dither_intensity = True, 0.0
         is_bg = getattr(bpy.app, "background", False) if bpy else False
         preferred = (
@@ -62,16 +62,22 @@ class EphemeralBakeSceneGuard:
             if is_bg
             else ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES")
         )
-        cycles: Any = getattr(self.bake_scene, "cycles", None)
-        eevee: Any = getattr(self.bake_scene, "eevee", None)
+        cycles = getattr(self.bake_scene, "cycles", None)
+        eevee = getattr(self.bake_scene, "eevee", None)
         for eng in preferred:
             try:
-                render.engine = eng
+                render.engine = eng  # type: ignore[assignment]
                 if render.engine == eng:
-                    if eng == "CYCLES" and cycles:
-                        cycles.samples, cycles.max_bounces, cycles.diffuse_bounces, cycles.glossy_bounces = 1, 0, 0, 0
-                        cycles.device = "CPU"
-                    elif eevee and hasattr(eevee, "taa_render_samples"):
+                    if eng == "CYCLES" and cycles is not None:
+                        for attr, val in (
+                            ("samples", 1),
+                            ("max_bounces", 0),
+                            ("diffuse_bounces", 0),
+                            ("glossy_bounces", 0),
+                            ("device", "CPU"),
+                        ):
+                            setattr(cycles, attr, val)
+                    elif eevee is not None and hasattr(eevee, "taa_render_samples"):
                         eevee.taa_render_samples = 1
                     break
             except (TypeError, ValueError, AttributeError) as eng_err:
@@ -142,7 +148,9 @@ class ImpostorCameraRig:
         if not bpy or not scene:
             return None
 
-        cam_data: Any = scene.camera.data if scene.camera else bpy.data.cameras.new("OMNIMESH_Bake_Cam")
+        cam_data = cast(
+            "bpy.types.Camera", scene.camera.data if scene.camera else bpy.data.cameras.new("OMNIMESH_Bake_Cam")
+        )
         cam_data.type = "ORTHO"
         cam_data.ortho_scale = ortho_scale
 

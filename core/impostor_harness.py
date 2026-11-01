@@ -12,7 +12,7 @@ Constructs unlit emission shader overrides for the required PBR and depth passes
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,8 @@ else:
     except ImportError:
         bpy = None
 
+
+from .compat import get_socket_default_value, set_socket_default_value
 
 try:
     from .exceptions import ImpostorBakeError
@@ -58,8 +60,8 @@ class ImpostorShaderHarness:
         mat.use_nodes = True
         if not mat.node_tree:
             raise ImpostorBakeError("Material has no node tree.")
-        nodes: Any = mat.node_tree.nodes
-        links: Any = mat.node_tree.links
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
         nodes.clear()
 
         out_node = nodes.new(type="ShaderNodeOutputMaterial")
@@ -67,7 +69,7 @@ class ImpostorShaderHarness:
         emit_node = nodes.new(type="ShaderNodeEmission")
         emit_node.location = (150, 0)
 
-        src_bsdf: Any = None
+        src_bsdf: bpy.types.Node | None = None
         if source_mat and getattr(source_mat, "use_nodes", False) and source_mat.node_tree:
             src_bsdf = next(
                 (n for n in source_mat.node_tree.nodes if getattr(n, "type", "") == "BSDF_PRINCIPLED"), None
@@ -75,37 +77,44 @@ class ImpostorShaderHarness:
 
         # 1. BaseColor Pass
         if channel_layer == "BASE_COLOR":
-            if src_bsdf and "Base Color" in src_bsdf.inputs and src_bsdf.inputs["Base Color"].is_linked:
-                src_link = src_bsdf.inputs["Base Color"].links[0]
+            base_links = (
+                getattr(src_bsdf.inputs["Base Color"], "links", None)
+                if src_bsdf and "Base Color" in src_bsdf.inputs
+                else None
+            )
+            if src_bsdf and "Base Color" in src_bsdf.inputs and src_bsdf.inputs["Base Color"].is_linked and base_links:
+                src_link = base_links[0]
                 cls._duplicate_link_to_target(src_link, nodes, links, emit_node.inputs["Color"])
             elif src_bsdf and "Base Color" in src_bsdf.inputs:
-                emit_node.inputs["Color"].default_value = src_bsdf.inputs["Base Color"].default_value
+                set_socket_default_value(
+                    emit_node.inputs["Color"], get_socket_default_value(src_bsdf.inputs["Base Color"])
+                )
             else:
-                emit_node.inputs["Color"].default_value = (0.8, 0.8, 0.8, 1.0)
+                set_socket_default_value(emit_node.inputs["Color"], (0.8, 0.8, 0.8, 1.0))
 
         # 2. Camera-Space Normal Pass
         elif channel_layer == "NORMAL":
             geom_node = nodes.new(type="ShaderNodeNewGeometry")
             geom_node.location = (-350, 0)
             vec_trans = nodes.new(type="ShaderNodeVectorTransform")
-            vec_trans.vector_type = "NORMAL"
-            vec_trans.convert_from = "WORLD"
-            vec_trans.convert_to = "CAMERA"
+            setattr(vec_trans, "vector_type", "NORMAL")  # noqa: B010
+            setattr(vec_trans, "convert_from", "WORLD")  # noqa: B010
+            setattr(vec_trans, "convert_to", "CAMERA")  # noqa: B010
             vec_trans.location = (-180, 0)
             links.new(geom_node.outputs["Normal"], vec_trans.inputs["Vector"])
 
             vec_math = nodes.new(type="ShaderNodeVectorMath")
-            vec_math.operation = "MULTIPLY_ADD"
+            setattr(vec_math, "operation", "MULTIPLY_ADD")  # noqa: B010
             vec_math.location = (0, 0)
 
             if target_engine == "UE5":
                 # DirectX normal convention: Invert Green channel (-Y), camera forward (-Z) -> tangent (+Z)
-                vec_math.inputs[1].default_value = (0.5, -0.5, -0.5)
+                set_socket_default_value(vec_math.inputs[1], (0.5, -0.5, -0.5))
             else:
                 # OpenGL standard: +Y is Up, camera forward (-Z) -> tangent (+Z)
-                vec_math.inputs[1].default_value = (0.5, 0.5, -0.5)
+                set_socket_default_value(vec_math.inputs[1], (0.5, 0.5, -0.5))
 
-            vec_math.inputs[2].default_value = (0.5, 0.5, 0.5)
+            set_socket_default_value(vec_math.inputs[2], (0.5, 0.5, 0.5))
             links.new(vec_trans.outputs["Vector"], vec_math.inputs[0])
             links.new(vec_math.outputs["Vector"], emit_node.inputs["Color"])
 
@@ -116,16 +125,16 @@ class ImpostorShaderHarness:
 
             map_range = nodes.new(type="ShaderNodeMapRange")
             map_range.location = (-100, 0)
-            map_range.clamp = True
+            setattr(map_range, "clamp", True)  # noqa: B010
 
             # Near and far boundaries of the bounding sphere relative to camera
             from_min = max(0.01, cam_distance - radius)
             from_max = cam_distance + radius
 
-            map_range.inputs["From Min"].default_value = from_min
-            map_range.inputs["From Max"].default_value = from_max
-            map_range.inputs["To Min"].default_value = 0.0
-            map_range.inputs["To Max"].default_value = 1.0
+            set_socket_default_value(map_range.inputs["From Min"], from_min)
+            set_socket_default_value(map_range.inputs["From Max"], from_max)
+            set_socket_default_value(map_range.inputs["To Min"], 0.0)
+            set_socket_default_value(map_range.inputs["To Max"], 1.0)
 
             # Planar Z Depth strictly matches parallel rays of orthographic camera
             links.new(cam_data.outputs["View Z Depth"], map_range.inputs["Value"])
@@ -140,20 +149,26 @@ class ImpostorShaderHarness:
             metal_val = 0.0
             if src_bsdf:
                 if "Roughness" in src_bsdf.inputs and not src_bsdf.inputs["Roughness"].is_linked:
-                    rough_val = float(src_bsdf.inputs["Roughness"].default_value)
+                    try:
+                        rough_val = float(get_socket_default_value(src_bsdf.inputs["Roughness"], 0.5))  # type: ignore[arg-type]
+                    except (ValueError, TypeError):
+                        rough_val = 0.5
                 if "Metallic" in src_bsdf.inputs and not src_bsdf.inputs["Metallic"].is_linked:
-                    metal_val = float(src_bsdf.inputs["Metallic"].default_value)
+                    try:
+                        metal_val = float(get_socket_default_value(src_bsdf.inputs["Metallic"], 0.0))  # type: ignore[arg-type]
+                    except (ValueError, TypeError):
+                        metal_val = 0.0
 
             if target_engine == "UNITY":
                 # Unity standard MaskMap: R=Metallic, G=AO (1.0), B=Detail Mask (0.0), A=Smoothness (1-Roughness)
-                comb_node.inputs["Red"].default_value = metal_val
-                comb_node.inputs["Green"].default_value = 1.0
-                comb_node.inputs["Blue"].default_value = 1.0 - rough_val
+                set_socket_default_value(comb_node.inputs["Red"], metal_val)
+                set_socket_default_value(comb_node.inputs["Green"], 1.0)
+                set_socket_default_value(comb_node.inputs["Blue"], 1.0 - rough_val)
             else:
                 # UE5, MSFS 2024: R=AO, G=Roughness, B=Metallic
-                comb_node.inputs["Red"].default_value = 1.0
-                comb_node.inputs["Green"].default_value = rough_val
-                comb_node.inputs["Blue"].default_value = metal_val
+                set_socket_default_value(comb_node.inputs["Red"], 1.0)
+                set_socket_default_value(comb_node.inputs["Green"], rough_val)
+                set_socket_default_value(comb_node.inputs["Blue"], metal_val)
 
             links.new(comb_node.outputs["Color"], emit_node.inputs["Color"])
 
@@ -161,19 +176,21 @@ class ImpostorShaderHarness:
         has_alpha_link = src_bsdf is not None and "Alpha" in src_bsdf.inputs and src_bsdf.inputs["Alpha"].is_linked
 
         if has_alpha_link and src_bsdf is not None:
-            transp_node = nodes.new(type="ShaderNodeBsdfTransparent")
-            transp_node.location = (200, -150)
-            mix_node = nodes.new(type="ShaderNodeMixShader")
-            mix_node.location = (400, 0)
+            alpha_links = getattr(src_bsdf.inputs["Alpha"], "links", None)
+            if alpha_links:
+                transp_node = nodes.new(type="ShaderNodeBsdfTransparent")
+                transp_node.location = (200, -150)
+                mix_node = nodes.new(type="ShaderNodeMixShader")
+                mix_node.location = (400, 0)
 
-            # Input 1: Transparent (when Fac is 0)
-            # Input 2: Emission (when Fac is 1)
-            links.new(transp_node.outputs["BSDF"], mix_node.inputs[1])
-            links.new(emit_node.outputs["Emission"], mix_node.inputs[2])
-            links.new(mix_node.outputs["Shader"], out_node.inputs["Surface"])
+                # Input 1: Transparent (when Fac is 0)
+                # Input 2: Emission (when Fac is 1)
+                links.new(transp_node.outputs["BSDF"], mix_node.inputs[1])
+                links.new(emit_node.outputs["Emission"], mix_node.inputs[2])
+                links.new(mix_node.outputs["Shader"], out_node.inputs["Surface"])
 
-            src_alpha_link = src_bsdf.inputs["Alpha"].links[0]
-            cls._duplicate_link_to_target(src_alpha_link, nodes, links, mix_node.inputs["Fac"])
+                src_alpha_link = alpha_links[0]
+                cls._duplicate_link_to_target(src_alpha_link, nodes, links, mix_node.inputs["Fac"])
 
             if hasattr(mat, "blend_method"):
                 mat.blend_method = "CLIP"
@@ -192,10 +209,10 @@ class ImpostorShaderHarness:
         target_socket: bpy.types.NodeSocket,
     ) -> None:
         """Duplicates an upstream texture node to feed unlit emission or cutout alpha sockets."""
-        from_node: Any = link.from_node
+        from_node = link.from_node
         if getattr(from_node, "type", "") == "TEX_IMAGE" and getattr(from_node, "image", None):
-            tex: Any = target_nodes.new(type="ShaderNodeTexImage")
-            tex.image = from_node.image
+            tex = target_nodes.new(type="ShaderNodeTexImage")
+            setattr(tex, "image", getattr(from_node, "image", None))  # noqa: B010
             tex.location = (-250, 0)
             from_socket_name = link.from_socket.name if link.from_socket else "Color"
             if from_socket_name in tex.outputs:

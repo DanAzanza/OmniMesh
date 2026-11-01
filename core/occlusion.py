@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Dict, List, Set, cast
+from typing import TYPE_CHECKING, Dict, List, Sequence, Set, cast
 
 import numpy as np
 
@@ -61,7 +61,7 @@ class RobustTransparencyEvaluator:
 
         # If material doesn't use nodes, check diffuse color alpha
         if not getattr(mat, "use_nodes", False) or not getattr(mat, "node_tree", None):
-            diff_col: Any = getattr(mat, "diffuse_color", None)
+            diff_col = cast("Sequence[float] | None", getattr(mat, "diffuse_color", None))
             if diff_col is not None and len(diff_col) >= 4:
                 return float(diff_col[3]) < 0.99
             return False
@@ -209,7 +209,7 @@ class HardenedOcclusionCuller:
             # Construct isolated BMesh of opaque faces only for accurate raycasts
             temp_bm = bmesh.new()
             try:
-                vert_map: dict[Any, Any] = {}
+                vert_map: dict[bmesh.types.BMVert, bmesh.types.BMVert] = {}
                 opaque_face_map = []
                 for f in opaque_faces:
                     new_verts = []
@@ -286,7 +286,7 @@ class HardenedOcclusionCuller:
                     break
 
         # 6. Island Quorum & Clean Removal
-        faces_to_delete: List[Any] = []
+        faces_to_delete: List[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = []
         culled_islands_count = 0
 
         for island in islands:
