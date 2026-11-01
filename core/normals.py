@@ -63,19 +63,22 @@ class NormalManager:
         if not bpy or not source_lod0 or not lod_obj or source_lod0 == lod_obj:
             return False
 
-        if getattr(lod_obj, "type", "") != "MESH" or getattr(source_lod0, "type", "") != "MESH":
+        if lod_obj.type != "MESH" or source_lod0.type != "MESH":
             return False
 
-        if not hasattr(lod_obj, "data") or not lod_obj.data or not hasattr(source_lod0, "data") or not source_lod0.data:
+        if lod_obj.data is None or source_lod0.data is None:
             return False
 
-        src_verts = getattr(source_lod0.data, "vertices", [])
-        tgt_verts = getattr(lod_obj.data, "vertices", [])
+        src_mesh = cast("bpy.types.Mesh", source_lod0.data)
+        tgt_mesh = cast("bpy.types.Mesh", lod_obj.data)
+
+        src_verts = src_mesh.vertices
+        tgt_verts = tgt_mesh.vertices
         if len(src_verts) == 0 or len(tgt_verts) == 0:
             return False
 
-        src_polys = getattr(source_lod0.data, "polygons", [])
-        tgt_polys = getattr(lod_obj.data, "polygons", [])
+        src_polys = src_mesh.polygons
+        tgt_polys = tgt_mesh.polygons
         if len(src_polys) == 0 or len(tgt_polys) == 0:
             return False
 
@@ -166,26 +169,27 @@ class NormalManager:
         if not KDTree or not lod_obj or not source_lod0:
             return False
         try:
-            src_mesh = getattr(source_lod0, "data", None)
-            tgt_mesh = getattr(lod_obj, "data", None)
-            if not src_mesh or not tgt_mesh:
+            if source_lod0.data is None or lod_obj.data is None:
                 return False
 
-            src_verts = getattr(src_mesh, "vertices", [])
-            tgt_loops = getattr(tgt_mesh, "loops", [])
-            tgt_verts = getattr(tgt_mesh, "vertices", [])
+            src_mesh = cast("bpy.types.Mesh", source_lod0.data)
+            tgt_mesh = cast("bpy.types.Mesh", lod_obj.data)
+
+            src_verts = src_mesh.vertices
+            tgt_loops = tgt_mesh.loops
+            tgt_verts = tgt_mesh.vertices
 
             num_src_verts = len(src_verts)
             if num_src_verts == 0 or len(tgt_loops) == 0:
                 return False
 
-            src_mat = getattr(source_lod0, "matrix_world", None)
-            tgt_mat = getattr(lod_obj, "matrix_world", None)
+            src_mat = source_lod0.matrix_world
+            tgt_mat = lod_obj.matrix_world
 
             kd = KDTree(num_src_verts)
             for i, v in enumerate(src_verts):
                 world_co = src_mat @ v.co if src_mat is not None else v.co
-                kd.insert(world_co, i)
+                kd.insert((float(world_co[0]), float(world_co[1]), float(world_co[2])), i)
             kd.balance()
 
             src_rot = src_mat.to_3x3() if (src_mat is not None and hasattr(src_mat, "to_3x3")) else None
@@ -204,10 +208,10 @@ class NormalManager:
                 v_idx = loop.vertex_index
                 v_co = tgt_verts[v_idx].co
                 world_tgt_co = tgt_mat @ v_co if tgt_mat is not None else v_co
-                _, src_idx, _ = kd.find(world_tgt_co)
+                _, src_idx, _ = kd.find((float(world_tgt_co[0]), float(world_tgt_co[1]), float(world_tgt_co[2])))
                 if src_idx is not None:
                     src_norm = src_verts[int(src_idx)].normal
-                    v_src = Vector(src_norm) if Vector else src_norm
+                    v_src = Vector((float(src_norm[0]), float(src_norm[1]), float(src_norm[2]))) if Vector else src_norm
                     if src_norm_to_world:
                         world_norm = src_norm_to_world @ v_src
                     else:

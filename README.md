@@ -173,7 +173,7 @@ OmniMesh provides a reproducible headless benchmark harness (`scripts/run_benchm
 | **10k** | 10,200 | 13.3 ms | 91.9 ms | 59.2 ms | 68.5 ms | 93.6 ms |
 | **100k** | 101,108 | 369.0 ms | 990.1 ms | 716.8 ms | 1,012.4 ms | 1,211.8 ms |
 
-> *Reproducible via `python scripts/run_benchmarks.py --quick` (or `--full` for 500k poly tier). Raw JSON metrics stored in `benchmark_results.json`.*
+> *Reproducible via `python scripts/run_benchmarks.py --quick` (or `--full` for 500k poly tier), which generates local raw JSON metrics in `benchmark_results.json`.*
 
 ### Architectural Verification Matrix
 

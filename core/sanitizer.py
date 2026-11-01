@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Dict, List, cast
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from .topology_repair import TopologyRepairEngine, TopologyRepairOptions
 
@@ -83,7 +83,7 @@ class MeshSanitizer:
         vert_set_to_faces: Dict[frozenset[bmesh.types.BMVert], List[bmesh.types.BMFace]] = {}
 
         for f in bm.faces:
-            if not getattr(f, "is_valid", False):
+            if not f.is_valid:
                 continue
             key = frozenset(f.verts)
             if key not in vert_set_to_faces:
@@ -324,18 +324,17 @@ class MeshSanitizer:
                 bm = bmesh.new()
                 try:
                     bm.from_mesh(mesh_data)
-                    for v in getattr(bm, "verts", []):
-                        if len(getattr(v, "link_edges", [])) == 0:
+                    for v in bm.verts:
+                        if len(v.link_edges) == 0:
                             total_loose_verts += 1
-                    for e in getattr(bm, "edges", []):
-                        face_count = len(getattr(e, "link_faces", []))
+                    for e in bm.edges:
+                        face_count = len(e.link_faces)
                         if face_count == 0:
                             total_loose_edges += 1
                         elif face_count > 2:
                             total_non_manifold_edges += 1
-                    for f in getattr(bm, "faces", []):
-                        calc_area = getattr(f, "calc_area", None)
-                        if callable(calc_area) and float(cast(Any, calc_area)()) <= 1e-10:
+                    for f in bm.faces:
+                        if f.calc_area() <= 1e-10:
                             total_degenerate_tris += 1
                 finally:
                     bm.free()
@@ -414,7 +413,7 @@ class MeshSanitizer:
             visited_faces: set[bmesh.types.BMFace] = set()
             closed_shells: list[list[bmesh.types.BMFace]] = []
             for face in bm.faces:
-                if face in visited_faces or not getattr(face, "is_valid", False):
+                if face in visited_faces or not face.is_valid:
                     continue
                 shell: list[bmesh.types.BMFace] = []
                 queue = [face]
@@ -424,12 +423,12 @@ class MeshSanitizer:
                 while queue:
                     curr = queue.pop()
                     shell.append(curr)
-                    for edge in getattr(curr, "edges", []):
-                        link_faces = getattr(edge, "link_faces", [])
+                    for edge in curr.edges:
+                        link_faces = edge.link_faces
                         if len(link_faces) != 2:
                             is_closed_shell = False
                         for nbr in link_faces:
-                            if nbr not in visited_faces and getattr(nbr, "is_valid", False):
+                            if nbr not in visited_faces and nbr.is_valid:
                                 visited_faces.add(nbr)
                                 queue.append(nbr)
 

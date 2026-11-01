@@ -10,88 +10,13 @@ if _TC:
 else:
     _MockBase = object
 
-from typing import Any
 from unittest.mock import MagicMock
 
 from core.decimator import MeshDecimator
 from core.lod_generator import generate_all_lods
 
 
-class MockVert(_MockBase):
-    def __init__(self, index: int, co: tuple[float, float, float] = (0.0, 0.0, 0.0)):
-        self.index = index
-        self.co = co
-        self.is_valid = True
-        self.link_edges: list[MockEdge] = []
-        self.link_faces: list[MockFace] = []
-        self._deform_dict: dict[int, float] = {}
-
-    def __getitem__(self, item: Any) -> Any:
-        return self._deform_dict
-
-
-class MockEdge(_MockBase):
-    def __init__(
-        self, verts: tuple[MockVert, MockVert], is_boundary: bool = False, seam: bool = False, smooth: bool = True
-    ):
-        self.verts = verts
-        self.is_valid = True
-        self.is_boundary = is_boundary
-        self.seam = seam
-        self.smooth = smooth
-        self.link_faces: list[MockFace] = []
-        for v in verts:
-            v.link_edges.append(self)
-
-
-class MockUVLoop(_MockBase):
-    def __init__(self, vert: MockVert, uv: tuple[float, float] = (0.0, 0.0)):
-        self.vert = vert
-        self._uv_data = {0: MagicMock(uv=uv)}
-
-    def __getitem__(self, item: Any) -> Any:
-        return self._uv_data.get(item, MagicMock(uv=(0.0, 0.0)))
-
-
-class MockFace(_MockBase):
-    def __init__(
-        self, verts: list[MockVert], material_index: int = 0, normal: tuple[float, float, float] = (0.0, 0.0, 1.0)
-    ):
-        self.verts = verts
-        self.is_valid = True
-        self.material_index = material_index
-        self.smooth = True
-        self.normal = normal
-        self.edges: list[MockEdge] = []
-        self.loops: list[MockUVLoop] = [MockUVLoop(v) for v in verts]
-        for v in verts:
-            v.link_faces.append(self)
-
-
-class MockBMesh(_MockBase):
-    def __init__(self, verts: list[MockVert], edges: list[MockEdge], faces: list[MockFace]):
-        self.verts = MagicMock()
-        self.verts.__iter__ = lambda self: iter(verts)
-        self.verts.__len__ = lambda self: len(verts)
-        self.verts.ensure_lookup_table = MagicMock()
-        self.verts.index_update = MagicMock()
-
-        self.edges = MagicMock()
-        self.edges.__iter__ = lambda self: iter(edges)
-        self.edges.__len__ = lambda self: len(edges)
-        self.edges.ensure_lookup_table = MagicMock()
-        self.edges.index_update = MagicMock()
-
-        self.faces = MagicMock()
-        self.faces.__iter__ = lambda self: iter(faces)
-        self.faces.__len__ = lambda self: len(faces)
-        self.faces.ensure_lookup_table = MagicMock()
-        self.faces.index_update = MagicMock()
-
-        self.loops = MagicMock()
-        self.loops.layers = MagicMock()
-        self.loops.layers.uv = {0: 0}
-        self.normal_update = MagicMock()
+from tests.conftest import MockBMesh, MockEdge, MockFace, MockVert
 
 
 def test_tag_boundaries_and_uv_seams_null():

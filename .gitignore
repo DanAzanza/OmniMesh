@@ -13,6 +13,7 @@ build/
 .coverage
 htmlcov/
 .tox/
+benchmark_results.json
 
 # Blender backup & temp files
 *.blend1

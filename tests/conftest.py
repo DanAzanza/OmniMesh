@@ -223,7 +223,20 @@ class MockMeshObject(_MockBase):
         self.material_slots: List[MockMaterialSlot] = [MockMaterialSlot(MockMaterial("M_Default"))]
         self.data = MagicMock()
         self.data.polygons = [MockPolygon(material_index=0, area=area_per_poly) for _ in range(poly_count)]
+        self.data.vertices = []
         self.data.materials = [slot.material for slot in self.material_slots if slot.material]
+        self.modifiers: List[Any] = []
+        self.bound_box: Tuple[Tuple[float, float, float], ...] = (
+            (-1.0, -1.0, -1.0),
+            (-1.0, -1.0, 1.0),
+            (-1.0, 1.0, 1.0),
+            (-1.0, 1.0, -1.0),
+            (1.0, -1.0, -1.0),
+            (1.0, -1.0, 1.0),
+            (1.0, 1.0, 1.0),
+            (1.0, 1.0, -1.0),
+        )
+        self.users_collection: List[Any] = []
         self.matrix_world = MagicMock()
 
     def hide_get(self, view_layer: Optional[Any] = None) -> bool:
@@ -280,6 +293,136 @@ class MockCollection(_MockBase):
         for c in self._children.values():
             objs.extend(c.all_objects)
         return objs
+
+
+# ==============================================================================
+# BMesh Mocks
+# ==============================================================================
+
+
+class MockVert(_MockBase):
+    """Canonical Mock BMesh Vertex with deform weights and topological links."""
+
+    def __init__(self, index: int, co: Tuple[float, float, float] = (0.0, 0.0, 0.0)):
+        self.index = index
+        self.co = MockVector(co)
+        self.is_valid = True
+        self.link_edges: List[MockEdge] = []
+        self.link_faces: List[MockFace] = []
+        self._deform_dict: Dict[int, float] = {}
+
+    def __getitem__(self, item: Any) -> Any:
+        return self._deform_dict
+
+
+class MockEdge(_MockBase):
+    """Canonical Mock BMesh Edge with length calculation and boundary flags."""
+
+    def __init__(
+        self, verts: Tuple[MockVert, MockVert], is_boundary: bool = False, seam: bool = False, smooth: bool = True
+    ):
+        self.verts = verts
+        self.is_valid = True
+        self.is_boundary = is_boundary
+        self.seam = seam
+        self.smooth = smooth
+        self.link_faces: List[MockFace] = []
+        for v in verts:
+            v.link_edges.append(self)
+
+    def calc_length(self) -> float:
+        v0, v1 = self.verts
+        dx = v0.co[0] - v1.co[0]
+        dy = v0.co[1] - v1.co[1]
+        dz = v0.co[2] - v1.co[2]
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+
+class MockUVLoop(_MockBase):
+    """Canonical Mock BMesh Loop with UV layers."""
+
+    def __init__(self, vert: MockVert, uv: Tuple[float, float] = (0.0, 0.0)):
+        self.vert = vert
+        self._uv_data = {0: MagicMock(uv=MockVector((uv[0], uv[1], 0.0)))}
+
+    def __getitem__(self, item: Any) -> Any:
+        return self._uv_data.get(item, MagicMock(uv=MockVector((0.0, 0.0, 0.0))))
+
+
+class MockFace(_MockBase):
+    """Canonical Mock BMesh Face with area calculation and winding loops."""
+
+    def __init__(
+        self,
+        verts: List[MockVert],
+        material_index: int = 0,
+        normal: Tuple[float, float, float] = (0.0, 0.0, 1.0),
+    ):
+        self.verts = verts
+        self.is_valid = True
+        self.material_index = material_index
+        self.smooth = True
+        self.normal = MockVector(normal)
+        self.edges: List[MockEdge] = []
+        self.loops: List[MockUVLoop] = [MockUVLoop(v) for v in verts]
+        for v in verts:
+            v.link_faces.append(self)
+
+    def calc_area(self) -> float:
+        if len(self.verts) < 3:
+            return 0.0
+        v0 = self.verts[0].co
+        v1 = self.verts[1].co
+        v2 = self.verts[2].co
+        ax, ay, az = v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]
+        bx, by, bz = v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]
+        cx = ay * bz - az * by
+        cy = az * bx - ax * bz
+        cz = ax * by - ay * bx
+        return 0.5 * math.sqrt(cx * cx + cy * cy + cz * cz)
+
+
+class MockBMesh(_MockBase):
+    """Canonical Mock BMesh structure containing vertices, edges, and faces."""
+
+    def __init__(self, verts: List[MockVert], edges: List[MockEdge], faces: List[MockFace]):
+        self.verts = MagicMock()
+        self.verts.__iter__ = lambda self: iter(verts)
+        self.verts.__len__ = lambda self: len(verts)
+        self.verts.__getitem__ = lambda self, idx: verts[idx]
+        self.verts.ensure_lookup_table = MagicMock()
+        self.verts.index_update = MagicMock()
+
+        self.edges = MagicMock()
+        self.edges.__iter__ = lambda self: iter(edges)
+        self.edges.__len__ = lambda self: len(edges)
+        self.edges.__getitem__ = lambda self, idx: edges[idx]
+        self.edges.ensure_lookup_table = MagicMock()
+        self.edges.index_update = MagicMock()
+
+        self.faces = MagicMock()
+        self.faces.__iter__ = lambda self: iter(faces)
+        self.faces.__len__ = lambda self: len(faces)
+        self.faces.__getitem__ = lambda self, idx: faces[idx]
+        self.faces.ensure_lookup_table = MagicMock()
+        self.faces.index_update = MagicMock()
+        self.faces.active = faces[0] if faces else None
+
+        class MockUVLayers(dict):
+            active = 0
+
+            def verify(self):
+                return 0
+
+        self.loops = MagicMock()
+        self.loops.layers = MagicMock()
+        self.loops.layers.uv = MockUVLayers({0: 0})
+
+        self.normal_update = MagicMock()
+        self.is_wrapped = False
+
+    def free(self) -> None:
+        pass
 
 
 # ==============================================================================

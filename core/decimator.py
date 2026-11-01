@@ -78,30 +78,30 @@ class MeshDecimator:
 
         # 1. Tag Boundaries & Non-Manifold Junctions (Always protected for topological integrity)
         for edge in bm.edges:
-            if not getattr(edge, "is_valid", False):
+            if not edge.is_valid:
                 continue
-            num_faces = len(getattr(edge, "link_faces", []))
-            if getattr(edge, "is_boundary", False) or num_faces != 2:
-                for v in getattr(edge, "verts", []):
+            num_faces = len(edge.link_faces)
+            if edge.is_boundary or num_faces != 2:
+                for v in edge.verts:
                     pinned_vert_indices.add(v.index)
 
         # 2. Tag Sharp Marks & Seam Edges
         if pin_sharp_edges:
             for edge in bm.edges:
-                if not getattr(edge, "is_valid", False):
+                if not edge.is_valid:
                     continue
-                if getattr(edge, "seam", False) or not getattr(edge, "smooth", True):
-                    for v in getattr(edge, "verts", []):
+                if edge.seam or not edge.smooth:
+                    for v in edge.verts:
                         pinned_vert_indices.add(v.index)
 
         # 3. Tag Material Boundaries
         if pin_material_borders:
             for edge in bm.edges:
-                if not getattr(edge, "is_valid", False) or len(getattr(edge, "link_faces", [])) != 2:
+                if not edge.is_valid or len(edge.link_faces) != 2:
                     continue
                 f1, f2 = edge.link_faces[0], edge.link_faces[1]
-                if getattr(f1, "material_index", 0) != getattr(f2, "material_index", 0):
-                    for v in getattr(edge, "verts", []):
+                if f1.material_index != f2.material_index:
+                    for v in edge.verts:
                         pinned_vert_indices.add(v.index)
 
         # 4. Tag UV Seams across Face Loops (Winding-Order Invariant)
@@ -113,7 +113,7 @@ class MeshDecimator:
 
         if uv_layers:
             for edge in bm.edges:
-                if not getattr(edge, "is_valid", False) or len(getattr(edge, "link_faces", [])) != 2:
+                if not edge.is_valid or len(edge.link_faces) != 2:
                     continue
                 f1, f2 = edge.link_faces[0], edge.link_faces[1]
                 v0, v1 = edge.verts[0], edge.verts[1]
@@ -243,7 +243,7 @@ class MeshDecimator:
                 )
 
                 # Collect manifold edge face and vertex indices
-                manifold_edges = [e for e in bm.edges if len(getattr(e, "link_faces", [])) == 2]
+                manifold_edges = [e for e in bm.edges if len(e.link_faces) == 2]
                 if manifold_edges and num_faces > 0:
                     f1_idx = np.fromiter(
                         (e.link_faces[0].index for e in manifold_edges), dtype=np.int32, count=len(manifold_edges)
@@ -283,8 +283,8 @@ class MeshDecimator:
         # Robust scalar fallback for small meshes or environments without NumPy
         for vert in bm.verts:
             max_dihedral = 0.0
-            for edge in getattr(vert, "link_edges", []):
-                link_faces = getattr(edge, "link_faces", [])
+            for edge in vert.link_edges:
+                link_faces = edge.link_faces
                 if len(link_faces) == 2:
                     n1 = link_faces[0].normal
                     n2 = link_faces[1].normal

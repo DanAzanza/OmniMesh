@@ -10,7 +10,6 @@ if _TC:
 else:
     _MockBase = object
 
-from typing import Any
 from unittest.mock import MagicMock
 import pytest
 
@@ -19,61 +18,12 @@ from core.sanitizer import MeshSanitizer, SanitizeOptions
 from core.topology_repair import TopologyRepairOptions
 
 
-class MockSanitizerVert(_MockBase):
-    def __init__(self, index: int, co: tuple[float, float, float] = (0.0, 0.0, 0.0)):
-        self.index = index
-        self.co = Vector(co)
-        self.is_valid = True
-        self.link_edges: list[MockSanitizerEdge] = []
-        self.link_faces: list[MockSanitizerFace] = []
-        self._deform_dict: dict[int, float] = {}
+from tests.conftest import MockEdge, MockFace, MockUVLoop, MockVert
 
-    def __getitem__(self, item: Any) -> Any:
-        return self._deform_dict
-
-
-class MockSanitizerEdge(_MockBase):
-    def __init__(self, verts: tuple[MockSanitizerVert, MockSanitizerVert], is_boundary: bool = False):
-        self.verts = verts
-        self.is_valid = True
-        self.is_boundary = is_boundary
-        self.link_faces: list[MockSanitizerFace] = []
-        for v in verts:
-            v.link_edges.append(self)
-
-    def calc_length(self) -> float:
-        v0, v1 = self.verts
-        return (v0.co - v1.co).length
-
-
-class MockSanitizerUVLoop(_MockBase):
-    def __init__(self, vert: MockSanitizerVert, uv: tuple[float, float] = (0.0, 0.0)):
-        self.vert = vert
-        self._uv_data = {0: MagicMock(uv=Vector(uv))}
-
-    def __getitem__(self, item: Any) -> Any:
-        return self._uv_data.get(item, MagicMock(uv=Vector((0.0, 0.0))))
-
-
-class MockSanitizerFace(_MockBase):
-    def __init__(
-        self,
-        verts: list[MockSanitizerVert],
-        normal: tuple[float, float, float] = (0.0, 0.0, 1.0),
-        material_index: int = 0,
-    ):
-        self.verts = verts
-        self.is_valid = True
-        self.normal = Vector(normal)
-        self.material_index = material_index
-        self.smooth = True
-        self.edges: list[MockSanitizerEdge] = []
-        self.loops: list[MockSanitizerUVLoop] = [MockSanitizerUVLoop(v) for v in verts]
-        for v in verts:
-            v.link_faces.append(self)
-
-    def calc_area(self) -> float:
-        return 1.0
+MockSanitizerVert = MockVert
+MockSanitizerEdge = MockEdge
+MockSanitizerUVLoop = MockUVLoop
+MockSanitizerFace = MockFace
 
 
 def test_tier0_pure_hygiene_null():
