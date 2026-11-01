@@ -180,11 +180,12 @@ class PivotPreservationEngine:
 
         if pivot_obj and hasattr(pivot_obj, "copy"):
             cloned_pivot = pivot_obj.copy()
-            cloned_pivot.name = pivot_name
-            cloned_pivot.matrix_world = pivot_obj.matrix_world.copy()
-            cloned_pivot["is_pivot"] = True
-            target_collection.objects.link(cloned_pivot)
-            return cloned_pivot
+            if cloned_pivot is not None:
+                cloned_pivot.name = pivot_name
+                cloned_pivot.matrix_world = pivot_obj.matrix_world.copy()
+                cloned_pivot["is_pivot"] = True
+                target_collection.objects.link(cloned_pivot)
+                return cloned_pivot
 
         empty_obj = bpy.data.objects.new(pivot_name, None)
         empty_obj.empty_display_type = "ARROWS"
@@ -218,6 +219,8 @@ class PivotPreservationEngine:
             if not sock or not hasattr(sock, "copy"):
                 continue
             sock_clone = sock.copy()
+            if sock_clone is None:
+                continue
             sock_world = sock.matrix_world.copy()
 
             if target_collection is not None:

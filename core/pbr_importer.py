@@ -389,6 +389,8 @@ class ShaderGraphBuilder:
                 inv_node.location = (x_post, t_node.location.y)
                 links.new(source_sock, inv_node.inputs[1])
                 source_sock = inv_node.outputs.get("Value")
+                if not source_sock:
+                    continue
 
             # Route to target socket
             if target == "Base Color":

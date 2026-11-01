@@ -439,6 +439,8 @@ class AnimationRigSanitizer:
             anim_data = armature.animation_data
             if not anim_data:
                 anim_data = armature.animation_data_create()
+            if not anim_data:
+                return False
 
             # Clear existing tracks
             for track in list(anim_data.nla_tracks):

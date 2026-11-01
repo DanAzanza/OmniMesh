@@ -386,7 +386,8 @@ class OMNIMESH_PT_lods(Panel):
         col_act.scale_y = 1.35
         action_text = "Update Out-of-Sync LODs" if has_out_of_sync else "Generate All LODs"
         op_gen = col_act.operator("lod_tool.generate_all", text=action_text, icon="GEOMETRY_NODES")
-        op_gen.only_out_of_sync = has_out_of_sync
+        if op_gen is not None:
+            op_gen.only_out_of_sync = has_out_of_sync
 
 
 class OMNIMESH_PT_lods_testing(Panel):

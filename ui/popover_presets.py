@@ -165,7 +165,8 @@ class OMNIMESH_PT_popover_import_preset(Panel):
         # Preset Management Row
         row_act = layout.row(align=True)
         op_dup = row_act.operator("lod_tool.duplicate_preset", text="Duplicate", icon="DUPLICATE")
-        op_dup.preset_type = "IMPORT"
+        if op_dup is not None:
+            op_dup.preset_type = "IMPORT"
         sub_del = row_act.row(align=True)
         sub_del.enabled = not is_builtin
         sub_del.operator("lod_tool.delete_import_preset", text="Delete", icon="X")
@@ -424,7 +425,8 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
         row_act = layout.row(align=True)
         row_act.operator("lod_tool.reset_to_preset", text="Reset to Factory", icon="LOOP_BACK")
         op_dup = row_act.operator("lod_tool.duplicate_preset", text="Duplicate", icon="DUPLICATE")
-        op_dup.preset_type = "LOD"
+        if op_dup is not None:
+            op_dup.preset_type = "LOD"
         if LODPresetManager.is_user_preset(preset_id):
             row_act.operator("lod_tool.delete_lod_preset", text="Delete Preset", icon="TRASH")
 
@@ -463,7 +465,8 @@ class OMNIMESH_PT_popover_export_preset(Panel):
         # Preset Management Row
         row_act = layout.row(align=True)
         op_dup = row_act.operator("lod_tool.duplicate_preset", text="Duplicate", icon="DUPLICATE")
-        op_dup.preset_type = "EXPORT"
+        if op_dup is not None:
+            op_dup.preset_type = "EXPORT"
         sub_del = row_act.row(align=True)
         sub_del.enabled = not is_builtin
         sub_del.operator("lod_tool.delete_export_preset", text="Delete", icon="X")

@@ -551,8 +551,9 @@ def setup_impostor_preview_rig(
         # Add UV layer
         uv_layer = mesh_data.uv_layers.new(name="UVMap")
         uv_coords = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-        for loop in mesh_data.loops:
-            uv_layer.data[loop.index].uv = uv_coords[loop.vertex_index]
+        if uv_layer is not None:
+            for loop in mesh_data.loops:
+                uv_layer.data[loop.index].uv = uv_coords[loop.vertex_index]
 
         proxy_obj = bpy.data.objects.new(proxy_name, mesh_data)
         rig_coll.objects.link(proxy_obj)

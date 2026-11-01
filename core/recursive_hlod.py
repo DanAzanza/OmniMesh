@@ -157,6 +157,8 @@ class RecursiveHLODManager:
                 if not hasattr(source_chunk, "data") or not source_chunk.data:
                     continue
                 hlod_mesh = source_chunk.data.copy()
+                if hlod_mesh is None:
+                    continue
                 hlod_mesh.name = f"{hlod_name}_Mesh"
                 hlod_obj = bpy.data.objects.new(name=hlod_name, object_data=hlod_mesh) if bpy else None
                 if hlod_obj:

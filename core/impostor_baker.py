@@ -153,8 +153,9 @@ class ImpostorAtlasBaker:
                             if active_devs:
                                 for d in active_devs:
                                     d.use = True
-                                if scene and hasattr(scene, "cycles") and scene.cycles:
-                                    scene.cycles.device = "GPU"
+                                cycles_settings = getattr(scene, "cycles", None) if scene else None
+                                if cycles_settings is not None:
+                                    cycles_settings.device = "GPU"
                                 dev_names = [getattr(d, "name", backend) for d in active_devs]
                                 logger.info("Configured Cycles GPU baking: %s (%s)", backend, ", ".join(dev_names))
                                 return backend, dev_names
@@ -165,8 +166,9 @@ class ImpostorAtlasBaker:
         except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
             logger.debug("Failed configuring Cycles compute device: %s", exc)
 
-        if scene and hasattr(scene, "cycles") and scene.cycles:
-            scene.cycles.device = "CPU"
+        cycles_settings = getattr(scene, "cycles", None) if scene else None
+        if cycles_settings is not None:
+            cycles_settings.device = "CPU"
         return "CPU", ["CPU"]
 
     @classmethod

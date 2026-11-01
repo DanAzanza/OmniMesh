@@ -367,6 +367,8 @@ class BatchProcessorEngine:
                     continue
                 lod_obj_name = f"{base_name}_{tier_name}"
                 lod_mesh = primary_mesh.copy()
+                if lod_mesh is None:
+                    continue
                 lod_mesh.name = f"{lod_obj_name}_Mesh"
                 lod_obj = bpy.data.objects.new(lod_obj_name, lod_mesh)
                 lod_obj.matrix_world = primary_obj.matrix_world.copy()

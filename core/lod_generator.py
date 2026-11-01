@@ -341,6 +341,8 @@ def _process_unmerged_tier(
                     logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
 
         lod_obj = source_obj.copy()
+        if lod_obj is None:
+            continue
         src_data = cast("bpy.types.Mesh | None", source_obj.data)
         lod_mesh = cast("bpy.types.Mesh", src_data.copy() if src_data else src_data)
         lod_obj.data = lod_mesh
@@ -356,11 +358,12 @@ def _process_unmerged_tier(
         ModifierManager.apply_all_modifiers_in_place(lod_obj, preserve_armature=True)
 
         if tier_pivot:
+            lod_parent = lod_obj.parent
             is_parent_pivot = (
-                lod_obj.parent is None
-                or (root_pivot and lod_obj.parent == root_pivot)
-                or (root_pivot and lod_obj.parent.name == root_pivot.name)
-                or "pivot" in lod_obj.parent.name.lower()
+                lod_parent is None
+                or (root_pivot is not None and lod_parent == root_pivot)
+                or (root_pivot is not None and lod_parent is not None and lod_parent.name == root_pivot.name)
+                or (lod_parent is not None and "pivot" in lod_parent.name.lower())
             )
             if is_parent_pivot:
                 lod_obj.parent = tier_pivot

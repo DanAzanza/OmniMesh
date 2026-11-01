@@ -202,6 +202,7 @@ def run_single_tier_benchmark(
 
     # 4. Curvature Weighting & QEM Decimation 50% (LOD1)
     mesh_lod1 = mesh_lod0.copy()
+    assert mesh_lod1 is not None
     obj_lod1 = bpy.data.objects.new(f"BenchObj_{target_name}_LOD1", mesh_lod1)
     scene.collection.objects.link(obj_lod1)
     bpy.context.view_layer.objects.active = obj_lod1
@@ -251,6 +252,7 @@ def run_single_tier_benchmark(
 
     # 6. Aggressive QEM Decimation 10% (LOD3)
     mesh_lod3 = mesh_lod0.copy()
+    assert mesh_lod3 is not None
     obj_lod3 = bpy.data.objects.new(f"BenchObj_{target_name}_LOD3", mesh_lod3)
     scene.collection.objects.link(obj_lod3)
     bpy.context.view_layer.objects.active = obj_lod3

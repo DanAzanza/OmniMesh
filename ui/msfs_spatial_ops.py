@@ -439,6 +439,9 @@ class OMNIMESH_OT_snap_msfs_point_to_vertex(Operator):
         depsgraph = context.evaluated_depsgraph_get()
         eval_mesh_obj = target_mesh.evaluated_get(depsgraph)
         mesh_data = eval_mesh_obj.to_mesh()
+        if mesh_data is None:
+            self.report({"WARNING"}, "Could not evaluate target mesh.")
+            return {"CANCELLED"}
 
         try:
             mat_world = eval_mesh_obj.matrix_world

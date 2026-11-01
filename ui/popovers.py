@@ -80,11 +80,14 @@ class OMNIMESH_PT_popover_scene_setup(Panel):
         row_ov = layout.row(align=True)
         row_ov.scale_y = 1.1
         op_st = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Stats", icon="VIEW_CAMERA")
-        op_st.mode = "STATS"
+        if op_st is not None:
+            op_st.mode = "STATS"
         op_cav = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Cavity", icon="SHADING_SOLID")
-        op_cav.mode = "CAVITY"
+        if op_cav is not None:
+            op_cav.mode = "CAVITY"
         op_fo = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Face Orientation", icon="NORMALS_FACE")
-        op_fo.mode = "FACE_ORIENTATION"
+        if op_fo is not None:
+            op_fo.mode = "FACE_ORIENTATION"
 
         layout.separator()
         layout.label(text="Helper Collections", icon="HELP")

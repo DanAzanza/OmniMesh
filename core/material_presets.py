@@ -93,7 +93,10 @@ def get_or_create_principled_node(mat: Material | None) -> Optional[Node]:
         output = tree.nodes.get("Material Output")
         if not output:
             output = tree.nodes.new(type="ShaderNodeOutputMaterial")
-        tree.links.new(bsdf.outputs.get("BSDF"), output.inputs.get("Surface"))
+        sock_bsdf = bsdf.outputs.get("BSDF")
+        sock_surf = output.inputs.get("Surface")
+        if sock_bsdf is not None and sock_surf is not None:
+            tree.links.new(sock_bsdf, sock_surf)
         return bsdf
     except (RuntimeError, ValueError, AttributeError) as exc:
         logger.warning("Could not instantiate Principled BSDF: %s", exc)
