@@ -151,6 +151,32 @@ class PBRTextureResolver:
 
         return results
 
+    @staticmethod
+    def _matches_semantic_map_id(texture_type: str, map_id: str) -> bool:
+        """Checks if a preset map ID corresponds to a semantic texture type."""
+        m_id = map_id.upper()
+        if m_id == texture_type:
+            return True
+        if texture_type == "ALBEDO":
+            return m_id in ("ALBEDO", "BASE_COLOR", "BASE_MAP", "DIFFUSE", "COLOR")
+        if texture_type == "NORMAL":
+            return "NORM" in m_id or "BUMP" in m_id
+        if texture_type == "COMP":
+            return m_id in ("COMP", "ORM", "ARM", "MASKMAP", "METALLIC", "ROUGHNESS")
+        if texture_type == "EMISSIVE":
+            return "EMIS" in m_id
+        if texture_type == "OCCLUSION":
+            return "AO" in m_id or "OCCLUSION" in m_id
+        if texture_type == "ROUGHNESS":
+            return "ROUGH" in m_id
+        if texture_type == "METALLIC":
+            return "METAL" in m_id
+        if texture_type == "HEIGHT":
+            return "HEIGHT" in m_id or "DISP" in m_id
+        if texture_type == "ALPHA":
+            return "ALPHA" in m_id or "OPAC" in m_id
+        return False
+
     @classmethod
     def find_texture_by_preset_pattern(
         cls,
@@ -158,11 +184,31 @@ class PBRTextureResolver:
         material_name: str,
         texture_type: str,
         texture_index: dict[str, list[Path]],
+        preset: dict[str, object] | None = None,
     ) -> Path | None:
         """Finds candidate file matching AssetName_MaterialName_TextureType_UDIM pattern in the index."""
         clean_mat = cls.sanitize_material_name(material_name).lower()
         clean_asset = asset_name.strip().lower()
-        tokens = SEMANTIC_MAP_TOKENS.get(texture_type, ())
+        tokens = set(SEMANTIC_MAP_TOKENS.get(texture_type, ()))
+
+        # Also pull any custom suffixes from active preset
+        maps_raw = preset.get("maps") if isinstance(preset, dict) else None
+        if isinstance(maps_raw, list):
+            for m in maps_raw:
+                if not isinstance(m, dict):
+                    continue
+                m_id = str(m.get("id", ""))
+                if not cls._matches_semantic_map_id(texture_type, m_id):
+                    continue
+                suffixes_raw = m.get("suffixes")
+                if not isinstance(suffixes_raw, (list, tuple)):
+                    continue
+                for s in suffixes_raw:
+                    if not isinstance(s, str):
+                        continue
+                    s_tok = re.sub(r"^[._\-]+", "", s).lower()
+                    if s_tok:
+                        tokens.add(s_tok)
 
         fallback_match: Path | None = None
 
@@ -256,6 +302,7 @@ class PBRTextureResolver:
                         material_name=mat_name,
                         texture_type=sem_type,
                         texture_index=texture_index,
+                        preset=preset,
                     )
 
                 if matched_path is not None:

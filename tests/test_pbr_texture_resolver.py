@@ -137,6 +137,63 @@ def test_find_texture_by_preset_pattern():
     )
     assert match_fallback == cand_other
 
+    # Custom preset suffix matching
+    cand_custom = Path("C:/Project/Textures/SimpleAircraft_FUSELAGE_CustomColor.png")
+    index_custom = {"simpleaircraft_fuselage_customcolor.png": [cand_custom]}
+    custom_preset = {
+        "name": "Custom Test",
+        "maps": [
+            {"id": "albedo", "suffixes": ["_CustomColor"]},
+        ],
+    }
+    match_custom = PBRTextureResolver.find_texture_by_preset_pattern(
+        asset_name="SimpleAircraft",
+        material_name="FUSELAGE",
+        texture_type="ALBEDO",
+        texture_index=index_custom,
+        preset=custom_preset,
+    )
+    assert match_custom == cand_custom
+
+    # Negative isolation: NORMAL custom suffix must not match ALBEDO channel
+    cand_norm = Path("C:/Project/Textures/SimpleAircraft_FUSELAGE_CustomNorm.png")
+    index_norm = {"simpleaircraft_fuselage_customnorm.png": [cand_norm]}
+    preset_norm = {
+        "name": "Norm Custom Test",
+        "maps": [
+            {"id": "normal", "suffixes": ["_CustomNorm"]},
+        ],
+    }
+    match_wrong_channel = PBRTextureResolver.find_texture_by_preset_pattern(
+        asset_name="SimpleAircraft",
+        material_name="FUSELAGE",
+        texture_type="ALBEDO",
+        texture_index=index_norm,
+        preset=preset_norm,
+    )
+    assert match_wrong_channel is None
+
+    # Boundary & Malformed Inputs: suffixes=None, non-dict map items, non-string tokens
+    malformed_preset = {
+        "name": "Malformed Preset",
+        "maps": [
+            None,
+            123,
+            {"id": "albedo", "suffixes": None},
+            {"id": "albedo", "suffixes": [123, None, "", "_ValidCustom"]},
+        ],
+    }
+    cand_valid = Path("C:/Project/Textures/SimpleAircraft_FUSELAGE_ValidCustom.png")
+    index_malformed = {"simpleaircraft_fuselage_validcustom.png": [cand_valid]}
+    match_malformed = PBRTextureResolver.find_texture_by_preset_pattern(
+        asset_name="SimpleAircraft",
+        material_name="FUSELAGE",
+        texture_type="ALBEDO",
+        texture_index=index_malformed,
+        preset=malformed_preset,
+    )
+    assert match_malformed == cand_valid
+
 
 def test_resolve_material_textures_relinks_and_reports_unresolved():
     temp_dir = tempfile.mkdtemp()
