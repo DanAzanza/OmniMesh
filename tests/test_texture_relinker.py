@@ -61,7 +61,7 @@ def test_is_image_valid_cases():
 
 
 def test_build_texture_index_and_pruning():
-    temp_dir = tempfile.mkdtemp()
+    temp_dir = str(Path(tempfile.mkdtemp()).resolve())
     try:
         # Create normal texture directory
         tex_dir = os.path.join(temp_dir, "Sources", "Art", "Textures")
@@ -91,7 +91,7 @@ def test_build_texture_index_and_pruning():
 
         assert "simpleaircraft_fuselage_albd_000.png" in index
         assert len(index["simpleaircraft_fuselage_albd_000.png"]) == 1
-        assert index["simpleaircraft_fuselage_albd_000.png"][0] == Path(albedo_path)
+        assert index["simpleaircraft_fuselage_albd_000.png"][0] == Path(albedo_path).resolve()
 
         assert "simpleaircraft_fuselage_comp.png.dds" in index
         assert "ignored_texture.png" not in index
@@ -163,7 +163,7 @@ def test_make_relative_path_safety():
 
 
 def test_relink_images_end_to_end():
-    temp_dir = tempfile.mkdtemp()
+    temp_dir = str(Path(tempfile.mkdtemp()).resolve())
     try:
         textures_dir = os.path.join(temp_dir, "Textures")
         os.makedirs(textures_dir, exist_ok=True)

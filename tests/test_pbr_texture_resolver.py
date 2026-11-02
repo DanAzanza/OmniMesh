@@ -196,7 +196,7 @@ def test_find_texture_by_preset_pattern():
 
 
 def test_resolve_material_textures_relinks_and_reports_unresolved():
-    temp_dir = tempfile.mkdtemp()
+    temp_dir = str(Path(tempfile.mkdtemp()).resolve())
     try:
         tex_dir = os.path.join(temp_dir, "Textures")
         os.makedirs(tex_dir, exist_ok=True)
@@ -231,7 +231,7 @@ def test_resolve_material_textures_relinks_and_reports_unresolved():
         assert summary.unresolved[0].expected_type == "NORMAL"
 
         assert img_albd.reload_called is True
-        assert img_albd.filepath == albd_file
+        assert Path(img_albd.filepath).resolve() == Path(albd_file).resolve()
     finally:
         import shutil
 
