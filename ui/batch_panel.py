@@ -29,9 +29,11 @@ else:
 try:
     from ..bridges.manager import BridgeManager
     from ..core.batch import BatchProcessorEngine
+    from ..core.batch_worker_process import WorkerProcessHandle
 except (ImportError, ValueError):
     from bridges.manager import BridgeManager
     from core.batch import BatchProcessorEngine
+    from core.batch_worker_process import WorkerProcessHandle
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,7 @@ class OMNIMESH_OT_batch_process(Operator):
     _total_count: int = 0
     _processed_count: int = 0
     _orig_global_undo: bool = True
-    _current_proc: Optional[subprocess.Popen] = None
+    _current_proc: Optional[WorkerProcessHandle] = None
     _current_file: str = ""
     _abort_requested: bool = False
     _source_root: str = ""
@@ -155,28 +157,26 @@ class OMNIMESH_OT_batch_process(Operator):
                     # Still working
                     return {"PASS_THROUGH"}
 
-                # Cleanly close log file handle if attached
-                log_file = getattr(self._current_proc, "_om_log_file", None)
-                log_path = getattr(self._current_proc, "_om_log_path", None)
-                if log_file and hasattr(log_file, "close"):
-                    try:
-                        log_file.close()
-                    except Exception as exc:
-                        logger.debug("Failed closing worker log file: %s", exc)
+                # Extract diagnostic tail on failure and close worker log file handle
+                error_tail = ""
+                if retcode != 0 and hasattr(self._current_proc, "read_log_tail"):
+                    error_tail = self._current_proc.read_log_tail(max_lines=20)
+
+                if hasattr(self._current_proc, "close_log"):
+                    self._current_proc.close_log()
+                else:
+                    log_file = getattr(self._current_proc, "_om_log_file", None)
+                    if log_file and hasattr(log_file, "close"):
+                        try:
+                            log_file.close()
+                        except Exception as exc:
+                            logger.debug("Failed closing worker log file: %s", exc)
 
                 # Finished
                 if retcode == 0:
                     logger.info("Batch worker finished: %s", self._current_file)
                 else:
-                    error_tail = ""
-                    if log_path and os.path.exists(log_path):
-                        try:
-                            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                                lines = f.readlines()
-                                error_tail = "".join(lines[-20:])
-                        except Exception as exc:
-                            logger.debug("Reading worker log tail failed: %s", exc)
-                    elif self._current_proc.stderr is not None:
+                    if not error_tail and self._current_proc.stderr is not None:
                         try:
                             error_tail = self._current_proc.stderr.read()
                         except Exception as exc:
@@ -276,12 +276,15 @@ class OMNIMESH_OT_batch_process(Operator):
                         logger.debug("Failed forcing kill on worker process: %s", exc)
 
             # Close log file unconditionally regardless of poll() state
-            log_file = getattr(self._current_proc, "_om_log_file", None)
-            if log_file and hasattr(log_file, "close") and not getattr(log_file, "closed", False):
-                try:
-                    log_file.close()
-                except Exception as exc:
-                    logger.debug("Failed closing worker log file in cleanup_modal: %s", exc)
+            if hasattr(self._current_proc, "close_log"):
+                self._current_proc.close_log()
+            else:
+                log_file = getattr(self._current_proc, "_om_log_file", None)
+                if log_file and hasattr(log_file, "close") and not getattr(log_file, "closed", False):
+                    try:
+                        log_file.close()
+                    except Exception as exc:
+                        logger.debug("Failed closing worker log file in cleanup_modal: %s", exc)
 
         self._current_proc = None
         type(self)._abort_requested = False

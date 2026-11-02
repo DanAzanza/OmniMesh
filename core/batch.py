@@ -16,7 +16,6 @@ import gc
 import logging
 import math
 import os
-import subprocess
 import sys
 import time
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, cast
@@ -34,6 +33,7 @@ try:
     from .materials import MaterialOptimizer
     from .batch_worker_process import (
         BatchWorkerProcessManager,
+        WorkerProcessHandle,
         build_hierarchical_export_path,
     )
     from .metrics import (
@@ -212,7 +212,7 @@ class BatchProcessorEngine:
         preset_id: str = "",
         target_engine: str = "UE5",
         asset_name: str = "",
-    ) -> subprocess.Popen:
+    ) -> WorkerProcessHandle:
         """Launches an isolated headless background Blender process to export a single .blend asset."""
         return BatchWorkerProcessManager.spawn_batch_worker(
             blend_path=blend_path,

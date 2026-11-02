@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from core.batch import BatchProcessorEngine
 from core.batch_worker_process import (
+    WorkerProcessHandle,
     build_hierarchical_export_path,
     normalize_export_path_for_cli,
 )
@@ -192,3 +193,89 @@ def test_batch_hierarchical_export_path():
     target_dir_p, asset_name_p = build_hierarchical_export_path(blend_path_posix, source_root_posix, export_root_posix)
     assert asset_name_p == "Hero_Asset_01"
     assert "Props" in target_dir_p
+
+
+class DummyPopen:
+    """Mock process object satisfying subprocess.Popen interface for worker tests."""
+
+    def __init__(self, pid: int = 4242, returncode: int | None = None) -> None:
+        self.pid = pid
+        self.returncode = returncode
+        self.killed = False
+        self.terminated = False
+        self.waited_timeout: float | None = None
+        self.stderr = None
+        self.stdout = None
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.waited_timeout = timeout
+        return self.returncode or 0
+
+    def kill(self) -> None:
+        self.killed = True
+        self.returncode = -9
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self.returncode = -15
+
+
+def test_worker_process_handle_lifecycle(tmp_path: Path):
+    """Verify WorkerProcessHandle forwards lifecycle commands and safely manages log handles."""
+    log_file_path = tmp_path / "worker_test.log"
+    log_file_path.write_text("Line 1\nLine 2\nCritical error details\n", encoding="utf-8")
+
+    f = open(log_file_path, "a", encoding="utf-8")
+    dummy_proc = DummyPopen(pid=9999, returncode=None)
+
+    handle = WorkerProcessHandle(
+        proc=cast(Any, dummy_proc),
+        log_file=f,
+        log_path=str(log_file_path),
+    )
+
+    assert handle.pid == 9999
+    assert handle.returncode is None
+    assert handle.poll() is None
+    assert handle._om_log_file is f
+    assert handle._om_log_path == str(log_file_path)
+
+    # Tail reading
+    tail = handle.read_log_tail(max_lines=2)
+    assert "Critical error details" in tail
+
+    # Termination
+    handle.terminate()
+    assert dummy_proc.terminated is True
+    assert handle.returncode == -15
+
+    # Safe log closure
+    assert not f.closed
+    handle.close_log()
+    assert f.closed
+    assert handle.log_file is None
+
+    # Idempotent close
+    handle.close_log()
+
+
+def test_worker_process_handle_edge_cases(tmp_path: Path):
+    """Verify WorkerProcessHandle behavior when log file is None or missing."""
+    dummy_proc = DummyPopen(pid=1234, returncode=0)
+    handle = WorkerProcessHandle(
+        proc=cast(Any, dummy_proc),
+        log_file=None,
+        log_path=str(tmp_path / "non_existent.log"),
+    )
+
+    assert handle.poll() == 0
+    assert handle.wait(timeout=2.0) == 0
+    assert dummy_proc.waited_timeout == 2.0
+    assert handle.read_log_tail() == ""
+
+    # close_log with None file
+    handle.close_log()
+    assert handle.log_file is None

@@ -11,7 +11,8 @@ import re
 import subprocess
 import sys
 import time
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import IO, TYPE_CHECKING, Any, TextIO
 
 if TYPE_CHECKING:
     import bpy
@@ -22,6 +23,81 @@ else:
         bpy = None  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WorkerProcessHandle:
+    """Encapsulates an active headless Blender worker subprocess and its associated log handle."""
+
+    proc: subprocess.Popen
+    log_file: TextIO | None = None
+    log_path: str | None = None
+
+    def poll(self) -> int | None:
+        """Checks if child process has terminated. Returns returncode or None."""
+        return self.proc.poll()
+
+    def wait(self, timeout: float | None = None) -> int:
+        """Waits for child process to terminate. Returns returncode."""
+        return self.proc.wait(timeout=timeout)
+
+    def kill(self) -> None:
+        """Kills the underlying worker process."""
+        self.proc.kill()
+
+    def terminate(self) -> None:
+        """Gracefully terminates the underlying worker process."""
+        self.proc.terminate()
+
+    @property
+    def pid(self) -> int:
+        """Returns the PID of the worker process."""
+        return self.proc.pid
+
+    @property
+    def returncode(self) -> int | None:
+        """Returns the process exit code, or None if still running."""
+        return self.proc.returncode
+
+    @property
+    def stderr(self) -> IO[str] | IO[bytes] | None:
+        """Standard error stream of the worker process, if piped."""
+        return self.proc.stderr
+
+    @property
+    def stdout(self) -> IO[str] | IO[bytes] | None:
+        """Standard output stream of the worker process, if piped."""
+        return self.proc.stdout
+
+    @property
+    def _om_log_file(self) -> TextIO | None:
+        """Backward-compatibility property for legacy callers inspecting log handle."""
+        return self.log_file
+
+    @property
+    def _om_log_path(self) -> str | None:
+        """Backward-compatibility property for legacy callers inspecting log file path."""
+        return self.log_path
+
+    def read_log_tail(self, max_lines: int = 20) -> str:
+        """Reads recent log entries for failure diagnostics."""
+        if self.log_path and os.path.exists(self.log_path):
+            try:
+                with open(self.log_path, "r", encoding="utf-8", errors="replace") as f:
+                    return "".join(f.readlines()[-max_lines:])
+            except OSError as exc:
+                logger.debug("Reading worker log tail failed: %s", exc)
+        return ""
+
+    def close_log(self) -> None:
+        """Deterministically closes the worker log file handle if open."""
+        if self.log_file is not None:
+            if not getattr(self.log_file, "closed", False):
+                try:
+                    self.log_file.close()
+                except OSError as exc:
+                    logger.debug("Failed closing worker log file: %s", exc)
+            self.log_file = None
 
 
 def normalize_export_path_for_cli(path_str: str) -> str:
@@ -70,7 +146,7 @@ class BatchWorkerProcessManager:
         preset_id: str = "",
         target_engine: str = "UE5",
         asset_name: str = "",
-    ) -> subprocess.Popen:
+    ) -> WorkerProcessHandle:
         """Launches an isolated headless background Blender process to export a single .blend asset."""
         blender_exe = bpy.app.binary_path if bpy else "blender"
         addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -147,7 +223,8 @@ class BatchWorkerProcessManager:
                 except OSError as exc:
                     logger.debug("Failed closing worker log file on spawn error: %s", exc)
 
-        if log_file is not None:
-            proc._om_log_file = log_file  # type: ignore[attr-defined]
-            proc._om_log_path = log_path  # type: ignore[attr-defined]
-        return proc
+        return WorkerProcessHandle(
+            proc=proc,
+            log_file=log_file,
+            log_path=log_path,
+        )
