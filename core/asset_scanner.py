@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from .compat import count_mesh_triangles
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -74,7 +76,7 @@ def get_available_asset_names(context: bpy.types.Context | None) -> list[str]:
                     "_Helpers",
                 )
             )
-            or getattr(coll, "get", lambda *_: False)("_omnimesh_role", "") in ("CONFIG", "HELPERS")
+            or (coll.get("_omnimesh_role", "") in ("CONFIG", "HELPERS") if hasattr(coll, "get") else False)
         ):
             continue
 
@@ -160,12 +162,13 @@ def get_asset_base_meshes(context: bpy.types.Context | None, asset_name: str) ->
         return meshes
 
     meshes = []
-    for obj in getattr(coll, "all_objects", getattr(coll, "objects", [])):
+    all_objs = coll.all_objects if hasattr(coll, "all_objects") else getattr(coll, "objects", [])
+    for obj in all_objs:
         if getattr(obj, "type", "") != "MESH":
             continue
         name = getattr(obj, "name", "")
-        is_col = bool(getattr(obj, "get", lambda *_: False)("_is_collider", False) is True)
-        is_imp = bool(getattr(obj, "get", lambda *_: False)("_is_impostor", False) is True)
+        is_col = bool(obj.get("_is_collider", False)) if hasattr(obj, "get") else False
+        is_imp = bool(obj.get("_is_impostor", False)) if hasattr(obj, "get") else False
         if is_col or is_imp or name.startswith("UCX_") or "_Collider_" in name:
             continue
         if any(f"_LOD{n}" in name for n in range(1, 11)):
@@ -187,11 +190,7 @@ def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict
     }
     """
     base_meshes = get_asset_base_meshes(context, asset_name)
-    base_tris = sum(
-        sum(len(cast(Any, p.vertices)) - 2 for p in cast(Any, m.data).polygons)
-        for m in base_meshes
-        if hasattr(m, "data") and hasattr(m.data, "polygons")
-    )
+    base_tris = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in base_meshes)
     mat_slots = sum(len(m.material_slots) for m in base_meshes if hasattr(m, "material_slots"))
 
     existing_tiers: dict[int, dict[str, Any]] = {}
@@ -212,9 +211,7 @@ def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict
             if c:
                 meshes = [o for o in getattr(c, "objects", []) if getattr(o, "type", "") == "MESH"]
                 t_count = sum(
-                    sum(len(p.vertices) - 2 for p in m.data.polygons)
-                    for m in meshes
-                    if hasattr(m, "data") and hasattr(m.data, "polygons")
+                    count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in meshes
                 )
                 existing_tiers[i] = {
                     "collection_name": c_name,
@@ -227,11 +224,7 @@ def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict
         c_imp = bpy.data.collections.get(imp_name)
         if c_imp:
             meshes = [o for o in getattr(c_imp, "objects", []) if getattr(o, "type", "") == "MESH"]
-            t_count = sum(
-                sum(len(p.vertices) - 2 for p in m.data.polygons)
-                for m in meshes
-                if hasattr(m, "data") and hasattr(m.data, "polygons")
-            )
+            t_count = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in meshes)
             existing_tiers[-1] = {
                 "collection_name": imp_name,
                 "meshes": meshes,

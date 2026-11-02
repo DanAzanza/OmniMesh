@@ -60,26 +60,25 @@ class PivotPreservationEngine:
         all_objs = getattr(collection, "all_objects", getattr(collection, "objects", []))
 
         for obj in all_objs:
-            obj_type = getattr(obj, "type", "")
+            if not obj or not hasattr(obj, "type"):
+                continue
+            obj_type = obj.type
             name_upper = getattr(obj, "name", "").upper()
 
             if obj_type == "EMPTY":
-                if any(tag in name_upper for tag in cls.PIVOT_TAGS) or getattr(obj, "get", lambda k, d=False: d)(
-                    "is_pivot", False
-                ):
+                has_pivot_prop = bool(obj.get("is_pivot", False)) if hasattr(obj, "get") else False
+                if any(tag in name_upper for tag in cls.PIVOT_TAGS) or has_pivot_prop:
                     if not pivot_obj:
                         pivot_obj = obj
-                elif name_upper.startswith(cls.SOCKET_PREFIXES) or getattr(obj, "get", lambda k, d=False: d)(
-                    "is_socket", False
-                ):
-                    sockets.append(obj)
-                elif not pivot_obj and name_upper == "PIVOT":
-                    pivot_obj = obj
+                else:
+                    has_socket_prop = bool(obj.get("is_socket", False)) if hasattr(obj, "get") else False
+                    if name_upper.startswith(cls.SOCKET_PREFIXES) or has_socket_prop:
+                        sockets.append(obj)
+                    elif not pivot_obj and name_upper == "PIVOT":
+                        pivot_obj = obj
             elif obj_type == "MESH":
-                # Check if it's a collision mesh
-                if not getattr(obj, "get", lambda k, d=False: d)("_is_collider", False) and not name_upper.startswith(
-                    "UCX_"
-                ):
+                is_collider = bool(obj.get("_is_collider", False)) if hasattr(obj, "get") else False
+                if not is_collider and not name_upper.startswith("UCX_"):
                     meshes.append(obj)
             elif obj_type == "ARMATURE":
                 armatures.append(obj)
@@ -226,22 +225,19 @@ class PivotPreservationEngine:
             if target_collection is not None:
                 target_collection.objects.link(sock_clone)
 
-            if getattr(sock, "parent_type", "") == "BONE" and getattr(sock, "parent", None):
+            sock_parent = getattr(sock, "parent", None)
+            sock_parent_type = getattr(sock, "parent_type", "")
+            if sock_parent_type == "BONE" and sock_parent is not None:
                 # Retain bone attachment on Master Armature
-                sock_clone.parent = sock.parent
+                sock_clone.parent = sock_parent
                 sock_clone.parent_type = "BONE"
                 if hasattr(sock, "parent_bone"):
                     sock_clone.parent_bone = sock.parent_bone
-                if hasattr(sock, "matrix_parent_inverse"):
-                    sock_clone.matrix_parent_inverse = sock.matrix_parent_inverse.copy()
+                sock_clone.matrix_parent_inverse = sock.matrix_parent_inverse.copy()
                 sock_clone.matrix_world = sock_world
             else:
                 sock_clone.parent = target_pivot
-                if (
-                    target_pivot is not None
-                    and hasattr(target_pivot, "matrix_world")
-                    and hasattr(target_pivot.matrix_world, "inverted")
-                ):
+                if target_pivot is not None and hasattr(target_pivot.matrix_world, "inverted"):
                     try:
                         sock_clone.matrix_parent_inverse = target_pivot.matrix_world.inverted()
                     except (ValueError, AttributeError, RuntimeError) as exc:

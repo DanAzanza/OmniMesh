@@ -260,9 +260,28 @@ def get_socket_default_value(socket: bpy.types.NodeSocket | None, fallback: obje
     return getattr(socket, "default_value", fallback)  # noqa: B009
 
 
+def count_mesh_triangles(mesh_data: bpy.types.Mesh | None) -> int:
+    """Computes accurate triangle count in O(1) via loop-poly invariant (n_loops - 2 * n_polys)."""
+    if mesh_data is None:
+        return 0
+    try:
+        loops = getattr(mesh_data, "loops", None)
+        polys = getattr(mesh_data, "polygons", None)
+        if loops is not None and polys is not None:
+            n_loops = len(loops)
+            n_polys = len(polys)
+            if n_polys == 0:
+                return 0
+            return max(0, n_loops - 2 * n_polys)
+    except (AttributeError, TypeError) as exc:
+        logger.debug("Loop-poly triangle count invariant fallback triggered: %s", exc)
+    return 0
+
+
 __all__ = [
     "MatrixLike",
     "Vector",
+    "count_mesh_triangles",
     "ensure_action_fcurve",
     "extract_action_fcurves",
     "get_socket_default_value",

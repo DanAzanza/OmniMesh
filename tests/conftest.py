@@ -95,6 +95,82 @@ class MockVector(_MockBase):
         return f"MockVector(({self.x:.4f}, {self.y:.4f}, {self.z:.4f}))"
 
 
+class MockQuaternion(_MockBase):
+    """Mock Blender/mathutils Quaternion."""
+
+    def __init__(
+        self,
+        w: float | Tuple[float, float, float, float] | List[float] = 1.0,
+        x: float = 0.0,
+        y: float = 0.0,
+        z: float = 0.0,
+    ):
+        if isinstance(w, (tuple, list)):
+            self.w = float(w[0])
+            self.x = float(w[1])
+            self.y = float(w[2])
+            self.z = float(w[3])
+        else:
+            self.w = float(w)
+            self.x = float(x)
+            self.y = float(y)
+            self.z = float(z)
+
+    def __getitem__(self, idx: int) -> float:
+        if idx == 0:
+            return self.w
+        elif idx == 1:
+            return self.x
+        elif idx == 2:
+            return self.y
+        elif idx == 3:
+            return self.z
+        raise IndexError(f"Index {idx} out of range for MockQuaternion (dim=4)")
+
+    def __setitem__(self, idx: int, val: float) -> None:
+        if idx == 0:
+            self.w = float(val)
+        elif idx == 1:
+            self.x = float(val)
+        elif idx == 2:
+            self.y = float(val)
+        elif idx == 3:
+            self.z = float(val)
+        else:
+            raise IndexError(f"Index {idx} out of range for MockQuaternion (dim=4)")
+
+    def dot(self, other: Any) -> float:
+        ow = other[0] if isinstance(other, (list, tuple)) else getattr(other, "w", other[0])
+        ox = other[1] if isinstance(other, (list, tuple)) else getattr(other, "x", other[1])
+        oy = other[2] if isinstance(other, (list, tuple)) else getattr(other, "y", other[2])
+        oz = other[3] if isinstance(other, (list, tuple)) else getattr(other, "z", other[3])
+        return self.w * ow + self.x * ox + self.y * oy + self.z * oz
+
+    @property
+    def magnitude(self) -> float:
+        return math.sqrt(self.w**2 + self.x**2 + self.y**2 + self.z**2)
+
+    def normalized(self) -> MockQuaternion:
+        mag = self.magnitude
+        if mag < 1e-12:
+            return MockQuaternion(1.0, 0.0, 0.0, 0.0)
+        return MockQuaternion(self.w / mag, self.x / mag, self.y / mag, self.z / mag)
+
+    def normalize(self) -> None:
+        mag = self.magnitude
+        if mag > 1e-12:
+            self.w /= mag
+            self.x /= mag
+            self.y /= mag
+            self.z /= mag
+
+    def copy(self) -> MockQuaternion:
+        return MockQuaternion(self.w, self.x, self.y, self.z)
+
+    def __repr__(self) -> str:
+        return f"MockQuaternion(({self.w:.4f}, {self.x:.4f}, {self.y:.4f}, {self.z:.4f}))"
+
+
 # ==============================================================================
 # Shader Node & Socket Mocks
 # ==============================================================================

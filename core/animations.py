@@ -19,6 +19,14 @@ from .compat import (
 )
 
 if TYPE_CHECKING:
+    from typing import Protocol
+
+    class QuaternionLike(Protocol):
+        w: float
+        x: float
+        y: float
+        z: float
+
     import bpy
     from mathutils import Matrix, Quaternion, Vector
 else:
@@ -48,12 +56,12 @@ class AnimationRigSanitizer:
     @classmethod
     def get_deform_bone_names(cls, armature: bpy.types.Object | None) -> List[str]:
         """Returns list of bone names marked for mesh deformation (`use_deform == True`)."""
-        if not armature or getattr(armature, "type", None) != "ARMATURE":
+        if armature is None or getattr(armature, "type", None) != "ARMATURE":
             return []
-        arm_data = cast("bpy.types.Armature | None", getattr(armature, "data", None))
-        if not arm_data or not hasattr(arm_data, "bones"):
+        arm_data = cast("bpy.types.Armature | None", armature.data)
+        if arm_data is None:
             return []
-        return [b.name for b in arm_data.bones if getattr(b, "use_deform", True)]
+        return [b.name for b in arm_data.bones if b.use_deform]
 
     @classmethod
     def get_action_fcurves(cls, action: bpy.types.Action | None) -> List[bpy.types.FCurve]:
@@ -74,7 +82,7 @@ class AnimationRigSanitizer:
             return {"valid": False, "error": "No action provided."}
 
         all_fcurves = cls.get_action_fcurves(action)
-        fcurves = [fc for fc in all_fcurves if hasattr(fc, "keyframe_points") and len(fc.keyframe_points) > 0]
+        fcurves = [fc for fc in all_fcurves if fc and len(fc.keyframe_points) > 0]
         if not fcurves:
             return {"valid": False, "error": "Action has no keyframes."}
 
@@ -101,9 +109,8 @@ class AnimationRigSanitizer:
         for fc in fcurves:
             for kp in fc.keyframe_points:
                 total_keys += 1
-                co = getattr(kp, "co", None)
-                if co is not None and hasattr(co, "x") and math.isfinite(co.x):
-                    if abs(co.x - round(co.x)) > 1e-3:
+                if math.isfinite(kp.co.x):
+                    if abs(kp.co.x - round(kp.co.x)) > 1e-3:
                         subframe_keys += 1
 
         return {
@@ -136,34 +143,28 @@ class AnimationRigSanitizer:
         all_fcurves = cls.get_action_fcurves(action)
         snapped_count = 0
         for fc in all_fcurves:
-            if not hasattr(fc, "keyframe_points"):
+            if not fc:
                 continue
 
             for kp in fc.keyframe_points:
-                co = getattr(kp, "co", None)
-                if co is None or not hasattr(co, "x") or not math.isfinite(co.x):
+                if not math.isfinite(kp.co.x):
                     continue
 
-                raw_x = co.x
+                raw_x = kp.co.x
                 target_x = round(raw_x)
                 dx = target_x - raw_x
                 if abs(dx) > 1e-4 and abs(dx) <= safe_threshold:
-                    if hasattr(kp, "handle_left") and hasattr(kp.handle_left, "x") and math.isfinite(kp.handle_left.x):
+                    if math.isfinite(kp.handle_left.x):
                         kp.handle_left.x += dx
-                    if (
-                        hasattr(kp, "handle_right")
-                        and hasattr(kp.handle_right, "x")
-                        and math.isfinite(kp.handle_right.x)
-                    ):
+                    if math.isfinite(kp.handle_right.x):
                         kp.handle_right.x += dx
                     kp.co.x = float(target_x)
                     snapped_count += 1
 
-            if hasattr(fc, "update"):
-                try:
-                    fc.update()
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("FCurve update failed: %s", exc)
+            try:
+                fc.update()
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
+                logger.debug("FCurve update failed: %s", exc)
 
         return snapped_count
 
@@ -215,15 +216,11 @@ class AnimationRigSanitizer:
         """
         if rot is None or prev_rot is None:
             return rot
-        w1 = getattr(rot, "w", None)
-        w2 = getattr(prev_rot, "w", None)
-        if isinstance(w1, (int, float)) and isinstance(w2, (int, float)):
-            x1 = float(getattr(rot, "x", 0.0))
-            y1 = float(getattr(rot, "y", 0.0))
-            z1 = float(getattr(rot, "z", 0.0))
-            x2 = float(getattr(prev_rot, "x", 0.0))
-            y2 = float(getattr(prev_rot, "y", 0.0))
-            z2 = float(getattr(prev_rot, "z", 0.0))
+        if hasattr(rot, "w") and hasattr(prev_rot, "w"):
+            rq1 = cast("QuaternionLike", rot)
+            rq2 = cast("QuaternionLike", prev_rot)
+            w1, x1, y1, z1 = float(rq1.w), float(rq1.x), float(rq1.y), float(rq1.z)
+            w2, x2, y2, z2 = float(rq2.w), float(rq2.x), float(rq2.y), float(rq2.z)
             dot = w1 * w2 + x1 * x2 + y1 * y2 + z1 * z2
             if dot < 0.0:
                 if Quaternion:
@@ -259,10 +256,10 @@ class AnimationRigSanitizer:
         if not bpy or not context or not source_armature or not action:
             return None
 
-        if getattr(source_armature, "type", None) != "ARMATURE":
+        if source_armature.type != "ARMATURE":
             return None
 
-        scene = getattr(context, "scene", None)
+        scene = context.scene if hasattr(context, "scene") else None
         if not scene:
             return None
 
@@ -353,9 +350,7 @@ class AnimationRigSanitizer:
                     loc, rot, scale = matrix_basis.decompose()
 
                     # Finite-float and degenerate quaternion sanitization
-                    rot_len_sq = (
-                        (rot.w * rot.w + rot.x * rot.x + rot.y * rot.y + rot.z * rot.z) if hasattr(rot, "w") else 1.0
-                    )
+                    rot_len_sq = rot.w * rot.w + rot.x * rot.x + rot.y * rot.y + rot.z * rot.z
                     if not math.isfinite(rot_len_sq) or rot_len_sq < 1e-8:
                         if Quaternion:
                             rot = Quaternion((1.0, 0.0, 0.0, 0.0))
@@ -386,14 +381,14 @@ class AnimationRigSanitizer:
                     # Add keyframe points
                     for i in range(3):
                         c_loc = curves.get((b_name, "loc", i))
-                        if c_loc and hasattr(c_loc, "keyframe_points"):
+                        if c_loc is not None:
                             c_loc.keyframe_points.insert(curr_f, safe_loc[i])
                         c_scale = curves.get((b_name, "scale", i))
-                        if c_scale and hasattr(c_scale, "keyframe_points"):
+                        if c_scale is not None:
                             c_scale.keyframe_points.insert(curr_f, safe_scale[i])
                     for i in range(4):
                         c_rot = curves.get((b_name, "rot", i))
-                        if c_rot and hasattr(c_rot, "keyframe_points"):
+                        if c_rot is not None:
                             c_rot.keyframe_points.insert(curr_f, safe_rot[i])
 
                 curr_f += step
@@ -401,7 +396,7 @@ class AnimationRigSanitizer:
             # Optional functional Ramer-Douglas-Peucker (RDP) curve reduction
             if keyframe_reduction_tolerance > 0.0:
                 for c in curves.values():
-                    if not c or not hasattr(c, "keyframe_points") or len(c.keyframe_points) <= 2:
+                    if not c or len(c.keyframe_points) <= 2:
                         continue
                     raw_pts = [(kp.co[0], kp.co[1]) for kp in c.keyframe_points]
                     reduced_pts = cls.functional_rdp_reduce(raw_pts, keyframe_reduction_tolerance)
@@ -413,7 +408,7 @@ class AnimationRigSanitizer:
 
             # Update all F-Curves to calculate internal indices and tangents
             for c in curves.values():
-                if c and hasattr(c, "update"):
+                if c is not None:
                     try:
                         c.update()
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
@@ -450,10 +445,10 @@ class AnimationRigSanitizer:
             track = anim_data.nla_tracks.new()
             track.name = "NLA_Export_Track"
             track.is_solo = True
-            frame_range = getattr(baked_action, "frame_range", (1.0, 1.0))
+            frame_range = baked_action.frame_range
             raw_start = frame_range[0] if (isinstance(frame_range, (list, tuple)) and len(frame_range) > 0) else 1.0
             start_frame = int(round(raw_start)) if math.isfinite(raw_start) else 1
-            track.strips.new(getattr(baked_action, "name", "Action"), start_frame, baked_action)
+            track.strips.new(baked_action.name, start_frame, baked_action)
             anim_data.action = None  # Ensure NLA evaluation takes precedence
 
             return True

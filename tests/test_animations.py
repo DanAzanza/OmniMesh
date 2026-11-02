@@ -45,9 +45,10 @@ class DummyFCurve(_MockBase):
 
 
 class DummyAction(_MockBase):
-    def __init__(self, name: str, fcurves: list[DummyFCurve]):
+    def __init__(self, name: str, fcurves: list[DummyFCurve], frame_range: tuple[float, float] = (1.0, 10.0)):
         self.name = name
         self.fcurves = fcurves
+        self.frame_range = frame_range
 
 
 class DummyBone(_MockBase):

@@ -232,11 +232,9 @@ class MeshMergeEngine:
                         mat_remap[idx] = mat_to_global_idx.get(mat, 0)
 
                     # Vertex Group Deform Layer Remap
-                    src_dvert_lay = None
-                    if hasattr(temp_bm.verts.layers, "deform"):
-                        src_dvert_lay = temp_bm.verts.layers.deform.active
-                        if src_dvert_lay is None and len(temp_bm.verts.layers.deform) > 0:
-                            src_dvert_lay = temp_bm.verts.layers.deform[0]
+                    src_dvert_lay = temp_bm.verts.layers.deform.active
+                    if src_dvert_lay is None and len(temp_bm.verts.layers.deform) > 0:
+                        src_dvert_lay = temp_bm.verts.layers.deform[0]
                     vg_map: dict[int, int] = {}
                     for vg in obj.vertex_groups:
                         if vg.name in global_group_names:
@@ -260,9 +258,7 @@ class MeshMergeEngine:
                     target_bm.verts.ensure_lookup_table()
 
                     # Copy UV Layers
-                    temp_uv_layers = (
-                        list(temp_bm.loops.layers.uv.values()) if hasattr(temp_bm.loops.layers, "uv") else []
-                    )
+                    temp_uv_layers = list(temp_bm.loops.layers.uv.values())
                     target_uv_layers = []
                     for src_uv in temp_uv_layers:
                         target_uv = target_bm.loops.layers.uv.get(src_uv.name) or target_bm.loops.layers.uv.new(
@@ -285,7 +281,7 @@ class MeshMergeEngine:
 
                 finally:
                     temp_bm.free()
-                    if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+                    if eval_obj is not None:
                         eval_obj.to_mesh_clear()
 
             # Build merged target mesh datablock
@@ -443,15 +439,10 @@ class CollectionCloneDAG:
         for obj in objects:
             if obj.name not in coll.objects:
                 coll.objects.link(obj)
-            for c in list(getattr(obj, "users_collection", [])):
+            for c in list(obj.users_collection):
                 if c != coll:
                     c.objects.unlink(obj)
-            if (
-                sc
-                and hasattr(sc, "collection")
-                and hasattr(sc.collection, "objects")
-                and obj.name in sc.collection.objects
-            ):
+            if sc and hasattr(sc, "collection") and obj.name in sc.collection.objects:
                 sc.collection.objects.unlink(obj)
 
         # Check for existing Pivot
@@ -466,9 +457,9 @@ class CollectionCloneDAG:
         vert_count = 0
 
         for obj in objects:
-            obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
-            if getattr(obj, "type", "") == "MESH" and obj_data and hasattr(obj_data, "vertices"):
-                for v in obj_data.vertices:
+            if obj.type == "MESH" and obj.data:
+                obj_mesh = cast("bpy.types.Mesh", obj.data)
+                for v in obj_mesh.vertices:
                     wco = obj.matrix_world @ v.co
                     sum_x += wco.x
                     sum_y += wco.y
@@ -705,7 +696,7 @@ def safe_remove_collection_objects(
 
             # Unlink and remove object from bpy.data.objects
             bpy_data = cast("bpy.types.BlendData | None", getattr(_bpy, "data", None))
-            if bpy_data is not None and hasattr(bpy_data, "objects"):
+            if bpy_data is not None:
                 bpy_data.objects.remove(obj, do_unlink=True)
                 removed += 1
 
