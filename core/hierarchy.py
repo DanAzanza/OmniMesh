@@ -18,15 +18,22 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData, Collection, Context, Object, Scene
     from mathutils import Matrix, Vector
 else:
     try:
         import bmesh
         import bpy
+        from bpy.types import BlendData, Collection, Context, Object, Scene
         from mathutils import Matrix, Vector
     except ImportError:
         bpy = None
         bmesh = None
+        BlendData = object
+        Collection = object
+        Context = object
+        Object = object
+        Scene = object
         Matrix = None
         Vector = None
 
@@ -142,6 +149,8 @@ class MeshMergeEngine:
         output_obj_name: str,
         armature_obj: bpy.types.Object | None = None,
         pivot_obj: bpy.types.Object | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> bpy.types.Object | None:
         """
         Merges multiple static and skinned meshes into a single optimized draw-call mesh
@@ -285,14 +294,17 @@ class MeshMergeEngine:
                         eval_obj.to_mesh_clear()
 
             # Build merged target mesh datablock
-            merged_mesh = bpy.data.meshes.new(f"{output_obj_name}_Mesh")
+            if not blend_data:
+                logger.error("Explicit blend_data required to create merged mesh '%s'", output_obj_name)
+                return None
+            merged_mesh = blend_data.meshes.new(f"{output_obj_name}_Mesh")
             target_bm.to_mesh(merged_mesh)
             merged_mesh.update()
 
         finally:
             target_bm.free()
 
-        merged_obj = bpy.data.objects.new(output_obj_name, merged_mesh)
+        merged_obj = blend_data.objects.new(output_obj_name, merged_mesh)
 
         # Assign unified material slots
         for mat in global_materials:
@@ -329,23 +341,29 @@ class CollectionCloneDAG:
 
     @classmethod
     def get_or_create_sibling_collection(
-        cls, root_coll: bpy.types.Collection | None, tier_idx: int, base_name: str, scene: bpy.types.Scene | None = None
+        cls,
+        root_coll: bpy.types.Collection | None,
+        tier_idx: int,
+        base_name: str,
+        scene: bpy.types.Scene | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> bpy.types.Collection | None:
         """
         Creates or retrieves a sibling collection for LOD tier i (e.g. Model_LOD1).
         """
-        if not bpy:
+        if not blend_data:
             return None
 
         tier_name = f"{base_name}_LOD{tier_idx}" if tier_idx > 0 else base_name
-        existing = bpy.data.collections.get(tier_name)
+        existing = blend_data.collections.get(tier_name)
         if existing:
             return existing
 
-        target_coll = bpy.data.collections.new(tier_name)
+        target_coll = blend_data.collections.new(tier_name)
 
         # Check if base_name collection exists as a container for LOD tiers
-        base_container = bpy.data.collections.get(base_name)
+        base_container = blend_data.collections.get(base_name)
         if base_container and base_container != target_coll and tier_idx > 0:
             if target_coll.name not in base_container.children:
                 base_container.children.link(target_coll)
@@ -354,14 +372,16 @@ class CollectionCloneDAG:
         # Link as sibling in parent collection or scene root
         linked = False
         if root_coll and hasattr(root_coll, "name"):
-            for parent_c in bpy.data.collections:
+            for parent_c in blend_data.collections:
                 if root_coll.name in parent_c.children:
                     parent_c.children.link(target_coll)
                     linked = True
                     break
 
         if not linked:
-            sc = scene or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+            sc = scene or (
+                blend_data.scenes[0] if hasattr(blend_data, "scenes") and len(blend_data.scenes) > 0 else None
+            )
             if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
                 sc.collection.children.link(target_coll)
 
@@ -416,20 +436,27 @@ class CollectionCloneDAG:
         base_name: str,
         scene: bpy.types.Scene | None = None,
         context: bpy.types.Context | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> tuple[bpy.types.Collection | None, bpy.types.Object | None]:
         """
         Auto-wraps loose selected scene objects into a clean root Collection {base_name}
         and instantiates a base Pivot Empty at the bottom center (Z_min) of the bounding box.
         Returns (created_collection, created_pivot_empty).
         """
-        if not bpy or not objects:
+        effective_blend_data = blend_data or getattr(context, "blend_data", None)
+        if not objects or not effective_blend_data:
             return None, None
 
-        sc = scene or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+        sc = scene or (
+            effective_blend_data.scenes[0]
+            if hasattr(effective_blend_data, "scenes") and len(effective_blend_data.scenes) > 0
+            else None
+        )
 
-        coll = bpy.data.collections.get(base_name)
+        coll = effective_blend_data.collections.get(base_name)
         if not coll:
-            coll = bpy.data.collections.new(base_name)
+            coll = effective_blend_data.collections.new(base_name)
             if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
                 sc.collection.children.link(coll)
 
@@ -439,7 +466,7 @@ class CollectionCloneDAG:
         for obj in objects:
             if obj.name not in coll.objects:
                 coll.objects.link(obj)
-            for c in list(obj.users_collection):
+            for c in list(getattr(obj, "users_collection", [])):
                 if c != coll:
                     c.objects.unlink(obj)
             if sc and hasattr(sc, "collection") and obj.name in sc.collection.objects:
@@ -472,7 +499,7 @@ class CollectionCloneDAG:
             else (0.0, 0.0, 0.0)
         )
 
-        pivot_obj = bpy.data.objects.new(f"{base_name}_Pivot", None)
+        pivot_obj = effective_blend_data.objects.new(f"{base_name}_Pivot", None)
         pivot_obj.empty_display_type = "ARROWS"
         pivot_obj.empty_display_size = 0.5
         pivot_obj.location = pivot_loc
@@ -490,7 +517,7 @@ class CollectionCloneDAG:
 
         # Parent unparented objects to Pivot
         for obj in objects:
-            if not obj.parent and obj != pivot_obj:
+            if not getattr(obj, "parent", None) and obj != pivot_obj:
                 obj.parent = pivot_obj
                 obj.matrix_parent_inverse = pivot_obj.matrix_world.inverted()
 
@@ -503,23 +530,20 @@ def get_or_create_engine_import_collection(
     role: str,
     use_lod0_suffix: bool = True,
     bpy_module: object = None,
+    *,
+    blend_data: BlendData | None = None,
 ) -> bpy.types.Collection | None:
-    """Finds or creates a collection adhering to OmniMesh's neutral engine package hierarchy.
-
-    Structure:
-    {AssetName} (Root Package Collection)
-       ├── {AssetName}_Config
-       │    ├── {AssetName}_Spatial
-       │    ├── {AssetName}_Lights
-       │    └── {AssetName}_Cameras
-       ├── {AssetName}_LOD0 (or {AssetName})
-       ├── {AssetName}_LOD1
-       └── {AssetName}_LODN
+    """Finds or creates a collection adhering to OmniMesh's neutral engine package hierarchy:
+    {AssetName} -> {_Config (Spatial, Lights, Cameras), _LOD0..N, _Colliders}.
     """
-    _bpy = bpy_module if bpy_module is not None else bpy
-    if not _bpy or not context_or_scene:
+    if not context_or_scene:
         return None
-    bpy_data = cast("bpy.types.BlendData", getattr(_bpy, "data", None))
+    effective_data = blend_data or getattr(context_or_scene, "blend_data", None)
+    if effective_data is None and bpy_module is not None:
+        effective_data = getattr(bpy_module, "data", None)
+    if not effective_data:
+        return None
+    bpy_data = cast("BlendData", effective_data)
 
     clean_asset = asset_name.strip() or "Asset"
     scene = getattr(context_or_scene, "scene", context_or_scene)
@@ -563,28 +587,25 @@ def get_or_create_engine_import_collection(
 
     # 2. Determine Sub-Collection Name
     role_upper = role.upper()
+    role_suffixes = {
+        "CONFIG": "_Config",
+        "HELPERS": "_Helpers",
+        "COLLIDERS": "_Colliders",
+        "SPATIAL": "_Spatial",
+        "LIGHTS": "_Lights",
+        "CAMERAS": "_Cameras",
+        "ATTACHMENTS": "_Attachments",
+        "INTERACTIONS": "_Interactions",
+        "TRIGGERS": "_Interactions",
+        "PREVIEW": "_Submodel_Previews",
+        "PREVIEWS": "_Submodel_Previews",
+    }
     if role_upper == "LOD0":
         sub_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
     elif role_upper.startswith("LOD"):
         sub_name = f"{clean_asset}_{role_upper}"
-    elif role_upper == "CONFIG":
-        sub_name = f"{clean_asset}_Config"
-    elif role_upper == "HELPERS":
-        sub_name = f"{clean_asset}_Helpers"
-    elif role_upper == "COLLIDERS":
-        sub_name = f"{clean_asset}_Colliders"
-    elif role_upper == "SPATIAL":
-        sub_name = f"{clean_asset}_Spatial"
-    elif role_upper == "LIGHTS":
-        sub_name = f"{clean_asset}_Lights"
-    elif role_upper == "CAMERAS":
-        sub_name = f"{clean_asset}_Cameras"
-    elif role_upper == "ATTACHMENTS":
-        sub_name = f"{clean_asset}_Attachments"
-    elif role_upper in ("INTERACTIONS", "TRIGGERS"):
-        sub_name = f"{clean_asset}_Interactions"
-    elif role_upper in ("PREVIEW", "PREVIEWS"):
-        sub_name = f"{clean_asset}_Submodel_Previews"
+    elif role_upper in role_suffixes:
+        sub_name = f"{clean_asset}{role_suffixes[role_upper]}"
     else:
         sub_name = f"{clean_asset}_{role}"
 
@@ -628,9 +649,8 @@ def get_or_create_engine_import_collection(
                         logger.debug("Could not link legacy subcollection to config: %s", e)
                 try:
                     lod0_col.children.unlink(old_sub)
-                except (RuntimeError, ReferenceError, AttributeError) as e:
+                except (RuntimeError, ReferenceError, AttributeError, ValueError) as e:
                     logger.debug("Could not unlink legacy subcollection from LOD0: %s", e)
-
     sub_col = bpy_data.collections.get(sub_name)
     if not sub_col:
         sub_col = bpy_data.collections.new(sub_name)
@@ -656,13 +676,20 @@ def safe_remove_collection_objects(
     col: bpy.types.Collection | None,
     bpy_module: object = None,
     predicate: Callable[[bpy.types.Object], bool] | None = None,
+    *,
+    blend_data: BlendData | None = None,
 ) -> int:
     """
     Safely and cleanly removes objects belonging to a collection and their unshared datablocks.
     Guards against RNA pointer invalidation and collection mutation during iteration.
     """
-    _bpy = bpy_module if bpy_module is not None else bpy
-    if not col or not hasattr(col, "objects") or not _bpy:
+    if not col or not hasattr(col, "objects"):
+        return 0
+
+    effective_data = blend_data
+    if effective_data is None and bpy_module is not None:
+        effective_data = getattr(bpy_module, "data", None)
+    if not effective_data:
         return 0
 
     removed = 0
@@ -694,21 +721,18 @@ def safe_remove_collection_objects(
                 if isinstance(users, (int, float)) and users <= 1:
                     data_to_remove = data
 
-            # Unlink and remove object from bpy.data.objects
-            bpy_data = cast("bpy.types.BlendData | None", getattr(_bpy, "data", None))
-            if bpy_data is not None:
-                bpy_data.objects.remove(obj, do_unlink=True)
-                removed += 1
+            # Unlink and remove object from blend_data.objects
+            effective_data.objects.remove(obj, do_unlink=True)
+            removed += 1
 
             # Remove orphaned datablock
-            if data_to_remove is not None and bpy_data is not None:
+            if data_to_remove is not None:
                 try:
-                    if hasattr(bpy_data, "meshes") and data_to_remove in bpy_data.meshes.values():
-                        bpy_data.meshes.remove(cast("bpy.types.Mesh", data_to_remove))
-                    elif hasattr(bpy_data, "lights") and data_to_remove in bpy_data.lights.values():
-                        bpy_data.lights.remove(cast("bpy.types.Light", data_to_remove))
-                    elif hasattr(bpy_data, "cameras") and data_to_remove in bpy_data.cameras.values():
-                        bpy_data.cameras.remove(cast("bpy.types.Camera", data_to_remove))
+                    for attr in ("meshes", "lights", "cameras"):
+                        container = getattr(effective_data, attr, None)
+                        if container and hasattr(container, "values") and data_to_remove in container.values():
+                            container.remove(data_to_remove)
+                            break
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Orphaned datablock removal skipped: %s", exc)
         except (ReferenceError, AttributeError, RuntimeError) as exc:

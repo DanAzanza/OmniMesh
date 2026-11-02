@@ -298,17 +298,18 @@ class OMNIMESH_OT_import_engine_project(Operator):
         get_or_create_engine_import_collection(context, asset_name, "HELPERS")
 
         # Smart Replace: Remove existing objects in enabled categories before importing
+        bdata = getattr(context, "blend_data", None) or (getattr(bpy, "data", None) if bpy else None)
         if do_spatial:
             spat_col = get_or_create_engine_import_collection(context, asset_name, "SPATIAL")
-            safe_remove_collection_objects(spat_col, bpy_module=bpy)
+            safe_remove_collection_objects(spat_col, blend_data=bdata)
             att_col = get_or_create_engine_import_collection(context, asset_name, "ATTACHMENTS")
-            safe_remove_collection_objects(att_col, bpy_module=bpy)
+            safe_remove_collection_objects(att_col, blend_data=bdata)
         if do_lights:
             lit_col = get_or_create_engine_import_collection(context, asset_name, "LIGHTS")
-            safe_remove_collection_objects(lit_col, bpy_module=bpy)
+            safe_remove_collection_objects(lit_col, blend_data=bdata)
         if do_cameras:
             cam_col = get_or_create_engine_import_collection(context, asset_name, "CAMERAS")
-            safe_remove_collection_objects(cam_col, bpy_module=bpy)
+            safe_remove_collection_objects(cam_col, blend_data=bdata)
 
         # 3. Import Geometry / LODs
         lod_mesh_map: dict[int, list[Any]] = {}

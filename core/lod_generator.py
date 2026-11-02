@@ -160,8 +160,9 @@ def _process_merged_tier(
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
 
+    bdata = getattr(context, "blend_data", None) if context else None
     tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
-        mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
+        mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot, blend_data=bdata
     )
     if not tier_obj:
         raise DecimationError(f"Mesh consolidation failed for {merged_name}.")
@@ -549,7 +550,10 @@ def generate_all_lods(
         # Build Sibling Collections list
         all_tier_collections: list[bpy.types.Collection | None] = [src_coll]
         for i in range(1, len(lods_list)):
-            tier_c = CollectionCloneDAG.get_or_create_sibling_collection(src_coll, i, base_name, scene=context.scene)
+            bdata = getattr(context, "blend_data", None) if context else None
+            tier_c = CollectionCloneDAG.get_or_create_sibling_collection(
+                src_coll, i, base_name, scene=context.scene, blend_data=bdata
+            )
             all_tier_collections.append(tier_c)
 
         updated_tier_count = 0

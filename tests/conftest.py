@@ -313,6 +313,7 @@ class MockMeshObject(_MockBase):
             (1.0, 1.0, -1.0),
         )
         self.users_collection: List[Any] = []
+        self.parent: Optional[Any] = None
         self.matrix_world = MagicMock()
 
     def hide_get(self, view_layer: Optional[Any] = None) -> bool:
@@ -334,31 +335,62 @@ class MockMeshObject(_MockBase):
         self.custom_props[key] = val
 
 
+class MockCollectionObjects(list):
+    """Simulates Blender Collection.objects RNA collection with link/unlink."""
+
+    def link(self, obj: Any) -> None:
+        if obj not in self:
+            self.append(obj)
+
+    def unlink(self, obj: Any) -> None:
+        if obj in self:
+            self.remove(obj)
+
+
+class MockChildrenDict(_MockBase):
+    """Simulates Blender Collection.children with dictionary mapping and link/unlink."""
+
+    def __init__(self, d: Dict[str, MockCollection]):
+        self._d = d
+
+    def get(self, k: str, default: Any = None) -> Any:
+        return self._d.get(k, default)
+
+    def link(self, child: Any) -> None:
+        self._d[child.name] = child
+
+    def unlink(self, child: Any) -> None:
+        if child.name in self._d:
+            del self._d[child.name]
+
+    def __iter__(self):
+        return iter(self._d.values())
+
+    def __contains__(self, k: str) -> bool:
+        return k in self._d
+
+    def values(self):
+        return self._d.values()
+
+
 class MockCollection(_MockBase):
     """Mock Blender Collection with object list and hierarchical children."""
 
     def __init__(self, name: str = "Collection"):
         self.name = name
-        self.objects: List[Any] = []
+        self.objects: MockCollectionObjects = MockCollectionObjects()
         self._children: Dict[str, MockCollection] = {}
+        self.children = MockChildrenDict(self._children)
+        self._custom_props: Dict[str, Any] = {}
 
-        class ChildrenDict:
-            def __init__(self, d: Dict[str, MockCollection]):
-                self._d = d
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._custom_props[key] = value
 
-            def get(self, k: str, default: Any = None) -> Any:
-                return self._d.get(k, default)
+    def __getitem__(self, key: str) -> Any:
+        return self._custom_props[key]
 
-            def __iter__(self):
-                return iter(self._d.values())
-
-            def __contains__(self, k: str) -> bool:
-                return k in self._d
-
-            def values(self):
-                return self._d.values()
-
-        self.children = ChildrenDict(self._children)
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._custom_props.get(key, default)
 
     def add_child(self, child: MockCollection) -> None:
         self._children[child.name] = child
@@ -526,6 +558,59 @@ def mock_material_factory() -> Callable[[str], MockMaterial]:
     return _create
 
 
+class MockBlendDataContainer(_MockBase):
+    """Dictionary-backed container simulating bpy.data collections/objects/meshes."""
+
+    def __init__(self, factory: Callable[..., Any] | None = None) -> None:
+        self._items: dict[str, Any] = {}
+        self._factory = factory
+
+    def get(self, name: str, default: Any = None) -> Any:
+        return self._items.get(name, default)
+
+    def new(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        if self._factory:
+            obj = self._factory(name, *args, **kwargs)
+        else:
+            obj = MagicMock(name=name)
+            obj.name = name
+        self._items[name] = obj
+        return obj
+
+    def remove(self, obj: Any, do_unlink: bool = True) -> None:
+        name = getattr(obj, "name", None)
+        if name in self._items:
+            del self._items[name]
+
+    def values(self) -> Any:
+        return list(self._items.values())
+
+    def __contains__(self, item: Any) -> bool:
+        if isinstance(item, str):
+            return item in self._items
+        return item in self._items.values()
+
+    def __iter__(self) -> Any:
+        return iter(self._items.values())
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+
+class MockBlendData(_MockBase):
+    """Canonical Mock Blender Database (bpy.types.BlendData) for DI tests."""
+
+    def __init__(self) -> None:
+        self.collections = MockBlendDataContainer(factory=lambda name, *a, **kw: MockCollection(name=name))
+        self.objects = MockBlendDataContainer(factory=lambda name, *a, **kw: MockMeshObject(name=name))
+        self.meshes = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name))
+        self.materials = MockBlendDataContainer(factory=lambda name, *a, **kw: MockMaterial(name=name))
+        self.scenes: list[Any] = [MagicMock(name="Scene", collection=MockCollection(name="Scene Collection"))]
+        self.lights = MockBlendDataContainer()
+        self.cameras = MockBlendDataContainer()
+        self.actions = MockBlendDataContainer()
+
+
 @pytest.fixture
 def mock_scene_context() -> MagicMock:
     """Provides a cleanly initialized mock Blender context."""
@@ -535,4 +620,5 @@ def mock_scene_context() -> MagicMock:
     ctx.view_layer.objects.active = None
     ctx.selected_objects = []
     ctx.active_object = None
+    ctx.blend_data = MockBlendData()
     return ctx
