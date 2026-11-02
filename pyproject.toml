@@ -9,7 +9,7 @@ description = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal 
 readme = "README.md"
 authors = [{ name = "Daniel" }]
 license = "GPL-3.0-or-later"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.22.0",
 ]
@@ -34,7 +34,7 @@ dev = [
 include = ["core*", "bridges*", "ui*", "exporters*"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]
@@ -54,7 +54,7 @@ addopts = "--ignore=tests/in_blender"
 [tool.pyright]
 include = ["core", "ui", "exporters", "bridges", "tests"]
 exclude = ["**/__pycache__", ".pytest_cache"]
-pythonVersion = "3.11"
+pythonVersion = "3.12"
 reportMissingImports = false
 reportMissingModuleSource = false
 reportCallIssue = true

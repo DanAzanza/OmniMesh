@@ -26,6 +26,7 @@ scratch/
 # Local Environment & Secrets
 .env
 .venv
+.venv*/
 env/
 venv/
 ENV/
