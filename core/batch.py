@@ -447,7 +447,7 @@ class BatchProcessorEngine:
             strategy = getattr(props, "pbr_export_texture_strategy", preset.get("strategy", "CONVERT_PNG"))
             bit_depth = int(getattr(props, "pbr_export_bit_depth", str(preset.get("bit_depth", 8))))
             naming_pattern = getattr(
-                props, "pbr_export_naming_pattern", preset.get("naming_pattern", "{material}{suffix}")
+                props, "pbr_export_naming_pattern", preset.get("naming_pattern", "{asset}_{material}{suffix}{udim}")
             )
 
             all_tex_futures: list[concurrent.futures.Future[bool]] = []

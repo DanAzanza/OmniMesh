@@ -494,3 +494,77 @@ def test_omnimesh_ul_export_preset_maps_draw_item():
     mock_col.prop.assert_any_call(export_item, "export", text="")
     mock_col_name.label.assert_any_call(text="Normal Map", icon="SNAP_NORMAL")
     mock_row.label.assert_any_call(text="(_Normal)")
+
+
+def test_format_texture_name_standard_and_variations():
+    """Verify format_texture_name supports standard placeholders, UDIM, and custom casing."""
+    from core.pbr_presets import format_texture_name
+
+    # 1. Standard pattern with asset, material, suffix, and udim
+    name = format_texture_name(
+        pattern="{asset}_{material}{suffix}{udim}",
+        asset="SimpleAircraft",
+        material="FUSELAGE",
+        suffix="_ALBEDO",
+        udim="",
+    )
+    assert name == "SimpleAircraft_FUSELAGE_ALBEDO"
+
+    # 2. With UDIM tile
+    name_udim = format_texture_name(
+        pattern="{asset}_{material}{suffix}{udim}",
+        asset="SimpleAircraft",
+        material="FUSELAGE",
+        suffix="_ALBEDO",
+        udim="1001",
+    )
+    assert name_udim == "SimpleAircraft_FUSELAGE_ALBEDO_1001"
+
+    # 3. Without asset name (leading underscore must be cleanly stripped)
+    name_no_asset = format_texture_name(
+        pattern="{asset}_{material}{suffix}{udim}",
+        asset="",
+        material="Cockpit",
+        suffix="_NORM",
+        udim="",
+    )
+    assert name_no_asset == "Cockpit_NORM"
+
+    # 4. German / custom casing placeholders {AssetName}_{MaterialName}_{TexturArt}_{UDIM}
+    name_custom = format_texture_name(
+        pattern="{AssetName}_{MaterialName}_{TexturArt}_{UDIM}",
+        asset="A320",
+        material="Wings",
+        suffix="COMP",
+        udim="1002",
+    )
+    assert name_custom == "A320_Wings_COMP_1002"
+
+    # 5. Empty suffix and fallback material
+    name_fallback = format_texture_name(
+        pattern="{asset}_{material}{suffix}{udim}",
+        asset="",
+        material="",
+        suffix="",
+        udim="",
+    )
+    assert name_fallback == "Material"
+
+
+def test_all_factory_presets_have_unified_naming_pattern():
+    """Verify all built-in import and export presets use the unified AssetName_MaterialName_TexturArt_UDIM schema."""
+    from core.pbr_presets import DEFAULT_NAMING_PATTERN, PBRExportPresetManager, PBRImportPresetManager
+
+    importer_presets = PBRImportPresetManager.load_presets(force_reload=True)
+    for pid, pdata in importer_presets.items():
+        if pdata.get("_is_builtin"):
+            pattern = pdata.get("naming_pattern", "")
+            assert "{material}" in pattern, f"Importer preset {pid} missing {{material}}"
+            assert pattern == DEFAULT_NAMING_PATTERN, f"Importer preset {pid} pattern is {pattern}"
+
+    exporter_presets = PBRExportPresetManager.load_presets(force_reload=True)
+    for pid, pdata in exporter_presets.items():
+        if pdata.get("_is_builtin"):
+            pattern = pdata.get("naming_pattern", "")
+            assert "{material}" in pattern, f"Exporter preset {pid} missing {{material}}"
+            assert pattern == DEFAULT_NAMING_PATTERN, f"Exporter preset {pid} pattern is {pattern}"

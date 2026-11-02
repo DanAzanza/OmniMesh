@@ -112,8 +112,13 @@ def test_extract_all_texture_nodes_with_nested_groups():
 
 
 def test_find_texture_by_preset_pattern():
-    cand = Path("C:/Project/Textures/SimpleAircraft_FUSELAGE_albd_000.png")
-    index = {"simpleaircraft_fuselage_albd_000.png": [cand]}
+    cand_other = Path("C:/Project/Textures/OtherAsset_FUSELAGE_albd.png")
+    cand_exact = Path("C:/Project/Textures/SimpleAircraft_FUSELAGE_albd_000.png")
+    # Both match material and albedo, but cand_exact matches asset_name
+    index = {
+        "otherasset_fuselage_albd.png": [cand_other],
+        "simpleaircraft_fuselage_albd_000.png": [cand_exact],
+    }
 
     match = PBRTextureResolver.find_texture_by_preset_pattern(
         asset_name="SimpleAircraft",
@@ -121,7 +126,16 @@ def test_find_texture_by_preset_pattern():
         texture_type="ALBEDO",
         texture_index=index,
     )
-    assert match == cand
+    assert match == cand_exact
+
+    # Fallback to cand_other when asset_name does not match any key
+    match_fallback = PBRTextureResolver.find_texture_by_preset_pattern(
+        asset_name="NonExistentAsset",
+        material_name="FUSELAGE",
+        texture_type="ALBEDO",
+        texture_index=index,
+    )
+    assert match_fallback == cand_other
 
 
 def test_resolve_material_textures_relinks_and_reports_unresolved():

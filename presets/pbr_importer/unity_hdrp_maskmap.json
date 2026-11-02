@@ -5,7 +5,7 @@
   "target_engine": "UNITY_6",
   "strategy": "CONVERT_PNG",
   "bit_depth": 16,
-  "naming_pattern": "{material}{suffix}",
+  "naming_pattern": "{asset}_{material}{suffix}{udim}",
   "maps": [
     {
       "id": "base_map",

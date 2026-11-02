@@ -534,7 +534,7 @@ class LOD_OT_save_export_preset(Operator):
             pdata["target_engine"] = getattr(props, "target_engine", "UE5")
             pdata["strategy"] = getattr(props, "pbr_export_texture_strategy", "CONVERT_PNG")
             pdata["bit_depth"] = int(getattr(props, "pbr_export_bit_depth", "8"))
-            pdata["naming_pattern"] = getattr(props, "pbr_export_naming_pattern", "{material}{suffix}")
+            pdata["naming_pattern"] = getattr(props, "pbr_export_naming_pattern", "{asset}_{material}{suffix}{udim}")
 
             PBRExportPresetManager.save_custom_preset(pdata, custom_id=preset_id)
             safe_report(self, {"INFO"}, f"Saved settings to custom preset '{pdata.get('name', preset_id)}'.")

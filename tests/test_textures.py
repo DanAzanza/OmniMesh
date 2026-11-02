@@ -587,7 +587,7 @@ def test_pack_material_preset_dominant_resolution():
         results = TexturePoolManager.wait_all(futures, timeout=10.0)
         assert all(results)
 
-        orm_file = os.path.join(tmpdir, "M_TestPBR_ORM.png")
+        orm_file = os.path.join(tmpdir, "SM_Dominant_M_TestPBR_ORM.png")
         assert os.path.exists(orm_file)
         with Image.open(orm_file) as img:
             # Dominant resolution rule: must match maximum linked texture size (128x128)

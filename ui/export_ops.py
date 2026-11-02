@@ -117,7 +117,10 @@ class LOD_OT_pack_pbr_textures(Operator):
 
         strategy = getattr(props, "pbr_export_texture_strategy", "CONVERT_PNG")
         bit_depth = int(getattr(props, "pbr_export_bit_depth", "8"))
-        naming_pattern = getattr(props, "pbr_export_naming_pattern", "{material}{suffix}") or "{material}{suffix}"
+        naming_pattern = (
+            getattr(props, "pbr_export_naming_pattern", "{asset}_{material}{suffix}{udim}")
+            or "{asset}_{material}{suffix}{udim}"
+        )
         raw_asset = getattr(props, "export_base_name", "").strip()
         if not raw_asset:
             raw_asset = resolve_effective_asset_name(context, props)

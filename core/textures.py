@@ -27,10 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 try:
+    from .pbr_presets import DEFAULT_NAMING_PATTERN, format_texture_name
     from .png_writer import write_png_direct
     from .shader_tracer import ShaderTracer
     from .texture_pool import TexturePoolManager
 except (ImportError, ValueError):
+    from core.pbr_presets import DEFAULT_NAMING_PATTERN, format_texture_name
     from core.png_writer import write_png_direct
     from core.shader_tracer import ShaderTracer
     from core.texture_pool import TexturePoolManager
@@ -62,7 +64,7 @@ class TextureChannelPacker:
         target_size: Tuple[int, int] = (2048, 2048),
         bit_depth: int = 8,
         strategy: str = "SMART_AUTO",
-        naming_pattern: str = "{material}{suffix}",
+        naming_pattern: str = DEFAULT_NAMING_PATTERN,
         context: Optional[bpy.types.Context] = None,
     ) -> list[concurrent.futures.Future[bool]]:
         """
@@ -127,7 +129,7 @@ class TextureChannelPacker:
 
             # Resolve output file name
             clean_suffix = export_suffix if export_suffix.startswith("_") else f"_{export_suffix}"
-            base_fname = naming_pattern.format(asset=clean_asset, material=mat_name, suffix=clean_suffix)
+            base_fname = format_texture_name(naming_pattern, asset=clean_asset, material=mat_name, suffix=clean_suffix)
             out_filepath = os.path.join(export_dir, f"{base_fname}.png")
 
             # Strategy: PASSTHROUGH (Direct file copy if identical single map exists)

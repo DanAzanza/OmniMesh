@@ -6,7 +6,7 @@
   "target_engine": "UE5",
   "strategy": "CONVERT_PNG",
   "bit_depth": 8,
-  "naming_pattern": "{material}{suffix}",
+  "naming_pattern": "{asset}_{material}{suffix}{udim}",
   "maps": [
     {
       "id": "base_color",

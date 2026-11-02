@@ -164,6 +164,8 @@ class PBRTextureResolver:
         clean_asset = asset_name.strip().lower()
         tokens = SEMANTIC_MAP_TOKENS.get(texture_type, ())
 
+        fallback_match: Path | None = None
+
         # Search index keys for matching patterns
         for key, paths in texture_index.items():
             if not paths:
@@ -181,9 +183,10 @@ class PBRTextureResolver:
             if clean_asset and clean_asset in key:
                 return paths[0]
 
-            return paths[0]
+            if fallback_match is None:
+                fallback_match = paths[0]
 
-        return None
+        return fallback_match
 
     @classmethod
     def resolve_material_textures(

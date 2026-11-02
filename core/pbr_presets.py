@@ -29,6 +29,64 @@ else:
 logger = logging.getLogger(__name__)
 
 DEFAULT_PRESET_ID = "unreal_engine_5"
+DEFAULT_NAMING_PATTERN = "{asset}_{material}{suffix}{udim}"
+
+
+def format_texture_name(
+    pattern: str = DEFAULT_NAMING_PATTERN,
+    asset: str = "",
+    material: str = "",
+    suffix: str = "",
+    udim: str = "",
+) -> str:
+    """Formats a texture file name from a naming pattern string with fallback safety.
+
+    Supported placeholders (case-insensitive):
+      - {asset}, {asset_name}, {assetname}: Asset identifier
+      - {material}, {material_name}, {materialname}: Material identifier
+      - {suffix}, {type}, {texturart}, {texture_type}: Texture map role/suffix
+      - {udim}: Optional UDIM tile index (e.g. '1001' or '_1001')
+    """
+    clean_mat = re.sub(r"[^\w\-_\.]", "_", material or "Material")
+    clean_asset = re.sub(r"[^\w\-_\.]", "_", asset or "")
+
+    raw_suffix = suffix.strip()
+    clean_suffix = raw_suffix if raw_suffix.startswith("_") else (f"_{raw_suffix}" if raw_suffix else "")
+    pure_type = raw_suffix.lstrip("_")
+
+    clean_udim = ""
+    if udim:
+        u_str = str(udim).strip()
+        if u_str:
+            clean_udim = u_str if u_str.startswith("_") else f"_{u_str}"
+
+    effective_pattern = pattern or DEFAULT_NAMING_PATTERN
+
+    replacements: dict[str, str] = {
+        "{asset}": clean_asset,
+        "{asset_name}": clean_asset,
+        "{assetname}": clean_asset,
+        "{material}": clean_mat,
+        "{material_name}": clean_mat,
+        "{materialname}": clean_mat,
+        "{suffix}": clean_suffix,
+        "{type}": pure_type,
+        "{texturart}": pure_type,
+        "{texture_type}": pure_type,
+        "{udim}": clean_udim,
+    }
+
+    result = effective_pattern
+    for ph, val in replacements.items():
+        result = re.sub(re.escape(ph), val, result, flags=re.IGNORECASE)
+
+    # Strip any unrecognized {placeholder} tokens
+    result = re.sub(r"\{[a-zA-Z0-9_]+\}", "", result)
+
+    # Collapse repeated underscores and trim boundary punctuation
+    result = re.sub(r"_+", "_", result)
+    result = result.strip("._- ")
+    return result or clean_mat
 
 
 def get_state_file() -> Path:

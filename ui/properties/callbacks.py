@@ -134,7 +134,7 @@ def on_target_engine_updated(self: Any, context: Any) -> None:
             if hasattr(self, "pbr_export_bit_depth"):
                 self.pbr_export_bit_depth = str(new_preset.get("bit_depth", 8))
             if hasattr(self, "pbr_export_naming_pattern"):
-                self.pbr_export_naming_pattern = new_preset.get("naming_pattern", "{material}{suffix}")
+                self.pbr_export_naming_pattern = new_preset.get("naming_pattern", "{asset}_{material}{suffix}{udim}")
             sync_export_maps_from_preset(self, new_preset)
 
 
@@ -162,7 +162,7 @@ def on_export_preset_updated(self: Any, context: Any) -> None:
         if hasattr(self, "pbr_export_bit_depth"):
             self.pbr_export_bit_depth = str(preset.get("bit_depth", 8))
         if hasattr(self, "pbr_export_naming_pattern"):
-            self.pbr_export_naming_pattern = preset.get("naming_pattern", "{material}{suffix}")
+            self.pbr_export_naming_pattern = preset.get("naming_pattern", "{asset}_{material}{suffix}{udim}")
         if hasattr(self, "pbr_preset"):
             self.pbr_preset = export_preset_id
         sync_export_maps_from_preset(self, preset)
@@ -228,7 +228,7 @@ def on_export_bit_depth_updated(self: Any, context: Any) -> None:
 
 
 def on_export_naming_updated(self: Any, context: Any) -> None:
-    val = getattr(self, "pbr_export_naming_pattern", "{material}{suffix}")
+    val = getattr(self, "pbr_export_naming_pattern", "{asset}_{material}{suffix}{udim}")
     _handle_cow_export_setting(self, context, "naming_pattern", val)
 
 

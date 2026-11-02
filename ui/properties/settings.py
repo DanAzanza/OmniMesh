@@ -474,8 +474,8 @@ class LODToolSettings(PropertyGroup):
     )
     pbr_export_naming_pattern: StringProperty(
         name="Naming Pattern",
-        default="{material}{suffix}",
-        description="Naming pattern for exported textures ({asset}, {material}, {suffix})",
+        default="{asset}_{material}{suffix}{udim}",
+        description="Naming pattern for exported textures ({asset}, {material}, {suffix}, {udim})",
         update=callbacks.on_export_naming_updated,
     )
     pbr_export_bit_depth: EnumProperty(
