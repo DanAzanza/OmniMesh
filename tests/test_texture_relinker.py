@@ -203,6 +203,7 @@ def test_operator_relink_project_textures():
     mock_bpy = MagicMock()
     mock_bpy.data.images = []
     mock_bpy.data.filepath = "C:/TestProject/Art/scene.blend"
+    mock_bpy.ops.lod_tool.import_pbr_set.return_value = {"FINISHED"}
 
     context = MagicMock()
     context.scene.lod_tool.pbr_import_directory = "C:/TestProject/Textures"

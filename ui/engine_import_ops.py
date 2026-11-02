@@ -53,7 +53,7 @@ try:
     )
     from .utils import get_or_create_engine_import_collection
     from ..core.hierarchy import safe_remove_collection_objects
-    from ..core.texture_relinker import ProjectTextureRelinker
+    from ..core.texture_resolver import PBRTextureResolver
 except (ImportError, ValueError):
     from core.engine_import_presets import (
         DEFAULT_ENGINE_IMPORT_PRESET_ID,
@@ -76,7 +76,7 @@ except (ImportError, ValueError):
     )
     from ui.utils import get_or_create_engine_import_collection
     from core.hierarchy import safe_remove_collection_objects
-    from core.texture_relinker import ProjectTextureRelinker
+    from core.texture_resolver import PBRTextureResolver
 
 logger = logging.getLogger(__name__)
 
@@ -316,8 +316,18 @@ class OMNIMESH_OT_import_engine_project(Operator):
         if do_geo and manifest.has_geometry:
             _, lod_mesh_map = self._import_geometry_models(context, manifest, asset_name, props, preset)
 
-            # Automatic Texture Verification & Relinking across Project Structure
-            if bpy and getattr(bpy.data, "images", None):
+            # Automatic Texture Verification & Relinking across LOD0 materials
+            lod0_objs = lod_mesh_map.get(0, [])
+            if not lod0_objs and bpy:
+                colls = getattr(getattr(bpy, "data", None), "collections", None)
+                lod0_c = colls.get(f"{asset_name}_LOD0") or colls.get(asset_name) if colls else None
+                if lod0_c:
+                    c_objs = getattr(lod0_c, "objects", [])
+                    lod0_objs = [o for o in c_objs if getattr(o, "type", "") == "MESH"]
+
+            mats = PBRTextureResolver.extract_unique_materials_from_objects(lod0_objs) if lod0_objs else []
+
+            if mats and bpy:
                 relink_roots: list[str] = [folder]
                 blend_file = getattr(bpy.data, "filepath", None)
                 if blend_file:
@@ -325,13 +335,18 @@ class OMNIMESH_OT_import_engine_project(Operator):
                     if blend_dir and blend_dir not in relink_roots:
                         relink_roots.append(blend_dir)
                 try:
-                    summary = ProjectTextureRelinker.relink_images(
-                        images=list(bpy.data.images),
+                    summary = PBRTextureResolver.resolve_material_textures(
+                        materials=mats,
                         search_roots=relink_roots,
+                        asset_name=asset_name,
                         blend_filepath=blend_file,
                         make_relative=True,
                     )
                     relinked_count = summary.relinked
+                    if summary.has_errors:
+                        logger.warning(
+                            "Engine import: %s texture(s) could not be resolved in package.", len(summary.unresolved)
+                        )
                 except Exception as exc:
                     logger.debug("Project texture verification/relink encountered non-fatal error: %s", exc)
 

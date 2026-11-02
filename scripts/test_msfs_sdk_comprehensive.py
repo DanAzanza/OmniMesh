@@ -367,6 +367,10 @@ def run_all_tests():
         res_automatch = bpy.ops.lod_tool.auto_match_pbr_folder(directory=textures_dir)
         assert res_automatch in ({"FINISHED"}, {"CANCELLED"}), f"auto_match_pbr_folder returned {res_automatch}"
 
+        # Test Rebuilt Import PBR Textures across LOD0
+        res_pbr_import = bpy.ops.lod_tool.import_pbr_set(directory=textures_dir)
+        assert res_pbr_import == {"FINISHED"}, f"import_pbr_set returned {res_pbr_import}"
+
         # Test PBR Channel Packing
         pbr_out_dir = os.path.join(temp_export_dir, "pbr_packed")
         os.makedirs(pbr_out_dir, exist_ok=True)
