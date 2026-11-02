@@ -119,3 +119,54 @@ def test_audit_catches_any_in_local_variable_annotations(tmp_path: Path) -> None
     assert len(sig_violations) == 2
     assert "x: Any" in str(sig_violations[0][2])
     assert "y: list[Any]" in str(sig_violations[1][2])
+
+
+def test_audit_catches_unallowed_cast_any_and_evasions(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True)
+    (core_dir / "cast_module.py").write_text(
+        "import typing\n"
+        "from typing import cast, Any\n"
+        "def bad_casts(obj, x):\n"
+        "    a = cast(Any, obj.foo)\n"
+        "    b = typing.cast(typing.Any, obj.bar)\n"
+        "    c = cast('Any', obj.baz)\n"
+        "    return a, b, c\n",
+        encoding="utf-8",
+    )
+
+    violations = scan_repository(tmp_path)
+    cast_violations = violations["unallowed_cast_any_in_core_exporters"]
+    assert len(cast_violations) == 3
+    reasons = [item[2] for item in cast_violations]
+    assert any("cast(Any, obj.foo)" in str(r) for r in reasons)
+    assert any("cast(Any, obj.bar)" in str(r) for r in reasons)
+    assert any("cast(Any, obj.baz)" in str(r) for r in reasons)
+
+
+def test_audit_catches_bpy_data_and_ignores_obj_data(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True)
+    # File with standard obj.data which must NOT trigger bpy.data
+    (core_dir / "normal_mesh_access.py").write_text(
+        "def inspect_mesh(obj):\n    d = obj.data\n    d2 = getattr(obj, 'data', None)\n    return d, d2\n",
+        encoding="utf-8",
+    )
+
+    violations = scan_repository(tmp_path)
+    assert violations["bpy_data_ratchet_in_core_exporters"] == []
+
+    # File with direct and indirect bpy.data
+    (core_dir / "leaky_db.py").write_text(
+        "import bpy\n"
+        "from bpy import data\n"
+        "def get_mats():\n"
+        "    m1 = bpy.data.materials\n"
+        "    m2 = getattr(bpy, 'data')\n"
+        "    return m1, m2\n",
+        encoding="utf-8",
+    )
+
+    # With only 3 references, it is well below the baseline 245
+    violations2 = scan_repository(tmp_path)
+    assert violations2["bpy_data_ratchet_in_core_exporters"] == []
