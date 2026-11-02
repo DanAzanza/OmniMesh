@@ -128,6 +128,14 @@ def test_find_matching_file_extension_alias():
     assert match == cand_dds
 
 
+def test_split_drive_portable():
+    assert ProjectTextureRelinker._split_drive_portable("C:/Project/file.png") == ("C:", "/Project/file.png")
+    assert ProjectTextureRelinker._split_drive_portable("D:\\Textures\\norm.png") == ("D:", "\\Textures\\norm.png")
+    assert ProjectTextureRelinker._split_drive_portable("/home/runner/work") == ("", "/home/runner/work")
+    assert ProjectTextureRelinker._split_drive_portable("textures/sub/file.png") == ("", "textures/sub/file.png")
+    assert ProjectTextureRelinker._split_drive_portable("") == ("", "")
+
+
 def test_make_relative_path_safety():
     # 1. Unsaved blend file (None)
     target = Path("C:/Project/Textures/diffuse.png")
@@ -142,6 +150,16 @@ def test_make_relative_path_safety():
     target_d = Path("D:/Textures/diffuse.png")
     cross_rel = ProjectTextureRelinker.make_relative_path(target_d, blend_file)
     assert cross_rel == str(target_d)
+
+    # 4. Simulated POSIX runner cross-drive isolation
+    with patch("core.texture_relinker.os.name", "posix"):
+        posix_cross = ProjectTextureRelinker.make_relative_path(target_d, blend_file)
+        assert posix_cross == str(target_d)
+
+        # Same drive under POSIX simulation
+        posix_same = ProjectTextureRelinker.make_relative_path(target, blend_file)
+        assert posix_same.startswith("//")
+        assert "diffuse.png" in posix_same
 
 
 def test_relink_images_end_to_end():

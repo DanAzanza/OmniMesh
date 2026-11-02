@@ -249,23 +249,48 @@ class ProjectTextureRelinker:
         return scored[0]
 
     @staticmethod
+    def _split_drive_portable(p: str) -> tuple[str, str]:
+        """Splits drive letter portably across Windows and POSIX platforms."""
+        drive, rest = os.path.splitdrive(p)
+        if drive:
+            return drive, rest
+        if len(p) >= 2 and p[1] == ":" and p[0].isalpha():
+            return p[:2], p[2:]
+        return "", p
+
+    @staticmethod
     def make_relative_path(target_path: Path, blend_filepath: str | None) -> str:
         """Safely formats path relative to blend file if available, falling back to absolute."""
         if not blend_filepath:
             return str(target_path)
 
         try:
-            blend_dir = os.path.dirname(os.path.abspath(blend_filepath))
-            if not blend_dir:
-                return str(target_path)
+            target_str = str(target_path)
+            blend_str = str(blend_filepath)
 
-            # Check if on same drive on Windows
-            target_drive = os.path.splitdrive(str(target_path))[0]
-            blend_drive = os.path.splitdrive(blend_dir)[0]
+            target_drive, _ = ProjectTextureRelinker._split_drive_portable(target_str)
+            blend_drive, _ = ProjectTextureRelinker._split_drive_portable(blend_str)
+
+            # Different drives cannot be relative
             if target_drive.lower() != blend_drive.lower():
                 return str(target_path)
 
-            rel_str = os.path.relpath(str(target_path), blend_dir)
+            if not blend_drive and not os.path.isabs(blend_str):
+                blend_dir = os.path.dirname(os.path.abspath(blend_str))
+            else:
+                blend_dir = os.path.dirname(blend_str)
+
+            if not blend_dir:
+                return str(target_path)
+
+            # On POSIX with Windows drive letters, strip drive prefixes for relpath
+            if target_drive and os.name != "nt":
+                t_no_drive = target_str[len(target_drive) :].replace("\\", "/")
+                b_no_drive = blend_dir[len(blend_drive) :].replace("\\", "/")
+                rel_str = os.path.relpath(t_no_drive, b_no_drive)
+            else:
+                rel_str = os.path.relpath(target_str, blend_dir)
+
             norm_rel = rel_str.replace("\\", "/")
             return f"//{norm_rel}"
         except (ValueError, RuntimeError, OSError):
