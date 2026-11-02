@@ -42,6 +42,7 @@ try:
         DEFAULT_PRESET_ID,
         PBRImportPresetManager,
     )
+    from ..core.texture_relinker import ProjectTextureRelinker
     from .lod_preset_ops import LOD_OT_delete_lod_preset  # noqa: F401
     from .pbr_preset_ops import (
         LOD_OT_add_export_preset_map,
@@ -68,6 +69,7 @@ except (ImportError, ValueError):
         DEFAULT_PRESET_ID,
         PBRImportPresetManager,
     )
+    from core.texture_relinker import ProjectTextureRelinker
     from ui.lod_preset_ops import LOD_OT_delete_lod_preset  # noqa: F401
     from ui.pbr_preset_ops import (
         LOD_OT_add_export_preset_map,
@@ -315,15 +317,106 @@ class LOD_OT_auto_match_pbr_folder(Operator):
         return {"RUNNING_MODAL"}
 
 
+class LOD_OT_relink_project_textures(Operator):
+    """Scan project directories and automatically relink missing, broken, or external textures."""
+
+    bl_idname = "lod_tool.relink_project_textures"
+    bl_label = "Auto-Relink Missing Textures"
+    bl_description = "Scan project directories and automatically relink missing or broken texture paths"
+    bl_options = {"REGISTER", "UNDO"}
+
+    directory: StringProperty(subtype="DIR_PATH")
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"FINISHED"}
+
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = getattr(context.scene, "lod_tool", None)
+
+        search_roots: list[str] = []
+        dir_val = getattr(self, "directory", "")
+        if dir_val and os.path.isdir(dir_val):
+            search_roots.append(dir_val)
+
+        blend_file = getattr(getattr(bpy, "data", None), "filepath", None)
+        if blend_file:
+            blend_dir = os.path.dirname(os.path.abspath(blend_file))
+            if blend_dir and blend_dir not in search_roots:
+                search_roots.append(blend_dir)
+                parent_dir = os.path.dirname(blend_dir)
+                if parent_dir and parent_dir not in search_roots:
+                    search_roots.append(parent_dir)
+
+        if props:
+            for attr in ("pbr_import_directory", "engine_import_directory"):
+                p = getattr(props, attr, "")
+                if p:
+                    abs_p = bpy.path.abspath(p)
+                    if os.path.isdir(abs_p) and abs_p not in search_roots:
+                        search_roots.append(abs_p)
+
+        if not search_roots:
+            safe_report(self, {"WARNING"}, "No project directory found. Please select a folder to search.")
+            return {"CANCELLED"}
+
+        images = list(getattr(bpy.data, "images", []))
+        if not images:
+            safe_report(self, {"INFO"}, "No images found in scene.")
+            return {"FINISHED"}
+
+        summary = ProjectTextureRelinker.relink_images(
+            images=images,
+            search_roots=search_roots,
+            blend_filepath=blend_file,
+            make_relative=True,
+        )
+
+        if summary.relinked > 0:
+            msg = f"Relinked {summary.relinked} missing texture(s) ({summary.already_valid} valid, {summary.missing_unresolved} unresolved)."
+            safe_report(self, {"INFO"}, msg)
+            if props and hasattr(props, "last_pbr_import_summary"):
+                props.last_pbr_import_summary = f"Relinked {summary.relinked} texture(s)"
+        elif summary.missing_unresolved > 0:
+            msg = f"{summary.missing_unresolved} texture(s) missing; no matches found in project directories."
+            safe_report(self, {"WARNING"}, msg)
+        else:
+            safe_report(self, {"INFO"}, f"All {summary.total_checked} texture(s) are valid and linked.")
+
+        return {"FINISHED"}
+
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"FINISHED"}
+
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = getattr(context.scene, "lod_tool", None)
+
+        blend_file = getattr(getattr(bpy, "data", None), "filepath", None)
+        has_dir = bool(blend_file)
+        if not has_dir and props:
+            has_dir = bool(getattr(props, "pbr_import_directory", "") or getattr(props, "engine_import_directory", ""))
+
+        if has_dir:
+            return self.execute(context)
+
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+
 PBR_OPERATOR_CLASSES = (
     LOD_OT_import_pbr_set,
     LOD_OT_auto_match_pbr_folder,
+    LOD_OT_relink_project_textures,
 )
 
 __all__ = [
     "PBR_OPERATOR_CLASSES",
     "LOD_OT_import_pbr_set",
     "LOD_OT_auto_match_pbr_folder",
+    "LOD_OT_relink_project_textures",
     "LOD_OT_reload_pbr_presets",
     "LOD_OT_reset_pbr_preset",
     "LOD_OT_duplicate_preset",

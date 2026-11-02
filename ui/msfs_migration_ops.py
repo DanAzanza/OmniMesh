@@ -7,6 +7,7 @@ into OmniMesh Variante A standard ({AssetName}_LOD0..N, {AssetName}_Config, {Ass
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -25,9 +26,11 @@ else:
 
 try:
     from ..core.hierarchy import get_or_create_engine_import_collection
+    from ..core.texture_relinker import ProjectTextureRelinker
     from .utils import safe_report
 except (ImportError, ValueError):
     from core.hierarchy import get_or_create_engine_import_collection
+    from core.texture_relinker import ProjectTextureRelinker
     from ui.utils import safe_report
 
 
@@ -154,10 +157,41 @@ class OMNIMESH_OT_convert_asobo_hierarchy(Operator):
                 except Exception as exc:
                     logger.debug("Could not remove old collection %s: %s", getattr(old_col, "name", ""), exc)
 
+        # Automatic Project Texture Verification & Relinking
+        relink_roots: list[str] = []
+        blend_file = getattr(getattr(bpy, "data", None), "filepath", None)
+        if blend_file:
+            blend_dir = os.path.dirname(os.path.abspath(blend_file))
+            if blend_dir:
+                relink_roots.append(blend_dir)
+                parent_dir = os.path.dirname(blend_dir)
+                if parent_dir:
+                    relink_roots.append(parent_dir)
+        props = getattr(scene, "lod_tool", None)
+        if props:
+            for attr in ("engine_import_directory", "pbr_import_directory"):
+                imp_dir = getattr(props, attr, "")
+                if imp_dir and os.path.isdir(imp_dir) and imp_dir not in relink_roots:
+                    relink_roots.append(imp_dir)
+
+        relink_suffix = ""
+        if relink_roots and bpy and getattr(bpy.data, "images", None):
+            try:
+                summary = ProjectTextureRelinker.relink_images(
+                    images=list(bpy.data.images),
+                    search_roots=relink_roots,
+                    blend_filepath=blend_file,
+                    make_relative=True,
+                )
+                if summary.relinked > 0:
+                    relink_suffix = f" ({summary.relinked} textures relinked)"
+            except Exception as exc:
+                logger.debug("Automatic texture relink encountered non-fatal error: %s", exc)
+
         safe_report(
             self,
             {"INFO"},
-            f"Migrated {migrated_objects_count} object(s) into '{asset_name}' Variante A ({cleaned_colls} collections cleaned).",
+            f"Migrated {migrated_objects_count} object(s) into '{asset_name}' Variante A ({cleaned_colls} collections cleaned){relink_suffix}.",
         )
         return {"FINISHED"}
 

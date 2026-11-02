@@ -497,6 +497,13 @@ def run_all_tests():
         res_mig = bpy.ops.omnimesh.convert_asobo_hierarchy()
         assert res_mig == {"FINISHED"}, f"SimpleAircraft migration returned {res_mig}"
 
+        # Verify automatic texture relinking healed the broken D:\ paths
+        fuselage_img = bpy.data.images.get("SimpleAircraft_FUSELAGE_albd_000.png")
+        assert fuselage_img is not None, "SimpleAircraft_FUSELAGE_albd_000.png should exist"
+        assert not fuselage_img.filepath.startswith("D:"), (
+            f"Fuselage texture should be relinked, got {fuselage_img.filepath}"
+        )
+
         # Import authentic MSFS flight_model.cfg spatial points (creates Spatial collection & wheels)
         fm_path = os.path.join(simple_aircraft_cfg_dir, "flight_model.cfg")
         if os.path.isfile(fm_path):

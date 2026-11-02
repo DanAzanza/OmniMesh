@@ -53,6 +53,7 @@ try:
     )
     from .utils import get_or_create_engine_import_collection
     from ..core.hierarchy import safe_remove_collection_objects
+    from ..core.texture_relinker import ProjectTextureRelinker
 except (ImportError, ValueError):
     from core.engine_import_presets import (
         DEFAULT_ENGINE_IMPORT_PRESET_ID,
@@ -75,6 +76,7 @@ except (ImportError, ValueError):
     )
     from ui.utils import get_or_create_engine_import_collection
     from core.hierarchy import safe_remove_collection_objects
+    from core.texture_relinker import ProjectTextureRelinker
 
 logger = logging.getLogger(__name__)
 
@@ -310,8 +312,28 @@ class OMNIMESH_OT_import_engine_project(Operator):
 
         # 3. Import Geometry / LODs
         lod_mesh_map: dict[int, list[Any]] = {}
+        relinked_count = 0
         if do_geo and manifest.has_geometry:
             _, lod_mesh_map = self._import_geometry_models(context, manifest, asset_name, props, preset)
+
+            # Automatic Texture Verification & Relinking across Project Structure
+            if bpy and getattr(bpy.data, "images", None):
+                relink_roots: list[str] = [folder]
+                blend_file = getattr(bpy.data, "filepath", None)
+                if blend_file:
+                    blend_dir = os.path.dirname(os.path.abspath(blend_file))
+                    if blend_dir and blend_dir not in relink_roots:
+                        relink_roots.append(blend_dir)
+                try:
+                    summary = ProjectTextureRelinker.relink_images(
+                        images=list(bpy.data.images),
+                        search_roots=relink_roots,
+                        blend_filepath=blend_file,
+                        make_relative=True,
+                    )
+                    relinked_count = summary.relinked
+                except Exception as exc:
+                    logger.debug("Project texture verification/relink encountered non-fatal error: %s", exc)
 
         # 4. Ingest Spatial Markers (flight_model.cfg)
         spatial_count = 0
@@ -338,6 +360,8 @@ class OMNIMESH_OT_import_engine_project(Operator):
         summary_parts = []
         if lod_mesh_map:
             summary_parts.append(f"{len(lod_mesh_map)} LODs")
+        if relinked_count:
+            summary_parts.append(f"{relinked_count} textures relinked")
         if spatial_count:
             summary_parts.append(f"{spatial_count} markers")
         if lights_count:

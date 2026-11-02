@@ -94,6 +94,12 @@ class OMNIMESH_PT_import(Panel):
         row2.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
         row2.prop(props, "pbr_import_directory", text="")
 
+        # Row 3: [ Auto-Relink Missing Textures ]
+        row_relink = box_pbr.row(align=True)
+        row_relink.operator(
+            "lod_tool.relink_project_textures", text="Auto-Relink Missing Textures", icon="FILE_REFRESH"
+        )
+
         if props.last_pbr_import_summary:
             box_pbr.label(text=props.last_pbr_import_summary, icon="CHECKMARK")
 
