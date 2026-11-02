@@ -94,9 +94,6 @@ class OMNIMESH_PT_import(Panel):
         row2.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
         row2.prop(props, "pbr_import_directory", text="")
 
-        if props.last_pbr_import_summary:
-            box_pbr.label(text=props.last_pbr_import_summary, icon="CHECKMARK")
-
 
 # =========================================================================
 # PANEL 2: MODIFY (Base Prep, Sanitization, Modifiers & Materials)

@@ -246,7 +246,6 @@ class LODToolSettings(PropertyGroup):
         description="Preserve existing non-PBR shader nodes in material when importing texture sets",
         update=callbacks.on_import_preserve_updated,
     )
-    last_pbr_import_summary: StringProperty(name="PBR Import Summary", default="")
 
     # Billboard Impostor Generator Settings
     enable_impostor_lod: BoolProperty(

@@ -42,6 +42,11 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * **AST Local Variable Assignment Audit (`ast.AnnAssign`)**: In addition to function signatures, `scripts/audit_architecture.py` inspects annotated local variable assignments for `: Any` in `core/` and `exporters/`. The ratchet baseline ceiling is strictly locked at **0** (zero tolerance for local `x: Any = ...`). Any change introducing local `: Any` fails the gate deterministically.
 * **Sanctioned File-Level Suppression**: `# pyright: reportInvalidTypeForm=none` is permitted only in modules declaring RNA properties via `prop: bpy.props.X(...)` annotations (`ui/*_ops.py`, `ui/properties/`). It must not appear in `core/`, `exporters/`, or `bridges/`.
 
+
+### 0.6 Cross-Platform Path & CI Test Invariants
+* **POSIX `os.path.splitdrive` Trap on Windows Paths**: On POSIX runners (Ubuntu GitHub Actions), `os.path.splitdrive("C:/...")` does not recognize Windows drive letters and returns `("", "C:/...")`. Cross-platform utilities comparing drive roots or computing blend-relative paths (`//`) must use portable drive splitting (`_split_drive_portable`) to avoid treating disparate Windows drives as identical roots.
+* **Windows CI 8.3 Short Directory Aliasing (`RUNNER~1` vs `runneradmin`)**: On Windows GitHub Actions runners, `tempfile.mkdtemp()` returns 8.3 short directory paths (e.g. `C:\Users\RUNNER~1\...`), whereas `pathlib.Path(p).resolve()` canonicalizes paths to their long forms (`runneradmin`). Test fixtures and assertions comparing file paths generated from temporary directories must canonicalize via `Path(...).resolve()` to prevent false-positive equality assertion failures.
+
 ---
 
 ## 1. Project Architecture & Module Boundaries

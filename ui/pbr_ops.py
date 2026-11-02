@@ -224,21 +224,15 @@ class LOD_OT_import_pbr_set(Operator):
 
             err_msg = f"PBR Import: {len(summary.unresolved)} texture(s) missing in {mat_details}. Check console."
             safe_report(self, {"ERROR"}, err_msg)
-            if props and hasattr(props, "last_pbr_import_summary"):
-                props.last_pbr_import_summary = f"{len(summary.unresolved)} texture(s) missing"
             return {"FINISHED"}
 
         relinked_total = summary.relinked + populated_slots
         if relinked_total > 0:
             msg = f"PBR Import: {summary.relinked} texture(s) relinked across {len(unique_materials)} LOD0 material(s)."
             safe_report(self, {"INFO"}, msg)
-            if props and hasattr(props, "last_pbr_import_summary"):
-                props.last_pbr_import_summary = f"Relinked {relinked_total} texture(s)"
         else:
             msg = f"PBR Import: All {summary.total_nodes_checked} textures verified and valid."
             safe_report(self, {"INFO"}, msg)
-            if props and hasattr(props, "last_pbr_import_summary"):
-                props.last_pbr_import_summary = f"{summary.total_nodes_checked} textures verified"
 
         return {"FINISHED"}
 
@@ -340,8 +334,6 @@ class LOD_OT_auto_match_pbr_folder(Operator):
                 count += 1
 
         summary = f"Matched {count} material slot(s) using '{preset.get('name', preset_id)}'."
-        if hasattr(props, "last_pbr_import_summary"):
-            props.last_pbr_import_summary = summary
         safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
 
