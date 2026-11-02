@@ -46,14 +46,14 @@ class CollisionDecomposer:
 
         centroid_np = np.mean(coords, axis=0)
         centered = coords - centroid_np
-        centroid_vec = Vector(centroid_np)
+        centroid_vec = Vector((float(centroid_np[0]), float(centroid_np[1]), float(centroid_np[2])))
 
         if len(coords) < 3:
             return centroid_vec, Vector((0.0, 0.0, 1.0))
 
         try:
             _, _, vh = np.linalg.svd(centered)
-            normal_vec = Vector(vh[0]).normalized()
+            normal_vec = Vector((float(vh[0][0]), float(vh[0][1]), float(vh[0][2]))).normalized()
             if normal_vec.length < 1e-8:
                 normal_vec = Vector((0.0, 0.0, 1.0))
             return centroid_vec, normal_vec
@@ -144,7 +144,7 @@ class CollisionDecomposer:
 
                 if rel_s2 < 1e-3:
                     # Planar 2D sheet detected: extrude along tertiary normal axis vh[2]
-                    normal = Vector(vh[2]).normalized()
+                    normal = Vector((float(vh[2][0]), float(vh[2][1]), float(vh[2][2]))).normalized()
                     offset = normal * effective_thickness
                     offset_vec = (offset.x, offset.y, offset.z)
                     if bm.faces:
@@ -158,7 +158,7 @@ class CollisionDecomposer:
 
                     # If also 1D collinear needle: extrude along secondary axis vh[1]
                     if rel_s1 < 1e-3:
-                        normal_sec = Vector(vh[1]).normalized()
+                        normal_sec = Vector((float(vh[1][0]), float(vh[1][1]), float(vh[1][2]))).normalized()
                         offset_sec = normal_sec * effective_thickness
                         offset_sec_vec = (offset_sec.x, offset_sec.y, offset_sec.z)
                         if bm.faces:

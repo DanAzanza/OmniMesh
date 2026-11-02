@@ -13,6 +13,7 @@ The central verification script required by `AGENTS.md` Section 7:
 python scripts/verify_ci.py
 ```
 *(Deterministically runs dependency validation, Ruff linter & formatter check, Pyright static type checker across core and test modules, static architectural invariant audit via `scripts/audit_architecture.py`, and the full test suite).*
+* **Canonical Test Doubles (`tests/conftest.py`)**: Test doubles must provide standard Blender RNA interfaces (`MockVector`, `MockQuaternion`, `MockMeshObject`, `MockAction` with `frame_range`). Production code must never be contorted with defensive `getattr`/`hasattr` fallbacks solely to appease sparse mocks (conforming to `AGENTS.md` §2).
 
 ### 0.2 Git Commit Scope Mapping
 Repository-specific component scopes required by `AGENTS.md` Section 6:
@@ -38,6 +39,7 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 ### 0.5 Static Analysis & Type Checking Configuration
 * **`pyrightconfig.json` Precedence Trap**: Pyright silently prioritizes `pyrightconfig.json` over `[tool.pyright]` in `pyproject.toml`. If `pyrightconfig.json` exists in the repository root, any strict configurations in `pyproject.toml` are completely ignored. Maintain `pyproject.toml` as the sole authoritative configuration file; `pyrightconfig.json` must never be reintroduced.
 * **`Any` Silently Disables Strict Mode**: Pyright performs no attribute, optional, or argument checks on values typed `Any`. A green Pyright run therefore says nothing about functions with `obj: Any` / `context: Any` parameters. Domain signatures in `core/` and `exporters/` must use concrete stub types (`bpy.types.Object`, `bpy.types.Context`, `bmesh.types.BMesh`) imported under `TYPE_CHECKING`. `cast(Any, ...)` is reserved strictly for documented stub defects (read-only setters, `RenderSettings.engine`) and must not be used as a general escape hatch.
+* **AST Local Variable Assignment Audit (`ast.AnnAssign`)**: In addition to function signatures, `scripts/audit_architecture.py` inspects annotated local variable assignments for `: Any` in `core/` and `exporters/`. The ratchet baseline ceiling is strictly locked at **0** (zero tolerance for local `x: Any = ...`). Any change introducing local `: Any` fails the gate deterministically.
 * **Sanctioned File-Level Suppression**: `# pyright: reportInvalidTypeForm=none` is permitted only in modules declaring RNA properties via `prop: bpy.props.X(...)` annotations (`ui/*_ops.py`, `ui/properties/`). It must not appear in `core/`, `exporters/`, or `bridges/`.
 
 ---
