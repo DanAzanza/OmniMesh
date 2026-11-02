@@ -356,6 +356,10 @@ def register_batch_ops() -> None:
     if not bpy:
         return
     for cls in (OMNIMESH_OT_batch_cancel, OMNIMESH_OT_batch_process):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
         existing = getattr(bpy.types, cls.__name__, None)
         if existing is not None:
             try:
@@ -369,6 +373,10 @@ def unregister_batch_ops() -> None:
     if not bpy:
         return
     for cls in (OMNIMESH_OT_batch_process, OMNIMESH_OT_batch_cancel):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as exc:
+            logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
         existing = getattr(bpy.types, cls.__name__, None)
         if existing is not None:
             try:

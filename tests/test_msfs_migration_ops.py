@@ -111,3 +111,50 @@ def test_asobo_migration_execution():
         lod1 = created_colls.get("DA62_LOD1")
         assert lod1 is not None
         assert mesh_lod1 in lod1.objects
+
+
+def test_asobo_migration_poll_true_when_bare_x0_exists():
+    mock_bpy = MagicMock()
+    c1 = MockCollection("x0")
+    mock_bpy.data.collections = [c1]
+    with patch("ui.msfs_migration_ops.bpy", mock_bpy):
+        context = MagicMock()
+        assert OMNIMESH_OT_convert_asobo_hierarchy.poll(context)
+
+
+def test_asobo_migration_execution_bare_x0_infers_asset_name():
+    mock_bpy = MagicMock()
+    coll_x0 = MockCollection("x0")
+    coll_x1 = MockCollection("x1")
+
+    # In MSFS SDK, object names are typically x0_SimpleAircraft_fuselage or similar
+    mesh_lod0 = MockObject("x0_SimpleAircraft_fuselage_01", "MESH")
+    mesh_lod1 = MockObject("x1_SimpleAircraft_fuselage_01", "MESH")
+
+    coll_x0.objects = [mesh_lod0]
+    coll_x1.objects = [mesh_lod1]
+
+    mock_bpy.data.collections = [coll_x0, coll_x1]
+
+    op = OMNIMESH_OT_convert_asobo_hierarchy()
+    op.report = MagicMock()
+    context = MagicMock()
+
+    created_colls: dict[str, MockCollection] = {}
+
+    def mock_get_or_create(ctx, asset_name, role, *args, **kwargs):
+        cname = f"{asset_name}_{role.upper()}"
+        if cname not in created_colls:
+            created_colls[cname] = MockCollection(cname)
+        return created_colls[cname]
+
+    with (
+        patch("ui.msfs_migration_ops.bpy", mock_bpy),
+        patch("ui.msfs_migration_ops.get_or_create_engine_import_collection", side_effect=mock_get_or_create),
+    ):
+        res = op.execute(context)
+        assert res == {"FINISHED"}
+
+        lod0 = created_colls.get("SimpleAircraft_LOD0")
+        assert lod0 is not None
+        assert mesh_lod0 in lod0.objects

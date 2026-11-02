@@ -49,7 +49,7 @@ class OMNIMESH_OT_convert_asobo_hierarchy(Operator):
         collections = getattr(getattr(bpy, "data", None), "collections", None)
         if not collections:
             return False
-        return any(re.match(r"^x[0-6]_", getattr(c, "name", ""), re.IGNORECASE) for c in collections)
+        return any(re.match(r"^x[0-6](?:_.*)?$", getattr(c, "name", ""), re.IGNORECASE) for c in collections)
 
     def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
@@ -59,25 +59,41 @@ class OMNIMESH_OT_convert_asobo_hierarchy(Operator):
         if not scene:
             return {"CANCELLED"}
 
-        pattern = re.compile(r"^x([0-6])_(.*)$", re.IGNORECASE)
+        pattern = re.compile(r"^x([0-6])(?:_(.*))?$", re.IGNORECASE)
         asobo_colls: list[tuple[int, str, Any]] = []
 
         for coll in bpy.data.collections:
             match = pattern.match(coll.name)
             if match:
                 tier_idx = int(match.group(1))
-                rest = match.group(2).strip()
+                raw_rest = match.group(2)
+                rest = raw_rest.strip() if raw_rest else ""
                 asobo_colls.append((tier_idx, rest, coll))
 
         if not asobo_colls:
             safe_report(self, {"WARNING"}, "No legacy Asobo x0_..x6_ collections found.")
             return {"CANCELLED"}
 
-        x0_entries = [rest for (tier, rest, coll) in asobo_colls if tier == 0]
+        x0_entries = [rest for (tier, rest, coll) in asobo_colls if tier == 0 and rest]
         if x0_entries:
             asset_name = x0_entries[0]
         else:
-            asset_name = asobo_colls[0][1]
+            non_empty = [rest for (tier, rest, coll) in asobo_colls if rest]
+            if non_empty:
+                asset_name = non_empty[0]
+            else:
+                inferred = None
+                for tier, _, coll in asobo_colls:
+                    if tier == 0:
+                        for obj in getattr(coll, "objects", []):
+                            m = re.match(r"^x[0-6]_(.+?)(?:_\d+)?$", getattr(obj, "name", ""), re.IGNORECASE)
+                            if m:
+                                inferred = m.group(1).split("_")[0]
+                                break
+                    if inferred:
+                        break
+                scene_name = getattr(scene, "name", "")
+                asset_name = inferred or (scene_name if scene_name and scene_name != "Scene" else None) or "MSFS_Asset"
 
         asset_name = re.sub(r'[\s<>:"/\\|?*]+', "_", asset_name).strip("_")
         if not asset_name:

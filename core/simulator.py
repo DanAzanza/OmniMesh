@@ -261,7 +261,7 @@ class LODSimulatorEngine:
 
         # 1. Index Sibling Collections ({Root}, {Root}_LOD1..k)
         for coll in scene_colls:
-            if not coll.name.endswith(tuple(f"_LOD{n}" for n in range(1, 11))) and not coll.name.endswith(
+            if not coll.name.endswith(tuple(f"_LOD{n}" for n in range(0, 11))) and not coll.name.endswith(
                 ("_LODs", "_Colliders", "_LOD_Impostor")
             ):
                 # Check if this collection has sibling LOD collections
@@ -273,6 +273,12 @@ class LODSimulatorEngine:
                     all_coords = []
                     # LOD 0
                     l0_objs = [o for o in coll.objects if o.type == "MESH" and not o.get("_is_collider", False)]
+                    if not l0_objs:
+                        s_c0 = bpy.data.collections.get(f"{coll.name}_LOD0")
+                        if s_c0 is not None:
+                            l0_objs = [
+                                o for o in list(s_c0.objects) if o.type == "MESH" and not o.get("_is_collider", False)
+                            ]
                     if l0_objs:
                         record.tier_objects[0] = l0_objs
                         for o in l0_objs:

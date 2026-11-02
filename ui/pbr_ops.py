@@ -14,14 +14,23 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
-    from bpy.types import Operator
+    from bpy.props import CollectionProperty, StringProperty
+    from bpy.types import Operator, OperatorFileListElement
 else:
     try:
         import bpy
-        from bpy.types import Operator
+        from bpy.props import CollectionProperty, StringProperty
+        from bpy.types import Operator, OperatorFileListElement
     except ImportError:
         bpy = None
         Operator = object
+        OperatorFileListElement = object  # type: ignore
+
+        def _mock_prop(*args: Any, **kwargs: Any) -> Any:
+            return None
+
+        StringProperty = _mock_prop  # type: ignore
+        CollectionProperty = _mock_prop  # type: ignore
 
 try:
     from ..core.pbr_importer import (
@@ -84,8 +93,8 @@ class LOD_OT_import_pbr_set(Operator):
     bl_label = "Import PBR Textures"
     bl_options = {"REGISTER", "UNDO"}
 
-    directory: Any = bpy.props.StringProperty(subtype="DIR_PATH") if bpy else ""  # type: ignore
-    files: Any = bpy.props.CollectionProperty(type=bpy.types.OperatorFileListElement) if bpy else None  # type: ignore
+    directory: StringProperty(subtype="DIR_PATH")
+    files: CollectionProperty(type=OperatorFileListElement)
 
     def execute(self, context: Any) -> set[Any]:
         if not bpy:
@@ -211,7 +220,7 @@ class LOD_OT_auto_match_pbr_folder(Operator):
     bl_label = "Auto-Match PBR Folder"
     bl_options = {"REGISTER", "UNDO"}
 
-    directory: Any = bpy.props.StringProperty(subtype="DIR_PATH") if bpy else ""  # type: ignore
+    directory: StringProperty(subtype="DIR_PATH")
 
     def execute(self, context: Any) -> set[Any]:
         if not bpy:
