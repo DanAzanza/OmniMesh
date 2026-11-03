@@ -163,6 +163,7 @@ def test_ue5_setup_guide_generation():
 def test_impostor_rig_guard_cleanup_on_exception(monkeypatch):
     """Verify EphemeralBakeSceneGuard and ImpostorCameraRig clean up temporary data blocks even on failure."""
     from unittest.mock import MagicMock
+    from tests.conftest import MockBlendData
 
     import core.impostor_rig as rig_mod
 
@@ -171,10 +172,11 @@ def test_impostor_rig_guard_cleanup_on_exception(monkeypatch):
 
     mock_bpy = MagicMock()
     mock_scene = MagicMock(name="TempBakeScene")
+    mock_scene.name = "TempBakeScene"
     mock_bpy.data.scenes.new.return_value = mock_scene
     monkeypatch.setattr(rig_mod, "bpy", mock_bpy)
 
-    guard = EphemeralBakeSceneGuard("BakeSceneTest")
+    guard = EphemeralBakeSceneGuard("BakeSceneTest", blend_data=mock_bpy.data)
     try:
         with guard as sc:
             assert sc == mock_scene
@@ -183,6 +185,18 @@ def test_impostor_rig_guard_cleanup_on_exception(monkeypatch):
         pass
 
     mock_bpy.data.scenes.remove.assert_called_once_with(mock_scene, do_unlink=True)
+
+    # Pure MockBlendData test
+    bdata = MockBlendData()
+    guard2 = EphemeralBakeSceneGuard("TempBakeScene2", blend_data=bdata)
+    try:
+        with guard2 as sc2:
+            assert sc2 is not None
+            assert sc2.name in bdata.scenes
+            raise RuntimeError("Simulated second crash")
+    except RuntimeError:
+        pass
+    assert "TempBakeScene2" not in bdata.scenes
 
 
 def test_impostor_baker_pure_di_with_mock_blend_data():

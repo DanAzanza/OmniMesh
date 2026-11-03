@@ -139,8 +139,8 @@ Before any commit or push operation is executed (or when the user requests a com
 
 * **CI Parity Gate**: For any code change, execute the project's central verification script (as documented in the project knowledge file, e.g. [`.agents/PROJECT.md`](PROJECT.md) or `KNOWLEDGE.md`) to ensure formatters, linters, static type checkers, and automated regression suites pass deterministically. Skip for pure documentation or comment changes.
 * **Subagent Pre-Commit Audit (`pre_commit_auditor`) — Large or Critical Changes Only**:
-  * **Default: Skip.** Do not spawn `pre_commit_auditor` for docs/configs, test-only edits, bugfixes, or small changes ($< 200$ changed lines) once the CI Parity Gate passes.
-  * **When to trigger**: Spawn a `research` subagent (`Role: "Pre-Commit Auditor (pre_commit_auditor)"`) **only** for large cross-cutting changes ($\ge 200$ lines), security/concurrency/process-lifecycle logic, or on explicit user request.
+  * **Default: Skip.** Do not spawn `pre_commit_auditor` for docs/configs, test-only edits, bugfixes, or small changes ($< 300$ changed lines) once the CI Parity Gate passes.
+  * **When to trigger**: Spawn a `research` subagent (`Role: "Pre-Commit Auditor (pre_commit_auditor)"`) **only** for large cross-cutting changes ($\ge 300$ lines), security/concurrency/process-lifecycle logic, or on explicit user request.
   * **Scope**: Verify against `git diff` solely for objective `BLOCKER` issues (bugs, architectural boundary breaches, resource/security leaks, or missing negative tests). Ignore subjective style preferences.
 * **Zero Regression Enforcement**: Commits and pushes remain strictly blocked until the CI Parity Gate passes (and `pre_commit_auditor` reports zero `BLOCKER` findings, if triggered).
 

@@ -614,7 +614,7 @@ class MockBlendDataContainer(_MockBase):
             obj = self._factory(name, *args, **kwargs)
         else:
             obj = MagicMock(name=name)
-            obj.name = name
+        obj.name = name
         self._items[name] = obj
         return obj
 
@@ -632,6 +632,11 @@ class MockBlendDataContainer(_MockBase):
         name = getattr(obj, "name", None)
         if name in self._items:
             del self._items[name]
+        else:
+            for k, v in list(self._items.items()):
+                if v == obj:
+                    del self._items[k]
+                    break
 
     def values(self) -> Any:
         return list(self._items.values())
@@ -650,7 +655,9 @@ class MockBlendDataContainer(_MockBase):
     def __iter__(self) -> Any:
         return iter(self._items.values())
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            return list(self._items.values())[key]
         return self._items[key]
 
     def __len__(self) -> int:
@@ -667,11 +674,26 @@ class MockBlendData(_MockBase):
         self.meshes = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name))
         self.materials = MockBlendDataContainer(factory=lambda name, *a, **kw: MockMaterial(name=name))
         self.images = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name, filepath=name))
-        self.scenes: list[Any] = [MagicMock(name="Scene", collection=MockCollection(name="Scene Collection"))]
+        self.scenes = MockBlendDataContainer(
+            factory=lambda name, *a, **kw: MagicMock(
+                name=name,
+                collection=MockCollection(name=f"{name} Collection"),
+                camera=None,
+                world=None,
+                render=MagicMock(),
+            )
+        )
+        self.scenes.new("Scene")
         self.lights = MockBlendDataContainer()
-        self.cameras = MockBlendDataContainer()
+        self.cameras = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name))
         self.actions = MockBlendDataContainer()
         self.armatures = MockBlendDataContainer()
+        self.worlds = MockBlendDataContainer(
+            factory=lambda name, *a, **kw: MagicMock(
+                name=name,
+                node_tree=MagicMock(nodes=MockBlendDataContainer()),
+            )
+        )
 
 
 @pytest.fixture

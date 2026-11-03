@@ -229,7 +229,9 @@ class ImpostorAtlasBaker:
             else ImpostorMath.full_octahedral_to_vector
         )
 
-        with EphemeralBakeSceneGuard(scene_name=f"{base_name}_BakeScene", context=context) as bake_scene:
+        with EphemeralBakeSceneGuard(
+            scene_name=f"{base_name}_BakeScene", context=context, blend_data=bdata
+        ) as bake_scene:
             if not bake_scene:
                 return {}
 
@@ -238,7 +240,7 @@ class ImpostorAtlasBaker:
                     bake_scene.collection.objects.link(obj)
 
             cam_obj = ImpostorCameraRig.setup_camera(
-                bake_scene, center, radius, ortho_scale, angle_rad=0.0, pitch_rad=0.0
+                bake_scene, center, radius, ortho_scale, angle_rad=0.0, pitch_rad=0.0, blend_data=bdata
             )
             if not cam_obj:
                 raise ImpostorBakeError("Failed to initialize bake camera.")
