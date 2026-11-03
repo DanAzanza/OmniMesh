@@ -231,6 +231,38 @@ class MockImage(_MockBase):
         return PixelsWrapper(raw)
 
 
+class MockConstraintList(list):
+    """List subclass simulating Blender obj.constraints collection."""
+
+    def new(self, type: str = "") -> Any:
+        c = MagicMock()
+        c.type = type
+        self.append(c)
+        return c
+
+    def remove(self, c: Any) -> None:
+        if c in self:
+            super().remove(c)
+
+
+class MockNodeList(list):
+    """List subclass simulating Blender node_tree.nodes container."""
+
+    def new(self, type: str = "") -> Any:
+        from collections import defaultdict
+
+        node = MagicMock()
+        node.type = type
+        node.inputs = defaultdict(MagicMock)
+        node.outputs = defaultdict(MagicMock)
+        self.append(node)
+        return node
+
+    def remove(self, node: Any) -> None:
+        if node in self:
+            super().remove(node)
+
+
 class MockMaterial(_MockBase):
     """Mock Blender Material datablock with Principled BSDF node tree."""
 
@@ -252,7 +284,8 @@ class MockMaterial(_MockBase):
                 },
             )
             self.node_tree = MagicMock()
-            self.node_tree.nodes = [self.bsdf]
+            self.node_tree.nodes = MockNodeList([self.bsdf])
+            self.node_tree.links = MagicMock()
         else:
             self.bsdf = None
             self.node_tree = None
@@ -315,6 +348,8 @@ class MockMeshObject(_MockBase):
         self.users_collection: List[Any] = []
         self.parent: Optional[Any] = None
         self.matrix_world = MagicMock()
+        self.constraints = MockConstraintList()
+        self.animation_data: Optional[Any] = None
 
     def hide_get(self, view_layer: Optional[Any] = None) -> bool:
         return self._hidden_layer
@@ -577,6 +612,16 @@ class MockBlendDataContainer(_MockBase):
         self._items[name] = obj
         return obj
 
+    def load(self, filepath: str, check_existing: bool = False) -> Any:
+        import os
+
+        name = os.path.basename(filepath)
+        obj = self.get(name)
+        if obj is None:
+            obj = MagicMock(name=name, filepath=filepath)
+            self._items[name] = obj
+        return obj
+
     def remove(self, obj: Any, do_unlink: bool = True) -> None:
         name = getattr(obj, "name", None)
         if name in self._items:
@@ -605,6 +650,7 @@ class MockBlendData(_MockBase):
         self.objects = MockBlendDataContainer(factory=lambda name, *a, **kw: MockMeshObject(name=name))
         self.meshes = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name))
         self.materials = MockBlendDataContainer(factory=lambda name, *a, **kw: MockMaterial(name=name))
+        self.images = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name, filepath=name))
         self.scenes: list[Any] = [MagicMock(name="Scene", collection=MockCollection(name="Scene Collection"))]
         self.lights = MockBlendDataContainer()
         self.cameras = MockBlendDataContainer()

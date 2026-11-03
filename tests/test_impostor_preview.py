@@ -108,8 +108,9 @@ def test_mock_preview_material_construction(monkeypatch):
         return node
 
     mock_nodes.new.side_effect = mock_node_new
-    mock_bpy.data.materials.get.return_value = None
-    mock_bpy.data.materials.new.return_value = mock_mat
+    mock_blend_data = MagicMock()
+    mock_blend_data.materials.get.return_value = None
+    mock_blend_data.materials.new.return_value = mock_mat
 
     import core.impostor_preview as preview_module
 
@@ -123,6 +124,7 @@ def test_mock_preview_material_construction(monkeypatch):
         orm_path=None,
         grid_size=8,
         target_engine="UE5",
+        blend_data=mock_blend_data,
     )
 
     assert mat is not None
@@ -131,3 +133,55 @@ def test_mock_preview_material_construction(monkeypatch):
     assert created_nodes.get("ShaderNodeVectorTransform") == 2
     assert created_nodes.get("ShaderNodeCombineXYZ") == 1
     assert mock_links.new.called
+
+
+def test_impostor_preview_pure_di_missing_blend_data_fails_closed():
+    """Verify pure DI fail-closed invariants when blend_data is None."""
+    import core.impostor_preview as preview_mod
+
+    assert preview_mod.safe_load_image("dummy.png", blend_data=None) is None
+    assert preview_mod.create_octahedral_preview_material("M_Fail", "dummy.png", blend_data=None) is None
+    assert preview_mod.setup_impostor_preview_rig(None, [], "Test", "/tmp", blend_data=None) == {}
+    assert preview_mod.teardown_impostor_preview_rig(None, "Test", blend_data=None) is False
+
+
+def test_impostor_preview_pure_di_lifecycle_with_mock_blend_data(tmp_path, monkeypatch):
+    """Verify full lifecycle of setup and teardown using canonical MockBlendData."""
+    import core.impostor_preview as preview_mod
+    from tests.conftest import MockBlendData, MockMeshObject
+
+    mock_bdata = MockBlendData()
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(preview_mod, "bpy", mock_bpy)
+
+    # Mock texture files
+    base_color_path = tmp_path / "T_SM_Asset_Impostor_BaseColor.png"
+    base_color_path.write_bytes(b"dummy")
+
+    mesh_obj = MockMeshObject(name="SM_Asset_LOD0")
+    mesh_obj.matrix_world = MagicMock()
+    mesh_obj.bound_box = ((-1.0, -1.0, -1.0), (1.0, 1.0, 1.0))
+
+    rig_info = preview_mod.setup_impostor_preview_rig(
+        context=None,
+        mesh_objs=[mesh_obj],
+        base_name="SM_Asset",
+        texture_dir=str(tmp_path),
+        blend_data=mock_bdata,
+    )
+
+    assert rig_info != {}
+    assert "SM_Asset_Preview_Rig" in mock_bdata.collections
+    assert "SM_Asset_Preview_Impostor" in mock_bdata.objects
+    assert "SM_Asset_Preview_Camera" in mock_bdata.objects
+    assert "SM_Asset_Preview_Sun" in mock_bdata.objects
+
+    # Teardown
+    success = preview_mod.teardown_impostor_preview_rig(
+        context=None,
+        base_name="SM_Asset",
+        blend_data=mock_bdata,
+    )
+    assert success is True
+    assert "SM_Asset_Preview_Rig" not in mock_bdata.collections
+    assert "SM_Asset_Preview_Impostor" not in mock_bdata.objects

@@ -262,6 +262,7 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
         tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""))
         target_engine = getattr(props, "target_engine", "UE5")
 
+        bdata = getattr(context, "blend_data", None)
         rig_info = setup_impostor_preview_rig(
             context=context,
             mesh_objs=mesh_objs,
@@ -271,6 +272,7 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
             num_frames=self.num_frames,
             target_engine=target_engine,
             create_turntable=self.create_turntable,
+            blend_data=bdata,
         )
 
         if not rig_info:
@@ -343,7 +345,8 @@ class LOD_OT_remove_impostor_preview_rig(Operator):
         except (ImportError, ValueError) as exc:
             logger.debug("Impostor viewport ops timer not loaded: %s", exc)
 
-        success = teardown_impostor_preview_rig(context, base_name)
+        bdata = getattr(context, "blend_data", None)
+        success = teardown_impostor_preview_rig(context, base_name, blend_data=bdata)
 
         if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
             for area in getattr(context.screen, "areas", []):

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
     import mathutils
     from mathutils import Matrix, Vector
 else:
@@ -29,22 +30,47 @@ else:
     except ImportError:
         bpy = None
         mathutils = None
-        Vector = None  # type: ignore
+        from .compat import Vector  # type: ignore
+
         Matrix = None  # type: ignore
+    BlendData = object  # runtime fallback for type annotations
 
 
-def safe_load_image(filepath: str) -> Optional[bpy.types.Image]:
+def _resolve_scene(context: bpy.types.Context | None, blend_data: BlendData | None) -> bpy.types.Scene | None:
+    if context and hasattr(context, "scene") and context.scene:
+        return context.scene
+    if blend_data and hasattr(blend_data, "scenes") and len(blend_data.scenes) > 0:
+        return blend_data.scenes[0]
+    return None
+
+
+def safe_load_image(
+    filepath: str,
+    *,
+    blend_data: BlendData | None = None,
+) -> Optional[bpy.types.Image]:
     """
     Loads an image from filepath while preventing duplicate datablocks in Blender.
     Re-uses existing image if already loaded with matching absolute path.
     """
-    if not bpy or not filepath or not os.path.exists(filepath):
+    if not bpy or not filepath or not os.path.exists(filepath) or blend_data is None:
+        return None
+
+    if not hasattr(blend_data, "images"):
         return None
 
     abs_target = os.path.abspath(filepath)
-    for img in bpy.data.images:
-        if img.filepath:
-            existing_abs = os.path.abspath(bpy.path.abspath(img.filepath))
+    for img in blend_data.images:
+        img_fp = getattr(img, "filepath", None)
+        if img_fp:
+            if hasattr(bpy, "path") and hasattr(bpy.path, "abspath"):
+                try:
+                    existing_abs = os.path.abspath(bpy.path.abspath(img_fp))
+                except (RuntimeError, ValueError, AttributeError):
+                    existing_abs = os.path.abspath(img_fp)
+            else:
+                existing_abs = os.path.abspath(img_fp)
+
             if existing_abs == abs_target:
                 try:
                     img.reload()
@@ -53,7 +79,7 @@ def safe_load_image(filepath: str) -> Optional[bpy.types.Image]:
                 return img
 
     try:
-        return bpy.data.images.load(filepath)
+        return blend_data.images.load(filepath)
     except (RuntimeError, ValueError, AttributeError) as exc:
         logger.error("Failed loading image from %s: %s", filepath, exc)
         return None
@@ -66,6 +92,8 @@ def create_octahedral_preview_material(
     orm_path: Optional[str] = None,
     grid_size: int = 8,
     target_engine: str = "UE5",
+    *,
+    blend_data: BlendData | None = None,
 ) -> Optional[bpy.types.Material]:
     """
     Constructs a native Blender Shader Node material that evaluates the upper-hemisphere
@@ -75,30 +103,28 @@ def create_octahedral_preview_material(
     and applies BaseColor cutout, Normal map (with DirectX Green-inversion compensation for UE5),
     and optional ORM roughness.
     """
-    if not bpy:
+    if not bpy or blend_data is None:
         return None
 
-    mat = bpy.data.materials.get(mat_name)
+    if not hasattr(blend_data, "materials"):
+        return None
+
+    mat = blend_data.materials.get(mat_name)
     if not mat:
-        mat = bpy.data.materials.new(mat_name)
+        mat = blend_data.materials.new(mat_name)
     mat.use_nodes = True
 
     # Defensive EEVEE Next & EEVEE Legacy transparency configuration
-    if hasattr(mat, "surface_render_method"):
-        try:
-            mat.surface_render_method = "DITHERED"
-        except (TypeError, ValueError, AttributeError) as exc:
-            logger.debug("Failed setting surface_render_method on material: %s", exc)
-    if hasattr(mat, "use_transparent_shadow"):
-        try:
-            mat.use_transparent_shadow = True
-        except (TypeError, ValueError, AttributeError) as exc:
-            logger.debug("Failed setting use_transparent_shadow on material: %s", exc)
-    if hasattr(mat, "use_backface_culling"):
-        try:
-            mat.use_backface_culling = True
-        except (TypeError, ValueError, AttributeError) as exc:
-            logger.debug("Failed setting use_backface_culling on material: %s", exc)
+    for prop, val in (
+        ("surface_render_method", "DITHERED"),
+        ("use_transparent_shadow", True),
+        ("use_backface_culling", True),
+    ):
+        if hasattr(mat, prop):
+            try:
+                setattr(mat, prop, val)
+            except (TypeError, ValueError, AttributeError) as exc:
+                logger.debug("Failed setting %s on material: %s", prop, exc)
     if hasattr(mat, "blend_method"):
         try:
             mat.blend_method = "CLIP"
@@ -305,7 +331,7 @@ def create_octahedral_preview_material(
     links.new(final_v.outputs["Value"], comb_uv.inputs["Y"])
 
     # 6. BaseColor Texture Node
-    base_img = safe_load_image(base_color_path)
+    base_img = safe_load_image(base_color_path, blend_data=blend_data)
     if base_img:
         tex_base = nodes.new(type="ShaderNodeTexImage")
         set_node_prop(tex_base, "image", base_img)
@@ -316,7 +342,7 @@ def create_octahedral_preview_material(
 
     # 7. Normal Map Texture Node (with DirectX Green-flip compensation for UE5)
     if normal_path and os.path.exists(normal_path):
-        norm_img = safe_load_image(normal_path)
+        norm_img = safe_load_image(normal_path, blend_data=blend_data)
         if norm_img:
             if hasattr(norm_img, "colorspace_settings") and norm_img.colorspace_settings:
                 cast(Any, norm_img.colorspace_settings).name = "Non-Color"
@@ -353,7 +379,7 @@ def create_octahedral_preview_material(
 
     # 8. Optional ORM (Roughness / Metallic)
     if orm_path and os.path.exists(orm_path):
-        orm_img = safe_load_image(orm_path)
+        orm_img = safe_load_image(orm_path, blend_data=blend_data)
         if orm_img:
             if hasattr(orm_img, "colorspace_settings") and orm_img.colorspace_settings:
                 cast(Any, orm_img.colorspace_settings).name = "Non-Color"
@@ -378,19 +404,17 @@ def setup_impostor_tracking(
     proxy_obj: bpy.types.Object | None,
     camera_obj: Optional[bpy.types.Object] = None,
     context: bpy.types.Context | None = None,
+    *,
+    blend_data: BlendData | None = None,
 ) -> Optional[bpy.types.Constraint]:
     """
     Configures a TRACK_TO constraint on the proxy quad to orient continuously toward the camera.
     """
-    if not bpy or not proxy_obj:
+    if not bpy or not proxy_obj or not hasattr(proxy_obj, "constraints") or proxy_obj.constraints is None:
         return None
 
-    ctx = context
-    sc = (
-        getattr(ctx, "scene", None)
-        if ctx
-        else (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
-    )
+    effective_bdata = blend_data or getattr(context, "blend_data", None)
+    sc = _resolve_scene(context, effective_bdata)
     cam = camera_obj or (getattr(sc, "camera", None) if sc else None)
     if not cam:
         return None
@@ -398,7 +422,7 @@ def setup_impostor_tracking(
     # Find or create TRACK_TO constraint
     track_c = cast(
         "bpy.types.TrackToConstraint",
-        next((c for c in proxy_obj.constraints if c.type == "TRACK_TO"), None)
+        next((c for c in proxy_obj.constraints if getattr(c, "type", "") == "TRACK_TO"), None)
         or proxy_obj.constraints.new(type="TRACK_TO"),
     )
 
@@ -416,6 +440,8 @@ def setup_preview_turntable(
     height: float,
     num_frames: int = 72,
     context: bpy.types.Context | None = None,
+    *,
+    blend_data: BlendData | None = None,
 ) -> bool:
     """
     Keyframes an elevated circular camera orbit around target_center over frames 1..num_frames.
@@ -426,12 +452,8 @@ def setup_preview_turntable(
     if not bpy or not cam_obj:
         return False
 
-    ctx = context
-    scene = (
-        getattr(ctx, "scene", None)
-        if ctx
-        else (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
-    )
+    effective_bdata = blend_data or getattr(context, "blend_data", None)
+    scene = _resolve_scene(context, effective_bdata)
     if not scene:
         return False
     scene.frame_start = 1
@@ -478,33 +500,47 @@ def setup_impostor_preview_rig(
     num_frames: int = 72,
     target_engine: str = "UE5",
     create_turntable: bool = False,
+    *,
+    blend_data: BlendData | None = None,
 ) -> dict[str, Any]:
     """
     Constructs an isolated, complete In-Blender preview test rig for Octahedral Impostors.
     Places all temporary objects in a dedicated '{base_name}_Preview_Rig' collection.
     Never alters the production transforms of mesh_objs.
     """
-    ctx = context
-    scene = (
-        getattr(ctx, "scene", None)
-        if ctx
-        else (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
-    )
+    if not bpy:
+        return {}
+
+    effective_bdata = blend_data or getattr(context, "blend_data", None)
+    if effective_bdata is None:
+        return {}
+
+    scene = _resolve_scene(context, effective_bdata)
     if not scene:
         return {}
     rig_coll_name = f"{base_name}_Preview_Rig"
 
     # 1. Manage dedicated collection
-    rig_coll = bpy.data.collections.get(rig_coll_name)
+    rig_coll = effective_bdata.collections.get(rig_coll_name) if hasattr(effective_bdata, "collections") else None
+    if not rig_coll and hasattr(effective_bdata, "collections"):
+        rig_coll = effective_bdata.collections.new(rig_coll_name)
+        if hasattr(scene, "collection") and hasattr(scene.collection, "children"):
+            scene.collection.children.link(rig_coll)
+
     if not rig_coll:
-        rig_coll = bpy.data.collections.new(rig_coll_name)
-        scene.collection.children.link(rig_coll)
+        return {}
 
     # 2. Compute bounding parameters
     coords = []
     for obj in mesh_objs:
-        if hasattr(obj, "bound_box") and obj.bound_box:
-            coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
+        mat_w = getattr(obj, "matrix_world", None)
+        for c in getattr(obj, "bound_box", []) or []:
+            v = Vector(c)
+            try:
+                res = mat_w @ v if mat_w is not None else v
+                coords.append(res if isinstance(getattr(res, "x", None), (int, float)) else v)
+            except (TypeError, ValueError, AttributeError, RuntimeError):
+                coords.append(v)
     if not coords:
         coords = [Vector((-1.0, -1.0, -1.0)), Vector((1.0, 1.0, 1.0))]
 
@@ -515,22 +551,19 @@ def setup_impostor_preview_rig(
 
     # 3. Locate baked textures
     base_color_file = os.path.join(texture_dir, f"T_{base_name}_Impostor_BaseColor.png")
-    normal_file = os.path.join(texture_dir, f"T_{base_name}_Impostor_Normal.png")
-    orm_file = os.path.join(texture_dir, f"T_{base_name}_Impostor_ORM.png")
-
     if not os.path.exists(base_color_file):
         for obj in mesh_objs:
-            for candidate in [getattr(obj, "name", ""), getattr(obj, "name", "").split("_")[0]]:
+            obj_n = getattr(obj, "name", "")
+            for candidate in (obj_n, obj_n.split("_")[0]):
                 cand_clean = candidate.split("_LOD")[0].split("_Test")[0]
                 alt_base = os.path.join(texture_dir, f"T_{cand_clean}_Impostor_BaseColor.png")
                 if os.path.exists(alt_base):
-                    base_name = cand_clean
-                    base_color_file = alt_base
-                    normal_file = os.path.join(texture_dir, f"T_{base_name}_Impostor_Normal.png")
-                    orm_file = os.path.join(texture_dir, f"T_{base_name}_Impostor_ORM.png")
+                    base_name, base_color_file = cand_clean, alt_base
                     break
             if os.path.exists(base_color_file):
                 break
+    normal_file = os.path.join(texture_dir, f"T_{base_name}_Impostor_Normal.png")
+    orm_file = os.path.join(texture_dir, f"T_{base_name}_Impostor_ORM.png")
 
     if not os.path.exists(base_color_file):
         logger.warning("Preview rig could not find BaseColor atlas: %s", base_color_file)
@@ -538,9 +571,9 @@ def setup_impostor_preview_rig(
 
     # 4. Create preview billboard quad
     proxy_name = f"{base_name}_Preview_Impostor"
-    proxy_obj = bpy.data.objects.get(proxy_name)
-    if not proxy_obj:
-        mesh_data = bpy.data.meshes.new(f"{proxy_name}_Mesh")
+    proxy_obj = effective_bdata.objects.get(proxy_name) if hasattr(effective_bdata, "objects") else None
+    if not proxy_obj and hasattr(effective_bdata, "meshes") and hasattr(effective_bdata, "objects"):
+        mesh_data = effective_bdata.meshes.new(f"{proxy_name}_Mesh")
         s = radius * 2.08
         hs = s * 0.5
         verts = [(-hs, 0.0, -hs), (hs, 0.0, -hs), (hs, 0.0, hs), (-hs, 0.0, hs)]
@@ -555,8 +588,11 @@ def setup_impostor_preview_rig(
             for loop in mesh_data.loops:
                 uv_layer.data[loop.index].uv = uv_coords[loop.vertex_index]
 
-        proxy_obj = bpy.data.objects.new(proxy_name, mesh_data)
+        proxy_obj = effective_bdata.objects.new(proxy_name, mesh_data)
         rig_coll.objects.link(proxy_obj)
+
+    if not proxy_obj:
+        return {}
 
     # Position proxy
     offset_x = radius * 2.8 if mode == "SIDE_BY_SIDE" else 0.0
@@ -571,6 +607,7 @@ def setup_impostor_preview_rig(
         orm_path=orm_file if os.path.exists(orm_file) else None,
         grid_size=8,
         target_engine=target_engine,
+        blend_data=effective_bdata,
     )
     if preview_mat:
         proxy_data = cast("bpy.types.Mesh", proxy_obj.data)
@@ -579,54 +616,59 @@ def setup_impostor_preview_rig(
 
     # 6. Setup dedicated preview camera
     cam_name = f"{base_name}_Preview_Camera"
-    cam_obj = bpy.data.objects.get(cam_name)
-    if not cam_obj:
-        cam_data = bpy.data.cameras.new(f"{cam_name}_Data")
+    cam_obj = effective_bdata.objects.get(cam_name) if hasattr(effective_bdata, "objects") else None
+    if not cam_obj and hasattr(effective_bdata, "cameras") and hasattr(effective_bdata, "objects"):
+        cam_data = effective_bdata.cameras.new(f"{cam_name}_Data")
         cam_data.lens = 50
-        cam_obj = bpy.data.objects.new(cam_name, cam_data)
+        cam_obj = effective_bdata.objects.new(cam_name, cam_data)
         rig_coll.objects.link(cam_obj)
+
+    if not cam_obj:
+        return {}
 
     cam_dist = radius * 5.6
     cam_x = center.x + (offset_x * 0.5 if mode == "SIDE_BY_SIDE" else 0.0)
     cam_obj.location = Vector((cam_x, center.y - cam_dist, center.z + radius * 0.5))
     aim_target = Vector((cam_x, center.y, center.z))
     dir_cam = aim_target - cam_obj.location
-    cam_obj.rotation_euler = dir_cam.to_track_quat("-Z", "Y").to_euler()
+    if hasattr(dir_cam, "to_track_quat"):
+        cam_obj.rotation_euler = dir_cam.to_track_quat("-Z", "Y").to_euler()
 
     # Create Tracker Target Empty to decouple billboard orientation from camera animation
     target_name = f"{base_name}_Preview_Tracker_Target"
-    target_empty = bpy.data.objects.get(target_name)
-    if not target_empty:
-        target_empty = bpy.data.objects.new(target_name, None)
+    target_empty = effective_bdata.objects.get(target_name) if hasattr(effective_bdata, "objects") else None
+    if not target_empty and hasattr(effective_bdata, "objects"):
+        target_empty = effective_bdata.objects.new(target_name, None)
         target_empty.empty_display_type = "PLAIN_AXES"
         target_empty.empty_display_size = 0.2
         rig_coll.objects.link(target_empty)
-    target_empty.location = cam_obj.location.copy()
+    if target_empty:
+        target_empty.location = cam_obj.location.copy()
 
     # Track constraint on proxy targets the Empty
-    setup_impostor_tracking(proxy_obj, target_empty, context=context)
+    setup_impostor_tracking(proxy_obj, target_empty, context=context, blend_data=effective_bdata)
 
     # 7. Setup preview sun light for normal map lighting validation
     sun_name = f"{base_name}_Preview_Sun"
-    sun_obj = bpy.data.objects.get(sun_name)
-    if not sun_obj:
-        sun_data = cast("bpy.types.SunLight", bpy.data.lights.new(name=f"{sun_name}_Data", type="SUN"))
+    sun_obj = effective_bdata.objects.get(sun_name) if hasattr(effective_bdata, "objects") else None
+    if not sun_obj and hasattr(effective_bdata, "lights") and hasattr(effective_bdata, "objects"):
+        sun_data = cast("bpy.types.SunLight", effective_bdata.lights.new(name=f"{sun_name}_Data", type="SUN"))
         sun_data.energy = 3.0
-        sun_obj = bpy.data.objects.new(sun_name, sun_data)
+        sun_obj = effective_bdata.objects.new(sun_name, sun_data)
         rig_coll.objects.link(sun_obj)
         sun_obj.location = Vector((center.x + 5.0, center.y - 5.0, center.z + 10.0))
         sun_obj.rotation_euler = (0.7, 0.2, 0.5)
 
     # 8. Setup elevated camera turntable animation (only if explicitly requested)
     if create_turntable:
-        elev_height = radius * 2.2
         setup_preview_turntable(
             cam_obj=cam_obj,
             target_center=aim_target,
             radius=cam_dist,
-            height=elev_height,
+            height=radius * 2.2,
             num_frames=num_frames,
             context=context,
+            blend_data=effective_bdata,
         )
 
     # Set active camera
@@ -640,7 +682,12 @@ def setup_impostor_preview_rig(
     }
 
 
-def teardown_impostor_preview_rig(context: bpy.types.Context | None, base_name: str) -> bool:
+def teardown_impostor_preview_rig(
+    context: bpy.types.Context | None,
+    base_name: str,
+    *,
+    blend_data: BlendData | None = None,
+) -> bool:
     """
     Cleanly destroys all preview rig elements and removes the '{base_name}_Preview_Rig' collection.
     Restores original camera and removes animation data from mesh objects.
@@ -648,36 +695,56 @@ def teardown_impostor_preview_rig(context: bpy.types.Context | None, base_name: 
     if not bpy:
         return False
 
+    effective_bdata = blend_data or getattr(context, "blend_data", None)
+    if effective_bdata is None or not hasattr(effective_bdata, "collections"):
+        return False
+
     rig_coll_name = f"{base_name}_Preview_Rig"
-    rig_coll = bpy.data.collections.get(rig_coll_name)
+    rig_coll = effective_bdata.collections.get(rig_coll_name)
     if not rig_coll:
         return False
 
-    # Clear animation on any objects that were keyed
-    for obj in list(rig_coll.objects):
-        if obj.animation_data:
-            obj.animation_data_clear()
-        bpy.data.objects.remove(obj, do_unlink=True)
+    # Capture objects and unshared datablocks
+    for obj in list(getattr(rig_coll, "objects", [])):
+        if getattr(obj, "animation_data", None):
+            try:
+                obj.animation_data_clear()
+            except (AttributeError, RuntimeError):
+                pass
+
+        obj_data = getattr(obj, "data", None)
+        if hasattr(effective_bdata, "objects") and hasattr(effective_bdata.objects, "remove"):
+            try:
+                effective_bdata.objects.remove(obj, do_unlink=True)
+            except (TypeError, RuntimeError):
+                effective_bdata.objects.remove(obj)
+
+        # Deallocate orphaned datablocks
+        users = getattr(obj_data, "users", 1)
+        if obj_data and isinstance(users, (int, float)) and users <= 1:
+            for container_name in ("meshes", "cameras", "lights"):
+                container = getattr(effective_bdata, container_name, None)
+                if container and hasattr(container, "remove"):
+                    try:
+                        container.remove(obj_data)
+                        break
+                    except (TypeError, RuntimeError, ValueError):
+                        pass
 
     # Remove collection
-    bpy.data.collections.remove(rig_coll)
+    effective_bdata.collections.remove(rig_coll)
 
     # Remove preview material
-    mat_name = f"M_{base_name}_Octahedral_Preview"
-    mat = bpy.data.materials.get(mat_name)
-    if mat:
-        bpy.data.materials.remove(mat)
+    mats = getattr(effective_bdata, "materials", None)
+    if mats and hasattr(mats, "remove"):
+        mat = mats.get(f"M_{base_name}_Octahedral_Preview")
+        if mat:
+            mats.remove(mat)
 
     # Restore default active camera if possible
-    ctx = context
-    scene = (
-        getattr(ctx, "scene", None)
-        if ctx
-        else (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
-    )
+    scene = _resolve_scene(context, effective_bdata)
     cam = getattr(scene, "camera", None) if scene else None
     if cam and getattr(cam, "name", "") == f"{base_name}_Preview_Camera" and scene:
-        first_cam = next((o for o in scene.objects if o.type == "CAMERA"), None)
-        scene.camera = first_cam
+        scene.camera = next((o for o in getattr(scene, "objects", []) if getattr(o, "type", "") == "CAMERA"), None)
 
     return True
