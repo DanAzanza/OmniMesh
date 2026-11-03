@@ -170,8 +170,18 @@ class LODLevelItem(PropertyGroup):
     generated_obj: PointerProperty(name="Mesh Object", type=bpy.types.Object if bpy else None)
 
 
+def _auto_save_custom_lod_preset(props: Any) -> None:
+    """Persists LOD preset properties and tiers to disk when active preset is a custom user preset."""
+    preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+    if not LODPresetManager.is_builtin(preset_id):
+        try:
+            sync_preset_tiers_to_preset(props, preset_id=preset_id)
+        except Exception as exc:
+            logger.debug("Auto-save custom LOD preset skipped: %s", exc)
+
+
 def on_preset_tier_item_updated(self: Any, context: Any) -> None:
-    """Flags active preset as modified when a tier setting is changed."""
+    """Flags active preset as modified and auto-saves when a tier setting is changed on a custom preset."""
     if not context or not hasattr(context, "scene"):
         return
     if PresetSyncGuard.is_locked() or StateRestorationGuard.is_active():
@@ -179,10 +189,11 @@ def on_preset_tier_item_updated(self: Any, context: Any) -> None:
     props = getattr(context.scene, "lod_tool", None)
     if props:
         props.lod_preset_is_dirty = True
+        _auto_save_custom_lod_preset(props)
 
 
 def on_lod_preset_property_modified(self: Any, context: Any) -> None:
-    """Flags active LOD preset as modified when any preset-backed setting changes."""
+    """Flags active LOD preset as modified and auto-saves when any preset-backed setting changes."""
     if not context or not hasattr(context, "scene"):
         return
     if PresetSyncGuard.is_locked() or StateRestorationGuard.is_active():
@@ -190,6 +201,7 @@ def on_lod_preset_property_modified(self: Any, context: Any) -> None:
     props = getattr(context.scene, "lod_tool", None)
     if props:
         props.lod_preset_is_dirty = True
+        _auto_save_custom_lod_preset(props)
 
 
 def on_split_preview_updated(self: Any, context: Any) -> None:
@@ -347,6 +359,7 @@ def sync_preset_tiers_to_preset(props: Any, preset_id: str | None = None) -> str
         preset_data["consolidate_hierarchy"] = bool(props.consolidate_hierarchy)
 
     new_tiers: list[dict[str, Any]] = []
+    budget_mode = getattr(props, "lod_preset_budget_mode", "PERCENTAGE")
     for item in props.lod_preset_active_tiers:
         tier_dict: dict[str, Any] = {
             "name": item.name,
@@ -355,28 +368,38 @@ def sync_preset_tiers_to_preset(props: Any, preset_id: str | None = None) -> str
             "is_pinned": bool(getattr(item, "is_pinned", False)),
             "is_impostor": bool(getattr(item, "is_impostor", False)),
         }
+        if budget_mode == "ABSOLUTE" or hasattr(item, "target_tris"):
+            tier_dict["target_tris"] = max(1, int(getattr(item, "target_tris", 1000)))
         new_tiers.append(tier_dict)
     preset_data["tiers"] = new_tiers
 
-    # Serialize chunking block
-    preset_data["spatial_chunking"] = {
+    # Serialize chunking block matching LODPresetManager.validate_preset_schema
+    preset_data["chunking"] = {
         "enabled": bool(getattr(props, "enable_spatial_chunking", False)),
-        "max_chunk_size_m": float(getattr(props, "spatial_chunk_size", 50.0)),
-        "max_tris_per_chunk": int(getattr(props, "spatial_chunk_max_tris", 15000)),
-        "generation_mode": str(getattr(props, "spatial_chunk_mode", "AUTOMATIC")),
+        "cell_size": float(getattr(props, "chunk_cell_size", 32.0)),
+        "split_z": bool(getattr(props, "chunk_split_z", False)),
+        "cell_size_z": float(getattr(props, "chunk_cell_size_z", 32.0)),
+        "partitioning_mode": str(getattr(props, "chunk_partitioning_mode", "UNIFORM_GRID")),
+        "adaptive_target_polys": int(getattr(props, "adaptive_cluster_target_polys", 50000)),
+        "enable_hlod": bool(getattr(props, "enable_hlod", True)),
+        "hlod_start_tier": int(getattr(props, "hlod_start_tier", 2)),
     }
 
-    # Serialize impostor block
+    # Serialize impostor block matching LODPresetManager.validate_preset_schema
     preset_data["impostor"] = {
         "enabled": bool(getattr(props, "enable_impostor_lod", False)),
-        "texture_resolution": int(getattr(props, "impostor_texture_resolution", 1024)),
-        "angle_steps": int(getattr(props, "impostor_angle_steps", 16)),
+        "mode": str(getattr(props, "impostor_mode", "ORTHO_3_AXES")),
+        "resolution": str(getattr(props, "impostor_resolution", "2048")),
+        "replace_last_lod": bool(getattr(props, "impostor_replace_last_lod", True)),
     }
 
-    # Serialize slender culling block
-    preset_data["slender_feature_culling"] = {
-        "enabled": bool(getattr(props, "enable_slender_culling", False)),
-        "threshold_px": float(getattr(props, "slender_culling_threshold_px", 1.5)),
+    # Serialize culling block matching LODPresetManager.validate_preset_schema
+    preset_data["culling"] = {
+        "occlusion_enabled": bool(getattr(props, "enable_occlusion_culling", True)),
+        "occlusion_lod_start": int(getattr(props, "occlusion_lod_start", 1)),
+        "occlusion_ray_density": int(getattr(props, "occlusion_ray_density", 16)),
+        "occlusion_evaluate_alpha": bool(getattr(props, "occlusion_evaluate_alpha", True)),
+        "slender_enabled": bool(getattr(props, "enable_slender_culling", True)),
     }
 
     # Serialize seam pinning block

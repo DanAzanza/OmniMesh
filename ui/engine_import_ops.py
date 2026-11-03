@@ -107,8 +107,12 @@ class OMNIMESH_OT_import_engine_project(Operator):
         if not bpy or not context:
             return {"CANCELLED"}
         props = getattr(context.scene, "lod_tool", None)
-        if props and props.engine_import_directory and os.path.isdir(props.engine_import_directory):
-            self.directory = props.engine_import_directory
+        eng_dir = getattr(props, "engine_import_directory", "") if props else ""
+        if eng_dir:
+            abs_dir = bpy.path.abspath(eng_dir)
+            if os.path.isdir(abs_dir):
+                self.directory = abs_dir
+                return self.execute(context)
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
@@ -396,6 +400,124 @@ class OMNIMESH_OT_import_engine_project(Operator):
         return {"FINISHED"}
 
 
+class OMNIMESH_OT_create_engine_import_preset(Operator):
+    """Creates a new custom engine import preset."""
+
+    bl_idname = "omnimesh.create_engine_import_preset"
+    bl_label = "New Engine Import Preset"
+    bl_description = "Creates a new custom engine import preset"
+    bl_options = {"REGISTER", "UNDO"}
+
+    preset_name: StringProperty(
+        name="Preset Name",
+        description="Display name for the new custom engine import preset",
+        default="Custom Engine Import",
+    )
+
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
+            return
+        self.layout.prop(self, "preset_name", text="Name")
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        props = getattr(context.scene, "lod_tool", None)
+        try:
+            new_id = EngineImportPresetManager.create_new_preset(
+                name=self.preset_name,
+                template_id=DEFAULT_ENGINE_IMPORT_PRESET_ID,
+            )
+            if props and hasattr(props, "engine_import_preset"):
+                try:
+                    props.engine_import_preset = new_id
+                except (TypeError, ValueError):
+                    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+
+                        def _deferred() -> None:
+                            try:
+                                props.engine_import_preset = new_id
+                            except Exception as exc:
+                                logger.debug("Deferred engine import preset assignment skipped: %s", exc)
+
+                        bpy.app.timers.register(_deferred, first_interval=0.005)
+            self.report({"INFO"}, f"Created engine import preset '{self.preset_name}'")
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, f"Failed creating preset: {exc}")
+            return {"CANCELLED"}
+
+
+class OMNIMESH_OT_rename_engine_import_preset(Operator):
+    """Renames the active custom engine import preset."""
+
+    bl_idname = "omnimesh.rename_engine_import_preset"
+    bl_label = "Rename Engine Import Preset"
+    bl_description = "Renames the active custom engine import preset"
+    bl_options = {"REGISTER", "UNDO"}
+
+    new_name: StringProperty(
+        name="New Name",
+        description="New name for the custom engine import preset",
+        default="",
+    )
+
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        props = getattr(context.scene, "lod_tool", None)
+        active_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
+        if EngineImportPresetManager.is_builtin(active_id):
+            self.report({"ERROR"}, "Built-in factory presets cannot be renamed. Duplicate it first.")
+            return {"CANCELLED"}
+        preset = get_engine_import_preset(active_id)
+        self.new_name = str(preset.get("name", active_id))
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
+            return
+        self.layout.prop(self, "new_name", text="Name")
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        props = getattr(context.scene, "lod_tool", None)
+        old_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
+        if EngineImportPresetManager.is_builtin(old_id):
+            self.report({"ERROR"}, "Cannot rename built-in factory presets.")
+            return {"CANCELLED"}
+        clean_name = self.new_name.strip()
+        if not clean_name:
+            self.report({"ERROR"}, "Preset name cannot be empty.")
+            return {"CANCELLED"}
+        try:
+            new_id = EngineImportPresetManager.rename_custom_preset(old_id, clean_name)
+            if props and hasattr(props, "engine_import_preset"):
+                try:
+                    props.engine_import_preset = new_id
+                except (TypeError, ValueError):
+                    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+
+                        def _deferred() -> None:
+                            try:
+                                props.engine_import_preset = new_id
+                            except Exception as exc:
+                                logger.debug("Deferred engine import preset rename assignment skipped: %s", exc)
+
+                        bpy.app.timers.register(_deferred, first_interval=0.005)
+            self.report({"INFO"}, f"Renamed preset to '{clean_name}'")
+            return {"FINISHED"}
+        except Exception as exc:
+            self.report({"ERROR"}, f"Rename failed: {exc}")
+            return {"CANCELLED"}
+
+
 class OMNIMESH_OT_duplicate_engine_import_preset(Operator):
     """Duplicates the currently active engine import preset into a custom user preset."""
 
@@ -417,7 +539,12 @@ class OMNIMESH_OT_duplicate_engine_import_preset(Operator):
         active_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
         preset = get_engine_import_preset(active_id)
         self.new_name = f"{preset.get('name', active_id)} (Copy)"
-        return context.window_manager.invoke_props_dialog(self)
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
+            return
+        self.layout.prop(self, "new_name", text="Name")
 
     def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
@@ -427,7 +554,18 @@ class OMNIMESH_OT_duplicate_engine_import_preset(Operator):
         try:
             new_id = duplicate_engine_import_preset(active_id, new_name=self.new_name)
             if props:
-                props.engine_import_preset = new_id
+                try:
+                    props.engine_import_preset = new_id
+                except (TypeError, ValueError):
+                    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+
+                        def _deferred() -> None:
+                            try:
+                                props.engine_import_preset = new_id
+                            except Exception as exc:
+                                logger.debug("Deferred engine import preset duplicate assignment skipped: %s", exc)
+
+                        bpy.app.timers.register(_deferred, first_interval=0.005)
             self.report({"INFO"}, f"Created custom preset '{self.new_name}'")
             return {"FINISHED"}
         except Exception as exc:
@@ -451,6 +589,14 @@ class OMNIMESH_OT_delete_engine_import_preset(Operator):
         active_id = getattr(props, "engine_import_preset", "")
         return not EngineImportPresetManager.is_builtin(active_id)
 
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        wm = getattr(context, "window_manager", None)
+        if wm and hasattr(wm, "invoke_confirm"):
+            return wm.invoke_confirm(self, event)
+        return self.execute(context)
+
     def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
@@ -460,10 +606,11 @@ class OMNIMESH_OT_delete_engine_import_preset(Operator):
             self.report({"WARNING"}, "Cannot delete built-in factory preset.")
             return {"CANCELLED"}
 
+        if props and hasattr(props, "engine_import_preset"):
+            props.engine_import_preset = DEFAULT_ENGINE_IMPORT_PRESET_ID
+
         deleted = delete_engine_import_preset(active_id)
         if deleted:
-            if props:
-                props.engine_import_preset = DEFAULT_ENGINE_IMPORT_PRESET_ID
             self.report({"INFO"}, f"Deleted preset '{active_id}'")
             return {"FINISHED"}
         else:
@@ -473,6 +620,8 @@ class OMNIMESH_OT_delete_engine_import_preset(Operator):
 
 classes = (
     OMNIMESH_OT_import_engine_project,
+    OMNIMESH_OT_create_engine_import_preset,
+    OMNIMESH_OT_rename_engine_import_preset,
     OMNIMESH_OT_duplicate_engine_import_preset,
     OMNIMESH_OT_delete_engine_import_preset,
 )

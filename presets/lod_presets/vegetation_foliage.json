@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_lod_preset",
   "name": "Vegetation & Foliage (Impostor)",
   "version": 2,
-  "description": "Optimized 4-tier tree and plant progression with automatic billboard impostor",
   "target_engine": "UE5",
   "budget_mode": "PERCENTAGE",
   "tau_sse": 1.2,

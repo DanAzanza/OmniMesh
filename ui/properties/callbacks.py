@@ -52,6 +52,7 @@ ENGINE_TO_FACTORY_PRESET: dict[str, str] = {
 
 _PERSISTENT_PIPELINE_KEYS: tuple[str, ...] = (
     "pbr_import_directory",
+    "engine_import_directory",
     "export_directory",
     "pbr_import_ao_mode",
     "engine_project_path",
@@ -602,6 +603,29 @@ def on_engine_import_preset_updated(self: Any, context: Any) -> None:
             self.engine_import_reuse_master_rig = bool(preset.get("reuse_master_rig", True))
 
 
+def on_engine_import_setting_updated(self: Any, _context: Any) -> None:
+    """Auto-saves engine import settings to active custom engine import preset when modified."""
+    if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked():
+        return
+    preset_id = getattr(self, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
+    if EngineImportPresetManager.is_builtin(preset_id):
+        return
+    try:
+        pdata = copy.deepcopy(EngineImportPresetManager.get_preset(preset_id))
+        pdata["import_geometry"] = bool(getattr(self, "engine_import_geometry", True))
+        pdata["import_spatial"] = bool(getattr(self, "engine_import_spatial", True))
+        pdata["import_lights"] = bool(getattr(self, "engine_import_lights", True))
+        pdata["import_cameras"] = bool(getattr(self, "engine_import_cameras", True))
+        pdata["model_target"] = str(getattr(self, "engine_import_model_target", "EXTERIOR_ONLY"))
+        pdata["use_lod0_suffix"] = bool(getattr(self, "engine_import_use_lod0_suffix", True))
+        pdata["auto_assign_screen_pct"] = bool(getattr(self, "engine_import_auto_assign_screen_pct", True))
+        pdata["deduplicate_materials"] = bool(getattr(self, "engine_import_deduplicate_materials", True))
+        pdata["reuse_master_rig"] = bool(getattr(self, "engine_import_reuse_master_rig", True))
+        EngineImportPresetManager.save_custom_preset(pdata, custom_id=preset_id)
+    except Exception as exc:
+        logger.debug("Auto-save custom engine import preset skipped: %s", exc)
+
+
 def on_engine_import_directory_updated(self: Any, _context: Any) -> None:
     """Persists engine import directory path across sessions."""
     _persist_pipeline_prop(self, "engine_import_directory", "")
@@ -676,6 +700,7 @@ __all__ = [
     "get_pbr_preset_items",
     "get_engine_import_preset_items",
     "on_engine_import_preset_updated",
+    "on_engine_import_setting_updated",
     "on_engine_import_directory_updated",
     "on_active_lod_index_updated",
     "on_virtual_distance_updated",

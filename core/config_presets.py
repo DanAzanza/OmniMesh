@@ -72,8 +72,13 @@ class ConfigPresetManager(BasePresetManager):
             "$schema": cls.SCHEMA_TYPE,
             "name": name,
             "archetype": archetype,
-            "description": str(data.get("description", "")).strip(),
             "is_scenery": bool(data.get("is_scenery", False)),
+            "include_spatial": bool(data.get("include_spatial", True)),
+            "include_lights": bool(data.get("include_lights", True)),
+            "include_cameras": bool(data.get("include_cameras", True)),
+            "include_exits": bool(data.get("include_exits", True)),
+            "include_engines": bool(data.get("include_engines", True)),
+            "include_interactions": bool(data.get("include_interactions", True)),
             "spatial": list(data.get("spatial", [])),
             "lights": list(data.get("lights", [])),
             "cameras": list(data.get("cameras", [])),
@@ -83,6 +88,29 @@ class ConfigPresetManager(BasePresetManager):
             "interactions": list(data.get("interactions", [])),
         }
         return validated
+
+    @classmethod
+    def _get_minimal_starter(cls, clean_name: str) -> dict[str, Any]:
+        """Returns a schema-valid starter config preset dictionary."""
+        return {
+            "$schema": cls.SCHEMA_TYPE,
+            "name": clean_name,
+            "archetype": "general_aviation",
+            "is_scenery": False,
+            "include_spatial": True,
+            "include_lights": True,
+            "include_cameras": True,
+            "include_exits": True,
+            "include_engines": True,
+            "include_interactions": True,
+            "spatial": [],
+            "lights": [],
+            "cameras": [],
+            "exits": [],
+            "engines": [],
+            "station_loads": [],
+            "interactions": [],
+        }
 
     @classmethod
     def get_preset(cls, preset_id: str) -> dict[str, Any]:

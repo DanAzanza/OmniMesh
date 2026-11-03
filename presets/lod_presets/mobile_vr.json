@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_lod_preset",
   "name": "Mobile / VR (Aggressive)",
   "version": 2,
-  "description": "Aggressive 3-tier decimation progression for Mobile and XR/VR standalone hardware",
   "target_engine": "UNITY_6",
   "budget_mode": "PERCENTAGE",
   "tiers": [

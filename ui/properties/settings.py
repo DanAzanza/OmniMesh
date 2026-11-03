@@ -150,7 +150,13 @@ class LODToolSettings(PropertyGroup):
     lod_count: IntProperty(name="LOD Count", default=4, min=2, max=7, description="Total LOD tiers to generate")
     num_lods: IntProperty(name="LOD Count", default=7, min=2, max=8, description="Number of LOD tiers")
     cull_screen_size_pct: FloatProperty(
-        name="Cull Screen Size (%)", default=0.5, min=0.01, max=10.0, precision=2, subtype="PERCENTAGE"
+        name="Cull Screen Size (%)",
+        default=0.5,
+        min=0.01,
+        max=10.0,
+        precision=2,
+        subtype="PERCENTAGE",
+        update=on_lod_preset_property_modified,
     )
     preserve_slot_indexing: BoolProperty(name="Preserve Slot Indices", default=True)
 
@@ -166,11 +172,9 @@ class LODToolSettings(PropertyGroup):
         update=on_lod_preset_property_modified,
     )
     preserve_silhouette: BoolProperty(name="Preserve Silhouettes", default=True)
-    pin_uv_seams: BoolProperty(name="Pin UV Seams", default=True, description="Locks UV boundary edges from collapsing")
+    pin_uv_seams: BoolProperty(name="Pin UV Seams", default=True, update=on_lod_preset_property_modified)
     pin_material_borders: BoolProperty(
-        name="Pin Material Borders",
-        default=True,
-        description="Prevents edges on material slot transitions from warping",
+        name="Pin Material Borders", default=True, update=on_lod_preset_property_modified
     )
 
     # Mesh Cleanup & Topology Repair Settings
@@ -363,40 +367,51 @@ class LODToolSettings(PropertyGroup):
 
     # Spatial Chunking & HLOD Settings
     enable_spatial_chunking: BoolProperty(
-        name="Enable Spatial Chunking (Tiling)",
-        default=False,
-        description="Spatially partitions massive assets into 2.5D AABB grid tiles",
+        name="Enable Spatial Chunking (Tiling)", default=False, update=on_lod_preset_property_modified
     )
-    chunk_cell_size: FloatProperty(name="Chunk Cell Size (m)", default=32.0, min=1.0, max=1000.0, unit="LENGTH")
-    chunk_split_z: BoolProperty(
-        name="Split Vertical Z-Axis", default=False, description="Splits geometry along vertical Z planes"
+    chunk_cell_size: FloatProperty(
+        name="Chunk Cell Size (m)",
+        default=32.0,
+        min=1.0,
+        max=1000.0,
+        unit="LENGTH",
+        update=on_lod_preset_property_modified,
     )
-    chunk_cell_size_z: FloatProperty(name="Z Cell Size (m)", default=32.0, min=1.0, max=1000.0, unit="LENGTH")
+    chunk_split_z: BoolProperty(name="Split Vertical Z-Axis", default=False, update=on_lod_preset_property_modified)
+    chunk_cell_size_z: FloatProperty(
+        name="Z Cell Size (m)", default=32.0, min=1.0, max=1000.0, unit="LENGTH", update=on_lod_preset_property_modified
+    )
     chunk_partitioning_mode: EnumProperty(
         name="Partitioning Mode",
         items=enums.CHUNK_PARTITIONING_MODE_ITEMS,
         default="UNIFORM_GRID",
-        description="Spatial chunk tiling strategy",
+        update=on_lod_preset_property_modified,
     )
-    adaptive_cluster_target_polys: IntProperty(name="Max Polys / Cluster", default=50000, min=1000, max=5000000)
-    enable_hlod: BoolProperty(
-        name="Enable HLOD Merging", default=True, description="Merges tiles into unified mesh at distant LOD tiers"
+    adaptive_cluster_target_polys: IntProperty(
+        name="Max Polys / Cluster",
+        default=50000,
+        min=1000,
+        max=5000000,
+        update=on_lod_preset_property_modified,
     )
+    enable_hlod: BoolProperty(name="Enable HLOD Merging", default=True, update=on_lod_preset_property_modified)
     enable_hierarchical_hlod: BoolProperty(
-        name="Hierarchical HLOD (Quadtree)",
-        default=True,
-        description="Recursively clusters 2x2 adjacent chunks per LOD tier instead of collapsing all into one",
+        name="Hierarchical HLOD (Quadtree)", default=True, update=on_lod_preset_property_modified
     )
     hlod_start_tier: IntProperty(
-        name="HLOD Start Tier", default=2, min=1, max=6, description="LOD tier at which chunk tiles are merged"
+        name="HLOD Start Tier", default=2, min=1, max=6, update=on_lod_preset_property_modified
     )
     hlod_proxy_remesh: BoolProperty(
-        name="Terminal HLOD Voxel Wrap",
-        default=False,
-        description="Voxel remesh terminal HLOD tier into a sealed watertight shell",
+        name="Terminal HLOD Voxel Wrap", default=False, update=on_lod_preset_property_modified
     )
     hlod_proxy_voxel_size: FloatProperty(
-        name="Voxel Shell Size (m)", default=0.5, min=0.05, max=5.0, precision=2, unit="LENGTH"
+        name="Voxel Shell Size (m)",
+        default=0.5,
+        min=0.05,
+        max=5.0,
+        precision=2,
+        unit="LENGTH",
+        update=on_lod_preset_property_modified,
     )
     enable_scan_pre_remesh: BoolProperty(
         name="Pre-Process: Voxel Remesh", default=False, description="Voxel remesh cleanup for photogrammetry scans"
@@ -626,11 +641,7 @@ class LODToolSettings(PropertyGroup):
     batch_recursive_scan: BoolProperty(
         name="Recursive Subfolders", default=True, description="Scan nested subdirectories for 3D asset files"
     )
-    batch_file_formats: EnumProperty(
-        name="Formats",
-        items=enums.BATCH_FILE_FORMATS_ITEMS,
-        default="ALL",
-    )
+    batch_file_formats: EnumProperty(name="Formats", items=enums.BATCH_FILE_FORMATS_ITEMS, default="ALL")
     batch_status_text: StringProperty(name="Batch Status", default="Batch Ready")
     is_batch_running: BoolProperty(name="Batch Running", default=False)
     batch_total_count: IntProperty(name="Total Assets", default=0)
@@ -639,12 +650,7 @@ class LODToolSettings(PropertyGroup):
 
     # MSFS Package & Export Settings
     msfs_export_full_package: BoolProperty(name="Export Full Package", default=True)
-    msfs_target_version: EnumProperty(
-        name="MSFS Target Version",
-        items=enums.MSFS_TARGET_VERSION_ITEMS,
-        default="2024",
-        description="Target Microsoft Flight Simulator SDK version",
-    )
+    msfs_target_version: EnumProperty(name="MSFS Target Version", items=enums.MSFS_TARGET_VERSION_ITEMS, default="2024")
     msfs_with_exterior_show_interior: BoolProperty(
         name="Show Interior with Exterior",
         default=True,
@@ -695,17 +701,36 @@ class LODToolSettings(PropertyGroup):
         description="Root folder of project to ingest",
         update=callbacks.on_engine_import_directory_updated,
     )
-    engine_import_geometry: BoolProperty(name="Import Geometry & LODs", default=True)
-    engine_import_spatial: BoolProperty(name="Import Spatial Markers", default=True)
-    engine_import_lights: BoolProperty(name="Import Lights", default=True)
-    engine_import_cameras: BoolProperty(name="Import Cameras", default=True)
-    engine_import_model_target: EnumProperty(
-        name="Model Target", items=enums.ENGINE_IMPORT_MODEL_TARGET_ITEMS, default="EXTERIOR_ONLY"
+    engine_import_geometry: BoolProperty(
+        name="Import Geometry & LODs", default=True, update=callbacks.on_engine_import_setting_updated
     )
-    engine_import_use_lod0_suffix: BoolProperty(name="Use LOD0 Suffix", default=True)
-    engine_import_auto_assign_screen_pct: BoolProperty(name="Auto-Assign Screen %", default=True)
-    engine_import_deduplicate_materials: BoolProperty(name="Deduplicate Materials", default=True)
-    engine_import_reuse_master_rig: BoolProperty(name="Reuse Master Armature", default=True)
+    engine_import_spatial: BoolProperty(
+        name="Import Spatial Markers", default=True, update=callbacks.on_engine_import_setting_updated
+    )
+    engine_import_lights: BoolProperty(
+        name="Import Lights", default=True, update=callbacks.on_engine_import_setting_updated
+    )
+    engine_import_cameras: BoolProperty(
+        name="Import Cameras", default=True, update=callbacks.on_engine_import_setting_updated
+    )
+    engine_import_model_target: EnumProperty(
+        name="Model Target",
+        items=enums.ENGINE_IMPORT_MODEL_TARGET_ITEMS,
+        default="EXTERIOR_ONLY",
+        update=callbacks.on_engine_import_setting_updated,
+    )
+    engine_import_use_lod0_suffix: BoolProperty(
+        name="Use LOD0 Suffix", default=True, update=callbacks.on_engine_import_setting_updated
+    )
+    engine_import_auto_assign_screen_pct: BoolProperty(
+        name="Auto-Assign Screen %", default=True, update=callbacks.on_engine_import_setting_updated
+    )
+    engine_import_deduplicate_materials: BoolProperty(
+        name="Deduplicate Materials", default=True, update=callbacks.on_engine_import_setting_updated
+    )
+    engine_import_reuse_master_rig: BoolProperty(
+        name="Reuse Master Armature", default=True, update=callbacks.on_engine_import_setting_updated
+    )
     last_engine_import_summary: StringProperty(name="Last Import Summary", default="")
 
     # Config Preset Subsystem (Panel 2 Modify)

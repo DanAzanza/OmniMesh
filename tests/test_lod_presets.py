@@ -8,6 +8,8 @@ from pathlib import Path
 import tempfile
 from unittest.mock import patch
 
+import pytest
+
 
 from core.lod_presets import (
     DEFAULT_LOD_PRESET_ID,
@@ -239,3 +241,32 @@ def test_impostor_culling_pinning_preset_schema():
     assert val_legacy["culling"]["occlusion_enabled"] is True
     assert val_legacy["culling"]["occlusion_lod_start"] == 1
     assert val_legacy["pinning"]["pin_uv_seams"] is True
+
+
+def test_lod_preset_create_new_and_rename(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Verify LODPresetManager.create_new_preset and rename_custom_preset lifecycle and negative boundaries."""
+    monkeypatch.setattr(LODPresetManager, "get_user_dir", classmethod(lambda cls: tmp_path))
+    LODPresetManager.load_presets(force_reload=True)
+
+    new_id = LODPresetManager.create_new_preset("My Custom LOD", template_id="minimal")
+    assert new_id == "my_custom_lod"
+    assert not LODPresetManager.is_builtin(new_id)
+    preset = LODPresetManager.get_preset(new_id)
+    assert preset["name"] == "My Custom LOD"
+    assert "description" not in preset
+    assert len(preset["tiers"]) == 1
+
+    # Rename custom preset
+    renamed_id = LODPresetManager.rename_custom_preset(new_id, "Renamed Custom LOD")
+    assert renamed_id == "renamed_custom_lod"
+    assert not (tmp_path / f"{new_id}.json").exists()
+    assert (tmp_path / f"{renamed_id}.json").exists()
+    assert LODPresetManager.get_preset(renamed_id)["name"] == "Renamed Custom LOD"
+
+    # Negative: cannot rename built-in preset
+    with pytest.raises(PermissionError, match="Cannot rename built-in factory preset"):
+        LODPresetManager.rename_custom_preset("unreal_engine_5", "Hacked UE5")
+
+    # Negative: empty name rejected
+    with pytest.raises(ValueError, match="Preset name cannot be empty"):
+        LODPresetManager.create_new_preset("   ")

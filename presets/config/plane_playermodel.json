@@ -2,7 +2,6 @@
   "$schema": "omnimesh_config_preset",
   "name": "Plane - Playermodel",
   "archetype": "plane_playermodel",
-  "description": "Full-fidelity player aircraft with interactive cockpit clickspots, instrument cameras, pilots, complete lighting, and contact points",
   "spatial": [
     {
       "id": "WEIGHT_AND_BALANCE:reference_datum_position",
@@ -11,7 +10,11 @@
       "section": "WEIGHT_AND_BALANCE",
       "key": "reference_datum_position",
       "anchor": "AABB_ORIGIN",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "WEIGHT_AND_BALANCE:empty_weight_CG_position",
@@ -20,7 +23,11 @@
       "section": "WEIGHT_AND_BALANCE",
       "key": "empty_weight_CG_position",
       "anchor": "AABB_CENTER",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.0",
@@ -30,8 +37,24 @@
       "section": "CONTACT_POINTS",
       "key": "point.0",
       "anchor": "WHEEL_NOSE",
-      "offset_normalized": [0.0, 0.0, 0.0],
-      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "30.0", "0.5", "2.5", "0.8"]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "1",
+        "0.2",
+        "0.6",
+        "1.5",
+        "0.0",
+        "0.0",
+        "0.0",
+        "30.0",
+        "0.5",
+        "2.5",
+        "0.8"
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.1",
@@ -41,8 +64,24 @@
       "section": "CONTACT_POINTS",
       "key": "point.1",
       "anchor": "WHEEL_LEFT",
-      "offset_normalized": [0.0, 0.0, 0.0],
-      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "1",
+        "0.2",
+        "0.6",
+        "1.5",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.5",
+        "2.5",
+        "0.8"
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.2",
@@ -52,8 +91,24 @@
       "section": "CONTACT_POINTS",
       "key": "point.2",
       "anchor": "WHEEL_RIGHT",
-      "offset_normalized": [0.0, 0.0, 0.0],
-      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.5", "2.5", "0.8"]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "1",
+        "0.2",
+        "0.6",
+        "1.5",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.5",
+        "2.5",
+        "0.8"
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.scrape_nose",
@@ -63,7 +118,11 @@
       "section": "CONTACT_POINTS",
       "key": "point.3",
       "anchor": "EXTREMA_NOSE",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.scrape_wing_l",
@@ -73,7 +132,11 @@
       "section": "CONTACT_POINTS",
       "key": "point.4",
       "anchor": "EXTREMA_WING_L",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.scrape_wing_r",
@@ -83,7 +146,11 @@
       "section": "CONTACT_POINTS",
       "key": "point.5",
       "anchor": "EXTREMA_WING_R",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.scrape_tail",
@@ -93,7 +160,11 @@
       "section": "CONTACT_POINTS",
       "key": "point.6",
       "anchor": "EXTREMA_TAIL",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "FUEL:LeftMain",
@@ -102,8 +173,15 @@
       "section": "FUEL",
       "key": "LeftMain",
       "anchor": "EXTREMA_WING_L",
-      "offset_normalized": [0.3, 0.0, 0.0],
-      "default_properties": ["30.0", "0.0"]
+      "offset_normalized": [
+        0.3,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "30.0",
+        "0.0"
+      ]
     },
     {
       "id": "FUEL:RightMain",
@@ -112,8 +190,15 @@
       "section": "FUEL",
       "key": "RightMain",
       "anchor": "EXTREMA_WING_R",
-      "offset_normalized": [-0.3, 0.0, 0.0],
-      "default_properties": ["30.0", "0.0"]
+      "offset_normalized": [
+        -0.3,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "30.0",
+        "0.0"
+      ]
     }
   ],
   "lights": [
@@ -123,9 +208,18 @@
       "section": "LIGHTS",
       "key": "lightdef.0",
       "type": 3,
-      "color": [1.0, 0.0, 0.0, 1.0],
+      "color": [
+        1.0,
+        0.0,
+        0.0,
+        1.0
+      ],
       "anchor": "EXTREMA_WING_L",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.1",
@@ -133,9 +227,18 @@
       "section": "LIGHTS",
       "key": "lightdef.1",
       "type": 3,
-      "color": [0.0, 1.0, 0.0, 1.0],
+      "color": [
+        0.0,
+        1.0,
+        0.0,
+        1.0
+      ],
       "anchor": "EXTREMA_WING_R",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.2",
@@ -143,9 +246,18 @@
       "section": "LIGHTS",
       "key": "lightdef.2",
       "type": 3,
-      "color": [1.0, 1.0, 1.0, 1.0],
+      "color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
       "anchor": "EXTREMA_TAIL",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.3",
@@ -153,9 +265,18 @@
       "section": "LIGHTS",
       "key": "lightdef.3",
       "type": 2,
-      "color": [1.0, 1.0, 1.0, 1.0],
+      "color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
       "anchor": "EXTREMA_WING_L",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.4",
@@ -163,9 +284,18 @@
       "section": "LIGHTS",
       "key": "lightdef.4",
       "type": 2,
-      "color": [1.0, 1.0, 1.0, 1.0],
+      "color": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
       "anchor": "EXTREMA_WING_R",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.5",
@@ -173,9 +303,18 @@
       "section": "LIGHTS",
       "key": "lightdef.5",
       "type": 1,
-      "color": [1.0, 0.0, 0.0, 1.0],
+      "color": [
+        1.0,
+        0.0,
+        0.0,
+        1.0
+      ],
       "anchor": "EXTREMA_FIN",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.6",
@@ -183,9 +322,18 @@
       "section": "LIGHTS",
       "key": "lightdef.6",
       "type": 6,
-      "color": [1.0, 1.0, 0.9, 1.0],
+      "color": [
+        1.0,
+        1.0,
+        0.9,
+        1.0
+      ],
       "anchor": "EXTREMA_NOSE",
-      "offset_normalized": [0.0, -0.1, -0.5]
+      "offset_normalized": [
+        0.0,
+        -0.1,
+        -0.5
+      ]
     },
     {
       "id": "LIGHTS:lightdef.7",
@@ -193,9 +341,18 @@
       "section": "LIGHTS",
       "key": "lightdef.7",
       "type": 5,
-      "color": [1.0, 1.0, 0.95, 1.0],
+      "color": [
+        1.0,
+        1.0,
+        0.95,
+        1.0
+      ],
       "anchor": "EXTREMA_NOSE",
-      "offset_normalized": [0.0, 0.0, -0.4]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        -0.4
+      ]
     }
   ],
   "cameras": [
@@ -206,7 +363,11 @@
       "section": "VIEWS",
       "key": "eyepoint",
       "anchor": "COCKPIT_ESTIMATE",
-      "offset_normalized": [-0.3, 0.1, 0.35]
+      "offset_normalized": [
+        -0.3,
+        0.1,
+        0.35
+      ]
     },
     {
       "id": "CAMERAS:Pilot",
@@ -216,8 +377,16 @@
       "category": "Cockpit",
       "subcategory": "Pilot",
       "parent_to_eyepoint": true,
-      "offset_from_eyepoint_m": [0.0, 0.0, 0.0],
-      "pbh_deg": [0.0, 0.0, 0.0],
+      "offset_from_eyepoint_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "pbh_deg": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "zoom": 0.35
     },
     {
@@ -228,8 +397,16 @@
       "category": "Cockpit",
       "subcategory": "Instruments",
       "anchor": "COCKPIT_ESTIMATE",
-      "offset_normalized": [0.0, 0.25, 0.0],
-      "pbh_deg": [15.0, 0.0, 0.0],
+      "offset_normalized": [
+        0.0,
+        0.25,
+        0.0
+      ],
+      "pbh_deg": [
+        15.0,
+        0.0,
+        0.0
+      ],
       "zoom": 0.5
     }
   ],
@@ -240,7 +417,11 @@
       "section": "EXITS",
       "key": "exit.0",
       "anchor": "AABB_CENTER",
-      "offset_normalized": [-0.35, 0.1, 0.1],
+      "offset_normalized": [
+        -0.35,
+        0.1,
+        0.1
+      ],
       "exit_type": 0,
       "open_rate": 0.5
     },
@@ -250,7 +431,11 @@
       "section": "EXITS",
       "key": "exit.1",
       "anchor": "AABB_CENTER",
-      "offset_normalized": [0.35, -0.2, 0.0],
+      "offset_normalized": [
+        0.35,
+        -0.2,
+        0.0
+      ],
       "exit_type": 1,
       "open_rate": 0.5
     }
@@ -262,7 +447,11 @@
       "section": "GENERALENGINEDATA",
       "key": "engine.0",
       "anchor": "EXTREMA_NOSE",
-      "offset_normalized": [0.0, 0.1, 0.0],
+      "offset_normalized": [
+        0.0,
+        0.1,
+        0.0
+      ],
       "engine_index": 1,
       "engine_type": 0
     }
@@ -277,7 +466,11 @@
       "station_type": 1,
       "weight_lbs": 170.0,
       "anchor": "COCKPIT_ESTIMATE",
-      "offset_normalized": [-0.3, 0.0, 0.0]
+      "offset_normalized": [
+        -0.3,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "WEIGHT_AND_BALANCE:station_load.1",
@@ -288,7 +481,11 @@
       "station_type": 1,
       "weight_lbs": 170.0,
       "anchor": "COCKPIT_ESTIMATE",
-      "offset_normalized": [0.3, 0.0, 0.0]
+      "offset_normalized": [
+        0.3,
+        0.0,
+        0.0
+      ]
     }
   ],
   "interactions": [
@@ -296,19 +493,31 @@
       "name": "MasterSwitch",
       "shape": "BOX",
       "role": "SWITCH",
-      "size": [0.05, 0.05, 0.05]
+      "size": [
+        0.05,
+        0.05,
+        0.05
+      ]
     },
     {
       "name": "Throttle",
       "shape": "CYLINDER",
       "role": "LEVER",
-      "size": [0.04, 0.1, 0.04]
+      "size": [
+        0.04,
+        0.1,
+        0.04
+      ]
     },
     {
       "name": "GearHandle",
       "shape": "CYLINDER",
       "role": "LEVER",
-      "size": [0.04, 0.08, 0.04]
+      "size": [
+        0.04,
+        0.08,
+        0.04
+      ]
     }
   ]
 }

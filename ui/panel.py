@@ -26,11 +26,45 @@ else:
         Panel = object
 
 try:
+    from ..core.config_presets import (
+        DEFAULT_CONFIG_PRESET_ID,
+        ConfigPresetManager,
+    )
+    from ..core.engine_import_presets import (
+        DEFAULT_ENGINE_IMPORT_PRESET_ID,
+        EngineImportPresetManager,
+    )
+    from ..core.lod_presets import (
+        DEFAULT_LOD_PRESET_ID,
+        LODPresetManager,
+    )
+    from ..core.pbr_presets import (
+        DEFAULT_PRESET_ID,
+        PBRExportPresetManager,
+        PBRImportPresetManager,
+    )
     from .batch_panel import OMNIMESH_PT_export_batch
     from .operators import resolve_lod_context
     from .popovers import POPOVER_CLASSES
     from .utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
+    from core.config_presets import (
+        DEFAULT_CONFIG_PRESET_ID,
+        ConfigPresetManager,
+    )
+    from core.engine_import_presets import (
+        DEFAULT_ENGINE_IMPORT_PRESET_ID,
+        EngineImportPresetManager,
+    )
+    from core.lod_presets import (
+        DEFAULT_LOD_PRESET_ID,
+        LODPresetManager,
+    )
+    from core.pbr_presets import (
+        DEFAULT_PRESET_ID,
+        PBRExportPresetManager,
+        PBRImportPresetManager,
+    )
     from ui.batch_panel import OMNIMESH_PT_export_batch
     from ui.operators import resolve_lod_context
     from ui.popovers import POPOVER_CLASSES
@@ -62,16 +96,28 @@ class OMNIMESH_PT_import(Panel):
         box_engine = layout.box()
         box_engine.label(text="Engine Project Importer", icon="PACKAGE")
 
-        # Row 1: [ Preset Dropdown ▾ ] [ ⚙️ Gear ]
+        # Row 1: [ Preset Dropdown ▾ ] [ Duplicate ] [ Delete ] [ ⚙️ Gear ]
+        eng_preset_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
+        is_builtin_eng = EngineImportPresetManager.is_builtin(eng_preset_id)
+
         row_eng_preset = box_engine.row(align=True)
         row_eng_preset.use_property_split = False
         row_eng_preset.prop(props, "engine_import_preset", text="Preset")
+        row_eng_preset.operator("omnimesh.duplicate_engine_import_preset", text="", icon="DUPLICATE")
+        sub_del_eng = row_eng_preset.row(align=True)
+        sub_del_eng.enabled = not is_builtin_eng
+        sub_del_eng.operator("omnimesh.delete_engine_import_preset", text="", icon="X")
         row_eng_preset.popover(panel="OMNIMESH_PT_popover_engine_import_preset", icon="PREFERENCES", text="")
 
-        # Row 2: Single prominent button [ Import Engine Project ]
+        # Row 2: Path Field [ //Project/ ] [ 📁 ]
+        row_eng_path = box_engine.row(align=True)
+        row_eng_path.use_property_split = False
+        row_eng_path.prop(props, "engine_import_directory", text="Path")
+
+        # Row 3: Single prominent button [ Import Engine Project ]
         row_eng_act = box_engine.row(align=True)
         row_eng_act.use_property_split = False
-        row_eng_act.scale_y = 1.25
+        row_eng_act.scale_y = 1.2
         row_eng_act.operator("omnimesh.import_engine_project", text="Import Engine Project", icon="IMPORT")
 
         if props.last_engine_import_summary:
@@ -81,10 +127,19 @@ class OMNIMESH_PT_import(Panel):
         box_pbr = layout.box()
         box_pbr.label(text="PBR Texture Set Importer", icon="IMAGE_DATA")
 
-        # Row 1: [ Preset Dropdown ▾ ] [ ⚙️ Gear ]
+        # Row 1: [ Preset Dropdown ▾ ] [ Duplicate ] [ Delete ] [ ⚙️ Gear ]
+        pbr_preset_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
+        is_builtin_pbr = PBRImportPresetManager.is_builtin(pbr_preset_id)
+
         row_preset = box_pbr.row(align=True)
         row_preset.use_property_split = False
         row_preset.prop(props, "pbr_import_preset", text="Preset")
+        op_dup_pbr = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
+        if op_dup_pbr is not None:
+            op_dup_pbr.preset_type = "IMPORT"
+        sub_del_pbr = row_preset.row(align=True)
+        sub_del_pbr.enabled = not is_builtin_pbr
+        sub_del_pbr.operator("lod_tool.delete_import_preset", text="", icon="X")
         row_preset.popover(panel="OMNIMESH_PT_popover_import_preset", icon="PREFERENCES", text="")
 
         # Row 2: Path Field [ //Textures/ ] [ 📁 ]
@@ -173,9 +228,16 @@ class OMNIMESH_PT_modify(Panel):
             box_cfg = layout.box()
             box_cfg.label(text="Vehicle & Asset Configurator", icon="PRESET")
 
+            cfg_id = getattr(cfg_props, "config_preset", "") or DEFAULT_CONFIG_PRESET_ID
+            cfg_is_builtin = ConfigPresetManager.is_builtin(cfg_id)
+
             row_cfg_p = box_cfg.row(align=True)
             row_cfg_p.use_property_split = False
             row_cfg_p.prop(cfg_props, "config_preset", text="Preset")
+            row_cfg_p.operator("omnimesh.duplicate_config_preset", text="", icon="DUPLICATE")
+            sub_del_cfg = row_cfg_p.row(align=True)
+            sub_del_cfg.enabled = not cfg_is_builtin
+            sub_del_cfg.operator("omnimesh.delete_config_preset", text="", icon="X")
             row_cfg_p.popover(panel="OMNIMESH_PT_popover_config_preset", icon="PREFERENCES", text="")
 
             row_cfg_act = box_cfg.row(align=True)
@@ -352,10 +414,19 @@ class OMNIMESH_PT_lods(Panel):
         row_asset.use_property_split = False
         row_asset.prop(props, "active_asset", text="Asset")
 
-        # Row 1: [ Preset Dropdown ▾ ] [ ⚙️ Gear ]
+        # Row 1: [ Preset Dropdown ▾ ] [ Duplicate ] [ Delete ] [ ⚙️ Gear ]
+        lod_preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+        is_builtin_lod = not LODPresetManager.is_user_preset(lod_preset_id)
+
         row_preset = box_lod.row(align=True)
         row_preset.use_property_split = False
         row_preset.prop(props, "lod_preset", text="Preset")
+        op_dup_lod = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
+        if op_dup_lod is not None:
+            op_dup_lod.preset_type = "LOD"
+        sub_del_lod = row_preset.row(align=True)
+        sub_del_lod.enabled = not is_builtin_lod
+        sub_del_lod.operator("lod_tool.delete_lod_preset", text="", icon="X")
         row_preset.popover(panel="OMNIMESH_PT_popover_lod_preset", icon="PREFERENCES", text="")
 
         # Row 2: Visual Stability (tau_sse) slider directly below preset
@@ -472,18 +543,31 @@ class OMNIMESH_PT_export(Panel):
         box_exp = layout.box()
         box_exp.label(text="Package Export", icon="EXPORT")
 
-        # Row 1: [ Preset Dropdown ▾ ] [ ⚙️ Gear ]
+        # Row 1: [ Preset Dropdown ▾ ] [ Duplicate ] [ Delete ] [ ⚙️ Gear ]
+        exp_preset_id = getattr(props, "pbr_export_preset", "") or DEFAULT_PRESET_ID
+        is_builtin_exp = PBRExportPresetManager.is_builtin(exp_preset_id)
+
         row_preset = box_exp.row(align=True)
         row_preset.use_property_split = False
         row_preset.prop(props, "pbr_export_preset", text="Preset")
+        op_dup_exp = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
+        if op_dup_exp is not None:
+            op_dup_exp.preset_type = "EXPORT"
+        sub_del_exp = row_preset.row(align=True)
+        sub_del_exp.enabled = not is_builtin_exp
+        sub_del_exp.operator("lod_tool.delete_export_preset", text="", icon="X")
         row_preset.popover(panel="OMNIMESH_PT_popover_export_preset", icon="PREFERENCES", text="")
 
-        # Row 2: [ Export ] [ Path Field ][ 📁 ]
+        # Row 2: Path Field [ //Export/ ] [ 📁 ]
+        row_path_exp = box_exp.row(align=True)
+        row_path_exp.use_property_split = False
+        row_path_exp.prop(props, "export_directory", text="Path")
+
+        # Row 3: [ Export ]
         row2_exp = box_exp.row(align=True)
         row2_exp.use_property_split = False
-        row2_exp.scale_y = 1.15
+        row2_exp.scale_y = 1.2
         row2_exp.operator("lod_tool.export_engine_package", text="Export", icon="PACKAGE")
-        row2_exp.prop(props, "export_directory", text="")
 
         # Row 3: Live Link Status / Toggle
         row3_link = box_exp.row(align=True)

@@ -143,6 +143,29 @@ def test_config_preset_user_lifecycle(tmp_path: Path, monkeypatch: pytest.Monkey
     assert delete_config_preset(dup_id) is True
     assert delete_config_preset(preset_id) is True
 
+    # Create new preset from minimal template and rename
+    new_id = ConfigPresetManager.create_new_preset("Custom Glider", template_id="minimal")
+    assert new_id == "custom_glider"
+    assert not ConfigPresetManager.is_builtin(new_id)
+    loaded_new = ConfigPresetManager.get_preset(new_id)
+    assert loaded_new["name"] == "Custom Glider"
+    assert "description" not in loaded_new
+    assert loaded_new["include_spatial"] is True
+    assert len(loaded_new["spatial"]) == 0
+
+    # Create new preset from shipped template (non-empty markers)
+    ga_id = ConfigPresetManager.create_new_preset("Custom GA", template_id="plane_general_aviation")
+    loaded_ga = ConfigPresetManager.get_preset(ga_id)
+    assert len(loaded_ga["spatial"]) > 0
+    assert len(loaded_ga["lights"]) > 0
+
+    renamed_id = ConfigPresetManager.rename_custom_preset(new_id, "Touring Glider")
+    assert renamed_id == "touring_glider"
+    assert ConfigPresetManager.get_preset(renamed_id)["name"] == "Touring Glider"
+
+    with pytest.raises(PermissionError, match="Cannot rename built-in factory preset"):
+        ConfigPresetManager.rename_custom_preset("plane_general_aviation", "Forbidden")
+
 
 # =============================================================================
 # SPATIAL PARSER TESTS (EXITS, ENGINES, AERODYNAMICS)

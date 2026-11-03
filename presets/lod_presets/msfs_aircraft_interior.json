@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_lod_preset",
   "name": "MSFS Aircraft (Interior & Cabin)",
   "version": 2,
-  "description": "Official MSFS SDK LOD guidelines for Aircraft Cockpit & Cabin interior (400k ceiling down to 6 tris)",
   "target_engine": "MSFS_2024",
   "budget_mode": "ABSOLUTE",
   "tiers": [

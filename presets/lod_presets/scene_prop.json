@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_lod_preset",
   "name": "Scene Prop / Environment",
   "version": 2,
-  "description": "Standard 3-tier balanced progression for environment props and clutter",
   "target_engine": "UE5",
   "budget_mode": "PERCENTAGE",
   "tau_sse": 0.8,

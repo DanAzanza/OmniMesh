@@ -341,14 +341,17 @@ class OMNIMESH_PT_export_batch(Panel):
         row_src.use_property_split = False
         row_src.prop(props, "batch_source_directory", text="Source")
 
+        row_dst = layout.row(align=True)
+        row_dst.use_property_split = False
+        row_dst.prop(props, "export_directory", text="Path")
+
         row_act = layout.row(align=True)
         row_act.use_property_split = False
-        row_act.scale_y = 1.15
+        row_act.scale_y = 1.2
         if getattr(props, "is_batch_running", False):
             row_act.operator("lod_tool.batch_cancel", text="Cancel Batch", icon="CANCEL")
         else:
             row_act.operator("lod_tool.batch_process", text="Batch Export", icon="PACKAGE")
-        row_act.prop(props, "export_directory", text="")
 
         if getattr(props, "is_batch_running", False):
             box_status = layout.box()

@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_lod_preset",
   "name": "MSFS (Scenery & General)",
   "version": 2,
-  "description": "Standard 5-tier MinSize screen curve for MSFS 2020 / 2024 scenery and general props",
   "target_engine": "MSFS_2024",
   "budget_mode": "PERCENTAGE",
   "tiers": [

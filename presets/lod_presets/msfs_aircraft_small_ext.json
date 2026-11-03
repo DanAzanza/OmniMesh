@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_lod_preset",
   "name": "MSFS Aircraft (Small - Exterior)",
   "version": 2,
-  "description": "Official MSFS SDK LOD guidelines for Single/Double Seater propeller exterior (150k ceiling down to 100 tris)",
   "target_engine": "MSFS_2024",
   "budget_mode": "ABSOLUTE",
   "tiers": [

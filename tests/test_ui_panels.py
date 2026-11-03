@@ -402,7 +402,25 @@ def test_preset_delete_button_disabled_for_factory_presets():
     is_custom_builtin = PBRImportPresetManager.is_builtin("my_custom_import")
     assert is_custom_builtin is False
 
-    # 4. Simulate Panel 4 (Export) draw sub_del_exp.enabled
+    # 4. Engine Import Presets
+    from core.engine_import_presets import EngineImportPresetManager
+
+    assert EngineImportPresetManager.is_builtin("msfs_2024_aircraft") is True
+    assert EngineImportPresetManager.is_builtin("") is True
+
+    # 5. Config Presets
+    from core.config_presets import ConfigPresetManager
+
+    assert ConfigPresetManager.is_builtin("plane_general_aviation") is True
+    assert ConfigPresetManager.is_builtin("") is True
+
+    # 6. LOD Presets
+    from core.lod_presets import LODPresetManager
+
+    assert LODPresetManager.is_user_preset("balanced_gameplay") is False
+    assert (not LODPresetManager.is_user_preset("balanced_gameplay")) is True
+
+    # 7. Simulate Panel 4 (Export) draw sub_del_exp.enabled
     mock_props.pbr_export_preset = "unreal_engine_5"
     raw_exp = str(getattr(mock_props, "pbr_export_preset", "")).strip() or "unreal_engine_5"
     export_preset_id = raw_exp or "unreal_engine_5"

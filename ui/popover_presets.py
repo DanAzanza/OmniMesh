@@ -100,21 +100,19 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
         preset = EngineImportPresetManager.get_preset(preset_id)
         is_builtin = EngineImportPresetManager.is_builtin(preset_id)
 
-        layout.label(text=preset.get("name", preset_id), icon="PACKAGE")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
+        row_title = layout.row(align=True)
+        row_title.label(text=preset.get("name", preset_id), icon="PRESET")
+        if not is_builtin:
+            row_title.operator("omnimesh.rename_engine_import_preset", text="", icon="GREASEPENCIL")
 
-        # Preset Management Row
-        row_act = layout.row(align=True)
-        row_act.operator("omnimesh.duplicate_engine_import_preset", text="Duplicate", icon="DUPLICATE")
-        sub_del = row_act.row(align=True)
-        sub_del.enabled = not is_builtin
-        sub_del.operator("omnimesh.delete_engine_import_preset", text="Delete", icon="X")
+        if is_builtin:
+            box_badge = layout.box()
+            box_badge.label(text="Built-in Template (Read-Only)", icon="LOCKED")
 
         layout.separator()
         layout.label(text="Package Components to Ingest", icon="CHECKBOX_HLT")
         box_comp = layout.box()
+        box_comp.enabled = not is_builtin
         box_comp.prop(props, "engine_import_geometry", text="Geometry & Multi-LODs")
         box_comp.prop(props, "engine_import_spatial", text="Spatial Markers (Datum, CG, Wheels)")
         box_comp.prop(props, "engine_import_lights", text="Aviation Lights (Nav, Strobe, Landing)")
@@ -122,11 +120,14 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
 
         layout.separator()
         layout.label(text="Model Target Selection", icon="OUTLINER_OB_MESH")
-        layout.prop(props, "engine_import_model_target", text="Target")
+        row_tgt = layout.row(align=True)
+        row_tgt.enabled = not is_builtin
+        row_tgt.prop(props, "engine_import_model_target", text="Target")
 
         layout.separator()
         layout.label(text="Pipeline Optimizations", icon="MODIFIER")
         box_opt = layout.box()
+        box_opt.enabled = not is_builtin
         box_opt.prop(props, "engine_import_use_lod0_suffix", text="Use '_LOD0' Suffix")
         box_opt.prop(props, "engine_import_auto_assign_screen_pct", text="Auto-Assign minSize to Screen %")
         box_opt.prop(props, "engine_import_deduplicate_materials", text="Deduplicate Re-imported Materials")
@@ -167,20 +168,7 @@ class OMNIMESH_PT_popover_import_preset(Panel):
 
         if is_builtin:
             box_badge = layout.box()
-            row_bb = box_badge.row(align=True)
-            row_bb.label(text="Built-in Template (Read-Only)", icon="LOCKED")
-            op_dup_bb = row_bb.operator("lod_tool.duplicate_preset", text="Duplicate to Edit", icon="DUPLICATE")
-            if op_dup_bb is not None:
-                op_dup_bb.preset_type = "IMPORT"
-
-        # Preset Management Row: New, Duplicate, Delete
-        row_act = layout.row(align=True)
-        row_act.operator("lod_tool.create_import_preset", text="New", icon="ADD")
-        op_dup = row_act.operator("lod_tool.duplicate_preset", text="Duplicate", icon="DUPLICATE")
-        if op_dup is not None:
-            op_dup.preset_type = "IMPORT"
-        if not is_builtin:
-            row_act.operator("lod_tool.delete_import_preset", text="Delete", icon="TRASH")
+            box_badge.label(text="Built-in Template (Read-Only)", icon="LOCKED")
 
         layout.separator()
         layout.prop(props, "pbr_import_ao_mode", text="AO Routing")
@@ -304,21 +292,19 @@ class OMNIMESH_PT_popover_config_preset(Panel):
         preset = ConfigPresetManager.get_preset(preset_id)
         is_builtin = ConfigPresetManager.is_builtin(preset_id)
 
-        layout.label(text=preset.get("name", preset_id), icon="PRESET")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
+        row_title = layout.row(align=True)
+        row_title.label(text=preset.get("name", preset_id), icon="PRESET")
+        if not is_builtin:
+            row_title.operator("omnimesh.rename_config_preset", text="", icon="GREASEPENCIL")
 
-        # Preset Management Row
-        row_act = layout.row(align=True)
-        row_act.operator("omnimesh.duplicate_config_preset", text="Duplicate", icon="DUPLICATE")
-        sub_del = row_act.row(align=True)
-        sub_del.enabled = not is_builtin
-        sub_del.operator("omnimesh.delete_config_preset", text="Delete", icon="X")
+        if is_builtin:
+            box_badge = layout.box()
+            box_badge.label(text="Built-in Template (Read-Only)", icon="LOCKED")
 
         layout.separator()
         layout.label(text="Categories to Include", icon="CHECKBOX_HLT")
         box_comp = layout.box()
+        box_comp.enabled = not is_builtin
         box_comp.prop(cfg_props, "include_spatial", text="Spatial & Wheels")
         box_comp.prop(cfg_props, "include_lights", text="Aviation Lights")
         box_comp.prop(cfg_props, "include_cameras", text="Cockpit & Cameras")
@@ -362,13 +348,19 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
 
         preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
         preset = LODPresetManager.get_preset(preset_id)
+        is_builtin = LODPresetManager.is_builtin(preset_id)
 
-        # 1. Header & Quality Curve
-        layout.label(text=preset.get("name", preset_id), icon="PRESET")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
+        # 1. Header & Preset Management
+        row_title = layout.row(align=True)
+        row_title.label(text=preset.get("name", preset_id), icon="PRESET")
+        if not is_builtin:
+            row_title.operator("lod_tool.rename_lod_preset", text="", icon="GREASEPENCIL")
 
+        if is_builtin:
+            box_badge = layout.box()
+            box_badge.label(text="Built-in Template (Read-Only)", icon="LOCKED")
+
+        layout.separator()
         layout.prop(props, "tau_sse", slider=True, text="Visual Stability (τ)")
 
         layout.separator()
@@ -378,6 +370,7 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
         row_hdr.label(text="Preset Tiers & Budgets", icon="MESH_DATA")
 
         row = layout.row()
+        row.enabled = not is_builtin
         active_count = len(props.lod_preset_active_tiers)
         list_rows = max(3, min(active_count, 5))
         row.template_list(
@@ -393,23 +386,26 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
         col_btn = row.column(align=True)
         col_btn.operator("lod_tool.add_preset_tier", icon="ADD", text="")
         sub_rem = col_btn.column(align=True)
-        sub_rem.enabled = len(props.lod_preset_active_tiers) > 1
+        sub_rem.enabled = len(props.lod_preset_active_tiers) > 1 and not is_builtin
         sub_rem.operator("lod_tool.remove_preset_tier", icon="REMOVE", text="")
 
         # Cull Screen Size threshold immediately beneath the tiers
         row_cull = layout.row(align=True)
+        row_cull.enabled = not is_builtin
         row_cull.prop(props, "cull_screen_size_pct", slider=True, text="Cull at Screen Size")
 
         layout.separator()
 
         # 3. Hierarchy & Draw-Calls
         box_hier = layout.box()
+        box_hier.enabled = not is_builtin
         box_hier.use_property_split = True
         box_hier.use_property_decorate = False
         box_hier.prop(props, "consolidate_hierarchy", text="Consolidate Hierarchy")
 
         # 4. Occlusion & Slender Culling
         box_cull = layout.box()
+        box_cull.enabled = not is_builtin
         box_cull.use_property_split = True
         box_cull.use_property_decorate = False
         box_cull.label(text="Occlusion & Slender Culling", icon="HIDE_OFF")
@@ -422,6 +418,7 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
 
         # 5. Spatial Chunking & HLOD
         box_chunk = layout.box()
+        box_chunk.enabled = not is_builtin
         box_chunk.use_property_split = True
         box_chunk.use_property_decorate = False
         box_chunk.label(text="Spatial Chunking & HLOD", icon="MESH_GRID")
@@ -444,6 +441,7 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
 
         # 6. Billboard Impostor
         box_imp = layout.box()
+        box_imp.enabled = not is_builtin
         box_imp.use_property_split = True
         box_imp.use_property_decorate = False
         box_imp.label(text="Billboard Impostor", icon="IMAGE_PLANE")
@@ -460,15 +458,6 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
                 calc_res = max(256, min(4096, calc_res))
                 row_calc = box_imp.row()
                 row_calc.label(text=f"Calculated: {calc_res}×{calc_res}", icon="INFO")
-
-        layout.separator()
-        row_act = layout.row(align=True)
-        row_act.operator("lod_tool.reset_to_preset", text="Reset to Factory", icon="LOOP_BACK")
-        op_dup = row_act.operator("lod_tool.duplicate_preset", text="Duplicate", icon="DUPLICATE")
-        if op_dup is not None:
-            op_dup.preset_type = "LOD"
-        if LODPresetManager.is_user_preset(preset_id):
-            row_act.operator("lod_tool.delete_lod_preset", text="Delete Preset", icon="TRASH")
 
 
 # =========================================================================
@@ -497,27 +486,24 @@ class OMNIMESH_PT_popover_export_preset(Panel):
         preset = PBRExportPresetManager.get_preset(preset_id)
         is_builtin = PBRExportPresetManager.is_builtin(preset_id)
 
-        layout.label(text=preset.get("name", preset_id), icon="PRESET")
-        desc = preset.get("description", "")
-        if desc:
-            layout.label(text=desc)
+        row_title = layout.row(align=True)
+        row_title.label(text=preset.get("name", preset_id), icon="PRESET")
+        if not is_builtin:
+            row_title.operator("lod_tool.rename_export_preset", text="", icon="GREASEPENCIL")
 
-        # Preset Management Row
-        row_act = layout.row(align=True)
-        op_dup = row_act.operator("lod_tool.duplicate_preset", text="Duplicate", icon="DUPLICATE")
-        if op_dup is not None:
-            op_dup.preset_type = "EXPORT"
-        sub_del = row_act.row(align=True)
-        sub_del.enabled = not is_builtin
-        sub_del.operator("lod_tool.delete_export_preset", text="Delete", icon="X")
+        if is_builtin:
+            box_badge = layout.box()
+            box_badge.label(text="Built-in Template (Read-Only)", icon="LOCKED")
 
         layout.separator()
         layout.label(text="Preset Configuration", icon="SETTINGS")
-        layout.prop(props, "pbr_export_texture_strategy", text="Strategy")
+        col_cfg = layout.column(align=True)
+        col_cfg.enabled = not is_builtin
+        col_cfg.prop(props, "pbr_export_texture_strategy", text="Strategy")
         if props.pbr_export_texture_strategy in {"SMART_AUTO", "BAKE"}:
-            layout.prop(props, "texture_max_resolution", text="Bake Resolution")
-        layout.prop(props, "pbr_export_bit_depth", text="Bit Depth")
-        layout.prop(props, "pbr_export_naming_pattern", text="Naming Pattern")
+            col_cfg.prop(props, "texture_max_resolution", text="Bake Resolution")
+        col_cfg.prop(props, "pbr_export_bit_depth", text="Bit Depth")
+        col_cfg.prop(props, "pbr_export_naming_pattern", text="Naming Pattern")
 
         layout.separator()
         layout.label(text="Package Pipeline Toggles", icon="PACKAGE")
@@ -559,17 +545,36 @@ class OMNIMESH_PT_popover_export_preset(Panel):
             "pbr_export_active_maps",
             props,
             "pbr_export_active_map_index",
-            rows=min(max(len(props.pbr_export_active_maps), 2), 5),
+            rows=min(max(len(props.pbr_export_active_maps), 4), 7),
         )
         col_btn = row.column(align=True)
-        col_btn.operator("lod_tool.add_export_preset_map", icon="ADD", text="")
-        col_btn.operator("lod_tool.delete_export_preset_map", icon="REMOVE", text="")
+        sub_add_tpl = col_btn.column(align=True)
+        sub_add_tpl.enabled = not is_builtin
+        sub_add_tpl.operator("lod_tool.add_export_map_template", icon="PRESET_NEW", text="")
+        sub_add = col_btn.column(align=True)
+        sub_add.enabled = not is_builtin
+        sub_add.operator("lod_tool.add_export_preset_map", icon="ADD", text="")
+        sub_rem = col_btn.column(align=True)
+        sub_rem.enabled = len(props.pbr_export_active_maps) > 1 and not is_builtin
+        sub_rem.operator("lod_tool.delete_export_preset_map", icon="REMOVE", text="")
+        col_btn.separator()
+        sub_up = col_btn.column(align=True)
+        sub_up.enabled = not is_builtin
+        op_up = sub_up.operator("lod_tool.move_export_preset_map", icon="TRIA_UP", text="")
+        if op_up is not None:
+            op_up.direction = "UP"
+        sub_down = col_btn.column(align=True)
+        sub_down.enabled = not is_builtin
+        op_down = sub_down.operator("lod_tool.move_export_preset_map", icon="TRIA_DOWN", text="")
+        if op_down is not None:
+            op_down.direction = "DOWN"
 
         # Detail box for selected map
         idx = props.pbr_export_active_map_index
         if 0 <= idx < len(props.pbr_export_active_maps):
             active_map = props.pbr_export_active_maps[idx]
             box = layout.box()
+            box.enabled = not is_builtin
             box.use_property_split = True
             box.use_property_decorate = False
 
@@ -585,13 +590,15 @@ class OMNIMESH_PT_popover_export_preset(Panel):
             if active_map.is_normal_map:
                 row_norm.prop(active_map, "normal_format", text="")
 
-            box.prop(active_map, "is_packed", text="Channel Packed")
+            box.prop(active_map, "is_packed", text="Packed (R/G/B/A)")
 
             col = box.column(align=True)
             if not active_map.is_packed:
-                col.prop(active_map, "target_rgb", text="RGB Socket")
+                row_rgb = col.row(align=True)
+                row_rgb.prop(active_map, "target_rgb", text="Target Socket")
+                row_rgb.prop(active_map, "invert_rgb", text="Invert")
                 row_a = col.row(align=True)
-                row_a.prop(active_map, "target_a", text="Alpha Socket")
+                row_a.prop(active_map, "target_a", text="Alpha / Opacity")
                 row_a.prop(active_map, "invert_a", text="Invert")
             else:
                 for ch in ("r", "g", "b", "a"):

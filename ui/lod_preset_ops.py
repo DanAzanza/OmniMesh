@@ -16,6 +16,7 @@ try:
         LODPresetManager,
     )
     from .properties import (
+        PresetSyncGuard,
         sync_preset_tiers_from_preset,
         sync_preset_tiers_to_preset,
     )
@@ -26,6 +27,7 @@ except (ImportError, ValueError):
         LODPresetManager,
     )
     from ui.properties import (
+        PresetSyncGuard,
         sync_preset_tiers_from_preset,
         sync_preset_tiers_to_preset,
     )
@@ -33,16 +35,155 @@ except (ImportError, ValueError):
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.props import EnumProperty, StringProperty
     from bpy.types import Operator
 else:
     try:
         import bpy
+        from bpy.props import EnumProperty, StringProperty
         from bpy.types import Operator
     except ImportError:
         bpy = None
         Operator = object
 
+        def EnumProperty(**kwargs: Any) -> Any:
+            return Any
+
+        def StringProperty(**kwargs: Any) -> Any:
+            return Any
+
+
 logger = logging.getLogger(__name__)
+
+
+class LOD_OT_create_lod_preset(Operator):
+    """Create a new custom LOD tier preset from a starter template."""
+
+    bl_idname = "lod_tool.create_lod_preset"
+    bl_label = "New LOD Preset"
+    bl_description = "Creates a new custom LOD tier preset profile"
+    bl_options = {"REGISTER", "UNDO"}
+
+    preset_name: StringProperty(
+        name="Preset Name",
+        description="Display name for the new custom LOD preset",
+        default="Custom LOD Preset",
+    )
+
+    template_type: EnumProperty(
+        name="Starter Template",
+        items=[
+            ("unreal_engine_5", "Unreal Engine 5", "Standard 4-tier UE5 screen size curve"),
+            ("unity_hdrp", "Unity HDRP / URP", "Standard Unity LOD Group curve"),
+            ("msfs_2024", "MSFS 2024", "Microsoft Flight Simulator 2024 strict LOD curve"),
+            ("mobile_vr", "Mobile / VR (Aggressive)", "Aggressive triangle reduction for mobile & XR"),
+            ("minimal", "Minimal (Single Tier)", "Single LOD0 starter tier"),
+        ],
+        default="unreal_engine_5",
+    )
+
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
+        return context.window_manager.invoke_props_dialog(self, width=320)
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
+            return
+        col = self.layout.column(align=True)
+        col.prop(self, "preset_name", text="Name")
+        col.separator()
+        col.prop(self, "template_type", text="Template")
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
+        props, _, _ = resolve_lod_context(context)
+        if not props and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
+        try:
+            new_id = LODPresetManager.create_new_preset(
+                name=self.preset_name,
+                template_id=self.template_type,
+            )
+            if props and hasattr(props, "lod_preset"):
+                with PresetSyncGuard():
+                    try:
+                        props.lod_preset = new_id
+                    except (TypeError, ValueError):
+                        pass
+                sync_preset_tiers_from_preset(props, LODPresetManager.get_preset(new_id))
+            LODPresetManager.set_last_active_preset(new_id)
+            safe_report(self, {"INFO"}, f"Created LOD preset '{self.preset_name}'.")
+            return {"FINISHED"}
+        except Exception as exc:
+            logger.error("Failed creating LOD preset: %s", exc, exc_info=True)
+            safe_report(self, {"ERROR"}, f"Could not create preset: {exc}")
+            return {"CANCELLED"}
+
+
+class LOD_OT_rename_lod_preset(Operator):
+    """Rename the active custom LOD tier preset."""
+
+    bl_idname = "lod_tool.rename_lod_preset"
+    bl_label = "Rename LOD Preset"
+    bl_description = "Renames the active custom LOD tier preset"
+    bl_options = {"REGISTER", "UNDO"}
+
+    new_name: StringProperty(
+        name="New Name",
+        description="New display name for the custom LOD preset",
+        default="",
+    )
+
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
+        props, _, _ = resolve_lod_context(context)
+        if not props and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
+        preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+        if LODPresetManager.is_builtin(preset_id):
+            safe_report(self, {"ERROR"}, "Built-in factory presets cannot be renamed. Duplicate it first.")
+            return {"CANCELLED"}
+        preset = LODPresetManager.get_preset(preset_id)
+        self.new_name = preset.get("name", preset_id)
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
+            return
+        self.layout.prop(self, "new_name", text="Name")
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
+        props, _, _ = resolve_lod_context(context)
+        if not props and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
+        old_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+        if LODPresetManager.is_builtin(old_id):
+            safe_report(self, {"ERROR"}, "Cannot rename built-in factory presets.")
+            return {"CANCELLED"}
+        clean_name = self.new_name.strip()
+        if not clean_name:
+            safe_report(self, {"ERROR"}, "Preset name cannot be empty.")
+            return {"CANCELLED"}
+        try:
+            new_id = LODPresetManager.rename_custom_preset(old_id, clean_name)
+            if props and hasattr(props, "lod_preset"):
+                with PresetSyncGuard():
+                    try:
+                        props.lod_preset = new_id
+                    except (TypeError, ValueError):
+                        pass
+            LODPresetManager.set_last_active_preset(new_id)
+            safe_report(self, {"INFO"}, f"Renamed LOD preset to '{clean_name}'.")
+            return {"FINISHED"}
+        except Exception as exc:
+            logger.error("Failed renaming LOD preset '%s': %s", old_id, exc, exc_info=True)
+            safe_report(self, {"ERROR"}, f"Rename failed: {exc}")
+            return {"CANCELLED"}
 
 
 class LOD_OT_delete_lod_preset(Operator):
@@ -139,6 +280,9 @@ class LOD_OT_add_preset_tier(Operator):
 
         props.lod_preset_active_tier_index = count
         props.lod_preset_is_dirty = True
+        preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+        if not LODPresetManager.is_builtin(preset_id):
+            sync_preset_tiers_to_preset(props)
         safe_report(self, {"INFO"}, f"Added preset tier {item.name}.")
         return {"FINISHED"}
 
@@ -171,6 +315,9 @@ class LOD_OT_remove_preset_tier(Operator):
         props.lod_preset_active_tiers.remove(idx)
         props.lod_preset_active_tier_index = max(0, min(idx, len(props.lod_preset_active_tiers) - 1))
         props.lod_preset_is_dirty = True
+        preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+        if not LODPresetManager.is_builtin(preset_id):
+            sync_preset_tiers_to_preset(props)
         safe_report(self, {"INFO"}, f"Removed preset tier {deleted_name}.")
         return {"FINISHED"}
 
@@ -242,11 +389,16 @@ class LOD_OT_capture_scene_tiers(Operator):
             item.target_tris = tier.target_tris
 
         props.lod_preset_is_dirty = True
+        preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+        if not LODPresetManager.is_builtin(preset_id):
+            sync_preset_tiers_to_preset(props)
         safe_report(self, {"INFO"}, f"Captured {len(props.lods)} tiers from scene.")
         return {"FINISHED"}
 
 
 LOD_PRESET_OPERATOR_CLASSES = (
+    LOD_OT_create_lod_preset,
+    LOD_OT_rename_lod_preset,
     LOD_OT_delete_lod_preset,
     LOD_OT_add_preset_tier,
     LOD_OT_remove_preset_tier,
@@ -257,6 +409,8 @@ LOD_PRESET_OPERATOR_CLASSES = (
 
 __all__ = [
     "LOD_PRESET_OPERATOR_CLASSES",
+    "LOD_OT_create_lod_preset",
+    "LOD_OT_rename_lod_preset",
     "LOD_OT_delete_lod_preset",
     "LOD_OT_add_preset_tier",
     "LOD_OT_remove_preset_tier",

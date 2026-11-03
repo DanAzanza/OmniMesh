@@ -2,7 +2,6 @@
   "$schema": "omnimesh_config_preset",
   "name": "Car - NPC",
   "archetype": "car_npc",
-  "description": "Lightweight NPC traffic vehicle with 4 wheel contact points, bumper scrape points, basic headlights and taillights for ambient street traffic",
   "spatial": [
     {
       "id": "WEIGHT_AND_BALANCE:reference_datum_position",
@@ -11,7 +10,11 @@
       "section": "WEIGHT_AND_BALANCE",
       "key": "reference_datum_position",
       "anchor": "AABB_ORIGIN",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "WEIGHT_AND_BALANCE:empty_weight_CG_position",
@@ -20,7 +23,11 @@
       "section": "WEIGHT_AND_BALANCE",
       "key": "empty_weight_CG_position",
       "anchor": "AABB_CENTER",
-      "offset_normalized": [0.0, 0.0, -0.2]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        -0.2
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.0",
@@ -30,8 +37,24 @@
       "section": "CONTACT_POINTS",
       "key": "point.0",
       "anchor": "WHEEL_FRONT_L",
-      "offset_normalized": [0.0, 0.0, 0.0],
-      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "35.0", "0.3", "2.5", "0.9"]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "1",
+        "0.2",
+        "0.6",
+        "1.5",
+        "0.0",
+        "0.0",
+        "0.0",
+        "35.0",
+        "0.3",
+        "2.5",
+        "0.9"
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.1",
@@ -41,8 +64,24 @@
       "section": "CONTACT_POINTS",
       "key": "point.1",
       "anchor": "WHEEL_FRONT_R",
-      "offset_normalized": [0.0, 0.0, 0.0],
-      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "35.0", "0.3", "2.5", "0.9"]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "1",
+        "0.2",
+        "0.6",
+        "1.5",
+        "0.0",
+        "0.0",
+        "0.0",
+        "35.0",
+        "0.3",
+        "2.5",
+        "0.9"
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.2",
@@ -52,8 +91,24 @@
       "section": "CONTACT_POINTS",
       "key": "point.2",
       "anchor": "WHEEL_REAR_L",
-      "offset_normalized": [0.0, 0.0, 0.0],
-      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.3", "2.5", "0.9"]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "1",
+        "0.2",
+        "0.6",
+        "1.5",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.3",
+        "2.5",
+        "0.9"
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.3",
@@ -63,8 +118,24 @@
       "section": "CONTACT_POINTS",
       "key": "point.3",
       "anchor": "WHEEL_REAR_R",
-      "offset_normalized": [0.0, 0.0, 0.0],
-      "default_properties": ["1", "0.2", "0.6", "1.5", "0.0", "0.0", "0.0", "0.0", "0.3", "2.5", "0.9"]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "default_properties": [
+        "1",
+        "0.2",
+        "0.6",
+        "1.5",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.0",
+        "0.3",
+        "2.5",
+        "0.9"
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.scrape_bumper_fl",
@@ -74,7 +145,11 @@
       "section": "CONTACT_POINTS",
       "key": "point.4",
       "anchor": "EXTREMA_BUMPER_F_L",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.scrape_bumper_fr",
@@ -84,7 +159,11 @@
       "section": "CONTACT_POINTS",
       "key": "point.5",
       "anchor": "EXTREMA_BUMPER_F_R",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.scrape_bumper_rl",
@@ -94,7 +173,11 @@
       "section": "CONTACT_POINTS",
       "key": "point.6",
       "anchor": "EXTREMA_BUMPER_R_L",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "CONTACT_POINTS:point.scrape_bumper_rr",
@@ -104,7 +187,11 @@
       "section": "CONTACT_POINTS",
       "key": "point.7",
       "anchor": "EXTREMA_BUMPER_R_R",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     }
   ],
   "lights": [
@@ -114,9 +201,18 @@
       "section": "LIGHTS",
       "key": "lightdef.0",
       "type": 6,
-      "color": [1.0, 1.0, 0.95, 1.0],
+      "color": [
+        1.0,
+        1.0,
+        0.95,
+        1.0
+      ],
       "anchor": "HEADLIGHT_L",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.1",
@@ -124,9 +220,18 @@
       "section": "LIGHTS",
       "key": "lightdef.1",
       "type": 6,
-      "color": [1.0, 1.0, 0.95, 1.0],
+      "color": [
+        1.0,
+        1.0,
+        0.95,
+        1.0
+      ],
       "anchor": "HEADLIGHT_R",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.2",
@@ -134,9 +239,18 @@
       "section": "LIGHTS",
       "key": "lightdef.2",
       "type": 3,
-      "color": [1.0, 0.0, 0.0, 1.0],
+      "color": [
+        1.0,
+        0.0,
+        0.0,
+        1.0
+      ],
       "anchor": "TAILLIGHT_L",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     },
     {
       "id": "LIGHTS:lightdef.3",
@@ -144,9 +258,18 @@
       "section": "LIGHTS",
       "key": "lightdef.3",
       "type": 3,
-      "color": [1.0, 0.0, 0.0, 1.0],
+      "color": [
+        1.0,
+        0.0,
+        0.0,
+        1.0
+      ],
       "anchor": "TAILLIGHT_R",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     }
   ],
   "cameras": [
@@ -157,7 +280,11 @@
       "section": "VIEWS",
       "key": "eyepoint",
       "anchor": "CHASE_CAMERA",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     }
   ],
   "exits": [],
@@ -168,7 +295,11 @@
       "section": "GENERALENGINEDATA",
       "key": "engine.0",
       "anchor": "EXTREMA_NOSE",
-      "offset_normalized": [0.0, -0.1, 0.0],
+      "offset_normalized": [
+        0.0,
+        -0.1,
+        0.0
+      ],
       "engine_index": 1,
       "engine_type": 0
     }
@@ -183,7 +314,11 @@
       "station_type": 1,
       "weight_lbs": 170.0,
       "anchor": "DRIVER_SEAT",
-      "offset_normalized": [0.0, 0.0, 0.0]
+      "offset_normalized": [
+        0.0,
+        0.0,
+        0.0
+      ]
     }
   ],
   "interactions": []

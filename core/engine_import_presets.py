@@ -93,11 +93,25 @@ class EngineImportPresetManager(BasePresetManager):
             "reuse_master_rig": bool(data.get("reuse_master_rig", True)),
         }
 
-        desc = str(data.get("description", "")).strip()
-        if desc:
-            validated["description"] = desc
-
         return validated
+
+    @classmethod
+    def _get_minimal_starter(cls, clean_name: str) -> dict[str, Any]:
+        """Returns a schema-valid starter engine import preset dictionary."""
+        return {
+            "$schema": cls.SCHEMA_TYPE,
+            "name": clean_name,
+            "engine": "MSFS_2024",
+            "import_geometry": True,
+            "import_spatial": False,
+            "import_lights": False,
+            "import_cameras": False,
+            "model_target": "EXTERIOR_ONLY",
+            "use_lod0_suffix": True,
+            "auto_assign_screen_pct": True,
+            "deduplicate_materials": True,
+            "reuse_master_rig": True,
+        }
 
     @classmethod
     def get_preset(cls, preset_id: str) -> dict[str, Any]:

@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_pbr_export",
   "name": "Unreal Engine 5 (Skinned / Non-Nanite / UCX & Live Bridge)",
   "version": 2,
-  "description": "2026 production PBR export for Unreal Engine 5 (Skinned / Non-Nanite / UCX & Live Bridge)",
   "target_engine": "UE5",
   "strategy": "CONVERT_PNG",
   "bit_depth": 8,

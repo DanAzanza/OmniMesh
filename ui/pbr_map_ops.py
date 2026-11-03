@@ -502,7 +502,7 @@ class LOD_OT_add_export_preset_map(Operator):
 
     bl_idname = "lod_tool.add_export_preset_map"
     bl_label = "Add Export Map Definition"
-    bl_description = "Adds a new texture map rule to the active export preset (creates an editable copy if built-in)"
+    bl_description = "Adds a new texture map rule to the active export preset"
     bl_options = {"REGISTER"}
 
     def execute(self, context: Any) -> set[Any]:
@@ -510,6 +510,11 @@ class LOD_OT_add_export_preset_map(Operator):
         if not props:
             props, _, _ = resolve_lod_context(context)
         if not props or not hasattr(props, "pbr_export_active_maps"):
+            return {"CANCELLED"}
+
+        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
+        if PBRExportPresetManager.is_builtin(preset_id):
+            safe_report(self, {"WARNING"}, "Built-in presets are read-only. Duplicate to edit.")
             return {"CANCELLED"}
 
         idx = len(props.pbr_export_active_maps) + 1
@@ -533,6 +538,84 @@ class LOD_OT_add_export_preset_map(Operator):
         return {"FINISHED"}
 
 
+class LOD_OT_add_export_map_template(Operator):
+    """Add a standard PBR export texture map rule preconfigured with suffixes and channels."""
+
+    bl_idname = "lod_tool.add_export_map_template"
+    bl_label = "Add Standard Export Map"
+    bl_description = "Adds a standard PBR export map with preconfigured suffix, color space, and socket routing"
+    bl_options = {"REGISTER"}
+
+    template_type: EnumProperty(
+        name="Texture Type",
+        items=TEMPLATE_ITEMS,
+        default="BASE_COLOR",
+    )
+
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
+        props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
+        if not props:
+            props, _, _ = resolve_lod_context(context)
+        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
+        if PBRExportPresetManager.is_builtin(preset_id):
+            safe_report(self, {"WARNING"}, "Built-in presets are read-only. Duplicate to edit.")
+            return {"CANCELLED"}
+        return context.window_manager.invoke_props_dialog(self, width=320)
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
+            return
+        self.layout.prop(self, "template_type", text="Map Type")
+
+    def execute(self, context: Any) -> set[Any]:
+        props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
+        if not props:
+            props, _, _ = resolve_lod_context(context)
+        if not props or not hasattr(props, "pbr_export_active_maps"):
+            return {"CANCELLED"}
+
+        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
+        if PBRExportPresetManager.is_builtin(preset_id):
+            safe_report(self, {"WARNING"}, "Built-in presets are read-only. Duplicate to edit.")
+            return {"CANCELLED"}
+
+        t_data = MAP_TEMPLATE_DEFINITIONS.get(self.template_type)
+        if not t_data:
+            return {"CANCELLED"}
+
+        first_suffix = t_data["suffixes"].split(",")[0].strip()
+        with ExportMapSyncGuard() if ExportMapSyncGuard else nullcontext():
+            item = props.pbr_export_active_maps.add()
+            item.map_id = t_data["map_id"]
+            item.name = t_data["name"]
+            item.export = True
+            item.export_suffix = first_suffix
+            item.color_space = t_data["color_space"]
+            item.is_normal_map = t_data["is_normal_map"]
+            item.normal_format = t_data["normal_format"]
+            item.is_packed = t_data["is_packed"]
+
+            if not item.is_packed:
+                item.target_rgb = t_data.get("target_rgb", "Base Color")
+                item.invert_rgb = t_data.get("invert_rgb", False)
+                item.target_a = t_data.get("target_a", "NONE")
+                item.invert_a = t_data.get("invert_a", False)
+            else:
+                for ch in ("r", "g", "b", "a"):
+                    setattr(item, f"target_{ch}", t_data.get(f"target_{ch}", "NONE"))
+                    setattr(item, f"invert_{ch}", t_data.get(f"invert_{ch}", False))
+
+            props.pbr_export_active_map_index = len(props.pbr_export_active_maps) - 1
+
+        if sync_export_maps_to_preset:
+            sync_export_maps_to_preset(props)
+
+        safe_report(self, {"INFO"}, f"Added export map rule '{item.name}'.")
+        return {"FINISHED"}
+
+
 class LOD_OT_delete_export_preset_map(Operator):
     """Delete the selected texture map rule from the active export preset."""
 
@@ -546,6 +629,11 @@ class LOD_OT_delete_export_preset_map(Operator):
         if not props:
             props, _, _ = resolve_lod_context(context)
         if not props or not hasattr(props, "pbr_export_active_maps"):
+            return {"CANCELLED"}
+
+        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
+        if PBRExportPresetManager.is_builtin(preset_id):
+            safe_report(self, {"WARNING"}, "Built-in presets are read-only. Duplicate to edit.")
             return {"CANCELLED"}
 
         count = len(props.pbr_export_active_maps)
@@ -569,6 +657,50 @@ class LOD_OT_delete_export_preset_map(Operator):
         return {"FINISHED"}
 
 
+class LOD_OT_move_export_preset_map(Operator):
+    """Move export texture map rule up or down in the export list."""
+
+    bl_idname = "lod_tool.move_export_preset_map"
+    bl_label = "Move Export Map Rule"
+    bl_description = "Moves selected export map rule up or down"
+    bl_options = {"REGISTER"}
+
+    direction: EnumProperty(
+        name="Direction",
+        items=[("UP", "Up", "Move rule earlier"), ("DOWN", "Down", "Move rule later")],
+        default="UP",
+    )
+
+    def execute(self, context: Any) -> set[Any]:
+        props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
+        if not props:
+            props, _, _ = resolve_lod_context(context)
+        if not props or not hasattr(props, "pbr_export_active_maps"):
+            return {"CANCELLED"}
+
+        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
+        if PBRExportPresetManager.is_builtin(preset_id):
+            safe_report(self, {"WARNING"}, "Built-in presets are read-only. Duplicate to edit.")
+            return {"CANCELLED"}
+
+        count = len(props.pbr_export_active_maps)
+        idx = props.pbr_export_active_map_index
+        if idx < 0 or idx >= count:
+            return {"CANCELLED"}
+
+        target_idx = idx - 1 if self.direction == "UP" else idx + 1
+        if 0 <= target_idx < count:
+            with ExportMapSyncGuard() if ExportMapSyncGuard else nullcontext():
+                props.pbr_export_active_maps.move(idx, target_idx)
+                props.pbr_export_active_map_index = target_idx
+
+            if sync_export_maps_to_preset:
+                sync_export_maps_to_preset(props)
+            return {"FINISHED"}
+
+        return {"CANCELLED"}
+
+
 PBR_MAP_OPERATOR_CLASSES = (
     LOD_OT_init_preset_maps,
     LOD_OT_add_preset_map,
@@ -576,7 +708,9 @@ PBR_MAP_OPERATOR_CLASSES = (
     LOD_OT_delete_preset_map,
     LOD_OT_move_preset_map,
     LOD_OT_add_export_preset_map,
+    LOD_OT_add_export_map_template,
     LOD_OT_delete_export_preset_map,
+    LOD_OT_move_export_preset_map,
 )
 
 __all__ = [
@@ -587,7 +721,9 @@ __all__ = [
     "LOD_OT_delete_preset_map",
     "LOD_OT_move_preset_map",
     "LOD_OT_add_export_preset_map",
+    "LOD_OT_add_export_map_template",
     "LOD_OT_delete_export_preset_map",
+    "LOD_OT_move_export_preset_map",
     "MAP_TEMPLATE_DEFINITIONS",
     "TEMPLATE_ITEMS",
 ]

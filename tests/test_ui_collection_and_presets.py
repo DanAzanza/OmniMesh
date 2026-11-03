@@ -6,6 +6,7 @@ preset operators, enum contracts, and property synchronization callbacks.
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 import typing
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -668,3 +669,49 @@ def test_callbacks_virtual_distance_and_persist_helpers(monkeypatch):
 
     cb.on_import_directory_updated(props, ctx)
     persist_mock.assert_called_once()
+
+
+def test_engine_import_preset_create_rename_and_autosave(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Verify EngineImportPresetManager create_new_preset, rename_custom_preset, and auto-save callback."""
+    from core.engine_import_presets import EngineImportPresetManager
+    import ui.properties.callbacks as cb
+
+    monkeypatch.setattr(EngineImportPresetManager, "get_user_dir", classmethod(lambda cls: tmp_path))
+    EngineImportPresetManager.load_presets(force_reload=True)
+
+    new_id = EngineImportPresetManager.create_new_preset("My Aircraft Ingest", template_id="minimal")
+    assert new_id == "my_aircraft_ingest"
+    assert not EngineImportPresetManager.is_builtin(new_id)
+    pdata = EngineImportPresetManager.get_preset(new_id)
+    assert pdata["name"] == "My Aircraft Ingest"
+    assert "description" not in pdata
+    assert pdata["import_geometry"] is True
+    assert pdata["import_lights"] is False
+
+    # Test auto-save via on_engine_import_setting_updated
+    props = MagicMock()
+    props.engine_import_preset = new_id
+    props.engine_import_geometry = True
+    props.engine_import_spatial = True
+    props.engine_import_lights = True
+    props.engine_import_cameras = False
+    props.engine_import_model_target = "BOTH_SEPARATE"
+    props.engine_import_use_lod0_suffix = False
+    props.engine_import_auto_assign_screen_pct = True
+    props.engine_import_deduplicate_materials = True
+    props.engine_import_reuse_master_rig = False
+
+    cb.on_engine_import_setting_updated(props, None)
+    updated_pdata = EngineImportPresetManager.get_preset(new_id)
+    assert updated_pdata["import_lights"] is True
+    assert updated_pdata["model_target"] == "BOTH_SEPARATE"
+    assert updated_pdata["use_lod0_suffix"] is False
+
+    # Rename custom preset
+    renamed_id = EngineImportPresetManager.rename_custom_preset(new_id, "Renamed Ingest")
+    assert renamed_id == "renamed_ingest"
+    assert EngineImportPresetManager.get_preset(renamed_id)["name"] == "Renamed Ingest"
+
+    # Negative: cannot rename built-in factory preset
+    with pytest.raises(PermissionError, match="Cannot rename built-in factory preset"):
+        EngineImportPresetManager.rename_custom_preset("msfs_2024_aircraft", "Forbidden")

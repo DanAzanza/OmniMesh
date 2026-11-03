@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_lod_preset",
   "name": "Architecture / Large Structure",
   "version": 2,
-  "description": "Planar-angle protected 4-tier progression with HLOD chunking for buildings and large structures",
   "target_engine": "UE5",
   "budget_mode": "PERCENTAGE",
   "tau_sse": 0.6,

@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_lod_preset",
   "name": "Hero Character / Skeletal",
   "version": 2,
-  "description": "High-fidelity 4-tier progression with strict silhouette & normal protection for characters and hero props",
   "target_engine": "UE5",
   "budget_mode": "PERCENTAGE",
   "tau_sse": 0.5,

@@ -188,6 +188,7 @@ class LODPresetManager(BasePresetManager):
         validated_tau = max(0.01, min(5.0, tau_val))
 
         validated = dict(data)
+        validated.pop("description", None)
         validated["name"] = name
         validated["budget_mode"] = budget_mode
         validated["tiers"] = valid_tiers
@@ -198,12 +199,25 @@ class LODPresetManager(BasePresetManager):
         validated["schema_type"] = cls.SCHEMA_TYPE
         validated["version"] = max(3, int(data.get("version", 2)))
         validated["target_engine"] = str(data.get("target_engine", "UE5"))
-        validated["description"] = str(data.get("description", ""))
         validated["tau_sse"] = validated_tau
         validated["tau_sse_pct"] = validated_tau
         validated["cull_screen_size_pct"] = validated_cull_screen
         validated["consolidate_hierarchy"] = consolidate_hier
         return validated
+
+    @classmethod
+    def _get_minimal_starter(cls, clean_name: str) -> dict[str, Any]:
+        """Returns a schema-valid starter LOD preset dictionary."""
+        return {
+            "schema_type": cls.SCHEMA_TYPE,
+            "name": clean_name,
+            "version": 3,
+            "target_engine": "UE5",
+            "budget_mode": "PERCENTAGE",
+            "tiers": [
+                {"name": "LOD0", "screen_size_pct": 100.0, "target_tris_pct": 100.0},
+            ],
+        }
 
     @classmethod
     def load_presets(cls, force_reload: bool = False) -> dict[str, dict[str, Any]]:

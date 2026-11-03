@@ -2,7 +2,6 @@
   "schema_type": "omnimesh_pbr_export",
   "name": "Standard PBR (Split Maps)",
   "version": 2,
-  "description": "Universal discrete texture export without channel packing",
   "target_engine": "UE5",
   "strategy": "CONVERT_PNG",
   "bit_depth": 8,

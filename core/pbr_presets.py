@@ -300,6 +300,7 @@ class BasePresetManager:
             return None
 
         validated = dict(data)
+        validated.pop("description", None)
         validated["name"] = name
         validated["maps"] = valid_maps
         validated["version"] = int(data.get("version", 2))
@@ -441,8 +442,7 @@ class BasePresetManager:
         if not validated:
             raise ValueError("Invalid preset schema. Ensure non-empty name, maps, and channels.")
 
-        if cls.CATEGORY == "importer":
-            validated.pop("description", None)
+        validated.pop("description", None)
 
         pid = cls.sanitize_id(custom_id or validated["name"])
         builtin_ids = cls.get_builtin_preset_ids()
@@ -486,6 +486,29 @@ class BasePresetManager:
         return bool(preset and not preset.get("_is_builtin", False))
 
     @classmethod
+    def _get_minimal_starter(cls, clean_name: str) -> dict[str, Any]:
+        """Returns a schema-valid minimal starter preset dictionary for this category."""
+        return {
+            "name": clean_name,
+            "version": 2,
+            "maps": [
+                {
+                    "id": "base_color",
+                    "name": "Base Color",
+                    "priority": 10,
+                    "suffixes": ["_BaseColor", "_BC", "_Albedo", "_Diff", "_Color"],
+                    "export_suffix": "_BaseColor",
+                    "export": True,
+                    "color_space": "sRGB",
+                    "channels": {
+                        "rgb": {"target": "Base Color", "invert": False},
+                        "a": {"target": "Alpha", "invert": False},
+                    },
+                }
+            ],
+        }
+
+    @classmethod
     def create_new_preset(
         cls,
         name: str,
@@ -493,7 +516,9 @@ class BasePresetManager:
         template_id: str | None = None,
     ) -> str:
         """Creates a new unique custom preset from a template or minimal starter definition."""
-        clean_name = name.strip() if name and name.strip() else "New Preset"
+        clean_name = name.strip() if name else ""
+        if not clean_name:
+            raise ValueError("Preset name cannot be empty.")
         base_id = cls.sanitize_id(clean_name)
         existing = cls.load_presets()
         builtin_ids = cls.get_builtin_preset_ids()
@@ -504,37 +529,20 @@ class BasePresetManager:
             candidate_id = f"{base_id}_{counter}"
             counter += 1
 
-        if template_id and template_id in existing:
-            source = copy.deepcopy(existing[template_id])
+        effective_tpl = template_id
+        if not effective_tpl and cls.DEFAULT_PRESET_ID in existing and cls.CATEGORY not in {"importer", "exporter"}:
+            effective_tpl = cls.DEFAULT_PRESET_ID
+
+        if effective_tpl and effective_tpl in existing:
+            source = copy.deepcopy(existing[effective_tpl])
             source["name"] = clean_name
-            if cls.CATEGORY == "importer":
-                source.pop("description", None)
-            elif description:
-                source["description"] = description.strip()
+            source.pop("description", None)
             source["_is_builtin"] = False
             source.pop("_filepath", None)
             return cls.save_custom_preset(source, custom_id=candidate_id)
 
-        minimal_preset: dict[str, Any] = {
-            "name": clean_name,
-            "version": 2,
-            "maps": [
-                {
-                    "id": "base_color",
-                    "name": "Base Color",
-                    "priority": 10,
-                    "suffixes": ["_BaseColor", "_BC", "_Albedo", "_Diff", "_Color"],
-                    "color_space": "sRGB",
-                    "channels": {
-                        "rgb": {"target": "Base Color", "invert": False},
-                        "a": {"target": "Alpha", "invert": False},
-                    },
-                }
-            ],
-        }
-        if cls.CATEGORY != "importer" and description:
-            minimal_preset["description"] = description.strip()
-        return cls.save_custom_preset(minimal_preset, custom_id=candidate_id)
+        starter = cls._get_minimal_starter(clean_name)
+        return cls.save_custom_preset(starter, custom_id=candidate_id)
 
     @classmethod
     def rename_custom_preset(cls, old_id: str, new_name: str) -> str:
