@@ -9,11 +9,13 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bpy
     except ImportError:
         bpy = None
+    BlendData = object
 
 
 logger = logging.getLogger(__name__)
@@ -53,15 +55,24 @@ class AssetMeshResolver:
     """
 
     @classmethod
-    def resolve_payload(cls, context: bpy.types.Context | None, asset_name: str) -> AssetExportPayload:
+    def resolve_payload(
+        cls,
+        context: bpy.types.Context | None,
+        asset_name: str,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> AssetExportPayload:
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
         props = getattr(context.scene, "lod_tool", None) if (context and hasattr(context, "scene")) else None
 
-        has_bpy_collections = bool(bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections"))
+        effective_bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        has_collections = bool(effective_bdata and hasattr(effective_bdata, "collections"))
 
         root_col = None
-        if has_bpy_collections:
-            root_col = bpy.data.collections.get(clean_name) or bpy.data.collections.get(f"{clean_name}_LOD0")
+        if has_collections and effective_bdata:
+            root_col = effective_bdata.collections.get(clean_name) or effective_bdata.collections.get(
+                f"{clean_name}_LOD0"
+            )
 
         lod_tiers: dict[int, list[bpy.types.Object]] = {}
         collider_objects: list[bpy.types.Object] = []
@@ -115,7 +126,7 @@ class AssetMeshResolver:
                     return False
             return True
 
-        if has_bpy_collections and root_col:
+        if has_collections and root_col:
             max_tiers = len(props.lods) if (props and len(props.lods) > 0) else 10
 
             # LOD0: inspect child collection, then sibling, then direct objects
@@ -127,12 +138,12 @@ class AssetMeshResolver:
                     or root_col.children.get("x0")
                     or root_col.children.get(f"x0_{clean_name}")
                 )
-            if not lod0_col:
+            if not lod0_col and has_collections and effective_bdata:
                 lod0_col = (
-                    bpy.data.collections.get(f"{clean_name}_LOD0")
-                    or bpy.data.collections.get(f"{clean_name}_Mesh")
-                    or bpy.data.collections.get("x0")
-                    or bpy.data.collections.get(f"x0_{clean_name}")
+                    effective_bdata.collections.get(f"{clean_name}_LOD0")
+                    or effective_bdata.collections.get(f"{clean_name}_Mesh")
+                    or effective_bdata.collections.get("x0")
+                    or effective_bdata.collections.get(f"x0_{clean_name}")
                 )
 
             lod0_objs: list[bpy.types.Object] = []
@@ -163,9 +174,9 @@ class AssetMeshResolver:
                         tier_col = root_col.children.get(alias)
                         if tier_col:
                             break
-                if not tier_col:
+                if not tier_col and has_collections and effective_bdata:
                     for alias in aliases:
-                        tier_col = bpy.data.collections.get(alias)
+                        tier_col = effective_bdata.collections.get(alias)
                         if tier_col:
                             break
                 if tier_col:
@@ -180,15 +191,15 @@ class AssetMeshResolver:
             imp_col = None
             if hasattr(root_col, "children"):
                 imp_col = root_col.children.get(f"{clean_name}_LOD_Impostor")
-            if not imp_col:
-                imp_col = bpy.data.collections.get(f"{clean_name}_LOD_Impostor")
+            if not imp_col and has_collections and effective_bdata:
+                imp_col = effective_bdata.collections.get(f"{clean_name}_LOD_Impostor")
             if imp_col:
                 for obj in getattr(imp_col, "objects", []):
                     if getattr(obj, "type", "") == "MESH":
                         impostor_object = obj
                         break
-            if not impostor_object and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
-                for obj in bpy.data.objects:
+            if not impostor_object and effective_bdata and hasattr(effective_bdata, "objects"):
+                for obj in effective_bdata.objects:
                     o_name = getattr(obj, "name", "")
                     matches_asset = (
                         o_name == clean_name
@@ -207,14 +218,14 @@ class AssetMeshResolver:
             coll_col = None
             if hasattr(root_col, "children"):
                 coll_col = root_col.children.get(f"{clean_name}_Colliders")
-            if not coll_col:
-                coll_col = bpy.data.collections.get(f"{clean_name}_Colliders")
+            if not coll_col and has_collections and effective_bdata:
+                coll_col = effective_bdata.collections.get(f"{clean_name}_Colliders")
             if coll_col:
                 for obj in getattr(coll_col, "objects", []):
                     if getattr(obj, "type", "") == "MESH" and obj not in collider_objects:
                         collider_objects.append(obj)
-            elif hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
-                for obj in bpy.data.objects:
+            elif effective_bdata and hasattr(effective_bdata, "objects"):
+                for obj in effective_bdata.objects:
                     is_col = bool(getattr(obj, "get", lambda *_: False)("_is_collider", False))
                     o_name = getattr(obj, "name", "")
                     matches_asset = (
@@ -228,9 +239,14 @@ class AssetMeshResolver:
 
         # Headless mock / procedural fallback (vital for test_preflight_validator and procedural scenes)
         if not lod_tiers and props and len(props.lods) > 0:
+            bdata_objects = getattr(effective_bdata, "objects", None) if effective_bdata else None
             for i, tier in enumerate(props.lods):
                 obj = getattr(tier, "generated_obj", None)
-                if obj and (not bpy or (isinstance(getattr(obj, "name", None), str) and obj.name in bpy.data.objects)):
+                if obj and (
+                    not bpy
+                    or bdata_objects is None
+                    or (isinstance(getattr(obj, "name", None), str) and obj.name in bdata_objects)
+                ):
                     lod_tiers[i] = [obj]
 
         # Detect Armature / Rig
@@ -258,8 +274,13 @@ class AssetMeshResolver:
                 parent_asset = clean_name[:-9]
             elif "_" in clean_name and not any(clean_name.endswith(sfx) for sfx in ("_LOD0", "_Mesh")):
                 cand_parent = clean_name.rsplit("_", 1)[0]
-                if has_bpy_collections and (
-                    bpy.data.collections.get(cand_parent) or bpy.data.collections.get(f"{cand_parent}_LOD0")
+                if (
+                    has_collections
+                    and effective_bdata
+                    and (
+                        effective_bdata.collections.get(cand_parent)
+                        or effective_bdata.collections.get(f"{cand_parent}_LOD0")
+                    )
                 ):
                     role = "VARIANT"
                     parent_asset = cand_parent
@@ -271,7 +292,7 @@ class AssetMeshResolver:
         # Discover Attachment Nodes (ATTACH_POINT_, ATTACH_FX_, eye_, socket_)
         # Vital for MSFS glTF LOD0 runtime attachments, cameras, and effect positioning
         attachment_nodes: list[bpy.types.Object] = []
-        if has_bpy_collections and root_col:
+        if has_collections and root_col:
             candidate_cols = []
             if hasattr(root_col, "children"):
                 h_col = root_col.children.get(f"{clean_name}_Helpers")
@@ -280,11 +301,11 @@ class AssetMeshResolver:
                 l0_col = root_col.children.get(f"{clean_name}_LOD0")
                 if l0_col:
                     candidate_cols.append(l0_col)
-            if not candidate_cols:
-                h_col = bpy.data.collections.get(f"{clean_name}_Helpers")
+            if not candidate_cols and effective_bdata:
+                h_col = effective_bdata.collections.get(f"{clean_name}_Helpers")
                 if h_col:
                     candidate_cols.append(h_col)
-                l0_col = bpy.data.collections.get(f"{clean_name}_LOD0")
+                l0_col = effective_bdata.collections.get(f"{clean_name}_LOD0")
                 if l0_col:
                     candidate_cols.append(l0_col)
             candidate_cols.append(root_col)
@@ -335,7 +356,11 @@ def resolve_export_asset_name(context: bpy.types.Context | None, props: object =
 
 class PreFlightValidator:
     @staticmethod
-    def run_checks(context: bpy.types.Context | None) -> list[str]:
+    def run_checks(
+        context: bpy.types.Context | None,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> list[str]:
         if not context or not getattr(context, "scene", None):
             return ["Blender context not available."]
         props = getattr(context.scene, "lod_tool", None)
@@ -348,7 +373,8 @@ class PreFlightValidator:
             return errors
 
         raw_name = resolve_export_asset_name(context, props)
-        payload = AssetMeshResolver.resolve_payload(context, raw_name)
+        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        payload = AssetMeshResolver.resolve_payload(context, raw_name, blend_data=bdata)
 
         # Verify all configured tiers are generated/present
         missing_tiers = False

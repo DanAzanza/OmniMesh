@@ -217,6 +217,13 @@ class MockDataObjects(_MockBase):
         return obj
 
 
+class MockRuleContext(_MockBase):
+    def __init__(self, scene: Any, view_layer: Any, blend_data: Any = None):
+        self.scene = scene
+        self.view_layer = view_layer
+        self.blend_data = blend_data
+
+
 @pytest.fixture
 def mock_hierarchy():
     """Sets up a complete Variante A mock collection hierarchy."""
@@ -346,26 +353,21 @@ def mock_hierarchy():
         },
     )()
 
-    mock_context = type(
-        "MockContext",
+    mock_vl = type(
+        "VL",
         (),
         {
-            "scene": mock_scene,
-            "view_layer": type(
-                "VL",
-                (),
-                {
-                    "objects": type("OB", (), {"active": None})(),
-                    "active_layer_collection": type("ALC", (), {"collection": root})(),
-                },
-            )(),
+            "objects": type("OB", (), {"active": None})(),
+            "active_layer_collection": type("ALC", (), {"collection": root})(),
         },
     )()
+    mock_context = MockRuleContext(scene=mock_scene, view_layer=mock_vl)
 
     mock_bpy = MagicMock()
     mock_bpy.data.collections.get = lambda name: cols.get(name)
     mock_bpy.data.collections.__iter__ = lambda s: iter(cols.values())
     mock_bpy.data.objects = mock_data_objs
+    mock_context.blend_data = mock_bpy.data
     mock_bpy.context = mock_context
     mock_bpy.ops = MagicMock()
     mock_bpy.path.abspath = lambda p: p.replace("//", "")
@@ -636,3 +638,22 @@ def test_unified_export_asset_resolution():
     mock_props.active_asset = "AUTO"
     resolved_auto = resolve_export_asset_name(None, mock_props)
     assert resolved_auto == "Wasm_Aircraft"
+
+
+def test_asset_mesh_resolver_pure_di_with_mock_blend_data():
+    """Verify AssetMeshResolver resolves payload via injected BlendData without global bpy.data."""
+    from tests.conftest import MockBlendData, MockMeshObject
+
+    bdata = MockBlendData()
+    root_col = bdata.collections.new("HeroAsset")
+    lod0_col = bdata.collections.new("HeroAsset_LOD0")
+    root_col.children.link(lod0_col)
+
+    mesh_obj = MockMeshObject("HeroAsset_LOD0_Mesh")
+    lod0_col.objects.link(mesh_obj)
+
+    payload = AssetMeshResolver.resolve_payload(None, "HeroAsset", blend_data=bdata)
+    assert payload is not None
+    assert payload.asset_name == "HeroAsset"
+    assert 0 in payload.lod_tiers
+    assert mesh_obj in payload.lod_tiers[0]

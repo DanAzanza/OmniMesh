@@ -92,6 +92,7 @@ def test_asset_mesh_resolver_includes_attachment_nodes():
     mock_bpy.data.collections = MockCollectionDict([root_coll, lod0_coll, helpers_coll])
 
     context = MagicMock()
+    context.blend_data = mock_bpy.data
     with patch("exporters.engine_export.bpy", mock_bpy):
         payload = AssetMeshResolver.resolve_payload(context, "C172")
 
@@ -123,6 +124,7 @@ def test_msfs_export_selects_attachment_nodes_for_lod0():
     )
 
     context = MagicMock()
+    context.blend_data = mock_bpy.data
     context.view_layer.objects.active = None
     mock_gltf = MagicMock()
     mock_bpy.ops.export_scene.gltf = mock_gltf

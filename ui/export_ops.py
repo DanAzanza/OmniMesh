@@ -400,7 +400,8 @@ class LOD_OT_export_engine_package(Operator):
             self.report({"ERROR"}, "LOD configuration context could not be resolved.")
             return {"CANCELLED"}
 
-        errors = PreFlightValidator.run_checks(context)
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        errors = PreFlightValidator.run_checks(context, blend_data=bdata)
         if errors:
             for err in errors:
                 self.report({"ERROR"}, f"[Pre-Flight Gate] {err}")
@@ -436,7 +437,9 @@ class LOD_OT_export_engine_package(Operator):
         pkg_base = asset_name
         if target == "MSFS_2024" and getattr(props, "msfs_export_full_package", True):
             # If active asset is interior or variant, resolve the base package name
-            payload = AssetMeshResolver.resolve_payload(context, asset_name) if AssetMeshResolver else None
+            payload = (
+                AssetMeshResolver.resolve_payload(context, asset_name, blend_data=bdata) if AssetMeshResolver else None
+            )
             if payload and payload.parent_asset_name:
                 pkg_base = payload.parent_asset_name
             else:

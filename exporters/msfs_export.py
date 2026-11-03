@@ -135,7 +135,10 @@ class MSFSExporter(EngineExporterBase):
         except OSError as exc:
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
-        payload = AssetMeshResolver.resolve_payload(context, clean_name) if AssetMeshResolver else None
+        bdata = getattr(context, "blend_data", None)
+        payload = (
+            AssetMeshResolver.resolve_payload(context, clean_name, blend_data=bdata) if AssetMeshResolver else None
+        )
 
         if not payload or not payload.lod_tiers:
             return False, f"No valid LOD objects found to export for '{clean_name}'."
