@@ -22,11 +22,18 @@ from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, cast
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData, Collection, Context, Mesh, Object
 else:
     try:
         import bpy
+        from bpy.types import Collection, Context, Mesh, Object
     except ImportError:
         bpy = None
+        Collection = object
+        Context = object
+        Mesh = object
+        Object = object
+    BlendData = object
 
 try:
     from .decimator import MeshDecimator
@@ -223,12 +230,24 @@ class BatchProcessorEngine:
         )
 
     @classmethod
-    def import_asset_file(cls, filepath: str) -> list[bpy.types.Object]:
+    def import_asset_file(
+        cls,
+        filepath: str,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> list[bpy.types.Object]:
         """Imports 3D model file and returns newly created objects."""
         if not bpy or not os.path.exists(filepath):
             return []
 
-        existing_objs = set(bpy.data.objects.keys())
+        bdata = blend_data
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        if not bdata_objs:
+            return []
+
+        existing_objs = (
+            set(bdata_objs.keys()) if hasattr(bdata_objs, "keys") else {getattr(o, "name", "") for o in bdata_objs}
+        )
         ext = os.path.splitext(filepath)[1].lower()
 
         try:
@@ -247,7 +266,8 @@ class BatchProcessorEngine:
             logger.error("Failed to import asset '%s': %s", filepath, exc)
             return []
 
-        new_objs = [bpy.data.objects[k] for k in bpy.data.objects.keys() if k not in existing_objs]
+        all_keys = bdata_objs.keys() if hasattr(bdata_objs, "keys") else [getattr(o, "name", "") for o in bdata_objs]
+        new_objs = [bdata_objs[k] for k in all_keys if k not in existing_objs]
         return new_objs
 
     @classmethod
@@ -260,6 +280,8 @@ class BatchProcessorEngine:
         num_lods: int = 7,
         tau_sse: float = 0.8,
         cull_screen_size_pct: float = 0.5,
+        *,
+        blend_data: BlendData | None = None,
     ) -> dict[str, Any]:
         """
         Executes complete LOD pipeline on a single model file with complete teardown and memory cleanup.
@@ -281,14 +303,18 @@ class BatchProcessorEngine:
             result["message"] = "Blender environment not available."
             return result
 
-        imported_objs = cls.import_asset_file(filepath)
+        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata_cols = getattr(bdata, "collections", None) if bdata else None
+
+        imported_objs = cls.import_asset_file(filepath, blend_data=bdata)
         if not imported_objs:
             result["message"] = f"Failed to import '{filepath}'"
             return result
 
         mesh_objs = [o for o in imported_objs if getattr(o, "type", "") == "MESH"]
         if not mesh_objs:
-            cls.cleanup_imported_objects(imported_objs)
+            cls.cleanup_imported_objects(imported_objs, blend_data=bdata)
             result["message"] = f"No valid mesh geometry found in '{filepath}'"
             return result
 
@@ -341,9 +367,9 @@ class BatchProcessorEngine:
 
             # Setup LOD generation collection
             coll_name = f"{base_name}_LODs"
-            coll = bpy.data.collections.get(coll_name)
-            if not coll:
-                coll = bpy.data.collections.new(coll_name)
+            coll = bdata_cols.get(coll_name) if bdata_cols else None
+            if not coll and bdata_cols:
+                coll = bdata_cols.new(coll_name)
                 if hasattr(context, "scene") and hasattr(context.scene, "collection"):
                     context.scene.collection.children.link(coll)
 
@@ -370,7 +396,9 @@ class BatchProcessorEngine:
                 if lod_mesh is None:
                     continue
                 lod_mesh.name = f"{lod_obj_name}_Mesh"
-                lod_obj = bpy.data.objects.new(lod_obj_name, lod_mesh)
+                lod_obj = bdata_objs.new(lod_obj_name, lod_mesh) if bdata_objs else None
+                if lod_obj is None:
+                    continue
                 lod_obj.matrix_world = primary_obj.matrix_world.copy()
                 if coll:
                     coll.objects.link(lod_obj)
@@ -532,18 +560,18 @@ class BatchProcessorEngine:
         finally:
             # 6. Strict Memory & Datablock Teardown
             all_created = imported_objs + generated_lod_objs
-            cls.cleanup_imported_objects(all_created)
-            if coll and bpy:
+            cls.cleanup_imported_objects(all_created, blend_data=bdata)
+            if coll and bdata_cols:
                 try:
-                    bpy.data.collections.remove(coll)
+                    bdata_cols.remove(coll)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Collection cleanup failed: %s", exc)
 
             # Purge orphan datablocks
-            if bpy:
+            if bdata and hasattr(bdata, "orphans_purge"):
                 try:
                     is_bg = bool(getattr(getattr(bpy, "app", None), "background", False))
-                    bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=is_bg)
+                    bdata.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=is_bg)
                 except (RuntimeError, ValueError, AttributeError) as exc:
                     logger.debug("Orphan purge bypassed: %s", exc)
 
@@ -557,26 +585,33 @@ class BatchProcessorEngine:
         return result
 
     @staticmethod
-    def cleanup_imported_objects(objects: list[bpy.types.Object]) -> None:
+    def cleanup_imported_objects(
+        objects: list[bpy.types.Object],
+        *,
+        blend_data: BlendData | None = None,
+    ) -> None:
         """Removes objects and their mesh datablocks cleanly from Blender memory."""
-        if not bpy:
-            return
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_meshes = getattr(blend_data, "meshes", None) if blend_data else None
+
         meshes_to_remove = set()
         for obj in objects:
             if not obj:
                 continue
             if getattr(obj, "type", "") == "MESH" and getattr(obj, "data", None):
                 meshes_to_remove.add(obj.data)
-            try:
-                bpy.data.objects.remove(obj, do_unlink=True)
-            except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Object remove error: %s", exc)
+            if bdata_objs:
+                try:
+                    bdata_objs.remove(obj, do_unlink=True)
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    logger.debug("Object remove error: %s", exc)
 
         for mesh in meshes_to_remove:
-            try:
-                bpy.data.meshes.remove(mesh, do_unlink=True)
-            except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Mesh remove error: %s", exc)
+            if bdata_meshes:
+                try:
+                    bdata_meshes.remove(mesh, do_unlink=True)
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    logger.debug("Mesh remove error: %s", exc)
 
     @classmethod
     def force_garbage_collection(cls) -> None:

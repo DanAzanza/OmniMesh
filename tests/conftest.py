@@ -636,6 +636,12 @@ class MockBlendDataContainer(_MockBase):
     def values(self) -> Any:
         return list(self._items.values())
 
+    def keys(self) -> Any:
+        return list(self._items.keys())
+
+    def items(self) -> Any:
+        return list(self._items.items())
+
     def __contains__(self, item: Any) -> bool:
         if isinstance(item, str):
             return item in self._items

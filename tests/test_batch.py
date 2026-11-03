@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from core.batch import BatchProcessorEngine
+from tests.conftest import MockBlendData
 from core.batch_worker_process import (
     WorkerProcessHandle,
     build_hierarchical_export_path,
@@ -71,6 +72,18 @@ def test_batch_processor_cleanup_imported_objects():
     # Should not throw on empty/None
     BatchProcessorEngine.cleanup_imported_objects([])
     BatchProcessorEngine.cleanup_imported_objects(cast(Any, [None, object()]))
+
+    # Test explicit BlendData dependency injection cleanup
+    bdata = MockBlendData()
+    mesh_data = type("MockMeshData", (), {"name": "CubeMesh"})()
+    bdata.meshes._items["CubeMesh"] = mesh_data
+
+    obj = type("MockObj", (), {"name": "CubeObj", "type": "MESH", "data": mesh_data})()
+    bdata.objects._items["CubeObj"] = obj
+
+    BatchProcessorEngine.cleanup_imported_objects(cast(Any, [obj]), blend_data=bdata)
+    assert "CubeObj" not in bdata.objects
+    assert "CubeMesh" not in bdata.meshes
 
 
 def test_discover_blend_files_recursive(tmp_path: Path):
