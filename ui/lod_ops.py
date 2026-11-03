@@ -181,6 +181,7 @@ class LOD_OT_generate_all(Operator):
         )
         base_name = base_name.split("_LOD")[0]
 
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
         success, msg = generate_all_lods(
             context=context,
             props=props,
@@ -188,6 +189,7 @@ class LOD_OT_generate_all(Operator):
             armature_obj=armature_obj,
             base_name=base_name,
             only_out_of_sync=bool(self.only_out_of_sync),
+            blend_data=bdata,
         )
 
         if success:

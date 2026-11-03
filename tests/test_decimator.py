@@ -253,3 +253,18 @@ def test_execute_decimate_qem_raises_decimation_error_on_apply_failure(monkeypat
     assert "SM_Hero" in str(exc_info.value)
     # Ensure broken modifier was removed
     mock_obj.modifiers.remove.assert_called_with(mock_mod)
+
+
+def test_lod_generator_pure_di_with_mock_blend_data(monkeypatch):
+    """Verify generate_all_lods accepts injected BlendData without global bpy.data."""
+    from tests.conftest import MockBlendData
+
+    monkeypatch.setattr("core.lod_generator.bpy", MagicMock())
+    bdata = MockBlendData()
+    mock_ctx = MagicMock()
+    mock_ctx.blend_data = bdata
+
+    # Empty meshes -> fails safely with expected error message
+    success, msg = generate_all_lods(context=mock_ctx, props=None, mesh_objs=[], blend_data=bdata)
+    assert success is False
+    assert "no mesh objects" in msg.lower()

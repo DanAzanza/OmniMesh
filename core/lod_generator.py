@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData
     from mathutils import Vector
 else:
     try:
@@ -38,6 +39,7 @@ else:
         bpy = None
         bmesh = None
         Vector = None
+    BlendData = object
 
 try:
     from .decimator import MeshDecimator
@@ -144,23 +146,26 @@ def _process_merged_tier(
     max_influences: int,
     ref_merged_obj: bpy.types.Object | None = None,
     context: bpy.types.Context | None = None,
+    *,
+    blend_data: BlendData | None = None,
 ) -> tuple[int, int, int, bpy.types.Object | None]:
     """Processes a merged LOD tier, combining meshes and applying decimation pipeline."""
     tier = tier_in
     props = props_in
     render = cast("bpy.types.RenderSettings", render_in)
+    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+    bdata_objs = getattr(bdata, "objects", None) if bdata else None
     merged_name = f"{base_name}_LOD{tier_idx}"
-    existing = bpy.data.objects.get(merged_name)
-    if existing and existing not in mesh_objs:
+    existing = bdata_objs.get(merged_name) if bdata_objs else None
+    if existing and existing not in mesh_objs and bdata_objs:
         old_mesh = cast("bpy.types.Mesh | None", existing.data)
-        bpy.data.objects.remove(existing, do_unlink=True)
-        if old_mesh and old_mesh.users == 0 and hasattr(bpy.data, "meshes"):
+        bdata_objs.remove(existing, do_unlink=True)
+        bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+        if old_mesh and getattr(old_mesh, "users", 1) == 0 and bdata_meshes:
             try:
-                bpy.data.meshes.remove(old_mesh)
+                bdata_meshes.remove(old_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
-
-    bdata = getattr(context, "blend_data", None) if context else None
+                logger.debug("Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", ""), exc)
     tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
         mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot, blend_data=bdata
     )
@@ -270,12 +275,14 @@ def _process_merged_tier(
                     fb_exc,
                 )
     finally:
-        if owned_ref and target_ref and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        if owned_ref and target_ref and bdata_objs:
             ref_mesh = cast("bpy.types.Mesh | None", target_ref.data)
             try:
-                bpy.data.objects.remove(target_ref, do_unlink=True)
-                if ref_mesh and ref_mesh.users == 0 and hasattr(bpy.data, "meshes"):
-                    bpy.data.meshes.remove(ref_mesh)
+                bdata_objs.remove(target_ref, do_unlink=True)
+                bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and bdata_meshes:
+                    bdata_meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Cleanup ref_merged_obj exception: %s", exc)
 
@@ -319,6 +326,8 @@ def _process_unmerged_tier(
     fov_v: float,
     max_influences: int,
     context: bpy.types.Context | None = None,
+    *,
+    blend_data: BlendData | None = None,
 ) -> tuple[int, int, int, bpy.types.Object | None]:
     """Processes an unmerged multi-mesh LOD tier, decimating each object individually."""
     tier = tier_in
@@ -329,17 +338,21 @@ def _process_unmerged_tier(
     culled_slender_count = 0
     first_generated_obj = None
 
+    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+    bdata_objs = getattr(bdata, "objects", None) if bdata else None
+    bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+
     for obj_idx, source_obj in enumerate(mesh_objs):
         sub_name = f"{source_obj.name}_LOD{tier_idx}" if len(mesh_objs) > 1 else f"{base_name}_LOD{tier_idx}"
-        existing = bpy.data.objects.get(sub_name)
-        if existing and existing not in mesh_objs and existing != source_obj:
+        existing = bdata_objs.get(sub_name) if bdata_objs else None
+        if existing and existing not in mesh_objs and existing != source_obj and bdata_objs:
             old_mesh = cast("bpy.types.Mesh | None", existing.data)
-            bpy.data.objects.remove(existing, do_unlink=True)
-            if old_mesh and old_mesh.users == 0 and hasattr(bpy.data, "meshes"):
+            bdata_objs.remove(existing, do_unlink=True)
+            if old_mesh and getattr(old_mesh, "users", 1) == 0 and bdata_meshes:
                 try:
-                    bpy.data.meshes.remove(old_mesh)
+                    bdata_meshes.remove(old_mesh)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
+                    logger.debug("Failed deallocating orphan mesh %s: %s", getattr(old_mesh, "name", ""), exc)
 
         lod_obj = source_obj.copy()
         if lod_obj is None:
@@ -468,6 +481,8 @@ def generate_all_lods(
     armature_obj: bpy.types.Object | None = None,
     base_name: str = "",
     only_out_of_sync: bool = False,
+    *,
+    blend_data: BlendData | None = None,
 ) -> tuple[bool, str]:
     """
     Execute the full multi-tier LOD generation pipeline across selected meshes.
@@ -500,6 +515,7 @@ def generate_all_lods(
         orig_pose_pos = arm_data.pose_position
         arm_data.pose_position = "REST"
 
+    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
     shared_ref_merged_obj = None
     try:
         base_name = base_name.split("_LOD")[0]
@@ -609,7 +625,11 @@ def generate_all_lods(
                         try:
                             shared_ref_merged_name = "__OM_Ref_Merged_LOD0_Shared__"
                             shared_ref_merged_obj = MeshMergeEngine.consolidate_and_merge_meshes(
-                                mesh_objs, shared_ref_merged_name, armature_obj=armature_obj, pivot_obj=root_pivot
+                                mesh_objs,
+                                shared_ref_merged_name,
+                                armature_obj=armature_obj,
+                                pivot_obj=root_pivot,
+                                blend_data=bdata,
                             )
                         except (RuntimeError, ValueError, AttributeError) as exc:
                             logger.debug("Failed creating shared ref_merged_obj: %s", exc)
@@ -631,6 +651,7 @@ def generate_all_lods(
                         max_influences=max_influences,
                         ref_merged_obj=shared_ref_merged_obj,
                         context=context,
+                        blend_data=bdata,
                     )
                 else:
                     tris, mats, slender_cull, gen_obj = _process_unmerged_tier(
@@ -649,6 +670,7 @@ def generate_all_lods(
                         fov_v=fov_v,
                         max_influences=max_influences,
                         context=context,
+                        blend_data=bdata,
                     )
 
                 if props is not None:
@@ -701,12 +723,14 @@ def generate_all_lods(
         return False, f"LOD generation failed: {exc}"
 
     finally:
-        if shared_ref_merged_obj and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "objects"):
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        if shared_ref_merged_obj and bdata_objs:
             ref_mesh = getattr(shared_ref_merged_obj, "data", None)
             try:
-                bpy.data.objects.remove(shared_ref_merged_obj, do_unlink=True)
-                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and hasattr(bpy.data, "meshes"):
-                    bpy.data.meshes.remove(ref_mesh)
+                bdata_objs.remove(shared_ref_merged_obj, do_unlink=True)
+                bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and bdata_meshes:
+                    bdata_meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Cleanup shared_ref_merged_obj exception: %s", exc)
 
