@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Monotonic ratchet baseline for direct and indirect bpy.data references in core/ and exporters/
-BPY_DATA_RATCHET_BASELINE = 106
+BPY_DATA_RATCHET_BASELINE = 95
 
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }

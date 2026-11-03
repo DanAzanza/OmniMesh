@@ -644,6 +644,9 @@ class MockBlendDataContainer(_MockBase):
     def __iter__(self) -> Any:
         return iter(self._items.values())
 
+    def __getitem__(self, key: str) -> Any:
+        return self._items[key]
+
     def __len__(self) -> int:
         return len(self._items)
 
@@ -662,6 +665,7 @@ class MockBlendData(_MockBase):
         self.lights = MockBlendDataContainer()
         self.cameras = MockBlendDataContainer()
         self.actions = MockBlendDataContainer()
+        self.armatures = MockBlendDataContainer()
 
 
 @pytest.fixture

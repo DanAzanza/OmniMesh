@@ -157,6 +157,7 @@ class OMNIMESH_OT_import_engine_project(Operator):
             target_models.append(("exterior", first_model))
 
         primary_model_name = target_models[0][0] if target_models else "exterior"
+        bdata = getattr(context, "blend_data", None)
         for model_name, model_info in target_models:
             tag_lower = model_name.lower()
             is_exterior = tag_lower in ("exterior", "normal", "base")
@@ -181,7 +182,12 @@ class OMNIMESH_OT_import_engine_project(Operator):
                     continue
 
                 new_objs = GLTFAssemblyEngine.import_gltf_into_collection(
-                    context, lod_info.gltf_path, tier_col, asset_name=sub_asset, is_interior=(not is_exterior)
+                    context,
+                    lod_info.gltf_path,
+                    tier_col,
+                    asset_name=sub_asset,
+                    is_interior=(not is_exterior),
+                    blend_data=bdata,
                 )
                 all_imported_objects.extend(new_objs)
                 model_imported_objects.extend(new_objs)
@@ -203,13 +209,18 @@ class OMNIMESH_OT_import_engine_project(Operator):
             # Master Rig Retargeting scoped strictly to this model's objects
             if reuse_rig and model_master_armature and model_imported_objects:
                 mods_retargeted = GLTFAssemblyEngine.retarget_armatures_to_master(
-                    model_master_armature, model_imported_objects
+                    model_master_armature,
+                    model_imported_objects,
+                    blend_data=bdata,
                 )
                 logger.info("Retargeted %d armature modifiers to master rig for '%s'", mods_retargeted, sub_asset)
 
         # Deduplicate materials across LODs
         if dedup_mats and all_imported_objects:
-            mats_remapped = GLTFAssemblyEngine.deduplicate_materials(all_imported_objects)
+            mats_remapped = GLTFAssemblyEngine.deduplicate_materials(
+                all_imported_objects,
+                blend_data=bdata,
+            )
             logger.info("Deduplicated %d material slots across LODs", mats_remapped)
 
         # Bind to OmniMesh Scene LOD Tiers

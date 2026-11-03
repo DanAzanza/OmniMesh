@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
-    from bpy.types import Collection, LayerCollection, Material, Object
+    from bpy.types import BlendData, Collection, LayerCollection, Material, Object
 else:
     try:
         import bpy
@@ -26,6 +26,7 @@ else:
         LayerCollection = object
         Material = object
         Object = object
+    BlendData = object
 
 from .msfs.project_scanner import MSFSProjectManifest
 
@@ -121,6 +122,8 @@ class GLTFAssemblyEngine:
         target_collection: bpy.types.Collection | None,
         asset_name: str = "",
         is_interior: bool = False,
+        *,
+        blend_data: BlendData | None = None,
     ) -> list[bpy.types.Object]:
         """Imports a glTF file into target_collection while strictly isolating created objects.
 
@@ -141,9 +144,10 @@ class GLTFAssemblyEngine:
         if target_lc:
             vl.active_layer_collection = target_lc
 
+        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
         # Snapshot existing objects
-        existing_objects = set(bpy.data.objects)
-        existing_collections = set(bpy.data.collections)
+        existing_objects = set(bdata.objects) if bdata and hasattr(bdata, "objects") else set()
+        existing_collections = set(bdata.collections) if bdata and hasattr(bdata, "collections") else set()
 
         try:
             # Execute Blender's glTF importer
@@ -159,7 +163,9 @@ class GLTFAssemblyEngine:
                     logger.debug("Failed restoring previous active layer collection: %s", exc)
 
         # Identify newly created objects
-        new_objects = [obj for obj in bpy.data.objects if obj not in existing_objects]
+        new_objects = (
+            [obj for obj in bdata.objects if obj not in existing_objects] if bdata and hasattr(bdata, "objects") else []
+        )
 
         # Isolate new objects and route interaction / collision volumes
         effective_asset = asset_name or getattr(target_collection, "name", "Asset").split("_")[0]
@@ -223,24 +229,31 @@ class GLTFAssemblyEngine:
                         logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
 
         # Cleanup dummy collections created by glTF importer if they are now empty
-        new_collections = [c for c in bpy.data.collections if c not in existing_collections]
+        bdata_cols = getattr(bdata, "collections", None) if bdata else None
+        new_collections = [c for c in bdata_cols if c not in existing_collections] if bdata_cols else []
         for coll in new_collections:
-            if coll != target_collection and len(coll.objects) == 0 and len(coll.children) == 0:
+            if coll != target_collection and len(coll.objects) == 0 and len(coll.children) == 0 and bdata_cols:
                 try:
-                    bpy.data.collections.remove(coll)
+                    bdata_cols.remove(coll)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed removing empty collection %s: %s", coll.name, exc)
 
         return new_objects
 
     @classmethod
-    def deduplicate_materials(cls, objects: list[bpy.types.Object]) -> int:
+    def deduplicate_materials(
+        cls,
+        objects: list[bpy.types.Object],
+        *,
+        blend_data: BlendData | None = None,
+    ) -> int:
         """Detects duplicated material datablocks (e.g. Fuselage.001) across imported objects,
 
         remaps them to canonical base materials (Fuselage), and cleans up unreferenced duplicates.
         Returns the number of material slots remapped.
         """
-        if not bpy:
+        bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
+        if not bdata_mats:
             return 0
 
         remapped_count = 0
@@ -258,8 +271,8 @@ class GLTFAssemblyEngine:
                 match = re.search(r"^(.*?)\.\d{3}$", mat.name)
                 if match:
                     base_name = match.group(1)
-                    if base_name in bpy.data.materials:
-                        canonical_mat = bpy.data.materials[base_name]
+                    if bdata_mats and base_name in bdata_mats:
+                        canonical_mat = bdata_mats[base_name]
                         if canonical_mat != mat:
                             slot.material = canonical_mat
                             materials_to_check.add(mat)
@@ -267,9 +280,9 @@ class GLTFAssemblyEngine:
 
         # Purge unreferenced duplicate materials
         for dup_mat in materials_to_check:
-            if dup_mat.users == 0:
+            if getattr(dup_mat, "users", 1) == 0 and bdata_mats:
                 try:
-                    bpy.data.materials.remove(dup_mat, do_unlink=True)
+                    bdata_mats.remove(dup_mat, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed removing unreferenced duplicate material %s: %s", dup_mat.name, exc)
 
@@ -280,12 +293,14 @@ class GLTFAssemblyEngine:
         cls,
         master_armature: Optional[bpy.types.Object],
         lod_objects: list[bpy.types.Object],
+        *,
+        blend_data: BlendData | None = None,
     ) -> int:
         """Retargets ARMATURE modifiers on LOD mesh objects to the Master Rig (LOD0 Armature)
 
         and purges redundant duplicate armature objects. Returns number of modifiers retargeted.
         """
-        if not bpy or not master_armature:
+        if not master_armature:
             return 0
 
         retargeted_count = 0
@@ -297,7 +312,7 @@ class GLTFAssemblyEngine:
                 continue
 
             if obj.type == "MESH":
-                if obj.parent in redundant_armatures:
+                if getattr(obj, "parent", None) in redundant_armatures:
                     obj.parent = master_armature
                 if hasattr(obj, "modifiers"):
                     for mod in obj.modifiers:
@@ -309,15 +324,17 @@ class GLTFAssemblyEngine:
                             retargeted_count += 1
 
         # Safely remove redundant armatures and clean orphan datablocks
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_armatures = getattr(blend_data, "armatures", None) if blend_data else None
         for arm_obj in redundant_armatures:
-            if arm_obj != master_armature:
+            if arm_obj != master_armature and bdata_objs:
                 arm_data = getattr(arm_obj, "data", None)
                 try:
-                    bpy.data.objects.remove(arm_obj, do_unlink=True)
-                    if arm_data and hasattr(bpy.data, "armatures") and getattr(arm_data, "users", 0) == 0:
-                        bpy.data.armatures.remove(arm_data)
+                    bdata_objs.remove(arm_obj, do_unlink=True)
+                    if arm_data and bdata_armatures and getattr(arm_data, "users", 0) == 0:
+                        bdata_armatures.remove(arm_data)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed removing redundant armature %s: %s", arm_obj.name, exc)
+                    logger.debug("Failed removing redundant armature %s: %s", getattr(arm_obj, "name", ""), exc)
 
         return retargeted_count
 
