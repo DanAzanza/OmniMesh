@@ -248,12 +248,21 @@ class ShaderGraphBuilder:
                 if node not in keep_nodes:
                     nodes.remove(node)
 
-        # 3. Coordinate Mapping
-        tex_coord = nodes.new(type="ShaderNodeTexCoord")
-        tex_coord.location = (-1200, 0)
-        mapping = nodes.new(type="ShaderNodeMapping")
-        mapping.location = (-1000, 0)
-        links.new(tex_coord.outputs["UV"], mapping.inputs["Vector"])
+        # 3. Coordinate Mapping (Reuse existing nodes to ensure idempotency when preserve_existing=True)
+        tex_coord = next((n for n in nodes if getattr(n, "type", "") == "TEX_COORD"), None)
+        if not tex_coord:
+            tex_coord = nodes.new(type="ShaderNodeTexCoord")
+            tex_coord.location = (-1200, 0)
+
+        mapping = next((n for n in nodes if getattr(n, "type", "") == "MAPPING"), None)
+        if not mapping:
+            mapping = nodes.new(type="ShaderNodeMapping")
+            mapping.location = (-1000, 0)
+
+        uv_out = tex_coord.outputs.get("UV")
+        vec_in = mapping.inputs.get("Vector")
+        if uv_out and vec_in and not vec_in.is_linked:
+            links.new(uv_out, vec_in)
 
         # 4. Conflict Arbitration & Route Plan
         # Resolve map definitions for active files

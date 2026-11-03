@@ -184,8 +184,8 @@ class LOD_OT_import_pbr_set(Operator):
         if search_roots:
             primary_dir = search_roots[0]
             ao_mode = getattr(props, "pbr_import_ao_mode", "MULTIPLY") if props else "MULTIPLY"
-            preserve = getattr(props, "pbr_import_preserve_existing", False) if props else False
-            path_mode = getattr(props, "pbr_import_path_mode", "RELATIVE") if props else "RELATIVE"
+            preserve = True
+            path_mode = "RELATIVE"
 
             for obj in lod0_meshes:
                 for slot in getattr(obj, "material_slots", []):
@@ -297,8 +297,8 @@ class LOD_OT_auto_match_pbr_folder(Operator):
             return {"CANCELLED"}
 
         ao_mode = getattr(props, "pbr_import_ao_mode", "MULTIPLY")
-        preserve = getattr(props, "pbr_import_preserve_existing", False)
-        path_mode = getattr(props, "pbr_import_path_mode", "RELATIVE")
+        preserve = True
+        path_mode = "RELATIVE"
         count = 0
 
         for slot_name, tex_dict in matched.items():

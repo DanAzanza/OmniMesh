@@ -1,7 +1,6 @@
 {
   "name": "MSFS 2024 (glTF COMP)",
   "version": 2,
-  "description": "Microsoft Flight Simulator 2024 / glTF COMP (ALBEDO, COMP [R: AO, G: Roughness, B: Metallic], NORM OpenGL)",
   "target_engine": "MSFS_2024",
   "strategy": "CONVERT_PNG",
   "bit_depth": 8,

@@ -395,7 +395,7 @@ class BasePresetManager:
         items: list[tuple[str, str, str]] = []
         for pid, pdata in presets.items():
             name = str(pdata.get("name", pid))
-            desc = str(pdata.get("description", ""))
+            desc = str(pdata.get("description", "")).strip() or name
             items.append((pid, name, desc))
         return items or [(cls.DEFAULT_PRESET_ID, "Default Profile", "Default template")]
 
@@ -441,6 +441,9 @@ class BasePresetManager:
         if not validated:
             raise ValueError("Invalid preset schema. Ensure non-empty name, maps, and channels.")
 
+        if cls.CATEGORY == "importer":
+            validated.pop("description", None)
+
         pid = cls.sanitize_id(custom_id or validated["name"])
         builtin_ids = cls.get_builtin_preset_ids()
         if pid in builtin_ids:
@@ -472,6 +475,110 @@ class BasePresetManager:
 
         cls.load_presets(force_reload=True)
         return pid
+
+    @classmethod
+    def is_user_preset(cls, preset_id: str) -> bool:
+        """Returns True if preset_id is an editable custom user preset on disk."""
+        if not preset_id:
+            return False
+        presets = cls.load_presets()
+        preset = presets.get(preset_id)
+        return bool(preset and not preset.get("_is_builtin", False))
+
+    @classmethod
+    def create_new_preset(
+        cls,
+        name: str,
+        description: str = "",
+        template_id: str | None = None,
+    ) -> str:
+        """Creates a new unique custom preset from a template or minimal starter definition."""
+        clean_name = name.strip() if name and name.strip() else "New Preset"
+        base_id = cls.sanitize_id(clean_name)
+        existing = cls.load_presets()
+        builtin_ids = cls.get_builtin_preset_ids()
+
+        candidate_id = base_id
+        counter = 2
+        while candidate_id in existing or candidate_id in builtin_ids:
+            candidate_id = f"{base_id}_{counter}"
+            counter += 1
+
+        if template_id and template_id in existing:
+            source = copy.deepcopy(existing[template_id])
+            source["name"] = clean_name
+            if cls.CATEGORY == "importer":
+                source.pop("description", None)
+            elif description:
+                source["description"] = description.strip()
+            source["_is_builtin"] = False
+            source.pop("_filepath", None)
+            return cls.save_custom_preset(source, custom_id=candidate_id)
+
+        minimal_preset: dict[str, Any] = {
+            "name": clean_name,
+            "version": 2,
+            "maps": [
+                {
+                    "id": "base_color",
+                    "name": "Base Color",
+                    "priority": 10,
+                    "suffixes": ["_BaseColor", "_BC", "_Albedo", "_Diff", "_Color"],
+                    "color_space": "sRGB",
+                    "channels": {
+                        "rgb": {"target": "Base Color", "invert": False},
+                        "a": {"target": "Alpha", "invert": False},
+                    },
+                }
+            ],
+        }
+        if cls.CATEGORY != "importer" and description:
+            minimal_preset["description"] = description.strip()
+        return cls.save_custom_preset(minimal_preset, custom_id=candidate_id)
+
+    @classmethod
+    def rename_custom_preset(cls, old_id: str, new_name: str) -> str:
+        """Renames an existing user custom preset, updating its JSON file and metadata."""
+        clean_name = new_name.strip()
+        if not clean_name:
+            raise ValueError("Preset name cannot be empty.")
+
+        presets = cls.load_presets()
+        if old_id not in presets:
+            raise FileNotFoundError(f"Preset '{old_id}' does not exist.")
+
+        preset = presets[old_id]
+        if preset.get("_is_builtin", False):
+            raise PermissionError(f"Cannot rename built-in factory preset '{old_id}'. Duplicate it instead.")
+
+        old_filepath = preset.get("_filepath")
+        if not old_filepath or not os.path.exists(old_filepath):
+            raise FileNotFoundError(f"Preset file for '{old_id}' not found on disk.")
+
+        new_id = cls.sanitize_id(clean_name)
+        builtin_ids = cls.get_builtin_preset_ids()
+        if new_id in builtin_ids:
+            raise PermissionError(f"Cannot rename to built-in factory preset ID '{new_id}'.")
+
+        if new_id != old_id and new_id in presets:
+            raise FileExistsError(f"A preset with ID '{new_id}' already exists.")
+
+        preset_data = copy.deepcopy(preset)
+        preset_data["name"] = clean_name
+        preset_data.pop("_is_builtin", None)
+        preset_data.pop("_filepath", None)
+
+        saved_id = cls.save_custom_preset(preset_data, custom_id=new_id)
+
+        if new_id != old_id:
+            try:
+                if os.path.exists(old_filepath):
+                    os.remove(old_filepath)
+            except OSError as exc:
+                logger.warning("Could not remove old preset file '%s' after rename: %s", old_filepath, exc)
+
+        cls.load_presets(force_reload=True)
+        return saved_id
 
     @classmethod
     def duplicate_preset(cls, source_id: str, new_name: str = "", overrides: Optional[dict[str, Any]] = None) -> str:

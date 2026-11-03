@@ -157,3 +157,39 @@ class TestPBRPipeline(unittest.TestCase):
             self.assertIn("Asset_Glass", matches)
             self.assertIn("base_color", matches["Asset_Body"])
             self.assertIn("base_color", matches["Asset_Glass"])
+
+    def test_pbr_preset_operators_live_rna_properties(self) -> None:
+        """Verify that PBR preset operators have valid registered RNA properties in Blender C-API."""
+        with in_blender_sandbox() as scene:
+            if bpy is None or scene is None:
+                return
+
+            lod_ops: Any = getattr(bpy.ops, "lod_tool", None)
+            if lod_ops is None:
+                self.fail("lod_tool operator category not registered in Blender bpy.ops")
+
+            # Check move_preset_map has 'direction' RNA property
+            rna_move = lod_ops.move_preset_map.get_rna_type()
+            self.assertIn("direction", rna_move.properties.keys())
+
+            # Check add_map_template has 'template_type' RNA property
+            rna_tpl = lod_ops.add_map_template.get_rna_type()
+            self.assertIn("template_type", rna_tpl.properties.keys())
+
+            # Check create_import_preset has 'preset_name', 'template_type'
+            rna_create = lod_ops.create_import_preset.get_rna_type()
+            self.assertIn("preset_name", rna_create.properties.keys())
+            self.assertIn("template_type", rna_create.properties.keys())
+
+            # Check duplicate_preset has 'preset_type' and 'new_name'
+            rna_dup = lod_ops.duplicate_preset.get_rna_type()
+            self.assertIn("preset_type", rna_dup.properties.keys())
+            self.assertIn("new_name", rna_dup.properties.keys())
+
+            # Check rename_import_preset has 'new_name'
+            rna_ren = lod_ops.rename_import_preset.get_rna_type()
+            self.assertIn("new_name", rna_ren.properties.keys())
+
+            # Check open_presets_directory has 'category'
+            rna_open = lod_ops.open_presets_directory.get_rna_type()
+            self.assertIn("category", rna_open.properties.keys())

@@ -242,7 +242,7 @@ class LODToolSettings(PropertyGroup):
     )
     pbr_import_preserve_existing: BoolProperty(
         name="Preserve Existing Nodes",
-        default=False,
+        default=True,
         description="Preserve existing non-PBR shader nodes in material when importing texture sets",
         update=callbacks.on_import_preserve_updated,
     )

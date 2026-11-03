@@ -568,3 +568,134 @@ def test_all_factory_presets_have_unified_naming_pattern():
             pattern = pdata.get("naming_pattern", "")
             assert "{material}" in pattern, f"Exporter preset {pid} missing {{material}}"
             assert pattern == DEFAULT_NAMING_PATTERN, f"Exporter preset {pid} pattern is {pattern}"
+
+
+def test_create_new_preset_lifecycle():
+    """Verify create_new_preset generates valid files from templates and minimal starters."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        with patch.object(PBRImporterPresetManager, "get_user_dir", return_value=tmp_path):
+            # 1. Create from template
+            pid_tpl = PBRImporterPresetManager.create_new_preset(
+                name="Studio UE5",
+                description="Custom studio profile",
+                template_id="unreal_engine_5",
+            )
+            assert pid_tpl == "studio_ue5"
+            assert (tmp_path / "studio_ue5.json").exists()
+            data_tpl = PBRImporterPresetManager.get_preset("studio_ue5")
+            assert data_tpl["name"] == "Studio UE5"
+            assert "description" not in data_tpl
+            assert len(data_tpl["maps"]) >= 3
+
+            # 2. Create minimal starter
+            pid_min = PBRImporterPresetManager.create_new_preset(
+                name="Minimal Pipeline",
+                template_id="minimal",
+            )
+            assert pid_min == "minimal_pipeline"
+            assert (tmp_path / "minimal_pipeline.json").exists()
+            data_min = PBRImporterPresetManager.get_preset("minimal_pipeline")
+            assert data_min["name"] == "Minimal Pipeline"
+            assert len(data_min["maps"]) == 1
+            assert data_min["maps"][0]["id"] == "base_color"
+
+
+def test_rename_custom_preset_lifecycle_and_boundaries():
+    """Verify renaming custom presets updates files on disk, and enforces security boundaries."""
+    import pytest
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        with patch.object(PBRImporterPresetManager, "get_user_dir", return_value=tmp_path):
+            # Create a test custom preset
+            assert PBRImporterPresetManager.create_new_preset("Old Pipeline") == "old_pipeline"
+            assert (tmp_path / "old_pipeline.json").exists()
+
+            # Successful rename
+            new_id = PBRImporterPresetManager.rename_custom_preset("old_pipeline", "New Cool Pipeline")
+            assert new_id == "new_cool_pipeline"
+            assert not (tmp_path / "old_pipeline.json").exists()
+            assert (tmp_path / "new_cool_pipeline.json").exists()
+            renamed = PBRImporterPresetManager.get_preset("new_cool_pipeline")
+            assert renamed["name"] == "New Cool Pipeline"
+
+            # Boundaries:
+            # 1. Cannot rename built-in preset
+            with pytest.raises(PermissionError, match="built-in"):
+                PBRImporterPresetManager.rename_custom_preset("unreal_engine_5", "Hacked UE5")
+
+            # 2. Cannot rename with empty name
+            with pytest.raises(ValueError, match="empty"):
+                PBRImporterPresetManager.rename_custom_preset("new_cool_pipeline", "   ")
+
+            # 3. Cannot rename non-existent preset
+            with pytest.raises(FileNotFoundError):
+                PBRImporterPresetManager.rename_custom_preset("ghost_preset", "Ghost")
+
+            # 4. Cannot rename to built-in ID
+            with pytest.raises(PermissionError, match="built-in factory preset ID"):
+                PBRImporterPresetManager.rename_custom_preset("new_cool_pipeline", "unreal_engine_5")
+
+
+def test_is_user_preset_distinction():
+    """Verify is_user_preset accurately distinguishes factory templates from custom files."""
+    assert PBRImporterPresetManager.is_user_preset("unreal_engine_5") is False
+    assert PBRImporterPresetManager.is_user_preset("msfs_2024_comp") is False
+    assert PBRImporterPresetManager.is_user_preset("") is False
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        with patch.object(PBRImporterPresetManager, "get_user_dir", return_value=tmp_path):
+            pid = PBRImporterPresetManager.create_new_preset("User Spec")
+            assert PBRImporterPresetManager.is_user_preset(pid) is True
+
+
+def test_map_template_definitions_and_reordering():
+    """Verify map template definitions contain valid suffixes and reordering synchronizes priority."""
+    from ui.pbr_map_ops import (
+        MAP_TEMPLATE_DEFINITIONS,
+        TEMPLATE_ITEMS,
+        LOD_OT_move_preset_map,
+    )
+
+    # 1. Verify template items contract
+    for t_id, _name, _desc in TEMPLATE_ITEMS:
+        assert t_id in MAP_TEMPLATE_DEFINITIONS
+        t_data = MAP_TEMPLATE_DEFINITIONS[t_id]
+        assert t_data["map_id"]
+        assert len(t_data["suffixes"].split(",")) >= 1
+        assert t_data["color_space"] in {"sRGB", "Non-Color"}
+
+    # 2. Verify reordering priorities
+    mock_item1 = MagicMock(priority=10)
+    mock_item2 = MagicMock(priority=20)
+    mock_item3 = MagicMock(priority=30)
+    items = [mock_item1, mock_item2, mock_item3]
+
+    mock_maps = MagicMock()
+    mock_maps.__len__.side_effect = lambda: len(items)
+    mock_maps.__iter__.side_effect = lambda: iter(items)
+    mock_maps.__getitem__.side_effect = lambda i: items[i]
+    mock_maps.move.side_effect = lambda src, dst: items.insert(dst, items.pop(src))
+
+    mock_props = MagicMock()
+    mock_props.pbr_active_maps = mock_maps
+    mock_props.pbr_active_map_index = 0
+    mock_props.pbr_import_preset = "custom_test"
+
+    mock_context = MagicMock()
+    mock_context.scene.lod_tool = mock_props
+
+    with (
+        patch.object(PBRImporterPresetManager, "is_builtin", return_value=False),
+        patch("ui.pbr_map_ops.sync_maps_to_preset"),
+    ):
+        op_down = LOD_OT_move_preset_map()
+        op_down.direction = "DOWN"
+        res = op_down.execute(mock_context)
+        assert res == {"FINISHED"}
+        assert mock_props.pbr_active_map_index == 1
+        # Priority should be deterministically re-indexed
+        for idx, m in enumerate(items):
+            assert m.priority == (idx + 1) * 10

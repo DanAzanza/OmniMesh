@@ -87,12 +87,16 @@ class OMNIMESH_PT_import(Panel):
         row_preset.prop(props, "pbr_import_preset", text="Preset")
         row_preset.popover(panel="OMNIMESH_PT_popover_import_preset", icon="PREFERENCES", text="")
 
-        # Row 2: [ Import ] [ Path Field ][ 📁 ]
-        row2 = box_pbr.row(align=True)
-        row2.use_property_split = False
-        row2.scale_y = 1.15
-        row2.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
-        row2.prop(props, "pbr_import_directory", text="")
+        # Row 2: Path Field [ //Textures/ ] [ 📁 ]
+        row_path = box_pbr.row(align=True)
+        row_path.use_property_split = False
+        row_path.prop(props, "pbr_import_directory", text="Path")
+
+        # Row 3: [ Import PBR Textures ]
+        row_btn = box_pbr.row(align=True)
+        row_btn.use_property_split = False
+        row_btn.scale_y = 1.2
+        row_btn.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
 
 
 # =========================================================================

@@ -1,7 +1,6 @@
 {
   "name": "Unity URP (Metallic Standard)",
   "version": 2,
-  "description": "Unity Universal Render Pipeline (BaseMap, MetallicGloss [RGB: Metal, A: Smoothness], Normal OpenGL)",
   "target_engine": "UNITY_6",
   "strategy": "CONVERT_PNG",
   "bit_depth": 8,

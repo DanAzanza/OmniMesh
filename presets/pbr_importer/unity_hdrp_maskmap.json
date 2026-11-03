@@ -1,7 +1,6 @@
 {
   "name": "Unity HDRP (MaskMap)",
   "version": 2,
-  "description": "Unity High Definition Render Pipeline (BaseMap, MaskMap [R: Metal, G: AO, B: Detail, A: Smoothness], Normal OpenGL)",
   "target_engine": "UNITY_6",
   "strategy": "CONVERT_PNG",
   "bit_depth": 16,

@@ -116,6 +116,7 @@ def sync_maps_from_preset(props: Any, preset: dict[str, Any]) -> None:
                 item.is_packed = False
                 rgb_info = channels.get("rgb", {})
                 item.target_rgb = rgb_info.get("target", "Base Color") if isinstance(rgb_info, dict) else "Base Color"
+                item.invert_rgb = bool(rgb_info.get("invert", False)) if isinstance(rgb_info, dict) else False
                 if "a" in channels:
                     a_info = channels.get("a", {})
                     item.target_a = a_info.get("target", "NONE") if isinstance(a_info, dict) else "NONE"
@@ -163,7 +164,7 @@ def sync_maps_to_preset(props: Any) -> None:
         channels: dict[str, Any] = {}
         if not item.is_packed:
             if item.target_rgb != "NONE":
-                channels["rgb"] = {"target": item.target_rgb, "invert": False}
+                channels["rgb"] = {"target": item.target_rgb, "invert": bool(getattr(item, "invert_rgb", False))}
             if item.target_a != "NONE":
                 channels["a"] = {"target": item.target_a, "invert": item.invert_a}
         else:
@@ -238,6 +239,7 @@ def sync_export_maps_from_preset(props: Any, preset: dict[str, Any]) -> None:
                 item.is_packed = False
                 rgb_info = channels.get("rgb", {})
                 item.target_rgb = rgb_info.get("target", "Base Color") if isinstance(rgb_info, dict) else "Base Color"
+                item.invert_rgb = bool(rgb_info.get("invert", False)) if isinstance(rgb_info, dict) else False
                 if "a" in channels:
                     a_info = channels.get("a", {})
                     a_target = a_info.get("target", "NONE") if isinstance(a_info, dict) else "NONE"
@@ -298,7 +300,7 @@ def sync_export_maps_to_preset(props: Any) -> None:
         channels: dict[str, Any] = {}
         if not item.is_packed:
             if item.target_rgb != "NONE":
-                channels["rgb"] = {"target": item.target_rgb, "invert": False}
+                channels["rgb"] = {"target": item.target_rgb, "invert": bool(getattr(item, "invert_rgb", False))}
             if item.target_a != "NONE":
                 channels["a"] = {"target": item.target_a, "invert": item.invert_a}
         else:
@@ -365,6 +367,7 @@ class PBRMapItem(PropertyGroup):
     target_rgb: EnumProperty(
         name="RGB Target", items=PRINCIPLED_TARGET_ITEMS, default="Base Color", update=on_map_item_updated
     )
+    invert_rgb: BoolProperty(name="Invert RGB", default=False, update=on_map_item_updated)
     target_a: EnumProperty(
         name="Alpha Target", items=PRINCIPLED_TARGET_ITEMS, default="NONE", update=on_map_item_updated
     )
@@ -421,6 +424,7 @@ class PBRExportMapItem(PropertyGroup):
     target_rgb: EnumProperty(
         name="RGB Target", items=PRINCIPLED_TARGET_ITEMS, default="Base Color", update=on_export_map_item_updated
     )
+    invert_rgb: BoolProperty(name="Invert RGB", default=False, update=on_export_map_item_updated)
     target_a: EnumProperty(
         name="Alpha Target", items=PRINCIPLED_TARGET_ITEMS, default="NONE", update=on_export_map_item_updated
     )

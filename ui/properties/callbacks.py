@@ -53,9 +53,7 @@ ENGINE_TO_FACTORY_PRESET: dict[str, str] = {
 _PERSISTENT_PIPELINE_KEYS: tuple[str, ...] = (
     "pbr_import_directory",
     "export_directory",
-    "pbr_import_path_mode",
     "pbr_import_ao_mode",
-    "pbr_import_preserve_existing",
     "engine_project_path",
     "enable_live_sync",
     "batch_mode",

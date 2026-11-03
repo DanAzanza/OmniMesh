@@ -1,17 +1,18 @@
 # pyright: reportInvalidTypeForm=none
 """
 OmniMesh PBR Preset CRUD & Management Operators.
-Handles creation, duplication, map configuration, persistence, and deletion
+Handles creation, duplication, renaming, persistence, deletion, and directory access
 for PBR import presets and unified engine export presets.
+Map-level rule operators are modularized in ui.pbr_map_ops.
 """
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import copy
 import logging
 import os
 import sys
-from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any, cast
 
 try:
@@ -24,13 +25,20 @@ try:
         PBRExportPresetManager,
         PBRImportPresetManager,
     )
+    from .pbr_map_ops import (
+        LOD_OT_add_export_preset_map,
+        LOD_OT_add_map_template,
+        LOD_OT_add_preset_map,
+        LOD_OT_delete_export_preset_map,
+        LOD_OT_delete_preset_map,
+        LOD_OT_init_preset_maps,
+        LOD_OT_move_preset_map,
+        PBR_MAP_OPERATOR_CLASSES,
+    )
     from .properties import (
         ENGINE_TO_FACTORY_PRESET,
-        ExportMapSyncGuard,
         MapSyncGuard,
         PresetSyncGuard,
-        sync_export_maps_from_preset,
-        sync_export_maps_to_preset,
         sync_maps_from_preset,
         sync_maps_to_preset,
     )
@@ -45,13 +53,20 @@ except (ImportError, ValueError):
         PBRExportPresetManager,
         PBRImportPresetManager,
     )
+    from ui.pbr_map_ops import (
+        LOD_OT_add_export_preset_map,
+        LOD_OT_add_map_template,
+        LOD_OT_add_preset_map,
+        LOD_OT_delete_export_preset_map,
+        LOD_OT_delete_preset_map,
+        LOD_OT_init_preset_maps,
+        LOD_OT_move_preset_map,
+        PBR_MAP_OPERATOR_CLASSES,
+    )
     from ui.properties import (
         ENGINE_TO_FACTORY_PRESET,
-        ExportMapSyncGuard,
         MapSyncGuard,
         PresetSyncGuard,
-        sync_export_maps_from_preset,
-        sync_export_maps_to_preset,
         sync_maps_from_preset,
         sync_maps_to_preset,
     )
@@ -59,14 +74,29 @@ except (ImportError, ValueError):
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
     from bpy.types import Operator
 else:
     try:
         import bpy
+        from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
         from bpy.types import Operator
     except ImportError:
         bpy = None
         Operator = object
+
+        def BoolProperty(**kwargs: Any) -> Any:
+            return Any
+
+        def EnumProperty(**kwargs: Any) -> Any:
+            return Any
+
+        def IntProperty(**kwargs: Any) -> Any:
+            return Any
+
+        def StringProperty(**kwargs: Any) -> Any:
+            return Any
+
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +107,7 @@ class LOD_OT_reload_pbr_presets(Operator):
     bl_idname = "lod_tool.reload_pbr_presets"
     bl_label = "Reload Presets"
     bl_description = "Refreshes the PBR importer and exporter presets from built-in and user folders"
+    bl_options = {"REGISTER"}
 
     def execute(self, context: Any) -> set[Any]:
         loaded_imp = PBRImportPresetManager.load_presets(force_reload=True)
@@ -95,7 +126,7 @@ class LOD_OT_reset_pbr_preset(Operator):
     bl_idname = "lod_tool.reset_pbr_preset"
     bl_label = "Reset to Built-in Default"
     bl_description = "Deletes user custom overrides for this preset and restores factory defaults"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"REGISTER"}
 
     def execute(self, context: Any) -> set[Any]:
         props, _, _ = resolve_lod_context(context)
@@ -113,27 +144,174 @@ class LOD_OT_reset_pbr_preset(Operator):
         return {"FINISHED"}
 
 
-class LOD_OT_init_preset_maps(Operator):
-    """Initializes active PBR preset maps from built-in or custom definition."""
+class LOD_OT_create_import_preset(Operator):
+    """Create a new custom PBR import preset from scratch or starter template."""
 
-    bl_idname = "lod_tool.init_preset_maps"
-    bl_label = "Initialize Preset Maps"
-    bl_description = "Synchronizes active preset maps for texture import and export"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_idname = "lod_tool.create_import_preset"
+    bl_label = "New Import Preset"
+    bl_description = "Creates a new custom PBR import preset profile with name and starter template"
+    bl_options = {"REGISTER"}
+
+    preset_name: StringProperty(
+        name="Preset Name",
+        description="Display name for the new custom import preset",
+        default="Custom Import Preset",
+    )
+
+    template_type: EnumProperty(
+        name="Starter Template",
+        items=[
+            ("standard_pbr_split", "Standard PBR (Split Maps)", "Discrete texture files for each channel"),
+            ("unreal_engine_5", "Unreal Engine 5 (Packed ORM)", "Base Color, Packed ORM, and Normal"),
+            ("msfs_2024_comp", "MSFS 2024 (Packed COMP)", "Base Color, Packed COMP, and Normal"),
+            ("unity_hdrp_maskmap", "Unity HDRP (MaskMap)", "Base Color, Packed MaskMap, and Normal"),
+            ("minimal", "Minimal (Base Color Only)", "Minimal single-texture starter rule"),
+        ],
+        default="standard_pbr_split",
+    )
+
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
+        return context.window_manager.invoke_props_dialog(self, width=340)
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
+            return
+        layout = self.layout
+        col = layout.column(align=True)
+        col.prop(self, "preset_name", text="Name")
+        col.separator()
+        col.prop(self, "template_type", text="Template")
 
     def execute(self, context: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
         props, _, _ = resolve_lod_context(context)
         if not props and hasattr(context, "scene"):
             props = getattr(context.scene, "lod_tool", None)
-        if not props:
+
+        try:
+            new_id = PBRImportPresetManager.create_new_preset(
+                name=self.preset_name,
+                template_id=self.template_type,
+            )
+
+            if props and hasattr(props, "pbr_import_preset"):
+
+                def _apply_new_pre(p_obj: Any, nid: str) -> None:
+                    p_obj.pbr_import_preset = nid
+                    preset_data = PBRImportPresetManager.get_preset(nid)
+                    sync_maps_from_preset(p_obj, preset_data)
+
+                with PresetSyncGuard(), MapSyncGuard():
+                    try:
+                        _apply_new_pre(props, new_id)
+                    except (TypeError, ValueError):
+                        if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+
+                            def _make_deferred_new(p_target: Any, target_nid: str):
+                                def _deferred():
+                                    with PresetSyncGuard(), MapSyncGuard():
+                                        try:
+                                            _apply_new_pre(p_target, target_nid)
+                                        except Exception as exc:
+                                            logger.debug("Deferred preset assignment skipped: %s", exc)
+
+                                return _deferred
+
+                            bpy.app.timers.register(_make_deferred_new(props, new_id), first_interval=0.005)
+
+            PBRImportPresetManager.set_last_active_preset(new_id)
+            safe_report(self, {"INFO"}, f"Created import preset '{self.preset_name}'.")
+            return {"FINISHED"}
+        except Exception as exc:
+            logger.error("Failed creating import preset: %s", exc, exc_info=True)
+            safe_report(self, {"ERROR"}, f"Could not create preset: {exc}")
             return {"CANCELLED"}
 
-        imp_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
-        exp_id = getattr(props, "pbr_export_preset", "") or DEFAULT_PRESET_ID
-        sync_maps_from_preset(props, PBRImportPresetManager.get_preset(imp_id))
-        sync_export_maps_from_preset(props, PBRExportPresetManager.get_preset(exp_id))
-        safe_report(self, {"INFO"}, "Initialized active preset maps.")
-        return {"FINISHED"}
+
+class LOD_OT_rename_import_preset(Operator):
+    """Rename the active custom PBR import preset."""
+
+    bl_idname = "lod_tool.rename_import_preset"
+    bl_label = "Rename Import Preset"
+    bl_description = "Renames the active custom import preset file and display metadata"
+    bl_options = {"REGISTER"}
+
+    new_name: StringProperty(
+        name="New Name",
+        description="New name for the custom preset",
+        default="",
+    )
+
+    def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
+        props, _, _ = resolve_lod_context(context)
+        if not props and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
+        preset_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
+
+        if PBRImportPresetManager.is_builtin(preset_id):
+            safe_report(self, {"ERROR"}, "Built-in factory presets cannot be renamed. Duplicate it first.")
+            return {"CANCELLED"}
+
+        preset = PBRImportPresetManager.get_preset(preset_id)
+        self.new_name = preset.get("name", preset_id)
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not self.layout:
+            return
+        layout = self.layout
+        layout.prop(self, "new_name", text="Name")
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy:
+            return {"FINISHED"}
+        props, _, _ = resolve_lod_context(context)
+        if not props and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
+        old_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
+
+        if PBRImportPresetManager.is_builtin(old_id):
+            safe_report(self, {"ERROR"}, "Cannot rename built-in factory presets.")
+            return {"CANCELLED"}
+
+        clean_name = self.new_name.strip()
+        if not clean_name:
+            safe_report(self, {"ERROR"}, "Preset name cannot be empty.")
+            return {"CANCELLED"}
+
+        try:
+            new_id = PBRImportPresetManager.rename_custom_preset(old_id, clean_name)
+            if props and hasattr(props, "pbr_import_preset"):
+                with PresetSyncGuard():
+                    try:
+                        props.pbr_import_preset = new_id
+                    except (TypeError, ValueError):
+                        if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+
+                            def _make_deferred_ren(p_target: Any, target_nid: str):
+                                def _deferred():
+                                    with PresetSyncGuard():
+                                        try:
+                                            p_target.pbr_import_preset = target_nid
+                                        except Exception as exc:
+                                            logger.debug("Deferred preset assignment skipped: %s", exc)
+
+                                return _deferred
+
+                            bpy.app.timers.register(_make_deferred_ren(props, new_id), first_interval=0.005)
+
+            PBRImportPresetManager.set_last_active_preset(new_id)
+            safe_report(self, {"INFO"}, f"Renamed preset to '{clean_name}'.")
+            return {"FINISHED"}
+        except Exception as exc:
+            logger.error("Failed renaming preset '%s': %s", old_id, exc, exc_info=True)
+            safe_report(self, {"ERROR"}, f"Rename failed: {exc}")
+            return {"CANCELLED"}
 
 
 class LOD_OT_duplicate_preset(Operator):
@@ -142,30 +320,22 @@ class LOD_OT_duplicate_preset(Operator):
     bl_idname = "lod_tool.duplicate_preset"
     bl_label = "Duplicate Preset"
     bl_description = "Clones the active preset into a new editable custom user preset"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"REGISTER"}
 
-    preset_type: Any = (
-        bpy.props.EnumProperty(
-            name="Preset Type",
-            items=[
-                ("EXPORT", "Export Preset", "Duplicate active export preset"),
-                ("IMPORT", "Import Preset", "Duplicate active import preset"),
-                ("LOD", "LOD Preset", "Duplicate active LOD preset"),
-            ],
-            default="EXPORT",
-        )
-        if bpy
-        else "EXPORT"
+    preset_type: EnumProperty(
+        name="Preset Type",
+        items=[
+            ("EXPORT", "Export Preset", "Duplicate active export preset"),
+            ("IMPORT", "Import Preset", "Duplicate active import preset"),
+            ("LOD", "LOD Preset", "Duplicate active LOD preset"),
+        ],
+        default="EXPORT",
     )
 
-    new_name: Any = (
-        bpy.props.StringProperty(
-            name="Preset Name",
-            description="Name for the duplicated preset",
-            default="",
-        )
-        if bpy
-        else ""
+    new_name: StringProperty(
+        name="Preset Name",
+        description="Name for the duplicated preset",
+        default="",
     )
 
     def invoke(self, context: Any, event: Any) -> set[Any]:
@@ -187,13 +357,13 @@ class LOD_OT_duplicate_preset(Operator):
 
         current_name = preset.get("name", source_id)
         self.new_name = f"{current_name} (Copy)"
-        return context.window_manager.invoke_props_dialog(self)
+        return context.window_manager.invoke_props_dialog(self, width=300)
 
     def draw(self, context: Any) -> None:
         if not bpy or not self.layout:
             return
         layout = self.layout
-        layout.prop(self, "new_name")
+        layout.prop(self, "new_name", text="Name")
 
     def execute(self, context: Any) -> set[Any]:
         targets = []
@@ -232,9 +402,8 @@ class LOD_OT_duplicate_preset(Operator):
                 if self.preset_type == "IMPORT":
                     if hasattr(target_prop, "pbr_import_preset"):
                         target_prop.pbr_import_preset = target_nid
-                        if sync_maps_from_preset:
-                            preset_data = mgr.get_preset(target_nid)
-                            sync_maps_from_preset(target_prop, preset_data)
+                        preset_data = mgr.get_preset(target_nid)
+                        sync_maps_from_preset(target_prop, preset_data)
                 elif self.preset_type == "LOD":
                     if hasattr(target_prop, "lod_preset"):
                         target_prop.lod_preset = target_nid
@@ -254,25 +423,7 @@ class LOD_OT_duplicate_preset(Operator):
 
                             def make_deferred(prop_obj: Any, nid: str):
                                 def _deferred_apply() -> None:
-                                    guard = (
-                                        PresetSyncGuard()
-                                        if (
-                                            PresetSyncGuard
-                                            and hasattr(PresetSyncGuard, "is_locked")
-                                            and not PresetSyncGuard.is_locked()
-                                        )
-                                        else nullcontext()
-                                    )
-                                    mguard = (
-                                        MapSyncGuard()
-                                        if (
-                                            MapSyncGuard
-                                            and hasattr(MapSyncGuard, "is_active")
-                                            and not MapSyncGuard.is_active()
-                                        )
-                                        else nullcontext()
-                                    )
-                                    with guard, mguard:
+                                    with guard_ctx, map_ctx:
                                         try:
                                             apply_target_preset(prop_obj, nid)
                                         except Exception as exc:
@@ -283,7 +434,7 @@ class LOD_OT_duplicate_preset(Operator):
                             bpy.app.timers.register(make_deferred(p, new_id), first_interval=0.005)
 
             mgr.set_last_active_preset(new_id)
-            safe_report(self, {"INFO"}, f"Created custom preset '{new_id}'.")
+            safe_report(self, {"INFO"}, f"Created custom preset '{self.new_name}'.")
             return {"FINISHED"}
         except Exception as exc:
             logger.error("Failed to duplicate preset '%s': %s", source_id, exc, exc_info=True)
@@ -297,16 +448,12 @@ class LOD_OT_duplicate_export_preset(Operator):
     bl_idname = "lod_tool.duplicate_export_preset"
     bl_label = "Duplicate Export Preset"
     bl_description = "Legacy operator alias to clone active export preset"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"REGISTER"}
 
-    new_name: Any = (
-        bpy.props.StringProperty(
-            name="Preset Name",
-            description="Name for the duplicated preset",
-            default="",
-        )
-        if bpy
-        else ""
+    new_name: StringProperty(
+        name="Preset Name",
+        description="Name for the duplicated preset",
+        default="",
     )
 
     def execute(self, context: Any) -> set[Any]:
@@ -315,153 +462,67 @@ class LOD_OT_duplicate_export_preset(Operator):
         return cast(Any, bpy.ops).lod_tool.duplicate_preset(preset_type="EXPORT", new_name=self.new_name)
 
 
-class LOD_OT_add_preset_map(Operator):
-    """Add a new texture map rule to the active import preset."""
+class LOD_OT_save_import_preset(Operator):
+    """Save active import configuration into the custom preset on disk."""
 
-    bl_idname = "lod_tool.add_preset_map"
-    bl_label = "Add Map Definition"
-    bl_description = "Adds a new texture map rule to the active preset (creates an editable copy if built-in)"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_idname = "lod_tool.save_import_preset"
+    bl_label = "Save Import Preset"
+    bl_description = "Persists modified texture map rules and options to the active custom preset file"
+    bl_options = {"REGISTER"}
 
     def execute(self, context: Any) -> set[Any]:
-        if not bpy:
-            return {"FINISHED"}
-        props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
-        if not props:
-            props, _, _ = resolve_lod_context(context)
-        if not props or not hasattr(props, "pbr_active_maps"):
+        props, _, _ = resolve_lod_context(context)
+        if not props and hasattr(context, "scene"):
+            props = getattr(context.scene, "lod_tool", None)
+        preset_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
+
+        if PBRImportPresetManager.is_builtin(preset_id):
+            safe_report(self, {"ERROR"}, "Cannot overwrite built-in factory preset. Click 'Duplicate' first.")
             return {"CANCELLED"}
 
-        idx = len(props.pbr_active_maps) + 1
-        with MapSyncGuard() if MapSyncGuard else nullcontext():
-            item = props.pbr_active_maps.add()
-            item.map_id = f"custom_map_{idx}"
-            item.name = f"Custom Map {idx}"
-            item.suffixes_str = f"_Map{idx}"
-            item.color_space = "Non-Color"
-            item.is_normal_map = False
-            item.is_packed = False
-            item.target_rgb = "Base Color"
-            props.pbr_active_map_index = len(props.pbr_active_maps) - 1
-
-        if sync_maps_to_preset:
+        try:
             sync_maps_to_preset(props)
+            preset = PBRImportPresetManager.get_preset(preset_id)
+            safe_report(self, {"INFO"}, f"Saved import preset '{preset.get('name', preset_id)}'.")
+            return {"FINISHED"}
+        except Exception as exc:
+            logger.error("Failed to save custom import preset '%s': %s", preset_id, exc, exc_info=True)
+            safe_report(self, {"ERROR"}, f"Save failed: {exc}")
+            return {"CANCELLED"}
 
-        safe_report(self, {"INFO"}, f"Added map '{item.name}'.")
-        return {"FINISHED"}
 
+class LOD_OT_save_export_preset(Operator):
+    """Save modified export configuration into the active custom preset."""
 
-class LOD_OT_delete_preset_map(Operator):
-    """Delete the selected texture map rule from the active import preset."""
-
-    bl_idname = "lod_tool.delete_preset_map"
-    bl_label = "Delete Map Definition"
-    bl_description = "Removes the selected texture map rule from the active preset"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_idname = "lod_tool.save_export_preset"
+    bl_label = "Save Export Preset"
+    bl_description = "Saves target engine, channel strategy, and naming settings to the active custom preset"
+    bl_options = {"REGISTER"}
 
     def execute(self, context: Any) -> set[Any]:
-        if not bpy:
-            return {"FINISHED"}
-        props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
+        props, _, _ = resolve_lod_context(context)
         if not props:
-            props, _, _ = resolve_lod_context(context)
-        if not props or not hasattr(props, "pbr_active_maps"):
+            props = getattr(context.scene, "lod_tool", None)
+        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
+
+        if PBRExportPresetManager.is_builtin(preset_id):
+            safe_report(self, {"ERROR"}, "Cannot overwrite built-in factory preset. Click 'Duplicate' first.")
             return {"CANCELLED"}
 
-        count = len(props.pbr_active_maps)
-        if count <= 1:
-            safe_report(self, {"WARNING"}, "A preset must contain at least one texture map.")
-            return {"CANCELLED"}
+        try:
+            pdata = copy.deepcopy(PBRExportPresetManager.get_preset(preset_id))
+            pdata["target_engine"] = getattr(props, "target_engine", "UE5")
+            pdata["strategy"] = getattr(props, "pbr_export_texture_strategy", "CONVERT_PNG")
+            pdata["bit_depth"] = int(getattr(props, "pbr_export_bit_depth", "8"))
+            pdata["naming_pattern"] = getattr(props, "pbr_export_naming_pattern", "{asset}_{material}{suffix}{udim}")
 
-        idx = props.pbr_active_map_index
-        if idx < 0 or idx >= count:
-            return {"CANCELLED"}
-
-        deleted_name = props.pbr_active_maps[idx].name
-        with MapSyncGuard() if MapSyncGuard else nullcontext():
-            props.pbr_active_maps.remove(idx)
-            props.pbr_active_map_index = max(0, min(idx, len(props.pbr_active_maps) - 1))
-
-        if sync_maps_to_preset:
-            sync_maps_to_preset(props)
-
-        safe_report(self, {"INFO"}, f"Deleted map '{deleted_name}'.")
-        return {"FINISHED"}
-
-
-class LOD_OT_add_export_preset_map(Operator):
-    """Add a new texture map rule to the active export preset."""
-
-    bl_idname = "lod_tool.add_export_preset_map"
-    bl_label = "Add Export Map Definition"
-    bl_description = "Adds a new texture map rule to the active export preset (creates an editable copy if built-in)"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy:
+            PBRExportPresetManager.save_custom_preset(pdata, custom_id=preset_id)
+            safe_report(self, {"INFO"}, f"Saved settings to custom preset '{pdata.get('name', preset_id)}'.")
             return {"FINISHED"}
-        props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
-        if not props:
-            props, _, _ = resolve_lod_context(context)
-        if not props or not hasattr(props, "pbr_export_active_maps"):
+        except Exception as exc:
+            logger.error("Failed to save custom preset '%s': %s", preset_id, exc, exc_info=True)
+            safe_report(self, {"ERROR"}, f"Save failed: {exc}")
             return {"CANCELLED"}
-
-        idx = len(props.pbr_export_active_maps) + 1
-        with ExportMapSyncGuard() if ExportMapSyncGuard else nullcontext():
-            item = props.pbr_export_active_maps.add()
-            item.map_id = f"custom_map_{idx}"
-            item.name = f"Custom Map {idx}"
-            item.export = True
-            item.export_suffix = f"_Map{idx}"
-            item.color_space = "Non-Color"
-            item.is_normal_map = False
-            item.is_packed = False
-            item.target_rgb = "Base Color"
-            props.pbr_export_active_map_index = len(props.pbr_export_active_maps) - 1
-
-        if sync_export_maps_to_preset:
-            sync_export_maps_to_preset(props)
-
-        safe_report(self, {"INFO"}, f"Added export map '{item.name}'.")
-        return {"FINISHED"}
-
-
-class LOD_OT_delete_export_preset_map(Operator):
-    """Delete the selected texture map rule from the active export preset."""
-
-    bl_idname = "lod_tool.delete_export_preset_map"
-    bl_label = "Delete Export Map Definition"
-    bl_description = "Removes the selected texture map rule from the active export preset"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy:
-            return {"FINISHED"}
-        props = getattr(context.scene, "lod_tool", None) if context and hasattr(context, "scene") else None
-        if not props:
-            props, _, _ = resolve_lod_context(context)
-        if not props or not hasattr(props, "pbr_export_active_maps"):
-            return {"CANCELLED"}
-
-        count = len(props.pbr_export_active_maps)
-        if count <= 1:
-            safe_report(self, {"WARNING"}, "An export preset must contain at least one texture map.")
-            return {"CANCELLED"}
-
-        idx = props.pbr_export_active_map_index
-        if idx < 0 or idx >= count:
-            return {"CANCELLED"}
-
-        deleted_name = props.pbr_export_active_maps[idx].name
-        with ExportMapSyncGuard() if ExportMapSyncGuard else nullcontext():
-            props.pbr_export_active_maps.remove(idx)
-            props.pbr_export_active_map_index = max(0, min(idx, len(props.pbr_export_active_maps) - 1))
-
-        if sync_export_maps_to_preset:
-            sync_export_maps_to_preset(props)
-
-        safe_report(self, {"INFO"}, f"Deleted export map '{deleted_name}'.")
-        return {"FINISHED"}
 
 
 class LOD_OT_open_presets_directory(Operator):
@@ -470,18 +531,15 @@ class LOD_OT_open_presets_directory(Operator):
     bl_idname = "lod_tool.open_presets_directory"
     bl_label = "Open Presets Folder"
     bl_description = "Opens the custom preset folder in the operating system file manager"
+    bl_options = {"REGISTER"}
 
-    category: Any = (
-        bpy.props.EnumProperty(
-            name="Category",
-            items=[
-                ("IMPORTER", "Importer", "Open importer presets folder"),
-                ("EXPORTER", "Exporter", "Open exporter presets folder"),
-            ],
-            default="EXPORTER",
-        )
-        if bpy
-        else "EXPORTER"
+    category: EnumProperty(
+        name="Category",
+        items=[
+            ("IMPORTER", "Importer", "Open importer presets folder"),
+            ("EXPORTER", "Exporter", "Open exporter presets folder"),
+        ],
+        default="IMPORTER",
     )
 
     def execute(self, context: Any) -> set[Any]:
@@ -511,47 +569,13 @@ class LOD_OT_open_presets_directory(Operator):
             return {"CANCELLED"}
 
 
-class LOD_OT_save_export_preset(Operator):
-    """Save modified export configuration into the active custom preset."""
-
-    bl_idname = "lod_tool.save_export_preset"
-    bl_label = "Save Export Preset"
-    bl_description = "Saves target engine, channel strategy, and naming settings to the active custom preset"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context: Any) -> set[Any]:
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            props = getattr(context.scene, "lod_tool", None)
-        preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", DEFAULT_PRESET_ID)
-
-        if PBRExportPresetManager.is_builtin(preset_id):
-            safe_report(self, {"ERROR"}, "Cannot overwrite built-in factory preset. Click 'Duplicate' first.")
-            return {"CANCELLED"}
-
-        try:
-            pdata = copy.deepcopy(PBRExportPresetManager.get_preset(preset_id))
-            pdata["target_engine"] = getattr(props, "target_engine", "UE5")
-            pdata["strategy"] = getattr(props, "pbr_export_texture_strategy", "CONVERT_PNG")
-            pdata["bit_depth"] = int(getattr(props, "pbr_export_bit_depth", "8"))
-            pdata["naming_pattern"] = getattr(props, "pbr_export_naming_pattern", "{asset}_{material}{suffix}{udim}")
-
-            PBRExportPresetManager.save_custom_preset(pdata, custom_id=preset_id)
-            safe_report(self, {"INFO"}, f"Saved settings to custom preset '{pdata.get('name', preset_id)}'.")
-            return {"FINISHED"}
-        except Exception as exc:
-            logger.error("Failed to save custom preset '%s': %s", preset_id, exc, exc_info=True)
-            safe_report(self, {"ERROR"}, f"Save failed: {exc}")
-            return {"CANCELLED"}
-
-
 class LOD_OT_delete_import_preset(Operator):
     """Permanently delete active custom import preset with confirmation."""
 
     bl_idname = "lod_tool.delete_import_preset"
     bl_label = "Delete Custom Preset"
     bl_description = "Deletes the active custom import preset file and resets to factory default"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"REGISTER"}
 
     def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy:
@@ -604,7 +628,7 @@ class LOD_OT_delete_export_preset(Operator):
     bl_idname = "lod_tool.delete_export_preset"
     bl_label = "Delete Custom Preset"
     bl_description = "Deletes the active custom export preset file and resets to factory default"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"REGISTER"}
 
     def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy:
@@ -656,34 +680,39 @@ class LOD_OT_delete_export_preset(Operator):
 
 
 PBR_PRESET_OPERATOR_CLASSES = (
+    *PBR_MAP_OPERATOR_CLASSES,
     LOD_OT_reload_pbr_presets,
     LOD_OT_reset_pbr_preset,
-    LOD_OT_init_preset_maps,
+    LOD_OT_create_import_preset,
+    LOD_OT_rename_import_preset,
     LOD_OT_duplicate_preset,
     LOD_OT_duplicate_export_preset,
-    LOD_OT_add_preset_map,
-    LOD_OT_delete_preset_map,
-    LOD_OT_add_export_preset_map,
-    LOD_OT_delete_export_preset_map,
-    LOD_OT_open_presets_directory,
+    LOD_OT_save_import_preset,
     LOD_OT_save_export_preset,
     LOD_OT_delete_import_preset,
     LOD_OT_delete_export_preset,
+    LOD_OT_open_presets_directory,
 )
 
 __all__ = [
     "PBR_PRESET_OPERATOR_CLASSES",
     "LOD_OT_reload_pbr_presets",
     "LOD_OT_reset_pbr_preset",
-    "LOD_OT_init_preset_maps",
+    "LOD_OT_create_import_preset",
+    "LOD_OT_rename_import_preset",
     "LOD_OT_duplicate_preset",
     "LOD_OT_duplicate_export_preset",
-    "LOD_OT_add_preset_map",
-    "LOD_OT_delete_preset_map",
-    "LOD_OT_add_export_preset_map",
-    "LOD_OT_delete_export_preset_map",
-    "LOD_OT_open_presets_directory",
+    "LOD_OT_save_import_preset",
     "LOD_OT_save_export_preset",
     "LOD_OT_delete_import_preset",
     "LOD_OT_delete_export_preset",
+    "LOD_OT_open_presets_directory",
+    # Re-exported from pbr_map_ops
+    "LOD_OT_init_preset_maps",
+    "LOD_OT_add_preset_map",
+    "LOD_OT_add_map_template",
+    "LOD_OT_delete_preset_map",
+    "LOD_OT_move_preset_map",
+    "LOD_OT_add_export_preset_map",
+    "LOD_OT_delete_export_preset_map",
 ]

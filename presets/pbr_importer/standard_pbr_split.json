@@ -1,7 +1,6 @@
 {
   "name": "Standard PBR (Split Maps)",
   "version": 2,
-  "description": "Standard PBR with individual textures per channel (Substance Default)",
   "target_engine": "UE5",
   "strategy": "CONVERT_PNG",
   "bit_depth": 8,
