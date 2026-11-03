@@ -17,11 +17,10 @@
 ---
 
 ## 2. Execution & Workflow Protocol
-* **Mandatory Architecture Sparring & Critique Gate (`plan_critic`)**:
-  * Before generating or updating implementation plans for multi-component features or architectural refactors (skip for localized bugfixes, single-file edits, or trivial config changes), execute an adversarial critique pass.
-  * When subagent tools are available (`invoke_subagent`), spawn an isolated review subagent (`TypeName: "research"` or `"self"`, `Role: "Plan Critic (plan_critic)"`) to challenge the technical design, failure modes, edge cases, and regression vectors. Summarize and address its findings before presenting the plan.
-  * Only if subagent tools are unavailable in the host environment, conduct an explicit adversarial review section in your thinking scratchpad before presenting the design.
-  * Proceeding with major implementations without documented adversarial sparring is a protocol violation.
+* **Architecture Critique (`plan_critic`) — Major Architecture Only**:
+  * **Default: Skip.** Do not run `plan_critic` for routine features, bugfixes, UI tweaks, config/doc updates, or localized refactors.
+  * **When to trigger**: Run **only** when introducing new architectural layers, breaking public contracts/schemas, adding external dependencies, or when explicitly requested by the user.
+  * **Execution**: Spawn a `research` subagent (`Role: "Plan Critic (plan_critic)"`) to check for design flaws, edge cases, and failure modes before presenting the plan.
 * **Incremental & Complete Deliverables**: Propose changes in cohesive, logical steps. Never output placeholder comments, partial snippets, or truncated blocks. Every delivered file or functional block must be complete and syntactically valid.
 * **Defensive Dependency Hygiene**: Rely on runtime standard libraries and established project utilities first. Never introduce external third-party dependencies without explicit architectural justification and user approval.
 * **Non-Blocking Execution**: When initiating long-running processes or asynchronous tasks, yield execution cleanly rather than polling in tight loops.
@@ -136,18 +135,14 @@ When formulating Git commit messages, adhere strictly to the following standards
 ---
 
 ## 7. Quality Gate & Pre-Commit Audit
-Before any commit or push operation is executed (or when the user requests a commit/pre-commit check), you MUST execute this sequence in full:
+Before any commit or push operation is executed (or when the user requests a commit/pre-commit check), follow these steps:
 
-* **CI Parity Gate**: Execute the project's central verification script (as documented in the project knowledge file, e.g. [`.agents/PROJECT.md`](PROJECT.md) or `KNOWLEDGE.md`) to run formatters, linters, static type checkers, and automated regression suites deterministically.
-* **Mandatory Adversarial Subagent Audit (`pre_commit_auditor`)**:
-  * Before finalizing a commit, always run an isolated audit pass against the current `git diff` and modified files.
-  * When subagent tools are available (`invoke_subagent`), you MUST spawn a fresh subagent (`TypeName: "research"` or `"self"`, `Role: "Pre-Commit Auditor (pre_commit_auditor)"`) rather than self-certifying in the main thread.
-  * The auditor must verify and report on three criteria:
-    1. *Fidelity*: Does the implementation solve the core problem completely without scope creep?
-    2. *Code Quality*: Does the change comply with all layering, typing, resource management, and clean code rules in `AGENTS.md`?
-    3. *Zero Regressions*: Confirm negative/boundary test coverage, zero diagnostic errors, zero linter warnings, and zero broken tests across the repository.
-  * *Anti-Nitpick Guard*: Once formatters, linters, and type checkers are green, the auditor must distinguish between objective `BLOCKER` violations (bugs, architectural boundary breaches, missing negative/boundary tests, security or resource leaks) and subjective style suggestions.
-* **Zero Regression Enforcement**: Commits and pushes remain strictly blocked until the CI Parity Gate passes and the `pre_commit_auditor` reports zero `BLOCKER` findings.
+* **CI Parity Gate**: For any code change, execute the project's central verification script (as documented in the project knowledge file, e.g. [`.agents/PROJECT.md`](PROJECT.md) or `KNOWLEDGE.md`) to ensure formatters, linters, static type checkers, and automated regression suites pass deterministically. Skip for pure documentation or comment changes.
+* **Subagent Pre-Commit Audit (`pre_commit_auditor`) — Large or Critical Changes Only**:
+  * **Default: Skip.** Do not spawn `pre_commit_auditor` for docs/configs, test-only edits, bugfixes, or small changes ($\le 3$ production files and $< 150$ changed lines) once the CI Parity Gate passes.
+  * **When to trigger**: Spawn a `research` subagent (`Role: "Pre-Commit Auditor (pre_commit_auditor)"`) **only** for large cross-cutting changes ($> 3$ production files or $\ge 150$ lines), security/concurrency/process-lifecycle logic, or on explicit user request.
+  * **Scope**: Verify against `git diff` solely for objective `BLOCKER` issues (bugs, architectural boundary breaches, resource/security leaks, or missing negative tests). Ignore subjective style preferences.
+* **Zero Regression Enforcement**: Commits and pushes remain strictly blocked until the CI Parity Gate passes (and `pre_commit_auditor` reports zero `BLOCKER` findings, if triggered).
 
 ---
 
