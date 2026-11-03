@@ -390,6 +390,7 @@ class LOD_OT_generate_collision_hulls(Operator):
         if not base_name or base_name in {"AUTO", "NONE"}:
             base_name = resolve_asset_base_name(context, mesh_objs)
 
+        bdata = getattr(context, "blend_data", None)
         created_hulls = CollisionManager.generate_colliders_for_objects(
             mesh_objs,
             base_name,
@@ -400,6 +401,7 @@ class LOD_OT_generate_collision_hulls(Operator):
             target_collection_name=f"{base_name}_Colliders",
             target_engine=getattr(props, "target_engine", "GENERIC"),
             scene=context.scene,
+            blend_data=bdata,
         )
 
         props.last_generated_collider_count = len(created_hulls)
@@ -429,7 +431,12 @@ class LOD_OT_remove_collision_hulls(Operator):
         if not base_name or base_name in {"AUTO", "NONE"}:
             base_name = resolve_asset_base_name(context, mesh_objs)
 
-        removed = CollisionManager.remove_colliders_for_objects(mesh_objs, base_name)
+        bdata = getattr(context, "blend_data", None)
+        removed = CollisionManager.remove_colliders_for_objects(
+            mesh_objs,
+            base_name,
+            blend_data=bdata,
+        )
         props.last_generated_collider_count = 0
         safe_report(self, {"INFO"}, f"Removed {removed} collision hulls.")
         return {"FINISHED"}

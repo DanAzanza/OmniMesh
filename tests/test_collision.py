@@ -198,12 +198,13 @@ def test_remove_colliders_scoped_safety(monkeypatch):
         True if k in {"_is_collider"} else "SM_Table" if k == "_om_asset_base" else default
     )
 
+    mock_blend_data = MagicMock()
     mock_objects_coll = MagicMock()
     mock_objects_coll.__iter__.return_value = [chair_col_1, table_col_1]
-    mock_bpy.data.objects = mock_objects_coll
-    mock_bpy.data.collections.get.return_value = None
+    mock_blend_data.objects = mock_objects_coll
+    mock_blend_data.collections.get.return_value = None
 
-    removed = CollisionManager.remove_colliders_for_objects([], "SM_Chair")
+    removed = CollisionManager.remove_colliders_for_objects([], "SM_Chair", blend_data=mock_blend_data)
     assert removed == 1
     mock_objects_coll.remove.assert_called_once_with(chair_col_1, do_unlink=True)
 
@@ -285,8 +286,9 @@ def test_collision_collection_nested_under_root_asset(monkeypatch):
             return root_coll
         return None
 
-    mock_bpy.data.collections.get.side_effect = mock_get
-    mock_bpy.data.collections.new.return_value = target_coll
+    mock_blend_data = MagicMock()
+    mock_blend_data.collections.get.side_effect = mock_get
+    mock_blend_data.collections.new.return_value = target_coll
 
     mesh_obj = MagicMock()
     mesh_obj.name = "SM_Plane"
@@ -298,6 +300,7 @@ def test_collision_collection_nested_under_root_asset(monkeypatch):
         "SM_Plane",
         mode="PER_OBJECT",
         hull_count=1,
+        blend_data=mock_blend_data,
     )
 
     root_coll.children.link.assert_called_once_with(target_coll)
@@ -339,7 +342,67 @@ def test_collision_area_none_data_safeguard(monkeypatch):
     obj_invalid.data = None
 
     # Must safely calculate total area without raising AttributeError for obj_invalid.data
+    mock_blend_data = MagicMock()
+    mock_blend_data.collections.get.return_value = None
+    mock_coll = MagicMock()
+    mock_blend_data.collections.new.return_value = mock_coll
     res = CollisionManager.generate_colliders_for_objects(
-        [obj_valid, obj_invalid], "SM_Test", mode="PER_OBJECT", hull_count=2
+        [obj_valid, obj_invalid], "SM_Test", mode="PER_OBJECT", hull_count=2, blend_data=mock_blend_data
     )
     assert isinstance(res, list)
+
+
+def test_collision_manager_pure_di_missing_blend_data_fails_closed():
+    """Verify generate_colliders and remove_colliders return empty results when blend_data is None."""
+    from core.collision import CollisionManager
+    from unittest.mock import MagicMock
+
+    dummy_obj = MagicMock()
+    assert CollisionManager.generate_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None) == []
+    assert CollisionManager.remove_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None) == 0
+
+
+def test_collision_manager_pure_di_lifecycle_with_mock_blend_data(monkeypatch):
+    """Verify full lifecycle of collider creation and removal using MockBlendData."""
+    import core.collision as col_mod
+    from core.collision import CollisionManager
+    from tests.conftest import MockBlendData, MockMeshObject
+    from unittest.mock import MagicMock
+
+    mock_bdata = MockBlendData()
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(col_mod, "bpy", mock_bpy)
+
+    # Provide a mesh object
+    mesh_obj = MockMeshObject(name="SM_Hero_LOD0", poly_count=12)
+    mesh_obj.matrix_world = MagicMock()
+
+    # Mock decompose_mesh_to_hulls to return 2 dummy bmesh hulls
+    hull1 = MagicMock()
+    hull2 = MagicMock()
+    monkeypatch.setattr(
+        col_mod.CollisionDecomposer,
+        "decompose_mesh_to_hulls",
+        lambda *args, **kwargs: [hull1, hull2],
+    )
+
+    created = CollisionManager.generate_colliders_for_objects(
+        [mesh_obj],
+        "SM_Hero",
+        hull_count=2,
+        blend_data=mock_bdata,
+    )
+    assert len(created) == 2
+    assert "SM_Hero_Colliders" in mock_bdata.collections
+    assert "SM_Hero_Collider_01" in mock_bdata.objects
+    assert "SM_Hero_Collider_02" in mock_bdata.objects
+
+    # Now test removal via blend_data
+    removed = CollisionManager.remove_colliders_for_objects(
+        [mesh_obj],
+        "SM_Hero",
+        blend_data=mock_bdata,
+    )
+    assert removed == 2
+    assert "SM_Hero_Collider_01" not in mock_bdata.objects
+    assert "SM_Hero_Collider_02" not in mock_bdata.objects

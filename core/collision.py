@@ -15,6 +15,7 @@ from .collision_decomposer import CollisionDecomposer
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bmesh
@@ -22,6 +23,8 @@ else:
     except ImportError:
         bpy = None  # type: ignore
         bmesh = None  # type: ignore
+
+    BlendData = object  # runtime fallback for type annotations
 
 logger = logging.getLogger(__name__)
 
@@ -47,21 +50,26 @@ class CollisionManager:
         target_collection_name: str = "",
         target_engine: str = "",
         scene: bpy.types.Scene | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> List[bpy.types.Object]:
-        if not bpy or not mesh_objs:
+        if not bpy or not mesh_objs or blend_data is None:
             return []
 
-        sc = scene or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+        sc = scene or (blend_data.scenes[0] if hasattr(blend_data, "scenes") and len(blend_data.scenes) > 0 else None)
 
         # Remove pre-existing colliders for clean regeneration first
-        cls.remove_colliders_for_objects(mesh_objs, base_name)
+        cls.remove_colliders_for_objects(mesh_objs, base_name, blend_data=blend_data)
 
         coll_name = target_collection_name or f"{base_name}_Colliders"
-        target_coll = bpy.data.collections.get(coll_name)
-        if not target_coll:
-            target_coll = bpy.data.collections.new(coll_name)
+        target_coll = blend_data.collections.get(coll_name) if hasattr(blend_data, "collections") else None
+        if not target_coll and hasattr(blend_data, "collections"):
+            target_coll = blend_data.collections.new(coll_name)
 
-        root_coll = bpy.data.collections.get(base_name)
+        if not target_coll:
+            return []
+
+        root_coll = blend_data.collections.get(base_name) if hasattr(blend_data, "collections") else None
         if root_coll and hasattr(root_coll, "children"):
             c_children = root_coll.children
             already_in = False
@@ -111,13 +119,13 @@ class CollisionManager:
             bm_unified = bmesh.new()
             temp_meshes_to_clean: list[bpy.types.Mesh] = []
             try:
-                for obj in mesh_objs:
+                for idx, obj in enumerate(mesh_objs):
                     bm_temp = bmesh.new()
                     try:
                         obj_mesh = cast("bpy.types.Mesh", obj.data)
                         bm_temp.from_mesh(obj_mesh)
                         bmesh.ops.transform(bm_temp, matrix=obj.matrix_world, verts=bm_temp.verts[:])
-                        temp_m = bpy.data.meshes.new("_om_temp_sub")
+                        temp_m = blend_data.meshes.new(f"_om_temp_sub_{idx}")
                         bm_temp.to_mesh(temp_m)
                         temp_meshes_to_clean.append(temp_m)
                         bm_unified.from_mesh(temp_m)
@@ -125,8 +133,11 @@ class CollisionManager:
                         bm_temp.free()
 
                 for temp_m in temp_meshes_to_clean:
-                    if temp_m in bpy.data.meshes.values():
-                        bpy.data.meshes.remove(temp_m)
+                    if hasattr(blend_data, "meshes") and hasattr(blend_data.meshes, "remove"):
+                        try:
+                            blend_data.meshes.remove(temp_m)
+                        except (RuntimeError, ReferenceError, KeyError):
+                            pass
                 temp_meshes_to_clean.clear()
 
                 # Decompose unified geometry
@@ -139,16 +150,19 @@ class CollisionManager:
             finally:
                 bm_unified.free()
                 for temp_m in temp_meshes_to_clean:
-                    if temp_m in bpy.data.meshes.values():
-                        bpy.data.meshes.remove(temp_m)
+                    if hasattr(blend_data, "meshes") and hasattr(blend_data.meshes, "remove"):
+                        try:
+                            blend_data.meshes.remove(temp_m)
+                        except (RuntimeError, ReferenceError, KeyError):
+                            pass
 
             try:
                 for bm_hull in hulls:
                     c_name = cls.map_collider_name_for_engine(base_name, hull_index, resolved_engine)
-                    c_mesh = bpy.data.meshes.new(f"{c_name}_Mesh")
+                    c_mesh = blend_data.meshes.new(f"{c_name}_Mesh")
                     bm_hull.to_mesh(c_mesh)
 
-                    c_obj = bpy.data.objects.new(c_name, c_mesh)
+                    c_obj = blend_data.objects.new(c_name, c_mesh)
                     c_obj.display_type = "WIRE"
                     c_obj.show_wire = True
                     c_obj.hide_render = True
@@ -193,10 +207,10 @@ class CollisionManager:
                 try:
                     for bm_hull in hulls:
                         c_name = cls.map_collider_name_for_engine(sub_base, hull_index, resolved_engine)
-                        c_mesh = bpy.data.meshes.new(f"{c_name}_Mesh")
+                        c_mesh = blend_data.meshes.new(f"{c_name}_Mesh")
                         bm_hull.to_mesh(c_mesh)
 
-                        c_obj = bpy.data.objects.new(c_name, c_mesh)
+                        c_obj = blend_data.objects.new(c_name, c_mesh)
                         # Inherit parent and transform hierarchy cleanly
                         if obj.parent:
                             c_obj.parent = obj.parent
@@ -225,19 +239,25 @@ class CollisionManager:
         return created_collider_objs
 
     @classmethod
-    def remove_colliders_for_objects(cls, mesh_objs: List[bpy.types.Object], base_name: str) -> int:
+    def remove_colliders_for_objects(
+        cls,
+        mesh_objs: List[bpy.types.Object],
+        base_name: str,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> int:
         """
         Purges existing collider objects and meshes scoped strictly to `{base_name}`.
         Supports standard and UCX (UE5) engine naming prefixes.
         Does not affect colliders of other assets in the scene.
         """
-        if not bpy:
+        if not bpy or blend_data is None:
             return 0
 
         coll_name = f"{base_name}_Colliders"
         removed_count = 0
 
-        target_coll = bpy.data.collections.get(coll_name) if hasattr(bpy.data, "collections") else None
+        target_coll = blend_data.collections.get(coll_name) if hasattr(blend_data, "collections") else None
         to_remove = []
 
         # 1. Scope to target collection if it exists
@@ -258,8 +278,8 @@ class CollisionManager:
 
         prefixes_tuple = tuple(name_prefixes)
 
-        if hasattr(bpy.data, "objects"):
-            for obj in bpy.data.objects:
+        if hasattr(blend_data, "objects"):
+            for obj in blend_data.objects:
                 if obj in to_remove:
                     continue
                 is_tagged = obj.get("_om_asset_base") == base_name and obj.get("_is_collider", False)
@@ -270,17 +290,17 @@ class CollisionManager:
 
         for obj in to_remove:
             mesh_data = obj.data if hasattr(obj, "data") else None
-            if hasattr(bpy.data, "objects") and hasattr(bpy.data.objects, "remove"):
+            if hasattr(blend_data, "objects") and hasattr(blend_data.objects, "remove"):
                 try:
-                    bpy.data.objects.remove(obj, do_unlink=True)
+                    blend_data.objects.remove(obj, do_unlink=True)
                 except TypeError:
-                    bpy.data.objects.remove(obj)
+                    blend_data.objects.remove(obj)
             if mesh_data and hasattr(mesh_data, "users") and mesh_data.users == 0:
-                if hasattr(bpy.data, "meshes") and hasattr(bpy.data.meshes, "remove"):
+                if hasattr(blend_data, "meshes") and hasattr(blend_data.meshes, "remove"):
                     try:
-                        bpy.data.meshes.remove(mesh_data, do_unlink=True)
+                        blend_data.meshes.remove(mesh_data, do_unlink=True)
                     except TypeError:
-                        bpy.data.meshes.remove(mesh_data)
+                        blend_data.meshes.remove(mesh_data)
             removed_count += 1
 
         return removed_count
