@@ -199,7 +199,8 @@ class ImpostorAtlasBaker:
         except (ImportError, ValueError):
             from core.impostor import resolve_impostor_export_dir
 
-        output_dir = resolve_impostor_export_dir(output_dir)
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        output_dir = resolve_impostor_export_dir(output_dir, blend_data=bdata)
         results: dict[str, str] = {}
 
         all_coords: list[Vector] = []
@@ -466,7 +467,8 @@ class ImpostorAtlasBaker:
         except (ImportError, ValueError):
             from core.impostor import resolve_impostor_export_dir
 
-        output_dir = resolve_impostor_export_dir(output_dir)
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        output_dir = resolve_impostor_export_dir(output_dir, blend_data=bdata)
         results: dict[str, str] = {}
 
         target_impostor = impostor_obj or bpy.data.objects.get(f"{base_name}_LOD_Impostor")

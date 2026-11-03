@@ -262,6 +262,12 @@ class MockNodeList(list):
         if node in self:
             super().remove(node)
 
+    def get(self, name: str, default: Any = None) -> Any:
+        for node in self:
+            if getattr(node, "name", None) == name:
+                return node
+        return default
+
 
 class MockMaterial(_MockBase):
     """Mock Blender Material datablock with Principled BSDF node tree."""
@@ -646,6 +652,7 @@ class MockBlendData(_MockBase):
     """Canonical Mock Blender Database (bpy.types.BlendData) for DI tests."""
 
     def __init__(self) -> None:
+        self.filepath: str = ""
         self.collections = MockBlendDataContainer(factory=lambda name, *a, **kw: MockCollection(name=name))
         self.objects = MockBlendDataContainer(factory=lambda name, *a, **kw: MockMeshObject(name=name))
         self.meshes = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name))

@@ -7,7 +7,14 @@ from __future__ import annotations
 import math
 import numpy as np
 
-from core.impostor import ImpostorMath, ImpostorMeshBuilder, ImpostorManager, Vector
+from core.impostor import (
+    ImpostorMath,
+    ImpostorMeshBuilder,
+    ImpostorManager,
+    Vector,
+    resolve_impostor_export_dir,
+)
+from tests.conftest import MockBlendData, MockMaterial
 
 
 def test_hemi_octahedral_mapping_forward_inverse():
@@ -153,3 +160,78 @@ def test_hemi_octahedral_nadir_and_equator():
     zero_vec = Vector((0.0, 0.0, 0.0))
     u_z, v_z = ImpostorMath.vector_to_hemi_octahedral(zero_vec)
     assert (u_z, v_z) == (0.5, 0.0)
+
+
+def test_resolve_impostor_export_dir_di():
+    """Verify resolve_impostor_export_dir correctly uses injected BlendData."""
+    bdata = MockBlendData()
+    bdata.filepath = "C:/Projects/Game/Assets/Model.blend"
+
+    res = resolve_impostor_export_dir("//Textures", blend_data=bdata)
+    assert "C:" in res or "Projects" in res
+    assert res.endswith("Textures")
+
+    # Empty filepath -> tempdir fallback
+    bdata_unsaved = MockBlendData()
+    bdata_unsaved.filepath = ""
+    res_unsaved = resolve_impostor_export_dir("//Textures", blend_data=bdata_unsaved)
+    assert "OmniMesh" in res_unsaved
+    assert res_unsaved.endswith("Textures")
+
+
+def test_create_impostor_material_di(monkeypatch):
+    """Verify ImpostorManager.create_impostor_material creates material via injected BlendData."""
+    from unittest.mock import MagicMock
+    import core.impostor as imp_mod
+
+    monkeypatch.setattr(imp_mod, "bpy", MagicMock())
+    bdata = MockBlendData()
+    mat = ImpostorManager.create_impostor_material("HeroProp", blend_data=bdata)
+    assert mat is not None
+    assert mat.name == "M_HeroProp_Impostor"
+    assert "M_HeroProp_Impostor" in bdata.materials
+
+    # Calling again returns existing material
+    mat2 = ImpostorManager.create_impostor_material("HeroProp", blend_data=bdata)
+    assert mat2 is mat
+
+
+def test_bind_baked_textures_to_material_di(tmp_path, monkeypatch):
+    """Verify ImpostorManager.bind_baked_textures_to_material loads textures via injected BlendData."""
+    from unittest.mock import MagicMock
+    import core.impostor as imp_mod
+
+    monkeypatch.setattr(imp_mod, "bpy", MagicMock())
+    bdata = MockBlendData()
+    mat = MockMaterial("M_HeroProp_Impostor")
+    mat.use_nodes = True
+    assert mat.node_tree is not None
+
+    # Setup TexImage nodes
+    t_base = mat.node_tree.nodes.new("ShaderNodeTexImage")
+    t_base.name = "Tex_BaseColor"
+    t_base.type = "TEX_IMAGE"
+
+    t_norm = mat.node_tree.nodes.new("ShaderNodeTexImage")
+    t_norm.name = "Tex_Normal"
+    t_norm.type = "TEX_IMAGE"
+
+    # Create dummy files
+    base_file = str(tmp_path / "base.png")
+    norm_file = str(tmp_path / "norm.png")
+    with open(base_file, "w") as f:
+        f.write("dummy")
+    with open(norm_file, "w") as f:
+        f.write("dummy")
+
+    ImpostorManager.bind_baked_textures_to_material(
+        mat,
+        base_color_path=base_file,
+        normal_path=norm_file,
+        blend_data=bdata,
+    )
+
+    assert t_base.image is not None
+    assert t_base.image.filepath == base_file
+    assert t_norm.image is not None
+    assert t_norm.image.filepath == norm_file

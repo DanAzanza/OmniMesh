@@ -89,6 +89,7 @@ class LOD_OT_generate_impostor(Operator):
             base_name = resolve_asset_base_name(context, mesh_objs)
 
         target_coll_name = f"{base_name}_LOD_Impostor"
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
 
         # Resolution calculation
         if getattr(props, "auto_impostor_resolution", True):
@@ -112,6 +113,8 @@ class LOD_OT_generate_impostor(Operator):
             target_collection_name=target_coll_name,
             atlas_resolution=calc_res,
             scene=context.scene,
+            context=context,
+            blend_data=bdata,
         )
 
         if not res:
@@ -119,7 +122,7 @@ class LOD_OT_generate_impostor(Operator):
             return {"CANCELLED"}
 
         # Determine output texture directory
-        tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""))
+        tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""), blend_data=bdata)
 
         # Execute Cycles GPU selected-to-active baking pass
         try:
@@ -146,6 +149,7 @@ class LOD_OT_generate_impostor(Operator):
                 base_color_path=baked_maps.get("BaseColor", ""),
                 normal_path=baked_maps.get("Normal", ""),
                 orm_path=baked_maps.get("ORM", ""),
+                blend_data=bdata,
             )
             props.last_impostor_status = (
                 f"Baked {calc_res}px Impostor Atlas ({len(baked_maps)} maps) in '{target_coll_name}'"
@@ -259,10 +263,10 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
         if not base_name or base_name in {"AUTO", "NONE"}:
             base_name = resolve_asset_base_name(context, mesh_objs)
 
-        tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""))
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""), blend_data=bdata)
         target_engine = getattr(props, "target_engine", "UE5")
 
-        bdata = getattr(context, "blend_data", None)
         rig_info = setup_impostor_preview_rig(
             context=context,
             mesh_objs=mesh_objs,

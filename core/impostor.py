@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData
     import mathutils
     from mathutils import Vector
 else:
@@ -33,6 +34,7 @@ else:
         bpy = None
         bmesh = None
         mathutils = None
+    BlendData = object  # runtime fallback for type annotations
 
 try:
     from .exceptions import ImpostorBakeError
@@ -286,18 +288,23 @@ class ImpostorManager:
         base_name: str,
         target_engine: str = "UE5",
         is_two_sided: bool = True,
+        *,
+        blend_data: BlendData | None = None,
     ) -> bpy.types.Material | None:
         """
         Creates or updates a dedicated PBR Impostor Material in Blender.
         Configures Alpha Clip transparency, two-sided shading, and texture slot nodes.
         """
-        if not bpy:
+        if not bpy or blend_data is None:
+            return None
+
+        if not hasattr(blend_data, "materials"):
             return None
 
         mat_name = f"M_{base_name}_Impostor"
-        mat = bpy.data.materials.get(mat_name)
+        mat = blend_data.materials.get(mat_name)
         if not mat:
-            mat = bpy.data.materials.new(name=mat_name)
+            mat = blend_data.materials.new(name=mat_name)
 
         mat.use_nodes = True
         if not mat.node_tree:
@@ -397,9 +404,14 @@ class ImpostorManager:
         base_color_path: str = "",
         normal_path: str = "",
         orm_path: str = "",
+        *,
+        blend_data: BlendData | None = None,
     ) -> None:
         """Loads and assigns baked PNG files into TexImage shader nodes on Impostor material."""
-        if not bpy or not mat or not getattr(mat, "use_nodes", False) or not mat.node_tree:
+        if not bpy or not mat or blend_data is None or not getattr(mat, "use_nodes", False) or not mat.node_tree:
+            return
+
+        if not hasattr(blend_data, "images"):
             return
 
         nodes = mat.node_tree.nodes
@@ -407,7 +419,7 @@ class ImpostorManager:
         if base_color_path and os.path.exists(base_color_path):
             tex_base = nodes.get("Tex_BaseColor")
             if tex_base and getattr(tex_base, "type", "") == "TEX_IMAGE":
-                img = bpy.data.images.load(base_color_path)
+                img = blend_data.images.load(base_color_path)
                 cast("bpy.types.ShaderNodeTexImage", tex_base).image = img
                 if hasattr(img, "colorspace_settings") and img.colorspace_settings:
                     img.colorspace_settings.name = "sRGB"  # type: ignore[assignment]
@@ -415,7 +427,7 @@ class ImpostorManager:
         if normal_path and os.path.exists(normal_path):
             tex_norm = nodes.get("Tex_Normal")
             if tex_norm and getattr(tex_norm, "type", "") == "TEX_IMAGE":
-                img = bpy.data.images.load(normal_path)
+                img = blend_data.images.load(normal_path)
                 cast("bpy.types.ShaderNodeTexImage", tex_norm).image = img
                 if hasattr(img, "colorspace_settings") and img.colorspace_settings:
                     img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
@@ -423,7 +435,7 @@ class ImpostorManager:
         if orm_path and os.path.exists(orm_path):
             tex_orm = nodes.get("Tex_ORM")
             if tex_orm and getattr(tex_orm, "type", "") == "TEX_IMAGE":
-                img = bpy.data.images.load(orm_path)
+                img = blend_data.images.load(orm_path)
                 cast("bpy.types.ShaderNodeTexImage", tex_orm).image = img
                 if hasattr(img, "colorspace_settings") and img.colorspace_settings:
                     img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
@@ -439,6 +451,8 @@ class ImpostorManager:
         atlas_resolution: int = 2048,
         scene: bpy.types.Scene | None = None,
         context: bpy.types.Context | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> bpy.types.Object | None:
         """
         Constructs and links the Impostor billboard object in Blender.
@@ -447,28 +461,54 @@ class ImpostorManager:
         if not bpy or not mesh_objs:
             return None
 
+        effective_bdata = blend_data or getattr(context, "blend_data", None)
+        if effective_bdata is None:
+            return None
+
         ctx = context
         sc = (
             scene
             or getattr(ctx, "scene", None)
-            or (bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None)
+            or (
+                effective_bdata.scenes[0]
+                if hasattr(effective_bdata, "scenes") and len(effective_bdata.scenes) > 0
+                else None
+            )
         )
 
         coll_name = target_collection_name or f"{base_name}_LOD_Impostor"
-        target_coll = bpy.data.collections.get(coll_name)
-        if not target_coll:
-            target_coll = bpy.data.collections.new(coll_name)
+        target_coll = effective_bdata.collections.get(coll_name) if hasattr(effective_bdata, "collections") else None
+        if not target_coll and hasattr(effective_bdata, "collections"):
+            target_coll = effective_bdata.collections.new(coll_name)
             if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
                 sc.collection.children.link(target_coll)
+
+        if not target_coll:
+            return None
 
         # Calculate bounding dimensions across all selected meshes (using bound_box corners for O(1) efficiency)
         all_coords = []
         for obj in mesh_objs:
+            mat_w = getattr(obj, "matrix_world", None)
             if hasattr(obj, "bound_box") and obj.bound_box:
-                all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
+                for c in obj.bound_box:
+                    v = Vector(c)
+                    try:
+                        res = mat_w @ v if mat_w is not None else v
+                        all_coords.append(res if isinstance(getattr(res, "x", None), (int, float)) else v)
+                    except (TypeError, ValueError, AttributeError, RuntimeError):
+                        all_coords.append(v)
             elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
                 obj_data = cast("bpy.types.Mesh", obj.data)
-                all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
+                for v_elem in obj_data.vertices:
+                    co = getattr(v_elem, "co", None)
+                    if co is not None:
+                        v = Vector(co)
+                        try:
+                            res = mat_w @ v if mat_w is not None else v
+                            all_coords.append(res if isinstance(getattr(res, "x", None), (int, float)) else v)
+                        except (TypeError, ValueError, AttributeError, RuntimeError):
+                            all_coords.append(v)
         if not all_coords:
             return None
 
@@ -504,25 +544,36 @@ class ImpostorManager:
             return None
 
         impostor_name = f"{base_name}_LOD_Impostor"
+        impostor_mesh: bpy.types.Mesh | None = None
         try:
-            existing = bpy.data.objects.get(impostor_name)
-            if existing:
-                bpy.data.objects.remove(existing, do_unlink=True)
+            existing = effective_bdata.objects.get(impostor_name) if hasattr(effective_bdata, "objects") else None
+            if existing and hasattr(effective_bdata, "objects"):
+                effective_bdata.objects.remove(existing, do_unlink=True)
 
-            impostor_mesh = bpy.data.meshes.new(f"{impostor_name}_Mesh")
-            bm.to_mesh(impostor_mesh)
+            if hasattr(effective_bdata, "meshes"):
+                impostor_mesh = effective_bdata.meshes.new(f"{impostor_name}_Mesh")
+                if impostor_mesh is not None:
+                    bm.to_mesh(impostor_mesh)
         finally:
             bm.free()
 
+        if not impostor_mesh or not hasattr(effective_bdata, "objects"):
+            return None
+
         impostor_created = False
         try:
-            impostor_obj = bpy.data.objects.new(impostor_name, impostor_mesh)
+            impostor_obj = effective_bdata.objects.new(impostor_name, impostor_mesh)
             impostor_obj.location = Vector((0.0, 0.0, 0.0))
             impostor_obj["_is_impostor"] = True
             impostor_obj["_impostor_mode"] = mode
 
             # Assign Impostor PBR Material
-            mat = cls.create_impostor_material(base_name, target_engine=target_engine, is_two_sided=True)
+            mat = cls.create_impostor_material(
+                base_name,
+                target_engine=target_engine,
+                is_two_sided=True,
+                blend_data=effective_bdata,
+            )
             if mat:
                 cast(Any, impostor_obj.data).materials.append(mat)
 
@@ -577,17 +628,23 @@ class ImpostorManager:
             if (
                 not impostor_created
                 and impostor_mesh
-                and bpy
-                and hasattr(bpy, "data")
-                and bpy.data.meshes.get(impostor_mesh.name)
+                and hasattr(effective_bdata, "meshes")
+                and hasattr(effective_bdata.meshes, "get")
+                and effective_bdata.meshes.get(impostor_mesh.name)
             ):
                 try:
-                    bpy.data.meshes.remove(impostor_mesh)
+                    effective_bdata.meshes.remove(impostor_mesh)
                 except (RuntimeError, ReferenceError, AttributeError) as clean_exc:
                     logger.debug("Failed removing impostor mesh in cleanup handler: %s", clean_exc)
 
 
-def resolve_impostor_export_dir(raw_dir: str = "", default_subfolder: str = "Textures") -> str:
+def resolve_impostor_export_dir(
+    raw_dir: str = "",
+    default_subfolder: str = "Textures",
+    *,
+    blend_data: BlendData | None = None,
+    blend_filepath: str = "",
+) -> str:
     """Safely resolves export directories handling Blender relative paths, unsaved scenes,
 
     and Windows UNC paths without triggering NetBIOS/SMB name timeouts.
@@ -598,14 +655,18 @@ def resolve_impostor_export_dir(raw_dir: str = "", default_subfolder: str = "Tex
     if not path_str:
         path_str = f"//{default_subfolder}/"
 
+    effective_fp = blend_filepath or (getattr(blend_data, "filepath", "") if blend_data else "")
+
     # Handle Blender-relative '//' paths
     if path_str.startswith("//"):
-        if bpy and hasattr(bpy.data, "filepath") and bpy.data.filepath:
-            resolved = bpy.path.abspath(path_str)
+        if effective_fp:
+            blend_dir = os.path.dirname(effective_fp)
+            rel_part = path_str[2:].lstrip("/\\")
+            resolved = os.path.abspath(os.path.join(blend_dir, rel_part))
         else:
             # Unsaved scene: Anchor to system temp directory to guarantee write permissions
             # NEVER fallback to os.getcwd() which may be C:\Program Files
-            rel_part = path_str.lstrip("/\\") or default_subfolder
+            rel_part = path_str[2:].lstrip("/\\") or default_subfolder
             resolved = os.path.join(tempfile.gettempdir(), "OmniMesh", rel_part)
     else:
         # Check if genuine Windows UNC path (e.g. \\server\share or //server/share)
@@ -613,8 +674,8 @@ def resolve_impostor_export_dir(raw_dir: str = "", default_subfolder: str = "Tex
         if norm_slashes.startswith(r"\\") and len(norm_slashes.split("\\")) > 3:
             resolved = path_str
         elif not os.path.isabs(path_str):
-            if bpy and hasattr(bpy.data, "filepath") and bpy.data.filepath:
-                resolved = os.path.abspath(os.path.join(os.path.dirname(bpy.data.filepath), path_str))
+            if effective_fp:
+                resolved = os.path.abspath(os.path.join(os.path.dirname(effective_fp), path_str))
             else:
                 resolved = os.path.join(tempfile.gettempdir(), "OmniMesh", path_str)
         else:
