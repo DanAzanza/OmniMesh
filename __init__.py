@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 bl_info = {
     "name": "OmniMesh",
     "author": "Daniel (DanAzanza)",
-    "version": (0, 8, 1),
+    "version": (0, 8, 5),
     "blender": (5, 0, 0),
     "location": "View3D > Sidebar > OmniMesh",
     "description": "Screen-Space Error driven LOD generation, topology sanitization, occlusion culling, collision hulls, multi-mesh hierarchies, skeletal rigging, bone pruning, billboard impostors, real-time viewport simulator, and multi-engine export (MSFS 2024, UE5, Unity 6)",

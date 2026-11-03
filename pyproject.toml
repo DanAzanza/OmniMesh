@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnimesh"
-version = "0.8.1"
+version = "0.8.5"
 description = "All-in-One 3D Mesh Optimization, Topology Sanitization, Skeletal Rigging, Real-Time LOD Simulation & Multi-Engine Pipeline"
 readme = "README.md"
 authors = [{ name = "Daniel" }]
