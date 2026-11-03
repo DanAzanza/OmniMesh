@@ -136,6 +136,7 @@ class LOD_OT_generate_impostor(Operator):
                 dilation_iterations=4,
                 impostor_obj=res,
                 context=context,
+                blend_data=bdata,
             )
         except OmniMeshError as bake_err:
             safe_report(self, {"ERROR"}, f"Impostor baking failed: {bake_err}")

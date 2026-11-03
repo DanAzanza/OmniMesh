@@ -183,3 +183,17 @@ def test_impostor_rig_guard_cleanup_on_exception(monkeypatch):
         pass
 
     mock_bpy.data.scenes.remove.assert_called_once_with(mock_scene, do_unlink=True)
+
+
+def test_impostor_baker_pure_di_with_mock_blend_data():
+    """Verify ImpostorAtlasBaker accepts injected BlendData without global bpy.data."""
+    from unittest.mock import MagicMock
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
+    mock_ctx = MagicMock()
+    mock_ctx.blend_data = bdata
+
+    # Empty meshes -> returns empty dict safely
+    res = ImpostorAtlasBaker.bake_impostor_textures([], "TestAsset", "/tmp", context=mock_ctx, blend_data=bdata)
+    assert res == {}

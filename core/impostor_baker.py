@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
     import mathutils
     from mathutils import Matrix, Vector
 else:
@@ -39,6 +40,7 @@ else:
             from .impostor_math import Vector
         except (ImportError, ValueError):
             from core.impostor_math import Vector
+    BlendData = object
 
 
 from .exceptions import ImpostorBakeError
@@ -183,6 +185,8 @@ class ImpostorAtlasBaker:
         dilation_iterations: int = 4,
         grid_size: int = 8,
         context: bpy.types.Context | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> dict[str, str]:
         """
         Bakes an NxN Octahedral Impostor atlas using an ephemeral animation timeline render.
@@ -199,7 +203,7 @@ class ImpostorAtlasBaker:
         except (ImportError, ValueError):
             from core.impostor import resolve_impostor_export_dir
 
-        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
         output_dir = resolve_impostor_export_dir(output_dir, blend_data=bdata)
         results: dict[str, str] = {}
 
@@ -321,16 +325,17 @@ class ImpostorAtlasBaker:
                                 f"Octahedral animation render failed for pass '{chan_name}': {render_exc}"
                             ) from render_exc
 
+                        bdata_imgs = getattr(bdata, "images", None) if bdata else None
                         for frame_idx in range(1, total_frames + 1):
                             col, row = (frame_idx - 1) % grid_size, (frame_idx - 1) // grid_size
                             frame_file = f"{chan_prefix}{frame_idx:04d}.png"
-                            if os.path.exists(frame_file):
-                                img = bpy.data.images.load(frame_file)
+                            if os.path.exists(frame_file) and bdata_imgs:
+                                img = bdata_imgs.load(frame_file)
                                 sz = getattr(img, "size", (0, 0))
                                 w, h = int(sz[0]), int(sz[1])
                                 arr = np.empty(w * h * 4, dtype=np.float32)
                                 img.pixels.foreach_get(arr)
-                                bpy.data.images.remove(img, do_unlink=True)
+                                bdata_imgs.remove(img, do_unlink=True)
                                 raw_tiles[chan_name][(col, row)] = np.ascontiguousarray(
                                     (arr.reshape((h, w, 4))[::-1] * 255.0 + 0.5).clip(0, 255).astype(np.uint8)
                                 )
@@ -441,6 +446,8 @@ class ImpostorAtlasBaker:
         dilation_iterations: int = 4,
         impostor_obj: Optional[bpy.types.Object] = None,
         context: bpy.types.Context | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> dict[str, str]:
         """
         Bakes BaseColor, Tangent Normal, and ORM (AO/Roughness/Metallic) maps using Cycles Selected-to-Active
@@ -449,6 +456,7 @@ class ImpostorAtlasBaker:
         if not bpy or not mesh_objs:
             return {}
 
+        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
         if mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             return cls.bake_octahedral_animation_atlas(
                 mesh_objs=mesh_objs,
@@ -460,6 +468,7 @@ class ImpostorAtlasBaker:
                 dilation_iterations=dilation_iterations,
                 grid_size=8,
                 context=context,
+                blend_data=bdata,
             )
 
         try:
@@ -467,11 +476,11 @@ class ImpostorAtlasBaker:
         except (ImportError, ValueError):
             from core.impostor import resolve_impostor_export_dir
 
-        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
         output_dir = resolve_impostor_export_dir(output_dir, blend_data=bdata)
         results: dict[str, str] = {}
 
-        target_impostor = impostor_obj or bpy.data.objects.get(f"{base_name}_LOD_Impostor")
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        target_impostor = impostor_obj or (bdata_objs.get(f"{base_name}_LOD_Impostor") if bdata_objs else None)
         if not target_impostor:
             logger.warning("No target impostor object found for baking '%s'", base_name)
             return {}
@@ -488,9 +497,8 @@ class ImpostorAtlasBaker:
         max_span = max((max(c[i] for c in all_coords) - min(c[i] for c in all_coords) for i in range(3)), default=4.0)
 
         ctx = context
-        scene = getattr(ctx, "scene", None) or (
-            bpy.data.scenes[0] if bpy and getattr(bpy.data, "scenes", None) else None
-        )
+        bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
+        scene = getattr(ctx, "scene", None) or (bdata_scenes[0] if bdata_scenes and len(bdata_scenes) > 0 else None)
         if not scene:
             return {}
         orig_engine = scene.render.engine
@@ -529,21 +537,28 @@ class ImpostorAtlasBaker:
         bk.use_selected_to_active, bk.margin, bk.target = True, 4, "IMAGE_TEXTURES"
         bk.cage_extrusion, bk.max_ray_distance = max(1.0, max_span * 1.0), max(4.0, max_span * 2.5)
         res = atlas_resolution
-        img_diff = bpy.data.images.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
+        bdata_imgs = getattr(bdata, "images", None) if bdata else None
+        if not bdata_imgs:
+            return {}
+        img_diff = bdata_imgs.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
         img_diff.colorspace_settings.name, img_diff.generated_color = "sRGB", (0.0, 0.0, 0.0, 0.0)  # type: ignore[assignment]
-        img_norm = bpy.data.images.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
+        img_norm = bdata_imgs.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
         img_norm.colorspace_settings.name, img_norm.generated_color = "Non-Color", (0.5, 0.5, 1.0, 0.0)  # type: ignore[assignment]
-        img_rough = bpy.data.images.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
+        img_rough = bdata_imgs.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
         img_rough.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
-        img_ao = bpy.data.images.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
+        img_ao = bdata_imgs.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
         img_ao.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
         imp_data = cast("bpy.types.Mesh | None", getattr(target_impostor, "data", None))
         mat = imp_data.materials[0] if (imp_data and hasattr(imp_data, "materials") and imp_data.materials) else None
-        if not mat:
-            mat = bpy.data.materials.new(name=f"M_{base_name}_Impostor")
+        bdata_mats = getattr(bdata, "materials", None) if bdata else None
+        if not mat and bdata_mats:
+            mat = bdata_mats.new(name=f"M_{base_name}_Impostor")
             if imp_data and hasattr(imp_data, "materials"):
                 imp_data.materials.append(mat)
+
+        if not mat:
+            raise ImpostorBakeError(f"Failed creating target impostor material for '{base_name}'.")
 
         mat.use_nodes = True
         if not mat.node_tree:
@@ -589,7 +604,7 @@ class ImpostorAtlasBaker:
             orm_pix[:, :, 1] = rough_pix.reshape((res, res, 4))[:, :, 0]
             orm_pix[:, :, 3] = base_pix.reshape((res, res, 4))[:, :, 3]
 
-            img_orm = bpy.data.images.new(f"__om_orm_{base_name}", width=res, height=res, alpha=True)
+            img_orm = bdata_imgs.new(f"__om_orm_{base_name}", width=res, height=res, alpha=True)
             img_orm.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
             cast(Any, img_orm.pixels).foreach_set(orm_pix.flatten())
             orm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_ORM.png")
@@ -597,14 +612,14 @@ class ImpostorAtlasBaker:
             img_orm.save()
             results["ORM"] = orm_path
 
-            bpy.data.images.remove(img_orm, do_unlink=True)
+            bdata_imgs.remove(img_orm, do_unlink=True)
         except (RuntimeError, ValueError, OSError) as b_err:
             raise ImpostorBakeError(f"Selected-to-active impostor bake failed for '{base_name}': {b_err}") from b_err
         finally:
             nodes.remove(bake_slot)
             for temp_img in [img_diff, img_norm, img_rough, img_ao]:
                 try:
-                    bpy.data.images.remove(temp_img, do_unlink=True)
+                    bdata_imgs.remove(temp_img, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed removing temp image: %s", exc)
             for o, vis in orig_vis:
