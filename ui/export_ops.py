@@ -450,6 +450,7 @@ class LOD_OT_export_engine_package(Operator):
             target,
             export_dir,
             asset_name,
+            blend_data=getattr(context, "blend_data", None),
             full_package=getattr(props, "msfs_export_full_package", True),
             package_name=pkg_base,
         )
