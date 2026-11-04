@@ -65,8 +65,18 @@ def get_available_asset_names(
     if not scene or not hasattr(scene, "collection"):
         return []
 
-    bdata = blend_data or getattr(context, "blend_data", None)
-    bdata_cols = getattr(bdata, "collections", None) if bdata else None
+    if blend_data:
+        bdata_cols = blend_data.collections
+    elif hasattr(scene, "collection"):
+        stack = [scene.collection]
+        bdata_cols = []
+        while stack:
+            curr = stack.pop()
+            for child in curr.children:
+                bdata_cols.append(child)
+                stack.append(child)
+    else:
+        bdata_cols = None
 
     asset_names = []
     for coll in bdata_cols or []:
@@ -108,7 +118,9 @@ def get_available_asset_names(
     return asset_names
 
 
-def resolve_effective_asset_name(context: bpy.types.Context | None, props: object = None) -> str:
+def resolve_effective_asset_name(
+    context: bpy.types.Context | None, props: object = None, *, blend_data: BlendData | None = None
+) -> str:
     """
     Resolves the active asset name to display or operate on:
     1. If props.active_asset is set and != 'AUTO' and != 'NONE': returns props.active_asset.
@@ -122,7 +134,7 @@ def resolve_effective_asset_name(context: bpy.types.Context | None, props: objec
         if selected_asset and selected_asset not in ("AUTO", "NONE"):
             return str(selected_asset)
 
-    available = get_available_asset_names(context)
+    available = get_available_asset_names(context, blend_data=blend_data)
 
     if context and hasattr(context, "view_layer") and hasattr(context.view_layer, "active_layer_collection"):
         active_lc = context.view_layer.active_layer_collection
@@ -158,9 +170,17 @@ def get_asset_collection(
     blend_data: BlendData | None = None,
 ) -> bpy.types.Collection | None:
     """Finds the root collection for asset_name (either '{BaseName}' or '{BaseName}_LOD0')."""
-    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
-    bdata_cols = getattr(bdata, "collections", None) if bdata else None
-    if not bdata_cols or not asset_name:
+    bdata_cols = blend_data.collections if blend_data else None
+    if not bdata_cols:
+        scene = getattr(context, "scene", None) if context else None
+        if scene and hasattr(scene, "collection") and asset_name:
+            stack = [scene.collection]
+            while stack:
+                curr = stack.pop()
+                if getattr(curr, "name", "") in (asset_name, f"{asset_name}_LOD0"):
+                    return curr
+                for child in getattr(curr, "children", []):
+                    stack.append(child)
         return None
 
     for candidate in (asset_name, f"{asset_name}_LOD0"):
@@ -220,10 +240,10 @@ def scan_asset_state(
         'existing_tiers': dict[int, dict[str, Any]], # maps 0..k to {collection_name, meshes, actual_tris, is_impostor}
     }
     """
-    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+    bdata = blend_data
     base_meshes = get_asset_base_meshes(context, asset_name, blend_data=bdata)
     base_tris = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in base_meshes)
-    mat_slots = sum(len(m.material_slots) for m in base_meshes if hasattr(m, "material_slots"))
+    mat_slots = sum(len(m.material_slots) for m in base_meshes)
 
     existing_tiers: dict[int, dict[str, Any]] = {}
 
@@ -236,7 +256,7 @@ def scan_asset_state(
             "is_impostor": False,
         }
 
-    bdata_cols = getattr(bdata, "collections", None) if bdata else None
+    bdata_cols = bdata.collections if bdata else None
 
     if bdata_cols and asset_name:
         for i in range(1, 11):

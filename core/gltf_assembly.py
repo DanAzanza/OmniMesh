@@ -144,10 +144,10 @@ class GLTFAssemblyEngine:
         if target_lc:
             vl.active_layer_collection = target_lc
 
-        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata = blend_data
         # Snapshot existing objects
-        existing_objects = set(bdata.objects) if bdata and hasattr(bdata, "objects") else set()
-        existing_collections = set(bdata.collections) if bdata and hasattr(bdata, "collections") else set()
+        existing_objects = set(bdata.objects) if bdata else set()
+        existing_collections = set(bdata.collections) if bdata else set()
 
         try:
             # Execute Blender's glTF importer
@@ -163,9 +163,7 @@ class GLTFAssemblyEngine:
                     logger.debug("Failed restoring previous active layer collection: %s", exc)
 
         # Identify newly created objects
-        new_objects = (
-            [obj for obj in bdata.objects if obj not in existing_objects] if bdata and hasattr(bdata, "objects") else []
-        )
+        new_objects = [obj for obj in bdata.objects if obj not in existing_objects] if bdata else []
 
         # Isolate new objects and route interaction / collision volumes
         effective_asset = asset_name or getattr(target_collection, "name", "Asset").split("_")[0]

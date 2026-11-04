@@ -39,7 +39,7 @@ else:
 def _resolve_scene(context: bpy.types.Context | None, blend_data: BlendData | None) -> bpy.types.Scene | None:
     if context and hasattr(context, "scene") and context.scene:
         return context.scene
-    if blend_data and hasattr(blend_data, "scenes") and len(blend_data.scenes) > 0:
+    if blend_data and len(blend_data.scenes) > 0:
         return blend_data.scenes[0]
     return None
 
@@ -54,9 +54,6 @@ def safe_load_image(
     Re-uses existing image if already loaded with matching absolute path.
     """
     if not bpy or not filepath or not os.path.exists(filepath) or blend_data is None:
-        return None
-
-    if not hasattr(blend_data, "images"):
         return None
 
     abs_target = os.path.abspath(filepath)
@@ -104,9 +101,6 @@ def create_octahedral_preview_material(
     and optional ORM roughness.
     """
     if not bpy or blend_data is None:
-        return None
-
-    if not hasattr(blend_data, "materials"):
         return None
 
     mat = blend_data.materials.get(mat_name)
@@ -413,7 +407,7 @@ def setup_impostor_tracking(
     if not bpy or not proxy_obj or not hasattr(proxy_obj, "constraints") or proxy_obj.constraints is None:
         return None
 
-    effective_bdata = blend_data or getattr(context, "blend_data", None)
+    effective_bdata = blend_data
     sc = _resolve_scene(context, effective_bdata)
     cam = camera_obj or (getattr(sc, "camera", None) if sc else None)
     if not cam:
@@ -452,7 +446,7 @@ def setup_preview_turntable(
     if not bpy or not cam_obj:
         return False
 
-    effective_bdata = blend_data or getattr(context, "blend_data", None)
+    effective_bdata = blend_data
     scene = _resolve_scene(context, effective_bdata)
     if not scene:
         return False
@@ -511,7 +505,7 @@ def setup_impostor_preview_rig(
     if not bpy:
         return {}
 
-    effective_bdata = blend_data or getattr(context, "blend_data", None)
+    effective_bdata = blend_data
     if effective_bdata is None:
         return {}
 
@@ -521,8 +515,8 @@ def setup_impostor_preview_rig(
     rig_coll_name = f"{base_name}_Preview_Rig"
 
     # 1. Manage dedicated collection
-    rig_coll = effective_bdata.collections.get(rig_coll_name) if hasattr(effective_bdata, "collections") else None
-    if not rig_coll and hasattr(effective_bdata, "collections"):
+    rig_coll = effective_bdata.collections.get(rig_coll_name)
+    if not rig_coll:
         rig_coll = effective_bdata.collections.new(rig_coll_name)
         if hasattr(scene, "collection") and hasattr(scene.collection, "children"):
             scene.collection.children.link(rig_coll)
@@ -571,8 +565,8 @@ def setup_impostor_preview_rig(
 
     # 4. Create preview billboard quad
     proxy_name = f"{base_name}_Preview_Impostor"
-    proxy_obj = effective_bdata.objects.get(proxy_name) if hasattr(effective_bdata, "objects") else None
-    if not proxy_obj and hasattr(effective_bdata, "meshes") and hasattr(effective_bdata, "objects"):
+    proxy_obj = effective_bdata.objects.get(proxy_name)
+    if not proxy_obj:
         mesh_data = effective_bdata.meshes.new(f"{proxy_name}_Mesh")
         s = radius * 2.08
         hs = s * 0.5
@@ -616,8 +610,8 @@ def setup_impostor_preview_rig(
 
     # 6. Setup dedicated preview camera
     cam_name = f"{base_name}_Preview_Camera"
-    cam_obj = effective_bdata.objects.get(cam_name) if hasattr(effective_bdata, "objects") else None
-    if not cam_obj and hasattr(effective_bdata, "cameras") and hasattr(effective_bdata, "objects"):
+    cam_obj = effective_bdata.objects.get(cam_name)
+    if not cam_obj:
         cam_data = effective_bdata.cameras.new(f"{cam_name}_Data")
         cam_data.lens = 50
         cam_obj = effective_bdata.objects.new(cam_name, cam_data)
@@ -636,8 +630,8 @@ def setup_impostor_preview_rig(
 
     # Create Tracker Target Empty to decouple billboard orientation from camera animation
     target_name = f"{base_name}_Preview_Tracker_Target"
-    target_empty = effective_bdata.objects.get(target_name) if hasattr(effective_bdata, "objects") else None
-    if not target_empty and hasattr(effective_bdata, "objects"):
+    target_empty = effective_bdata.objects.get(target_name)
+    if not target_empty:
         target_empty = effective_bdata.objects.new(target_name, None)
         target_empty.empty_display_type = "PLAIN_AXES"
         target_empty.empty_display_size = 0.2
@@ -650,8 +644,8 @@ def setup_impostor_preview_rig(
 
     # 7. Setup preview sun light for normal map lighting validation
     sun_name = f"{base_name}_Preview_Sun"
-    sun_obj = effective_bdata.objects.get(sun_name) if hasattr(effective_bdata, "objects") else None
-    if not sun_obj and hasattr(effective_bdata, "lights") and hasattr(effective_bdata, "objects"):
+    sun_obj = effective_bdata.objects.get(sun_name)
+    if not sun_obj:
         sun_data = cast("bpy.types.SunLight", effective_bdata.lights.new(name=f"{sun_name}_Data", type="SUN"))
         sun_data.energy = 3.0
         sun_obj = effective_bdata.objects.new(sun_name, sun_data)
@@ -695,8 +689,8 @@ def teardown_impostor_preview_rig(
     if not bpy:
         return False
 
-    effective_bdata = blend_data or getattr(context, "blend_data", None)
-    if effective_bdata is None or not hasattr(effective_bdata, "collections"):
+    effective_bdata = blend_data
+    if effective_bdata is None:
         return False
 
     rig_coll_name = f"{base_name}_Preview_Rig"
@@ -713,11 +707,10 @@ def teardown_impostor_preview_rig(
                 pass
 
         obj_data = getattr(obj, "data", None)
-        if hasattr(effective_bdata, "objects") and hasattr(effective_bdata.objects, "remove"):
-            try:
-                effective_bdata.objects.remove(obj, do_unlink=True)
-            except (TypeError, RuntimeError):
-                effective_bdata.objects.remove(obj)
+        try:
+            effective_bdata.objects.remove(obj, do_unlink=True)
+        except (TypeError, RuntimeError):
+            effective_bdata.objects.remove(obj)
 
         # Deallocate orphaned datablocks
         users = getattr(obj_data, "users", 1)

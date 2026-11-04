@@ -571,13 +571,9 @@ class ConfigPresetSpawner:
         mesh_fn = get_base_meshes_fn
         if not mesh_fn:
             try:
-                from ui.utils import get_asset_base_meshes as mesh_fn
+                from ..asset_scanner import get_asset_base_meshes as mesh_fn
             except (ImportError, ValueError):
-
-                def _empty_mesh_fn(_c: bpy.types.Context | None, _a: str) -> list[bpy.types.Object]:
-                    return []
-
-                mesh_fn = _empty_mesh_fn
+                from core.asset_scanner import get_asset_base_meshes as mesh_fn
 
         col_fn = get_import_collection_fn
         if not col_fn:
@@ -680,11 +676,8 @@ class ConfigPresetSpawner:
         total_added = 0
 
         bdata = blend_data
-        if bdata is None:
-            if bpy_module is not None and hasattr(bpy_module, "data"):
-                bdata = getattr(bpy_module, "data", None)
-            elif context is not None:
-                bdata = getattr(context, "blend_data", None)
+        if bdata is None and bpy_module is not None and hasattr(bpy_module, "data"):
+            bdata = getattr(bpy_module, "data", None)
 
         # 3. Datum
         datum_obj, datum_added = cls._spawn_datum_if_missing(bdata, asset_name, spatial_col, existing_ids, anchor_fn)

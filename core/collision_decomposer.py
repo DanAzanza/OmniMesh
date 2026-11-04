@@ -58,7 +58,7 @@ class CollisionDecomposer:
                 normal_vec = Vector((0.0, 0.0, 1.0))
             return centroid_vec, normal_vec
         except (np.linalg.LinAlgError, ValueError) as exc:
-            logger.debug("SVD decomposition fallback: %s", exc)
+            logger.warning("SVD decomposition failed (%s); falling back to default Z-axis splitting plane.", exc)
             return centroid_vec, Vector((0.0, 0.0, 1.0))
 
     @staticmethod

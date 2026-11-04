@@ -143,7 +143,7 @@ def _process_merged_tier(
     tier = tier_in
     props = props_in
     render = cast("bpy.types.RenderSettings", render_in)
-    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+    bdata = blend_data
     bdata_objs = getattr(bdata, "objects", None) if bdata else None
     merged_name = f"{base_name}_LOD{tier_idx}"
     existing = bdata_objs.get(merged_name) if bdata_objs else None
@@ -328,7 +328,7 @@ def _process_unmerged_tier(
     culled_slender_count = 0
     first_generated_obj = None
 
-    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+    bdata = blend_data
     bdata_objs = getattr(bdata, "objects", None) if bdata else None
     bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
 
@@ -505,7 +505,7 @@ def generate_all_lods(
         orig_pose_pos = arm_data.pose_position
         arm_data.pose_position = "REST"
 
-    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+    bdata = blend_data
     shared_ref_merged_obj = None
     try:
         base_name = base_name.split("_LOD")[0]
@@ -529,7 +529,7 @@ def generate_all_lods(
             if armature_obj and armature_obj not in wrap_objs:
                 wrap_objs.append(armature_obj)
             src_coll, root_pivot = CollectionCloneDAG.wrap_loose_objects_into_root_collection(
-                wrap_objs, base_name, scene=context.scene, context=context
+                wrap_objs, base_name, scene=context.scene, context=context, blend_data=bdata
             )
         else:
             root_pivot, _, _, _ = PivotPreservationEngine.identify_pivots_and_sockets(src_coll)

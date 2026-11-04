@@ -28,6 +28,11 @@ else:
 
 logger = logging.getLogger(__name__)
 
+try:
+    from .exceptions import DependencyInjectionError
+except (ImportError, ValueError):
+    from core.exceptions import DependencyInjectionError
+
 # Re-export for backward compatibility
 __all__ = ["CollisionDecomposer", "CollisionManager"]
 
@@ -53,24 +58,27 @@ class CollisionManager:
         *,
         blend_data: BlendData | None = None,
     ) -> List[bpy.types.Object]:
-        if not bpy or not mesh_objs or blend_data is None:
+        if blend_data is None:
+            raise DependencyInjectionError("Explicit 'blend_data' dependency is required for collider generation.")
+
+        if not bpy or not mesh_objs:
             return []
 
-        sc = scene or (blend_data.scenes[0] if hasattr(blend_data, "scenes") and len(blend_data.scenes) > 0 else None)
+        sc = scene or (blend_data.scenes[0] if len(blend_data.scenes) > 0 else None)
 
         # Remove pre-existing colliders for clean regeneration first
         cls.remove_colliders_for_objects(mesh_objs, base_name, blend_data=blend_data)
 
         coll_name = target_collection_name or f"{base_name}_Colliders"
-        target_coll = blend_data.collections.get(coll_name) if hasattr(blend_data, "collections") else None
-        if not target_coll and hasattr(blend_data, "collections"):
+        target_coll = blend_data.collections.get(coll_name)
+        if not target_coll:
             target_coll = blend_data.collections.new(coll_name)
 
         if not target_coll:
             return []
 
-        root_coll = blend_data.collections.get(base_name) if hasattr(blend_data, "collections") else None
-        if root_coll and hasattr(root_coll, "children"):
+        root_coll = blend_data.collections.get(base_name)
+        if root_coll:
             c_children = root_coll.children
             already_in = False
             try:
@@ -133,11 +141,10 @@ class CollisionManager:
                         bm_temp.free()
 
                 for temp_m in temp_meshes_to_clean:
-                    if hasattr(blend_data, "meshes") and hasattr(blend_data.meshes, "remove"):
-                        try:
-                            blend_data.meshes.remove(temp_m)
-                        except (RuntimeError, ReferenceError, KeyError):
-                            pass
+                    try:
+                        blend_data.meshes.remove(temp_m)
+                    except (RuntimeError, ReferenceError, KeyError):
+                        pass
                 temp_meshes_to_clean.clear()
 
                 # Decompose unified geometry
@@ -150,11 +157,10 @@ class CollisionManager:
             finally:
                 bm_unified.free()
                 for temp_m in temp_meshes_to_clean:
-                    if hasattr(blend_data, "meshes") and hasattr(blend_data.meshes, "remove"):
-                        try:
-                            blend_data.meshes.remove(temp_m)
-                        except (RuntimeError, ReferenceError, KeyError):
-                            pass
+                    try:
+                        blend_data.meshes.remove(temp_m)
+                    except (RuntimeError, ReferenceError, KeyError):
+                        pass
 
             try:
                 for bm_hull in hulls:
@@ -183,13 +189,13 @@ class CollisionManager:
                 sum(
                     sum(getattr(p, "area", 0.0) for p in getattr(obj.data, "polygons", []))
                     for obj in mesh_objs
-                    if getattr(obj, "data", None)
+                    if obj.data
                 )
                 or 1.0
             )
 
             for obj in mesh_objs:
-                obj_data = getattr(obj, "data", None)
+                obj_data = obj.data
                 if not obj_data:
                     continue
                 obj_area = sum(getattr(p, "area", 0.0) for p in getattr(obj_data, "polygons", []))
@@ -251,17 +257,20 @@ class CollisionManager:
         Supports standard and UCX (UE5) engine naming prefixes.
         Does not affect colliders of other assets in the scene.
         """
-        if not bpy or blend_data is None:
+        if blend_data is None:
+            raise DependencyInjectionError("Explicit 'blend_data' dependency is required for collider removal.")
+
+        if not bpy:
             return 0
 
         coll_name = f"{base_name}_Colliders"
         removed_count = 0
 
-        target_coll = blend_data.collections.get(coll_name) if hasattr(blend_data, "collections") else None
+        target_coll = blend_data.collections.get(coll_name)
         to_remove = []
 
         # 1. Scope to target collection if it exists
-        if target_coll and hasattr(target_coll, "objects"):
+        if target_coll:
             for obj in list(target_coll.objects):
                 to_remove.append(obj)
 
@@ -271,36 +280,32 @@ class CollisionManager:
             f"UCX_{base_name}_",
         ]
         for obj in mesh_objs:
-            if hasattr(obj, "name"):
-                stem = obj.name.split("_LOD")[0]
-                name_prefixes.append(f"{stem}_Collider_")
-                name_prefixes.append(f"UCX_{stem}_")
+            stem = obj.name.split("_LOD")[0]
+            name_prefixes.append(f"{stem}_Collider_")
+            name_prefixes.append(f"UCX_{stem}_")
 
         prefixes_tuple = tuple(name_prefixes)
 
-        if hasattr(blend_data, "objects"):
-            for obj in blend_data.objects:
-                if obj in to_remove:
-                    continue
-                is_tagged = obj.get("_om_asset_base") == base_name and obj.get("_is_collider", False)
-                name = getattr(obj, "name", "")
-                is_named = name.startswith(prefixes_tuple)
-                if is_tagged or is_named:
-                    to_remove.append(obj)
+        for obj in blend_data.objects:
+            if obj in to_remove:
+                continue
+            is_tagged = obj.get("_om_asset_base") == base_name and obj.get("_is_collider", False)
+            name = obj.name
+            is_named = name.startswith(prefixes_tuple)
+            if is_tagged or is_named:
+                to_remove.append(obj)
 
         for obj in to_remove:
-            mesh_data = obj.data if hasattr(obj, "data") else None
-            if hasattr(blend_data, "objects") and hasattr(blend_data.objects, "remove"):
-                try:
-                    blend_data.objects.remove(obj, do_unlink=True)
-                except TypeError:
-                    blend_data.objects.remove(obj)
+            mesh_data = obj.data
+            try:
+                blend_data.objects.remove(obj, do_unlink=True)
+            except TypeError:
+                blend_data.objects.remove(obj)
             if mesh_data and hasattr(mesh_data, "users") and mesh_data.users == 0:
-                if hasattr(blend_data, "meshes") and hasattr(blend_data.meshes, "remove"):
-                    try:
-                        blend_data.meshes.remove(mesh_data, do_unlink=True)
-                    except TypeError:
-                        blend_data.meshes.remove(mesh_data)
+                try:
+                    blend_data.meshes.remove(mesh_data, do_unlink=True)
+                except TypeError:
+                    blend_data.meshes.remove(mesh_data)
             removed_count += 1
 
         return removed_count

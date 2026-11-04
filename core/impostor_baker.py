@@ -203,7 +203,7 @@ class ImpostorAtlasBaker:
         except (ImportError, ValueError):
             from core.impostor import resolve_impostor_export_dir
 
-        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata = blend_data
         output_dir = resolve_impostor_export_dir(output_dir, blend_data=bdata)
         results: dict[str, str] = {}
 
@@ -459,7 +459,7 @@ class ImpostorAtlasBaker:
         if not bpy or not mesh_objs:
             return {}
 
-        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata = blend_data
         if mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             return cls.bake_octahedral_animation_atlas(
                 mesh_objs=mesh_objs,

@@ -59,7 +59,7 @@ class EphemeralBakeSceneGuard:
 
     def __enter__(self) -> Optional[bpy.types.Scene]:
         ctx = self.context
-        bdata = self.blend_data or (getattr(ctx, "blend_data", None) if ctx else None)
+        bdata = self.blend_data
         if not bdata and not bpy:
             return None
 
@@ -127,7 +127,7 @@ class EphemeralBakeSceneGuard:
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
         ctx = self.context
-        bdata = self.blend_data or (getattr(ctx, "blend_data", None) if ctx else None)
+        bdata = self.blend_data
         if not bdata and not bpy:
             return
 

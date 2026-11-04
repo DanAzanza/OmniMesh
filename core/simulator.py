@@ -535,12 +535,22 @@ class LODSimulatorEngine:
         """Restores exact pre-scrub visibility state from snapshot."""
         if not bpy or not context:
             return
-        bdata = blend_data or getattr(context, "blend_data", None)
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata = blend_data
+        resolved_objs: dict[str, Any] = {}
+        if bdata:
+            bdata_objs = bdata.objects
+        else:
+            for record in cls._tracked_assets.values():
+                for t_objs in record.tier_objects.values():
+                    for o in t_objs:
+                        if hasattr(o, "name"):
+                            resolved_objs[o.name] = o
+            bdata_objs = resolved_objs
+
         view_layer = getattr(context, "view_layer", None)
         if cls._visibility_snapshot:
             for obj_name, was_hidden in cls._visibility_snapshot.items():
-                obj = bdata_objs.get(obj_name) if bdata_objs else None
+                obj = bdata_objs.get(obj_name) if hasattr(bdata_objs, "get") else None
                 if obj and hasattr(obj, "hide_get") and obj.hide_get(view_layer=view_layer) != was_hidden:
                     obj.hide_set(was_hidden, view_layer=view_layer)
             cls._visibility_snapshot.clear()

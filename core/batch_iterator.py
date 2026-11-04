@@ -128,8 +128,8 @@ class BatchMeshIterator:
 
                 # Clean orphans every 10 meshes to prevent memory bloat
                 if (idx + 1) % 10 == 0:
-                    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
-                    if bdata is not None and hasattr(bdata, "orphans_purge"):
+                    bdata = blend_data
+                    if bdata is not None:
                         try:
                             bdata.orphans_purge(do_recursive=True)
                         except (RuntimeError, ValueError, AttributeError) as exc:

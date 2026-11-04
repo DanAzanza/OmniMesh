@@ -457,7 +457,7 @@ class ShaderTracer:
         if not bpy or not material or not material.use_nodes or not material.node_tree:
             return None
 
-        bdata = blend_data or getattr(context, "blend_data", None)
+        bdata = blend_data
         bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
         bdata_images = getattr(bdata, "images", None) if bdata else None
 

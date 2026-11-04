@@ -236,7 +236,7 @@ def setup_asset_collections(
     if not _bpy or not context:
         return {}
 
-    bdata = blend_data or getattr(context, "blend_data", None)
+    bdata = blend_data
     if bdata is None and bpy_module is not None:
         bdata = getattr(bpy_module, "data", None)
     if not bdata:

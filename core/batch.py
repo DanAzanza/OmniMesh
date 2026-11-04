@@ -294,7 +294,7 @@ class BatchProcessorEngine:
             result["message"] = "Blender environment not available."
             return result
 
-        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata = blend_data
         bdata_objs = getattr(bdata, "objects", None) if bdata else None
         bdata_cols = getattr(bdata, "collections", None) if bdata else None
 
@@ -556,7 +556,7 @@ class BatchProcessorEngine:
                     logger.debug("Collection cleanup failed: %s", exc)
 
             # Purge orphan datablocks
-            if bdata and hasattr(bdata, "orphans_purge"):
+            if bdata is not None:
                 try:
                     is_bg = bool(getattr(getattr(bpy, "app", None), "background", False))
                     bdata.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=is_bg)

@@ -298,9 +298,6 @@ class ImpostorManager:
         if not bpy or blend_data is None:
             return None
 
-        if not hasattr(blend_data, "materials"):
-            return None
-
         mat_name = f"M_{base_name}_Impostor"
         mat = blend_data.materials.get(mat_name)
         if not mat:
@@ -411,9 +408,6 @@ class ImpostorManager:
         if not bpy or not mat or blend_data is None or not getattr(mat, "use_nodes", False) or not mat.node_tree:
             return
 
-        if not hasattr(blend_data, "images"):
-            return
-
         nodes = mat.node_tree.nodes
 
         if base_color_path and os.path.exists(base_color_path):
@@ -461,7 +455,7 @@ class ImpostorManager:
         if not bpy or not mesh_objs:
             return None
 
-        effective_bdata = blend_data or getattr(context, "blend_data", None)
+        effective_bdata = blend_data
         if effective_bdata is None:
             return None
 
@@ -469,16 +463,12 @@ class ImpostorManager:
         sc = (
             scene
             or getattr(ctx, "scene", None)
-            or (
-                effective_bdata.scenes[0]
-                if hasattr(effective_bdata, "scenes") and len(effective_bdata.scenes) > 0
-                else None
-            )
+            or (effective_bdata.scenes[0] if len(effective_bdata.scenes) > 0 else None)
         )
 
         coll_name = target_collection_name or f"{base_name}_LOD_Impostor"
-        target_coll = effective_bdata.collections.get(coll_name) if hasattr(effective_bdata, "collections") else None
-        if not target_coll and hasattr(effective_bdata, "collections"):
+        target_coll = effective_bdata.collections.get(coll_name)
+        if not target_coll:
             target_coll = effective_bdata.collections.new(coll_name)
             if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
                 sc.collection.children.link(target_coll)
@@ -546,18 +536,17 @@ class ImpostorManager:
         impostor_name = f"{base_name}_LOD_Impostor"
         impostor_mesh: bpy.types.Mesh | None = None
         try:
-            existing = effective_bdata.objects.get(impostor_name) if hasattr(effective_bdata, "objects") else None
-            if existing and hasattr(effective_bdata, "objects"):
+            existing = effective_bdata.objects.get(impostor_name)
+            if existing:
                 effective_bdata.objects.remove(existing, do_unlink=True)
 
-            if hasattr(effective_bdata, "meshes"):
-                impostor_mesh = effective_bdata.meshes.new(f"{impostor_name}_Mesh")
-                if impostor_mesh is not None:
-                    bm.to_mesh(impostor_mesh)
+            impostor_mesh = effective_bdata.meshes.new(f"{impostor_name}_Mesh")
+            if impostor_mesh is not None:
+                bm.to_mesh(impostor_mesh)
         finally:
             bm.free()
 
-        if not impostor_mesh or not hasattr(effective_bdata, "objects"):
+        if not impostor_mesh:
             return None
 
         impostor_created = False
@@ -625,13 +614,7 @@ class ImpostorManager:
             impostor_created = True
             return impostor_obj
         finally:
-            if (
-                not impostor_created
-                and impostor_mesh
-                and hasattr(effective_bdata, "meshes")
-                and hasattr(effective_bdata.meshes, "get")
-                and effective_bdata.meshes.get(impostor_mesh.name)
-            ):
+            if not impostor_created and impostor_mesh and effective_bdata.meshes.get(impostor_mesh.name):
                 try:
                     effective_bdata.meshes.remove(impostor_mesh)
                 except (RuntimeError, ReferenceError, AttributeError) as clean_exc:

@@ -143,7 +143,7 @@ class RecursiveHLODManager:
         Merges chunk clusters for a specific HLOD tier, recents pivots stationary,
         decimates, and optionally seals into a voxel shell on terminal tier.
         """
-        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata = blend_data
         bdata_objs = getattr(bdata, "objects", None) if bdata else None
 
         generated_hlod_objs: list[bpy.types.Object] = []
@@ -266,7 +266,7 @@ class RecursiveHLODManager:
             if context and hasattr(context, "evaluated_depsgraph_get"):
                 eval_depsgraph = context.evaluated_depsgraph_get()
 
-            bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+            bdata = blend_data
             bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
 
             if eval_depsgraph and bdata_meshes:

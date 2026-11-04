@@ -371,7 +371,7 @@ class CollectionCloneDAG:
 
         # Link as sibling in parent collection or scene root
         linked = False
-        if root_coll and hasattr(root_coll, "name"):
+        if root_coll:
             for parent_c in blend_data.collections:
                 if root_coll.name in parent_c.children:
                     parent_c.children.link(target_coll)
@@ -379,9 +379,7 @@ class CollectionCloneDAG:
                     break
 
         if not linked:
-            sc = scene or (
-                blend_data.scenes[0] if hasattr(blend_data, "scenes") and len(blend_data.scenes) > 0 else None
-            )
+            sc = scene or (blend_data.scenes[0] if len(blend_data.scenes) > 0 else None)
             if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
                 sc.collection.children.link(target_coll)
 
@@ -409,7 +407,7 @@ class CollectionCloneDAG:
         if not bpy or not root_coll or not target_coll:
             return {"meshes": [], "pivot": None, "sockets": []}
 
-        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata = blend_data
         pivot_src, sockets_src, meshes_src, _ = PivotPreservationEngine.identify_pivots_and_sockets(root_coll)
         active_pivot = pivot_src or pivot_obj
 
@@ -449,15 +447,11 @@ class CollectionCloneDAG:
         and instantiates a base Pivot Empty at the bottom center (Z_min) of the bounding box.
         Returns (created_collection, created_pivot_empty).
         """
-        effective_blend_data = blend_data or getattr(context, "blend_data", None)
+        effective_blend_data = blend_data
         if not objects or not effective_blend_data:
             return None, None
 
-        sc = scene or (
-            effective_blend_data.scenes[0]
-            if hasattr(effective_blend_data, "scenes") and len(effective_blend_data.scenes) > 0
-            else None
-        )
+        sc = scene or (effective_blend_data.scenes[0] if len(effective_blend_data.scenes) > 0 else None)
 
         coll = effective_blend_data.collections.get(base_name)
         if not coll:
@@ -543,7 +537,7 @@ def get_or_create_engine_import_collection(
     """
     if not context_or_scene:
         return None
-    effective_data = blend_data or getattr(context_or_scene, "blend_data", None)
+    effective_data = blend_data
     if effective_data is None and bpy_module is not None:
         effective_data = getattr(bpy_module, "data", None)
     if not effective_data:
@@ -688,7 +682,7 @@ def safe_remove_collection_objects(
     Safely and cleanly removes objects belonging to a collection and their unshared datablocks.
     Guards against RNA pointer invalidation and collection mutation during iteration.
     """
-    if not col or not hasattr(col, "objects"):
+    if not col:
         return 0
 
     effective_data = blend_data
@@ -704,24 +698,22 @@ def safe_remove_collection_objects(
     for obj in objs_to_remove:
         try:
             # Unparent children safely
-            if hasattr(obj, "children"):
-                for child in list(obj.children):
-                    if child and hasattr(child, "parent"):
-                        child.parent = None
-            if hasattr(obj, "parent") and obj.parent:
+            for child in list(getattr(obj, "children", [])):
+                if child:
+                    child.parent = None
+            if getattr(obj, "parent", None):
                 obj.parent = None
 
             # Deselect if selected
-            if hasattr(obj, "select_set"):
-                try:
-                    obj.select_set(False)
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Deselect on removal skipped: %s", exc)
+            try:
+                obj.select_set(False)
+            except (RuntimeError, ReferenceError, AttributeError) as exc:
+                logger.debug("Deselect on removal skipped: %s", exc)
 
             # Capture unshared data block
             data_to_remove: bpy.types.ID | None = None
-            if hasattr(obj, "data") and obj.data:
-                data = obj.data
+            data = obj.data
+            if data:
                 users = getattr(data, "users", 1)
                 if isinstance(users, (int, float)) and users <= 1:
                     data_to_remove = data

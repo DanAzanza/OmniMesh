@@ -80,7 +80,7 @@ def create_interaction_volume(
     if not bpy:
         return None
 
-    bdata = blend_data or getattr(context, "blend_data", None)
+    bdata = blend_data
     bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
     bdata_objs = getattr(bdata, "objects", None) if bdata else None
     if bdata_meshes is None or bdata_objs is None:
