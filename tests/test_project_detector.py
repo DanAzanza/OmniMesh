@@ -96,6 +96,38 @@ class TestProjectDetector(unittest.TestCase):
         detected = detect_engine_project(str(deep_path), "UE5", max_depth=12)
         self.assertIsNotNone(detected)
 
+    def test_detect_relative_path_with_blend_data(self) -> None:
+        from unittest.mock import MagicMock
+
+        project_root = Path(self.temp_dir) / "RelativeUE5"
+        export_dir = project_root / "Content" / "Export"
+        export_dir.mkdir(parents=True)
+        (project_root / "Relative.uproject").write_text("{}", encoding="utf-8")
+
+        blend_file = project_root / "Content" / "Scene.blend"
+        blend_file.write_text("", encoding="utf-8")
+
+        mock_bdata = MagicMock()
+        mock_bdata.is_saved = True
+        mock_bdata.filepath = str(blend_file)
+
+        detected = detect_engine_project("//Export", "UE5", blend_data=mock_bdata)
+        self.assertIsNotNone(detected)
+        self.assertEqual(os.path.normpath(str(detected)), os.path.normpath(str(project_root)))
+
+    def test_detect_relative_path_without_blend_data_fails_closed(self) -> None:
+        detected = detect_engine_project("//Export", "UE5", blend_data=None)
+        self.assertIsNone(detected)
+
+    def test_detect_relative_path_unsaved_blend_data_fails_closed(self) -> None:
+        from unittest.mock import MagicMock
+
+        mock_bdata = MagicMock()
+        mock_bdata.is_saved = False
+        mock_bdata.filepath = ""
+        detected = detect_engine_project("//Export", "UE5", blend_data=mock_bdata)
+        self.assertIsNone(detected)
+
 
 if __name__ == "__main__":
     unittest.main()

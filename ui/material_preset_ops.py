@@ -68,6 +68,7 @@ class OMNIMESH_OT_assign_material_preset(Operator):
             roughness=roughness,
             metallic=metallic,
             emission_strength=emission_strength,
+            blend_data=getattr(context, "blend_data", None) if context else None,
         )
 
         if not mat:

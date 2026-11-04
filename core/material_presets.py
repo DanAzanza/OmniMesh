@@ -14,13 +14,14 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
-    from bpy.types import Material, Node, Object, ShaderNodeBsdfPrincipled
+    from bpy.types import BlendData, Material, Node, Object, ShaderNodeBsdfPrincipled
 else:
     try:
         import bpy
-        from bpy.types import Material, Node, Object, ShaderNodeBsdfPrincipled
+        from bpy.types import BlendData, Material, Node, Object, ShaderNodeBsdfPrincipled
     except ImportError:
         bpy = None
+        BlendData = object
         Material = object
         Node = object
         Object = object
@@ -110,6 +111,8 @@ def create_or_update_material_preset(
     roughness: float = 0.4,
     metallic: float = 0.0,
     emission_strength: float = 5.0,
+    *,
+    blend_data: BlendData | None = None,
 ) -> Material | None:
     """
     Creates or updates a Blender Material datablock configured according to the selected preset.
@@ -124,10 +127,15 @@ def create_or_update_material_preset(
     if not bpy:
         return None
 
+    bdata = blend_data
+    bdata_mats = getattr(bdata, "materials", None) if bdata else None
+    if bdata_mats is None:
+        return None
+
     clean_name = str(material_name).strip() or f"Mat_{preset_type}"
-    mat = bpy.data.materials.get(clean_name)
+    mat = bdata_mats.get(clean_name)
     if not mat:
-        mat = bpy.data.materials.new(name=clean_name)
+        mat = bdata_mats.new(name=clean_name)
 
     mat.use_nodes = True
     bsdf = get_or_create_principled_node(mat)

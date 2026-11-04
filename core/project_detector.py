@@ -14,22 +14,33 @@ from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bpy
     except ImportError:
         bpy = None  # type: ignore[assignment]
+        BlendData = object
+        BlendData = object
+        BlendData = object
 
 logger = logging.getLogger(__name__)
 
 
-def detect_engine_project(export_dir: str, target_engine: str, max_depth: int = 8) -> Optional[str]:
+def detect_engine_project(
+    export_dir: str,
+    target_engine: str,
+    max_depth: int = 8,
+    *,
+    blend_data: BlendData | None = None,
+) -> Optional[str]:
     """Crawls upward from export directory to identify engine project root.
 
     Args:
         export_dir: Destination path or relative path (e.g. '//Export').
         target_engine: Target engine identifier ('UE5', 'UNITY_6', 'MSFS_2024').
         max_depth: Maximum number of parent directory levels to inspect.
+        blend_data: Optional explicit Blender main database for relative path resolution.
 
     Returns:
         Absolute normalized directory path to engine project root, or None if not detected.
@@ -39,16 +50,22 @@ def detect_engine_project(export_dir: str, target_engine: str, max_depth: int = 
 
     # Guard 1: Blender relative paths with unsaved file
     if export_dir.startswith("//"):
-        if bpy is not None:
-            is_saved = getattr(bpy.data, "is_saved", False)
-            filepath = getattr(bpy.data, "filepath", "")
+        bdata = blend_data
+        if bdata is not None:
+            is_saved = bool(getattr(bdata, "is_saved", False))
+            filepath = getattr(bdata, "filepath", "")
             if not is_saved or not filepath:
                 return None
-            try:
-                abs_dir = bpy.path.abspath(export_dir)
-            except (RuntimeError, ValueError, AttributeError) as exc:
-                logger.debug("Failed resolving relative export dir '%s': %s", export_dir, exc)
-                return None
+            if bpy is not None and hasattr(bpy, "path") and hasattr(bpy.path, "abspath"):
+                try:
+                    abs_dir = bpy.path.abspath(export_dir, start=os.path.dirname(filepath))
+                except (RuntimeError, ValueError, AttributeError) as exc:
+                    logger.debug("Failed resolving relative export dir '%s': %s", export_dir, exc)
+                    return None
+            else:
+                base_dir = os.path.dirname(filepath)
+                rel_suffix = export_dir[2:]
+                abs_dir = os.path.normpath(os.path.join(base_dir, rel_suffix))
         else:
             return None
     else:

@@ -132,10 +132,10 @@ def test_get_or_create_principled_node_existing():
 def test_create_pbr_standard_preset(monkeypatch):
     """Verify PBR_STANDARD preset sets opaque properties and standard tags."""
     mock_mat = MockMaterial("Mat_PBR_Standard")
-    mock_bpy = MagicMock()
-    mock_bpy.data.materials.get.return_value = None
-    mock_bpy.data.materials.new.return_value = mock_mat
-    monkeypatch.setattr(mp, "bpy", mock_bpy)
+    mock_bdata = MagicMock()
+    mock_bdata.materials.get.return_value = None
+    mock_bdata.materials.new.return_value = mock_mat
+    monkeypatch.setattr(mp, "bpy", MagicMock())
 
     mat: Any = create_or_update_material_preset(
         material_name="Aircraft_Fuselage",
@@ -143,6 +143,7 @@ def test_create_pbr_standard_preset(monkeypatch):
         base_color=(0.5, 0.5, 0.5, 1.0),
         roughness=0.3,
         metallic=0.8,
+        blend_data=mock_bdata,
     )
     assert mat is not None
     assert mat["_omnimesh_shader_preset"] == "PBR_STANDARD"
@@ -154,15 +155,16 @@ def test_create_pbr_standard_preset(monkeypatch):
 def test_create_glass_preset(monkeypatch):
     """Verify GLASS_TRANSPARENT preset sets high transmission, low roughness, and windshield tags."""
     mock_mat = MockMaterial("Mat_Glass")
-    mock_bpy = MagicMock()
-    mock_bpy.data.materials.get.return_value = None
-    mock_bpy.data.materials.new.return_value = mock_mat
-    monkeypatch.setattr(mp, "bpy", mock_bpy)
+    mock_bdata = MagicMock()
+    mock_bdata.materials.get.return_value = None
+    mock_bdata.materials.new.return_value = mock_mat
+    monkeypatch.setattr(mp, "bpy", MagicMock())
 
     mat: Any = create_or_update_material_preset(
         material_name="Cockpit_Canopy",
         preset_type="GLASS_TRANSPARENT",
         roughness=0.05,
+        blend_data=mock_bdata,
     )
     assert mat is not None
     assert mat["_omnimesh_shader_preset"] == "GLASS_TRANSPARENT"
@@ -177,16 +179,16 @@ def test_create_decal_and_invisible_presets(monkeypatch):
     mock_mat_decal = MockMaterial("Mat_Decal")
     mock_mat_invis = MockMaterial("Mat_Invis")
 
-    mock_bpy = MagicMock()
-    mock_bpy.data.materials.get.return_value = None
-    mock_bpy.data.materials.new.side_effect = lambda name: mock_mat_decal if "Decal" in name else mock_mat_invis
-    monkeypatch.setattr(mp, "bpy", mock_bpy)
+    mock_bdata = MagicMock()
+    mock_bdata.materials.get.return_value = None
+    mock_bdata.materials.new.side_effect = lambda name: mock_mat_decal if "Decal" in name else mock_mat_invis
+    monkeypatch.setattr(mp, "bpy", MagicMock())
 
-    decal: Any = create_or_update_material_preset("Decal", "FLOATING_DECAL")
+    decal: Any = create_or_update_material_preset("Decal", "FLOATING_DECAL", blend_data=mock_bdata)
     assert decal["_omnimesh_decal"] is True
     assert decal["msfs_material_type"] == 2
 
-    invis: Any = create_or_update_material_preset("Invis", "INVISIBLE_COLLIDER")
+    invis: Any = create_or_update_material_preset("Invis", "INVISIBLE_COLLIDER", blend_data=mock_bdata)
     assert invis["_omnimesh_invisible"] is True
     assert invis["msfs_material_type"] == 12
     assert invis.bsdf.inputs["Alpha"].default_value == 0.0
@@ -195,16 +197,17 @@ def test_create_decal_and_invisible_presets(monkeypatch):
 def test_create_emissive_preset(monkeypatch):
     """Verify EMISSIVE_LIGHT preset sets emission color and strength."""
     mock_mat = MockMaterial("Mat_Light")
-    mock_bpy = MagicMock()
-    mock_bpy.data.materials.get.return_value = None
-    mock_bpy.data.materials.new.return_value = mock_mat
-    monkeypatch.setattr(mp, "bpy", mock_bpy)
+    mock_bdata = MagicMock()
+    mock_bdata.materials.get.return_value = None
+    mock_bdata.materials.new.return_value = mock_mat
+    monkeypatch.setattr(mp, "bpy", MagicMock())
 
     mat: Any = create_or_update_material_preset(
         material_name="Warning_Annunciator",
         preset_type="EMISSIVE_LIGHT",
         base_color=(1.0, 0.2, 0.0, 1.0),
         emission_strength=12.0,
+        blend_data=mock_bdata,
     )
     assert mat["_omnimesh_emissive"] is True
     assert mat.bsdf.inputs["Emission Strength"].default_value == 12.0
@@ -234,3 +237,13 @@ def test_assign_material_to_objects():
     assert count == 2
     assert mesh_obj1.data.materials[0] == mat
     assert mesh_obj2.data.materials[0] == mat
+
+
+def test_create_material_preset_without_blend_data_fails_closed(monkeypatch):
+    """Verify calling create_or_update_material_preset without blend_data fails closed returning None."""
+
+    monkeypatch.setattr(mp, "bpy", MagicMock())
+
+    mat = create_or_update_material_preset("FailMat", "PBR_STANDARD", blend_data=None)
+
+    assert mat is None
