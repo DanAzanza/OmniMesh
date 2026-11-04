@@ -20,11 +20,14 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bpy
+        from bpy.types import BlendData
     except ImportError:
         bpy = None
+        BlendData = object
 
 # Native Outliner Collection Color Tags (Blender 4.0+)
 # COLOR_01: Red, COLOR_02: Orange, COLOR_03: Yellow, COLOR_04: Green,
@@ -218,6 +221,7 @@ def setup_asset_collections(
     options: AssetCollectionOptions | None = None,
     *,
     bpy_module: object = None,
+    blend_data: BlendData | None = None,
 ) -> dict[str, Any]:
     """
     Creates or retrieves the standardized OmniMesh asset collection hierarchy:
@@ -231,7 +235,15 @@ def setup_asset_collections(
     _bpy = bpy_module if bpy_module is not None else bpy
     if not _bpy or not context:
         return {}
-    bpy_data = cast("bpy.types.BlendData", getattr(_bpy, "data", None))
+
+    bdata = blend_data or getattr(context, "blend_data", None)
+    if bdata is None and bpy_module is not None:
+        bdata = getattr(bpy_module, "data", None)
+    if not bdata:
+        return {}
+    bdata_cols = getattr(bdata, "collections", None)
+    if bdata_cols is None:
+        return {}
 
     scene = getattr(context, "scene", None)
     if not scene or not hasattr(scene, "collection"):
@@ -242,9 +254,9 @@ def setup_asset_collections(
     collections: dict[str, Any] = {}
 
     # 1. Root Collection {AssetName}
-    root_col = bpy_data.collections.get(clean_asset)
+    root_col = bdata_cols.get(clean_asset)
     if not root_col:
-        root_col = bpy_data.collections.new(clean_asset)
+        root_col = bdata_cols.new(clean_asset)
         scene.collection.children.link(root_col)
     elif root_col.name not in scene.collection.children:
         try:
@@ -260,9 +272,9 @@ def setup_asset_collections(
 
     # Helper function for nested sub-collections
     def _ensure_sub_collection(role_key: str, sub_name: str) -> bpy.types.Collection | None:
-        sub_col = bpy_data.collections.get(sub_name)
+        sub_col = bdata_cols.get(sub_name)
         if not sub_col:
-            sub_col = bpy_data.collections.new(sub_name)
+            sub_col = bdata_cols.new(sub_name)
             root_col.children.link(sub_col)
         else:
             if sub_col.name not in root_col.children:

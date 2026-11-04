@@ -167,6 +167,9 @@ def test_audit_catches_bpy_data_and_ignores_obj_data(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    # With only 3 references, it is well below the baseline 245
+    # With baseline locked at 0, any references violate the ratchet
     violations2 = scan_repository(tmp_path)
-    assert violations2["bpy_data_ratchet_in_core_exporters"] == []
+    assert len(violations2["bpy_data_ratchet_in_core_exporters"]) == 1
+    assert "bpy.data references (3) exceed ratchet baseline (0)" in str(
+        violations2["bpy_data_ratchet_in_core_exporters"][0][2]
+    )

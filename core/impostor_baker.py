@@ -287,6 +287,7 @@ class ImpostorAtlasBaker:
                                     target_engine=target_engine,
                                     radius=radius,
                                     cam_distance=dist,
+                                    blend_data=bdata,
                                 )
                                 for m in bake_mats
                             ]

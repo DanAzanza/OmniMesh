@@ -22,12 +22,14 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bmesh
         import bpy
     except ImportError:
         bpy = None
+        BlendData = object
         bmesh = None
 
 try:
@@ -72,7 +74,9 @@ class BatchMeshIterator:
         self.preserve_boundaries = preserve_boundaries
         self.planar_dissolve = planar_dissolve
 
-    def iterate(self, context: Optional[bpy.types.Context] = None) -> Iterator[BatchProgress]:
+    def iterate(
+        self, context: Optional[bpy.types.Context] = None, *, blend_data: BlendData | None = None
+    ) -> Iterator[BatchProgress]:
         """
         Yields BatchProgress for each mesh processed.
         Performs periodic orphan cleanup and explicit garbage collection.
@@ -124,10 +128,12 @@ class BatchMeshIterator:
 
                 # Clean orphans every 10 meshes to prevent memory bloat
                 if (idx + 1) % 10 == 0:
-                    try:
-                        bpy.data.orphans_purge(do_recursive=True)
-                    except (RuntimeError, ValueError, AttributeError) as exc:
-                        logger.debug("Orphans purge exception during batch: %s", exc)
+                    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+                    if bdata is not None and hasattr(bdata, "orphans_purge"):
+                        try:
+                            bdata.orphans_purge(do_recursive=True)
+                        except (RuntimeError, ValueError, AttributeError) as exc:
+                            logger.debug("Orphans purge exception during batch: %s", exc)
                     gc.collect()
 
                 yield BatchProgress(

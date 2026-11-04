@@ -18,11 +18,13 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bpy
     except ImportError:
         bpy = None
+        BlendData = object
 
 
 from .compat import get_socket_default_value, set_socket_default_value
@@ -48,6 +50,8 @@ class ImpostorShaderHarness:
         target_engine: str = "UE5",
         radius: float = 1.0,
         cam_distance: float = 2.5,
+        *,
+        blend_data: BlendData | None = None,
     ) -> Optional[bpy.types.Material]:
         """
         Creates an ephemeral unlit material for baking a specific PBR or depth pass.
@@ -56,7 +60,12 @@ class ImpostorShaderHarness:
         if not bpy:
             return None
 
-        mat = bpy.data.materials.new(f"OM_Bake_{channel_layer}")
+        bdata = blend_data
+        bdata_mats = getattr(bdata, "materials", None) if bdata else None
+        if bdata_mats is None:
+            return None
+
+        mat = bdata_mats.new(f"OM_Bake_{channel_layer}")
         mat.use_nodes = True
         if not mat.node_tree:
             raise ImpostorBakeError("Material has no node tree.")

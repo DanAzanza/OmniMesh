@@ -16,13 +16,14 @@ from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
     import bpy
-    from bpy.types import Material, Node, NodeSocket, NodeTree, Object, ShaderNodeTexImage
+    from bpy.types import BlendData, Material, Node, NodeSocket, NodeTree, Object, ShaderNodeTexImage
 else:
     try:
         import bpy
         from bpy.types import Material, Node, NodeSocket, NodeTree, Object, ShaderNodeTexImage
     except ImportError:
         bpy = None
+        BlendData = object
         Material = object
         Node = object
         NodeSocket = object
@@ -244,6 +245,8 @@ class PBRTextureResolver:
         blend_filepath: str | None = None,
         make_relative: bool = True,
         max_depth: int = 5,
+        *,
+        blend_data: BlendData | None = None,
     ) -> TextureResolutionSummary:
         """Audits all ShaderNodeTexImage nodes in materials and resolves missing textures from search roots."""
         if not materials or not search_roots:
@@ -316,9 +319,11 @@ class PBRTextureResolver:
 
                     try:
                         if img is None and bpy:
-                            # Load newly discovered image
-                            img = bpy.data.images.load(str(matched_path))
-                            node.image = img
+                            # Load newly discovered image via injected blend_data
+                            bdata_imgs = getattr(blend_data, "images", None) if blend_data else None
+                            if bdata_imgs is not None and hasattr(bdata_imgs, "load"):
+                                img = bdata_imgs.load(str(matched_path))
+                                node.image = img
                         elif img is not None:
                             img.filepath = new_path_str
                             reload_fn = getattr(img, "reload", None)

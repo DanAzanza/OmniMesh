@@ -190,6 +190,7 @@ class TestImpostorPipeline(unittest.TestCase):
                     source_mat=src_mat,
                     channel_layer=pass_name,
                     target_engine="UE5",
+                    blend_data=bpy.context.blend_data,
                 )
                 self.assertIsNotNone(unlit_mat, f"Unlit material for pass {pass_name} must not be None.")
                 if unlit_mat is None or unlit_mat.node_tree is None:

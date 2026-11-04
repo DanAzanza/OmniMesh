@@ -87,9 +87,10 @@ class DummyWindowManager(_MockBase):
 
 
 class DummyContext(_MockBase):
-    def __init__(self, scene: Any | None = None, wm: Any | None = None):
+    def __init__(self, scene: Any | None = None, wm: Any | None = None, blend_data: Any | None = None):
         self.scene = scene or DummyScene()
         self.window_manager = wm or DummyWindowManager()
+        self.blend_data = blend_data or DummyBpyData()
 
 
 class DummyCollection(_MockBase):
