@@ -54,7 +54,7 @@ class TestSimulatorPipeline(unittest.TestCase):
             cast(Any, bpy.ops).lod_tool.generate_all()
 
             # Index scene assets
-            tracked_count = LODSimulatorEngine.index_scene_assets(scene)
+            tracked_count = LODSimulatorEngine.index_scene_assets(scene, blend_data=bpy.context.blend_data)
             self.assertEqual(tracked_count, 1, "Must index exactly 1 asset hierarchy.")
 
             tracked = LODSimulatorEngine.get_tracked_assets()

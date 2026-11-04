@@ -104,6 +104,7 @@ def test_distance_scrub_differential_visibility_and_snapshot():
     mock_bpy = MagicMock()
     mock_bpy.data.objects.get.side_effect = lambda n: mock_objects_dict.get(n)
     sim_mod.bpy = mock_bpy
+    mock_context.blend_data = mock_bpy.data
 
     try:
         # Step A: Scrub to a close distance (e.g. 5m -> LOD0)

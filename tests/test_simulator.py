@@ -106,3 +106,60 @@ def test_non_numeric_and_none_coercion():
     assert evaluate_lod_tier_index_pure(None, thresholds) == 3  # type: ignore
     assert calculate_effective_distance_pure(None, (0.0, 0.0, 0.0), 1.0) == 0.01  # type: ignore
     assert calculate_effective_distance_pure((0.0, 0.0, 0.0), None, 1.0) == 0.01  # type: ignore
+
+
+def test_simulator_and_scanner_explicit_di_without_bpy_data(monkeypatch):
+    """Verify that LODSimulatorEngine and asset_scanner work with explicit BlendData injection."""
+    from unittest.mock import MagicMock
+
+    import core.asset_scanner as asset_scanner
+    import core.simulator as simulator
+    from core.asset_scanner import (
+        get_asset_base_meshes,
+        get_asset_collection,
+        get_available_asset_names,
+        scan_asset_state,
+    )
+    from core.simulator import LODSimulatorEngine
+    from tests.conftest import MockBlendData
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(asset_scanner, "bpy", mock_bpy)
+    monkeypatch.setattr(simulator, "bpy", mock_bpy)
+
+    bdata = MockBlendData()
+    mesh_obj = MagicMock(type="MESH")
+    mesh_obj.name = "Prop_LOD0"
+    mesh_obj.get.side_effect = lambda k, d=False: False
+    mesh_obj.material_slots = []
+    mesh_obj.data = None
+    coll_lod0 = MagicMock(name="Prop_LOD0")
+    coll_lod0.name = "Prop"
+    coll_lod0.objects = [mesh_obj]
+    coll_lod0.all_objects = [mesh_obj]
+    bdata.collections["Prop"] = coll_lod0
+
+    mock_scene = MagicMock()
+    scene_master = MagicMock(name="Scene Collection")
+    mock_scene.collection = scene_master
+
+    mock_ctx = MagicMock()
+    mock_ctx.scene = mock_scene
+    mock_ctx.blend_data = bdata
+
+    # Scanner with explicit blend_data
+    avail = get_available_asset_names(mock_ctx, blend_data=bdata)
+    assert "Prop" in avail
+
+    coll = get_asset_collection(mock_ctx, "Prop", blend_data=bdata)
+    assert coll == coll_lod0
+
+    meshes = get_asset_base_meshes(mock_ctx, "Prop", blend_data=bdata)
+    assert meshes == [mesh_obj]
+
+    summary = scan_asset_state(mock_ctx, "Prop", blend_data=bdata)
+    assert summary["base_meshes"] == [mesh_obj]
+
+    # Simulator index with explicit blend_data
+    count = LODSimulatorEngine.index_scene_assets(mock_scene, blend_data=bdata)
+    assert count >= 0

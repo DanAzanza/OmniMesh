@@ -223,6 +223,7 @@ def test_config_sibling_collection_and_active_asset_resolution(monkeypatch):
     mock_bpy.data.collections = [col_plane, col_config, col_spatial, col_helpers]
 
     mock_context = MagicMock()
+    mock_context.blend_data = mock_bpy.data
     mock_context.scene = mock_scene
     mock_context.view_layer.active_layer_collection = None
     mock_context.active_object = datum_empty

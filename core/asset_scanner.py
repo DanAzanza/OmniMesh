@@ -14,11 +14,18 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData, Collection, Context, Mesh, Object
 else:
     try:
         import bpy
+        from bpy.types import Collection, Context, Mesh, Object
     except ImportError:
         bpy = None
+        Collection = object
+        Context = object
+        Mesh = object
+        Object = object
+    BlendData = object
 
 
 def _strip_collection_suffixes(name: str) -> str:
@@ -45,7 +52,11 @@ def _strip_collection_suffixes(name: str) -> str:
     return stem
 
 
-def get_available_asset_names(context: bpy.types.Context | None) -> list[str]:
+def get_available_asset_names(
+    context: bpy.types.Context | None,
+    *,
+    blend_data: BlendData | None = None,
+) -> list[str]:
     """Discovers available asset base names by scanning scene collections."""
     if not bpy or not context:
         return []
@@ -54,8 +65,11 @@ def get_available_asset_names(context: bpy.types.Context | None) -> list[str]:
     if not scene or not hasattr(scene, "collection"):
         return []
 
+    bdata = blend_data or getattr(context, "blend_data", None)
+    bdata_cols = getattr(bdata, "collections", None) if bdata else None
+
     asset_names = []
-    for coll in bpy.data.collections:
+    for coll in bdata_cols or []:
         if coll == scene.collection or coll.name.startswith("."):
             continue
 
@@ -137,21 +151,33 @@ def resolve_effective_asset_name(context: bpy.types.Context | None, props: objec
     return "Asset"
 
 
-def get_asset_collection(context: bpy.types.Context | None, asset_name: str) -> bpy.types.Collection | None:
+def get_asset_collection(
+    context: bpy.types.Context | None,
+    asset_name: str,
+    *,
+    blend_data: BlendData | None = None,
+) -> bpy.types.Collection | None:
     """Finds the root collection for asset_name (either '{BaseName}' or '{BaseName}_LOD0')."""
-    if not bpy or not hasattr(bpy, "data") or not hasattr(bpy.data, "collections") or not asset_name:
+    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+    bdata_cols = getattr(bdata, "collections", None) if bdata else None
+    if not bdata_cols or not asset_name:
         return None
 
     for candidate in (asset_name, f"{asset_name}_LOD0"):
-        c = bpy.data.collections.get(candidate)
+        c = bdata_cols.get(candidate)
         if c:
             return c
     return None
 
 
-def get_asset_base_meshes(context: bpy.types.Context | None, asset_name: str) -> list[bpy.types.Object]:
+def get_asset_base_meshes(
+    context: bpy.types.Context | None,
+    asset_name: str,
+    *,
+    blend_data: BlendData | None = None,
+) -> list[bpy.types.Object]:
     """Retrieves all non-collider, non-impostor MESH objects from the root asset collection."""
-    coll = get_asset_collection(context, asset_name)
+    coll = get_asset_collection(context, asset_name, blend_data=blend_data)
     if not coll:
         selected = getattr(context, "selected_objects", []) if context else []
         meshes = [o for o in selected if getattr(o, "type", "") == "MESH"]
@@ -178,7 +204,12 @@ def get_asset_base_meshes(context: bpy.types.Context | None, asset_name: str) ->
     return meshes
 
 
-def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict[str, Any]:
+def scan_asset_state(
+    context: bpy.types.Context | None,
+    asset_name: str,
+    *,
+    blend_data: BlendData | None = None,
+) -> dict[str, Any]:
     """
     Scans scene collections for existing LODs and geometry for asset_name.
     Returns:
@@ -189,13 +220,14 @@ def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict
         'existing_tiers': dict[int, dict[str, Any]], # maps 0..k to {collection_name, meshes, actual_tris, is_impostor}
     }
     """
-    base_meshes = get_asset_base_meshes(context, asset_name)
+    bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+    base_meshes = get_asset_base_meshes(context, asset_name, blend_data=bdata)
     base_tris = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in base_meshes)
     mat_slots = sum(len(m.material_slots) for m in base_meshes if hasattr(m, "material_slots"))
 
     existing_tiers: dict[int, dict[str, Any]] = {}
 
-    l0_coll = get_asset_collection(context, asset_name)
+    l0_coll = get_asset_collection(context, asset_name, blend_data=bdata)
     if l0_coll:
         existing_tiers[0] = {
             "collection_name": l0_coll.name,
@@ -204,10 +236,12 @@ def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict
             "is_impostor": False,
         }
 
-    if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and asset_name:
+    bdata_cols = getattr(bdata, "collections", None) if bdata else None
+
+    if bdata_cols and asset_name:
         for i in range(1, 11):
             c_name = f"{asset_name}_LOD{i}"
-            c = bpy.data.collections.get(c_name)
+            c = bdata_cols.get(c_name)
             if c:
                 meshes = [o for o in getattr(c, "objects", []) if getattr(o, "type", "") == "MESH"]
                 t_count = sum(
@@ -221,7 +255,7 @@ def scan_asset_state(context: bpy.types.Context | None, asset_name: str) -> dict
                 }
 
         imp_name = f"{asset_name}_LOD_Impostor"
-        c_imp = bpy.data.collections.get(imp_name)
+        c_imp = bdata_cols.get(imp_name)
         if c_imp:
             meshes = [o for o in getattr(c_imp, "objects", []) if getattr(o, "type", "") == "MESH"]
             t_count = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in meshes)

@@ -9,15 +9,23 @@ from typing import TYPE_CHECKING, Any, Sequence, cast
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData, Collection, Context, Mesh, Object, Scene
     from mathutils import Matrix, Vector
 else:
     try:
         import bpy
+        from bpy.types import Collection, Context, Mesh, Object, Scene
         from mathutils import Matrix, Vector
     except ImportError:
         bpy = None
+        Collection = object
+        Context = object
+        Mesh = object
+        Object = object
+        Scene = object
         Vector = None
         Matrix = None
+    BlendData = object
 
 
 def calculate_effective_distance_pure(
@@ -187,10 +195,14 @@ class LODAssetRecord:
         self.current_tier: int = 0
         self.is_valid: bool = False
 
-    def update_bounds_and_tiers(self):
+    def update_bounds_and_tiers(self, *, blend_data: BlendData | None = None) -> None:
         if not bpy:
             return
-        coll = bpy.data.collections.get(self.collection_name)
+        bdata_cols = getattr(blend_data, "collections", None) if blend_data else None
+        if not bdata_cols:
+            self.is_valid = False
+            return
+        coll = bdata_cols.get(self.collection_name)
         if coll is None:
             self.is_valid = False
             return
@@ -233,7 +245,12 @@ class LODSimulatorEngine:
     _tracked_assets: dict[str, LODAssetRecord] = {}
 
     @classmethod
-    def index_scene_assets(cls, scene: bpy.types.Scene | None) -> int:
+    def index_scene_assets(
+        cls,
+        scene: bpy.types.Scene | None = None,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> int:
         if not bpy:
             return 0
         cls._tracked_assets.clear()
@@ -246,6 +263,8 @@ class LODSimulatorEngine:
 
         # Scope to collections linked to the target scene
         scene_colls: set[bpy.types.Collection] = set()
+        bdata_cols = getattr(blend_data, "collections", None) if blend_data else None
+
         if scene and hasattr(scene, "collection"):
 
             def collect_children(p_coll: bpy.types.Collection | None) -> None:
@@ -257,7 +276,7 @@ class LODSimulatorEngine:
 
             collect_children(scene.collection)
         else:
-            scene_colls = set(bpy.data.collections)
+            scene_colls = set(bdata_cols) if bdata_cols else set()
 
         # 1. Index Sibling Collections ({Root}, {Root}_LOD1..k)
         for coll in scene_colls:
@@ -265,7 +284,9 @@ class LODSimulatorEngine:
                 ("_LODs", "_Colliders", "_LOD_Impostor")
             ):
                 # Check if this collection has sibling LOD collections
-                has_siblings = any(bpy.data.collections.get(f"{coll.name}_LOD{i}") is not None for i in range(1, 8))
+                has_siblings = (
+                    any(bdata_cols.get(f"{coll.name}_LOD{i}") is not None for i in range(1, 8)) if bdata_cols else False
+                )
                 if has_siblings or coll.get("_is_lod_root", False):
                     record = LODAssetRecord(coll.name, coll.name)
                     # Gather objects from root and siblings
@@ -274,7 +295,7 @@ class LODSimulatorEngine:
                     # LOD 0
                     l0_objs = [o for o in coll.objects if o.type == "MESH" and not o.get("_is_collider", False)]
                     if not l0_objs:
-                        s_c0 = bpy.data.collections.get(f"{coll.name}_LOD0")
+                        s_c0 = bdata_cols.get(f"{coll.name}_LOD0") if bdata_cols else None
                         if s_c0 is not None:
                             l0_objs = [
                                 o for o in list(s_c0.objects) if o.type == "MESH" and not o.get("_is_collider", False)
@@ -288,7 +309,7 @@ class LODSimulatorEngine:
 
                     # LOD 1..k
                     for i in range(1, 8):
-                        s_c = bpy.data.collections.get(f"{coll.name}_LOD{i}")
+                        s_c = bdata_cols.get(f"{coll.name}_LOD{i}") if bdata_cols else None
                         if s_c is not None:
                             s_objs = [
                                 o for o in list(s_c.objects) if o.type == "MESH" and not o.get("_is_collider", False)
@@ -308,7 +329,7 @@ class LODSimulatorEngine:
             elif coll.name.endswith("_LODs"):
                 root_name = coll.name[:-5]
                 record = LODAssetRecord(coll.name, root_name)
-                record.update_bounds_and_tiers()
+                record.update_bounds_and_tiers(blend_data=blend_data)
                 record.tier_screen_pcts = list(default_tiers_pct)
                 if record.is_valid:
                     cls._tracked_assets[coll.name] = record
@@ -505,14 +526,21 @@ class LODSimulatorEngine:
         return primary
 
     @classmethod
-    def reset_distance_scrub(cls, context: bpy.types.Context | None) -> None:
+    def reset_distance_scrub(
+        cls,
+        context: bpy.types.Context | None,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> None:
         """Restores exact pre-scrub visibility state from snapshot."""
         if not bpy or not context:
             return
+        bdata = blend_data or getattr(context, "blend_data", None)
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
         view_layer = getattr(context, "view_layer", None)
         if cls._visibility_snapshot:
             for obj_name, was_hidden in cls._visibility_snapshot.items():
-                obj = bpy.data.objects.get(obj_name)
+                obj = bdata_objs.get(obj_name) if bdata_objs else None
                 if obj and hasattr(obj, "hide_get") and obj.hide_get(view_layer=view_layer) != was_hidden:
                     obj.hide_set(was_hidden, view_layer=view_layer)
             cls._visibility_snapshot.clear()

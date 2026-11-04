@@ -660,6 +660,9 @@ class MockBlendDataContainer(_MockBase):
             return list(self._items.values())[key]
         return self._items[key]
 
+    def __setitem__(self, key: str, item: Any) -> None:
+        self._items[key] = item
+
     def __len__(self) -> int:
         return len(self._items)
 
