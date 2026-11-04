@@ -106,6 +106,88 @@ class TestCleanupPipeline(unittest.TestCase):
             self.assertEqual(res, {"FINISHED"})
             self.assertIn("Purged", props.last_material_cleanup_summary)
 
+    def test_sanitize_mesh_full_direct_bmesh(self) -> None:
+        """Verify MeshSanitizer.sanitize_mesh_full coordinates all 3 tiers directly on live BMesh."""
+        import bmesh
+        from core.sanitizer import MeshSanitizer, SanitizeOptions
+
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+            obj = create_dirty_mesh("SM_SanitizeDirect")
+            mesh = cast("bpy.types.Mesh", obj.data)
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+
+            options = SanitizeOptions(
+                enable_weld=True,
+                epsilon_merge=0.001,
+                enable_split_non_manifold=True,
+                enable_fill_holes=True,
+                hole_max_edges=8,
+                enable_triangulate_ngons=True,
+                enable_cull_micro_islands=True,
+                w_crit=0.01,
+            )
+            stats = MeshSanitizer.sanitize_mesh_full(bm, options=options)
+            bm.to_mesh(mesh)
+            bm.free()
+
+            self.assertGreaterEqual(stats.get("loose_verts", 0), 2)
+            self.assertGreaterEqual(stats.get("zero_faces", 0), 1)
+            self.assertGreaterEqual(stats.get("split_bowties", 0), 1)
+
+    def test_topology_repair_cull_subpixel_islands(self) -> None:
+        """Verify cull_subpixel_islands removes micro-debris while preserving primary geometry."""
+        import bmesh
+        from core.topology_repair import TopologyRepairEngine
+
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+            _mesh = bpy.data.meshes.new("SM_IslandTest_Mesh")
+            bm = bmesh.new()
+            # 1. Main Cube (surface area = 24.0)
+            bmesh.ops.create_cube(bm, size=2.0)
+            # 2. Micro triangle (area ~ 0.00005, subpixel debris)
+            v1 = bm.verts.new((10.0, 0.0, 0.0))
+            v2 = bm.verts.new((10.01, 0.0, 0.0))
+            v3 = bm.verts.new((10.0, 0.01, 0.0))
+            bm.faces.new((v1, v2, v3))
+            bm.verts.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+
+            # Before cull: 6 cube faces + 1 micro face = 7 faces
+            self.assertEqual(len(bm.faces), 7)
+            removed = TopologyRepairEngine.cull_subpixel_islands(bm, w_crit=0.05)
+            self.assertEqual(removed, 1, "Exactly 1 subpixel island face should be culled.")
+            self.assertEqual(len(bm.faces), 6, "Only the 6 primary cube faces must remain.")
+            bm.free()
+
+    def test_topology_repair_fill_small_boundary_holes(self) -> None:
+        """Verify fill_small_boundary_holes identifies and caps open polygon rings."""
+        import bmesh
+        from core.topology_repair import TopologyRepairEngine
+
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+            _mesh = bpy.data.meshes.new("SM_HoleTest_Mesh")
+            bm = bmesh.new()
+            # Create cube and delete one face to create an open 4-edge hole
+            bmesh.ops.create_cube(bm, size=2.0)
+            bm.faces.ensure_lookup_table()
+            face_to_remove = bm.faces[0]
+            bmesh.ops.delete(bm, geom=[face_to_remove], context="FACES_ONLY")
+            self.assertEqual(len(bm.faces), 5)
+
+            filled = TopologyRepairEngine.fill_small_boundary_holes(bm, max_edges=6)
+            self.assertEqual(filled, 1, "The 4-edge hole must be detected and filled.")
+            # 5 original quads + 2 beauty-triangulated faces capping the 4-edge hole = 7 faces
+            self.assertEqual(len(bm.faces), 7, "Mesh should have 5 quads + 2 triangulated hole faces.")
+            self.assertFalse(any(e.is_boundary for e in bm.edges), "Mesh must be fully watertight.")
+            bm.free()
+
 
 if __name__ == "__main__":
     unittest.main()

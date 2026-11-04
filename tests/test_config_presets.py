@@ -447,6 +447,8 @@ def test_smart_replace_and_autofit_geometry(monkeypatch: pytest.MonkeyPatch):
             self.name = name
             self.data = data
             self.location = (0.0, 0.0, 0.0)
+            self.parent: Any = None
+            self.children: list[Any] = []
             self._dict: dict[str, Any] = {}
 
         def __setitem__(self, k, v):

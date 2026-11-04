@@ -239,7 +239,7 @@ def test_config_sibling_collection_and_active_asset_resolution(monkeypatch):
     eff_asset = ui_utils.resolve_effective_asset_name(mock_context)
     assert eff_asset == "Simple_Aircraft"
 
-    eff_scanner = asset_scanner.resolve_effective_asset_name(mock_context)
+    eff_scanner = asset_scanner.resolve_effective_asset_name(mock_context, blend_data=mock_bpy.data)
     assert eff_scanner == "Simple_Aircraft"
 
     # Selecting helper mesh should also resolve to Simple_Aircraft

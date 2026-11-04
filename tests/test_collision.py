@@ -81,8 +81,11 @@ def test_map_collider_name_for_engine():
 
 
 def test_collision_manager_null_mesh_objs():
-    assert CollisionManager.generate_colliders_for_objects([], "Test") == []
-    assert CollisionManager.remove_colliders_for_objects([], "Test") == 0
+    mock_bdata = MagicMock()
+    mock_bdata.collections.get.return_value = None
+    mock_bdata.objects = []
+    assert CollisionManager.generate_colliders_for_objects([], "Test", blend_data=mock_bdata) == []
+    assert CollisionManager.remove_colliders_for_objects([], "Test", blend_data=mock_bdata) == 0
 
 
 def test_get_lod0_mesh_objects_multi_collection(monkeypatch):
@@ -353,13 +356,18 @@ def test_collision_area_none_data_safeguard(monkeypatch):
 
 
 def test_collision_manager_pure_di_missing_blend_data_fails_closed():
-    """Verify generate_colliders and remove_colliders return empty results when blend_data is None."""
+    """Verify generate_colliders and remove_colliders fail fast when blend_data is None."""
     from core.collision import CollisionManager
+    from core.exceptions import DependencyInjectionError
     from unittest.mock import MagicMock
+    import pytest
 
     dummy_obj = MagicMock()
-    assert CollisionManager.generate_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None) == []
-    assert CollisionManager.remove_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None) == 0
+    with pytest.raises(DependencyInjectionError, match="Explicit 'blend_data' dependency is required"):
+        CollisionManager.generate_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None)
+
+    with pytest.raises(DependencyInjectionError, match="Explicit 'blend_data' dependency is required"):
+        CollisionManager.remove_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None)
 
 
 def test_collision_manager_pure_di_lifecycle_with_mock_blend_data(monkeypatch):

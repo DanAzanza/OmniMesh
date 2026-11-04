@@ -115,6 +115,7 @@ def test_create_interaction_volume_box(monkeypatch):
         shape="BOX",
         role="LEVER",
         size=(0.05, 0.12, 0.05),
+        blend_data=mock_bdata,
     )
 
     assert vol is not None
@@ -168,6 +169,7 @@ def test_create_interaction_volume_parenting(monkeypatch):
         shape="CYLINDER",
         role="LEVER",
         parent_obj=parent_mesh,
+        blend_data=mock_bdata,
     )
 
     assert vol is not None

@@ -353,9 +353,26 @@ class MockMeshObject(_MockBase):
         )
         self.users_collection: List[Any] = []
         self.parent: Optional[Any] = None
+        self.children: List[Any] = []
         self.matrix_world = MagicMock()
+        self.matrix_parent_inverse = MagicMock()
+        self.matrix_basis = MagicMock()
+        self.matrix_local = MagicMock()
+        self.parent_bone: str = ""
         self.constraints = MockConstraintList()
         self.animation_data: Optional[Any] = None
+
+    def visible_get(self, view_layer: Optional[Any] = None) -> bool:
+        return not self.hide_viewport and not self._hidden_layer
+
+    def evaluated_get(self, depsgraph: Optional[Any] = None) -> Any:
+        return self
+
+    def to_mesh(self, preserve_all_data_layers: bool = False, depsgraph: Optional[Any] = None) -> Any:
+        return self.data
+
+    def to_mesh_clear(self) -> None:
+        pass
 
     def hide_get(self, view_layer: Optional[Any] = None) -> bool:
         return self._hidden_layer
@@ -419,6 +436,8 @@ class MockCollection(_MockBase):
 
     def __init__(self, name: str = "Collection"):
         self.name = name
+        self.hide_viewport: bool = False
+        self.hide_render: bool = False
         self.objects: MockCollectionObjects = MockCollectionObjects()
         self._children: Dict[str, MockCollection] = {}
         self.children = MockChildrenDict(self._children)
@@ -697,6 +716,14 @@ class MockBlendData(_MockBase):
                 node_tree=MagicMock(nodes=MockBlendDataContainer()),
             )
         )
+
+    def orphans_purge(
+        self,
+        do_local_ids: bool = True,
+        do_linked_ids: bool = True,
+        do_recursive: bool = False,
+    ) -> int:
+        return 0
 
 
 @pytest.fixture
