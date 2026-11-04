@@ -732,3 +732,18 @@ def test_shader_tracer_pillow_absent_fallback_parity():
     assert out_numpy.dtype == np.uint8
     # Should be smooth gradient, not unhandled or corrupted
     assert out_numpy[0, 0] < out_numpy[1, 1]
+
+
+def test_shader_tracer_bake_socket_di_without_bpy_data():
+    """Verify bake_material_socket safely fails closed when images container is absent."""
+    from unittest.mock import MagicMock
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
+    mat = MagicMock()
+    mat.use_nodes = True
+    mat.node_tree = MagicMock()
+
+    # When no images or scene are available in bdata, returns None gracefully
+    result = ShaderTracer.bake_material_socket(mat, "Base Color", (32, 32), blend_data=bdata)
+    assert result is None

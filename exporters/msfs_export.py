@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
     from .base import EngineExporterBase
     from .engine_export import AssetMeshResolver
 else:
@@ -31,6 +32,7 @@ else:
         import bpy
     except ImportError:
         bpy = None
+    BlendData = object
 
     try:
         from .base import EngineExporterBase
@@ -310,11 +312,17 @@ class MSFSExporter(EngineExporterBase):
         exported_count += 1
 
         # 2. Export Interior if present
+        bdata_in = kwargs.get("blend_data")
+        bdata = (
+            bdata_in
+            if bdata_in is not None and hasattr(bdata_in, "collections")
+            else (getattr(context, "blend_data", None) if context else None)
+        )
+        bdata_cols = getattr(bdata, "collections", None) if bdata else None
+
         interior_name = f"{clean_base}_Interior"
         has_interior = False
-        if hasattr(bpy.data, "collections") and (
-            bpy.data.collections.get(interior_name) or bpy.data.collections.get(f"{interior_name}_LOD0")
-        ):
+        if bdata_cols and (bdata_cols.get(interior_name) or bdata_cols.get(f"{interior_name}_LOD0")):
             ok_int, msg_int = cls.export_asset(context, model_dir, interior_name, **kwargs)
             if ok_int:
                 exported_count += 1
@@ -366,8 +374,8 @@ class MSFSExporter(EngineExporterBase):
             logger.warning("Could not write model.cfg: %s", exc)
 
         # 4. Export Variants if present
-        if hasattr(bpy.data, "collections"):
-            for coll in bpy.data.collections:
+        if bdata_cols:
+            for coll in bdata_cols:
                 c_name = getattr(coll, "name", "")
                 if c_name.startswith(f"{clean_base}_") and not any(
                     c_name.endswith(sfx)

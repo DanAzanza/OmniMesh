@@ -13,11 +13,13 @@ import numpy as np
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bpy
     except ImportError:
         bpy = None
+    BlendData = object
 
 logger = logging.getLogger(__name__)
 
@@ -448,12 +450,18 @@ class ShaderTracer:
         context: Optional[bpy.types.Context] = None,
         active_obj: Optional[bpy.types.Object] = None,
         scene: Optional[bpy.types.Scene] = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> Optional[np.ndarray]:
         """Bakes an evaluated shader socket to an image array using Cycles Emission bake."""
         if not bpy or not material or not material.use_nodes or not material.node_tree:
             return None
 
-        sc = scene or (context.scene if context else None) or (bpy.data.scenes[0] if bpy and bpy.data.scenes else None)
+        bdata = blend_data or getattr(context, "blend_data", None)
+        bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
+        bdata_images = getattr(bdata, "images", None) if bdata else None
+
+        sc = scene or (context.scene if context else None) or (bdata_scenes[0] if bdata_scenes else None)
         act_obj = active_obj or (context.active_object if context else None)
         if (not act_obj or act_obj.type != "MESH") and sc and sc.objects:
             for obj in sc.objects:
@@ -509,7 +517,9 @@ class ShaderTracer:
             links.new(sock.links[0].from_socket, emit_node.inputs["Color"])
             links.new(emit_node.outputs["Emission"], surf_sock)
 
-            temp_img = bpy.data.images.new(
+            if not bdata_images:
+                return None
+            temp_img = bdata_images.new(
                 "_OM_Bake_Temp", width=target_w, height=target_h, alpha=False, float_buffer=(bit_depth == 16)
             )
             cs = getattr(temp_img, "colorspace_settings", None)
@@ -566,7 +576,7 @@ class ShaderTracer:
                     links.new(orig_surf_from, surf_sock)
                 for tn in temp_nodes:
                     nodes.remove(tn)
-                if temp_img and bpy and hasattr(bpy.data, "images"):
-                    bpy.data.images.remove(temp_img, do_unlink=True)
+                if temp_img and bdata_images:
+                    bdata_images.remove(temp_img, do_unlink=True)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Bake cleanup skipped: %s", exc)
