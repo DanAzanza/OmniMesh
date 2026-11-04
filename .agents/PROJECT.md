@@ -55,7 +55,7 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 ### 1.1 Layer Separation & Data Flow
 * **Unidirectional Layer Boundaries**:
   * `ui/`: Presentation layer, 3D viewport panels, modal operators. Gathers user parameters and dispatches commands.
-  * `core/`: Core decimation algorithms, impostor generation, hierarchy managers, and LOD chain calculators. Zero global `bpy.context` reads; all data and context dependencies are explicitly injected.
+  * `core/`: Core decimation algorithms, impostor generation, hierarchy managers, and LOD chain calculators. Zero global `bpy.context` and zero `bpy.data` reads; all database (`bpy.types.BlendData`) and context dependencies are explicitly injected (`blend_data: BlendData | None = None`).
   * `exporters/`: Engine packaging logic (MSFS 2024, UE5, Unity 6). Implements transactional rollback (`try...finally`).
   * `bridges/`: External IPC socket clients, health probes, and live engine sync. Strictly non-blocking.
 * **Core Domain Isolation**: Pure math, mesh partitioning, and quadric decimation algorithms must remain isolated from host UI state and headless batch loops.
