@@ -91,7 +91,9 @@ class TestPivotPipeline(unittest.TestCase):
             bpy.context.view_layer.update()
 
             # Clone pivot for LOD1
-            cloned_pivot = PivotPreservationEngine.clone_pivot_empty(pivot, tgt_coll, tier_idx=1, base_name="SM_Hero")
+            cloned_pivot = PivotPreservationEngine.clone_pivot_empty(
+                pivot, tgt_coll, tier_idx=1, base_name="SM_Hero", blend_data=bpy.context.blend_data
+            )
             self.assertIsNotNone(cloned_pivot)
             assert cloned_pivot is not None
             self.assertIn(cloned_pivot.name, tgt_coll.objects)

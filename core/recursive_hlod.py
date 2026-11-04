@@ -18,6 +18,7 @@ from .decimator import MeshDecimator
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData
     from mathutils import Matrix, Vector
 else:
     try:
@@ -29,6 +30,7 @@ else:
         bmesh = None
         Matrix = None
         Vector = None
+    BlendData = object
 
 logger = logging.getLogger(__name__)
 
@@ -134,11 +136,16 @@ class RecursiveHLODManager:
         use_voxel_shell: bool = False,
         voxel_size: float = 0.5,
         context: bpy.types.Context | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> list[bpy.types.Object]:
         """
         Merges chunk clusters for a specific HLOD tier, recents pivots stationary,
         decimates, and optionally seals into a voxel shell on terminal tier.
         """
+        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+
         generated_hlod_objs: list[bpy.types.Object] = []
 
         for (cx, cy, cz), cluster_members in parent_clusters.items():
@@ -160,7 +167,7 @@ class RecursiveHLODManager:
                 if hlod_mesh is None:
                     continue
                 hlod_mesh.name = f"{hlod_name}_Mesh"
-                hlod_obj = bpy.data.objects.new(name=hlod_name, object_data=hlod_mesh) if bpy else None
+                hlod_obj = bdata_objs.new(name=hlod_name, object_data=hlod_mesh) if bdata_objs else None
                 if hlod_obj:
                     hlod_obj.matrix_world = source_chunk.matrix_world.copy()
                     if target_collection and hasattr(target_collection, "objects"):
@@ -171,7 +178,9 @@ class RecursiveHLODManager:
 
                     # Optional: Terminal Voxel Proxy Shell
                     if is_terminal_tier and use_voxel_shell:
-                        cls.apply_voxel_proxy_shell(hlod_obj, voxel_size_m=voxel_size, context=context)
+                        cls.apply_voxel_proxy_shell(
+                            hlod_obj, voxel_size_m=voxel_size, context=context, blend_data=bdata
+                        )
 
                     # Decimate
                     MeshDecimator.execute_decimate_qem(
@@ -190,6 +199,7 @@ class RecursiveHLODManager:
                 hlod_name=hlod_name,
                 target_collection=target_collection,
                 weld_dist=weld_dist,
+                blend_data=bdata,
             )
 
             if not hlod_obj:
@@ -202,7 +212,7 @@ class RecursiveHLODManager:
 
             # Optional: Terminal Voxel Proxy Shell
             if is_terminal_tier and use_voxel_shell:
-                cls.apply_voxel_proxy_shell(hlod_obj, voxel_size_m=voxel_size, context=context)
+                cls.apply_voxel_proxy_shell(hlod_obj, voxel_size_m=voxel_size, context=context, blend_data=bdata)
 
             # Decimate merged cluster
             MeshDecimator.execute_decimate_qem(
@@ -222,6 +232,8 @@ class RecursiveHLODManager:
         obj: bpy.types.Object | None,
         voxel_size_m: float = 0.5,
         context: bpy.types.Context | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> bool:
         """
         Evaluates a watertight voxel remesh modifier via depsgraph (without UI bpy.ops context crash),
@@ -254,9 +266,12 @@ class RecursiveHLODManager:
             if context and hasattr(context, "evaluated_depsgraph_get"):
                 eval_depsgraph = context.evaluated_depsgraph_get()
 
-            if eval_depsgraph:
+            bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+            bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+
+            if eval_depsgraph and bdata_meshes:
                 eval_obj = obj.evaluated_get(eval_depsgraph)
-                new_mesh = bpy.data.meshes.new_from_object(
+                new_mesh = bdata_meshes.new_from_object(
                     eval_obj, preserve_all_data_layers=True, depsgraph=eval_depsgraph
                 )
                 obj.modifiers.remove(mod)
@@ -264,7 +279,7 @@ class RecursiveHLODManager:
                 old_mesh = cast("bpy.types.Mesh", obj.data)
                 obj.data = new_mesh
                 try:
-                    bpy.data.meshes.remove(old_mesh)
+                    bdata_meshes.remove(old_mesh)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Could not remove old mesh: %s", exc)
                 return True

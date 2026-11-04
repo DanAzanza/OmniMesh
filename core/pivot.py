@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
     from mathutils import Matrix, Vector
 else:
     try:
@@ -26,6 +27,7 @@ else:
         bpy = None
         Matrix = None
         Vector = None
+    BlendData = object
 
 
 class PivotPreservationEngine:
@@ -161,6 +163,8 @@ class PivotPreservationEngine:
         target_collection: bpy.types.Collection | None,
         tier_idx: int,
         base_name: str,
+        *,
+        blend_data: BlendData | None = None,
     ) -> bpy.types.Object | None:
         """
         Duplicates or creates a matching Pivot Empty in the target LOD collection.
@@ -171,7 +175,10 @@ class PivotPreservationEngine:
         tier_name = f"{base_name}_LOD{tier_idx}" if tier_idx > 0 else base_name
         pivot_name = f"{tier_name}_Pivot"
 
-        existing = bpy.data.objects.get(pivot_name)
+        bdata = blend_data
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+
+        existing = bdata_objs.get(pivot_name) if bdata_objs else None
         if existing:
             if existing.name not in target_collection.objects:
                 target_collection.objects.link(existing)
@@ -186,7 +193,9 @@ class PivotPreservationEngine:
                 target_collection.objects.link(cloned_pivot)
                 return cloned_pivot
 
-        empty_obj = bpy.data.objects.new(pivot_name, None)
+        if bdata_objs is None:
+            return None
+        empty_obj = bdata_objs.new(pivot_name, None)
         empty_obj.empty_display_type = "ARROWS"
         empty_obj.empty_display_size = 0.5
         empty_obj["is_pivot"] = True

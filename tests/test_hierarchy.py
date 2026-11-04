@@ -161,3 +161,20 @@ def test_safe_remove_collection_objects_with_blend_data():
     removed = safe_remove_collection_objects(col, blend_data=cast(Any, bdata))
     assert removed == 1
     assert bdata.objects.get("Temp_Obj") is None
+
+
+def test_pivot_preservation_di_without_bpy_data(monkeypatch):
+    from unittest.mock import MagicMock
+    import core.pivot as pivot_mod
+
+    monkeypatch.setattr(pivot_mod, "bpy", MagicMock())
+    """Verify clone_pivot_empty functions with explicit BlendData injection."""
+    from core.pivot import PivotPreservationEngine
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
+    tgt_col = bdata.collections.new("Asset_LOD1")
+    pivot = PivotPreservationEngine.clone_pivot_empty(None, tgt_col, 1, "Asset", blend_data=cast(Any, bdata))
+    assert pivot is not None
+    assert pivot.name == "Asset_LOD1_Pivot"
+    assert bdata.objects.get("Asset_LOD1_Pivot") is pivot

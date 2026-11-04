@@ -397,6 +397,8 @@ class CollectionCloneDAG:
         armature_obj: bpy.types.Object | None = None,
         pivot_obj: bpy.types.Object | None = None,
         context: bpy.types.Context | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> dict[str, Any]:
         """
         Builds sibling collection hierarchy for tier_idx:
@@ -407,13 +409,16 @@ class CollectionCloneDAG:
         if not bpy or not root_coll or not target_coll:
             return {"meshes": [], "pivot": None, "sockets": []}
 
+        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
         pivot_src, sockets_src, meshes_src, _ = PivotPreservationEngine.identify_pivots_and_sockets(root_coll)
         active_pivot = pivot_src or pivot_obj
 
         # 1. Clone Pivot Empty
         tier_pivot = None
         if active_pivot:
-            tier_pivot = PivotPreservationEngine.clone_pivot_empty(active_pivot, target_coll, tier_idx, base_name)
+            tier_pivot = PivotPreservationEngine.clone_pivot_empty(
+                active_pivot, target_coll, tier_idx, base_name, blend_data=bdata
+            )
 
         # 2. Clone Sockets
         tier_sockets = []
