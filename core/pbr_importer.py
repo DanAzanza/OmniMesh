@@ -22,11 +22,19 @@ from .compat import set_node_prop, set_socket_default_value
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData, Material, Node, NodeSocket, NodeTree, Object
 else:
     try:
         import bpy
+        from bpy.types import Material, Node, NodeSocket, NodeTree, Object
     except ImportError:
         bpy = None
+        Material = object
+        Node = object
+        NodeSocket = object
+        NodeTree = object
+        Object = object
+    BlendData = object
 
 try:
     from .pbr_classifier import PBRSemanticClassifier
@@ -168,7 +176,13 @@ class ShaderGraphBuilder:
         return None
 
     @classmethod
-    def resolve_texture_path(cls, raw_path: str, mode: str = "RELATIVE") -> tuple[str, bool]:
+    def resolve_texture_path(
+        cls,
+        raw_path: str,
+        mode: str = "RELATIVE",
+        *,
+        blend_data: BlendData | None = None,
+    ) -> tuple[str, bool]:
         """
         Resolves a texture path according to requested mode ('RELATIVE' vs 'ABSOLUTE').
         Returns (resolved_path, is_relative).
@@ -184,10 +198,13 @@ class ShaderGraphBuilder:
             return abs_path, False
 
         # If RELATIVE requested:
-        if not getattr(bpy.data, "is_saved", False) or not getattr(bpy.data, "filepath", ""):
+        bdata = blend_data
+        bdata_filepath = getattr(bdata, "filepath", "") if bdata else ""
+        is_saved = getattr(bdata, "is_saved", bool(bdata_filepath)) if bdata else False
+        if not is_saved or not bdata_filepath:
             return abs_path, False
 
-        blend_dir = os.path.dirname(bpy.path.abspath(bpy.data.filepath))
+        blend_dir = os.path.dirname(bpy.path.abspath(bdata_filepath))
 
         # Check cross-drive boundary on Windows
         abs_drive, _ = os.path.splitdrive(abs_path)
@@ -210,6 +227,8 @@ class ShaderGraphBuilder:
         preserve_existing: bool = False,
         ao_blend_mode: str = "MULTIPLY",
         path_mode: str = "RELATIVE",
+        *,
+        blend_data: BlendData | None = None,
     ) -> bool:
         """
         Constructs a deterministic PBR shader network driven by the active preset.
@@ -310,6 +329,9 @@ class ShaderGraphBuilder:
         x_proc = -450
         x_post = -150
 
+        bdata = blend_data
+        bdata_images = getattr(bdata, "images", None) if bdata else None
+
         loaded_tex_nodes: dict[str, bpy.types.Node] = {}
         loaded_sep_nodes: dict[bpy.types.Node, bpy.types.Node] = {}
 
@@ -318,10 +340,10 @@ class ShaderGraphBuilder:
             if filepath in loaded_tex_nodes:
                 return loaded_tex_nodes[filepath]
 
-            final_path, is_rel = cls.resolve_texture_path(filepath, mode=path_mode)
+            final_path, is_rel = cls.resolve_texture_path(filepath, mode=path_mode, blend_data=bdata)
             abs_disk_path = bpy.path.abspath(final_path)
             try:
-                img = bpy.data.images.load(abs_disk_path, check_existing=True)
+                img = bdata_images.load(abs_disk_path, check_existing=True) if bdata_images else None
             except (RuntimeError, OSError) as exc:
                 logger.warning("Failed to load image '%s': %s", abs_disk_path, exc)
                 return None
@@ -500,11 +522,11 @@ class ShaderGraphBuilder:
                 has_any_link = True
 
         # 8. Clean up orphan images if not preserving
-        if not preserve_existing and bpy and hasattr(bpy, "data") and hasattr(bpy.data, "images"):
-            for img in list(bpy.data.images):
+        if not preserve_existing and bdata_images:
+            for img in list(bdata_images):
                 if getattr(img, "users", 0) == 0:
                     try:
-                        bpy.data.images.remove(img)
+                        bdata_images.remove(img)
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
                         logger.debug("Orphan image removal skipped: %s", exc)
 

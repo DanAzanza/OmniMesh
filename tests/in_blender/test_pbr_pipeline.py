@@ -79,7 +79,9 @@ class TestPBRPipeline(unittest.TestCase):
             preset = PBRImportPresetManager.get_preset("unreal_engine_5")
             self.assertIsNotNone(preset)
 
-            success = ShaderGraphBuilder.build_pbr_graph(mat, texture_map, preset=preset)
+            success = ShaderGraphBuilder.build_pbr_graph(
+                mat, texture_map, preset=preset, blend_data=bpy.context.blend_data
+            )
             self.assertTrue(success, "ShaderGraphBuilder must report successful graph generation.")
 
             self.assertTrue(mat.use_nodes)
@@ -118,7 +120,9 @@ class TestPBRPipeline(unittest.TestCase):
             preset = PBRImportPresetManager.get_preset("unity_hdrp_maskmap")
             self.assertIsNotNone(preset)
 
-            success = ShaderGraphBuilder.build_pbr_graph(mat, texture_map, preset=preset)
+            success = ShaderGraphBuilder.build_pbr_graph(
+                mat, texture_map, preset=preset, blend_data=bpy.context.blend_data
+            )
             self.assertTrue(success)
 
             if mat.node_tree is None:

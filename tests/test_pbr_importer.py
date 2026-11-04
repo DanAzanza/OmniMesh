@@ -241,3 +241,35 @@ def test_pbr_bsdf_v2_socket_resolution():
     assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Clearcoat") == v2_sockets["Coat Weight"]
     assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Sheen") == v2_sockets["Sheen Weight"]
     assert ShaderGraphBuilder.resolve_bsdf_socket(mock_bsdf, "Base Color") == v2_sockets["Base Color"]
+
+
+def test_resolve_texture_path_pure_di():
+    from tests.conftest import MockBlendData
+
+    # Without blend_data, cannot resolve relative path -> returns absolute
+    res_path, is_rel = ShaderGraphBuilder.resolve_texture_path("textures/albedo.png", mode="RELATIVE", blend_data=None)
+    assert is_rel is False
+
+    # With blend_data and saved filepath
+    bdata = MockBlendData()
+    bdata.filepath = "C:/Project/Scene.blend"
+    bdata.is_saved = True
+
+    # Mode ABSOLUTE always returns absolute
+    res_abs, is_abs_rel = ShaderGraphBuilder.resolve_texture_path(
+        "C:/Project/textures/albedo.png", mode="ABSOLUTE", blend_data=bdata
+    )
+    assert is_abs_rel is False
+
+    # Empty raw path
+    empty_path, empty_rel = ShaderGraphBuilder.resolve_texture_path("", blend_data=bdata)
+    assert empty_path == ""
+    assert empty_rel is False
+
+
+def test_build_pbr_graph_guards_and_di():
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
+    assert ShaderGraphBuilder.build_pbr_graph(None, {}, blend_data=bdata) is False
+    assert ShaderGraphBuilder.build_pbr_graph(MagicMock(), {}, blend_data=bdata) is False

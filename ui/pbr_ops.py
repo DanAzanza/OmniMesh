@@ -195,6 +195,7 @@ class LOD_OT_import_pbr_set(Operator):
                         if not tex_nodes:
                             matched = BatchMaterialSlotMatcher.match_directory_to_slots(obj, primary_dir, preset=preset)
                             if matched and slot.name in matched:
+                                bdata = getattr(context, "blend_data", None)
                                 if ShaderGraphBuilder.build_pbr_graph(
                                     mat,
                                     matched[slot.name],
@@ -202,6 +203,7 @@ class LOD_OT_import_pbr_set(Operator):
                                     preserve_existing=preserve,
                                     ao_blend_mode=ao_mode,
                                     path_mode=path_mode,
+                                    blend_data=bdata,
                                 ):
                                     populated_slots += 1
 
@@ -323,6 +325,7 @@ class LOD_OT_auto_match_pbr_folder(Operator):
                     else:
                         active_obj.data.materials.append(slot_mat)
 
+            bdata = getattr(context, "blend_data", None)
             if ShaderGraphBuilder.build_pbr_graph(
                 slot_mat,
                 tex_dict,
@@ -330,6 +333,7 @@ class LOD_OT_auto_match_pbr_folder(Operator):
                 preserve_existing=preserve,
                 ao_blend_mode=ao_mode,
                 path_mode=path_mode,
+                blend_data=bdata,
             ):
                 count += 1
 
