@@ -17,6 +17,7 @@ from .normals import NormalManager
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData
     from mathutils import Matrix, Vector
 else:
     try:
@@ -28,6 +29,7 @@ else:
         bmesh = None  # type: ignore
         Matrix = None  # type: ignore
         Vector = None  # type: ignore
+    BlendData = object
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,8 @@ class HLODClusterMerger:
         hlod_name: str,
         target_collection: bpy.types.Collection | None,
         weld_dist: float = 0.002,
+        *,
+        blend_data: BlendData | None = None,
     ) -> bpy.types.Object | None:
         """
         Combines child chunk objects into a single unified mesh,
@@ -150,11 +154,19 @@ class HLODClusterMerger:
             bmesh.ops.remove_doubles(merged_bm, verts=merged_bm.verts[:], dist=max(1e-5, weld_dist))
 
             # Create merged Blender mesh and object
-            hlod_mesh = bpy.data.meshes.new(name=f"{hlod_name}_Mesh")
+            bdata = blend_data
+            bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+            bdata_objs = getattr(bdata, "objects", None) if bdata else None
+            bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
+
+            if not bdata_meshes or not bdata_objs:
+                return None
+
+            hlod_mesh = bdata_meshes.new(name=f"{hlod_name}_Mesh")
             merged_bm.to_mesh(hlod_mesh)
             hlod_mesh.update()
 
-            hlod_obj = bpy.data.objects.new(name=hlod_name, object_data=hlod_mesh)
+            hlod_obj = bdata_objs.new(name=hlod_name, object_data=hlod_mesh)
             hlod_obj.matrix_world = ref_mat_world
 
             # Allocate master vertex groups on hlod_obj
@@ -166,9 +178,7 @@ class HLODClusterMerger:
                 hlod_mesh.materials.append(mat)
 
             # Link to target collection
-            fallback_coll = target_collection or (
-                bpy.data.scenes[0].collection if bpy and getattr(bpy.data, "scenes", None) else None
-            )
+            fallback_coll = target_collection or (bdata_scenes[0].collection if bdata_scenes else None)
             if target_collection and hasattr(target_collection, "objects"):
                 target_collection.objects.link(hlod_obj)
             elif fallback_coll and hasattr(fallback_coll, "objects"):

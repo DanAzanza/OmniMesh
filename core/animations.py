@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         z: float
 
     import bpy
+    from bpy.types import BlendData
     from mathutils import Matrix, Quaternion, Vector
 else:
     try:
@@ -38,6 +39,7 @@ else:
         Matrix = None
         Quaternion = None
         Vector = None
+    BlendData = object
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +248,8 @@ class AnimationRigSanitizer:
         action: bpy.types.Action | None,
         bake_step: float = 1.0,
         keyframe_reduction_tolerance: float = 0.0,
+        *,
+        blend_data: BlendData | None = None,
     ) -> Optional[bpy.types.Action]:
         """Bakes evaluated depsgraph world matrices of all deforming bones into a clean FK Action.
 
@@ -289,9 +293,15 @@ class AnimationRigSanitizer:
                 if pb:
                     pb.rotation_mode = "QUATERNION"
 
+        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata_actions = getattr(bdata, "actions", None) if bdata else None
+
+        if not bdata_actions:
+            return None
+
         # Create clean target action
         clean_name = cls.sanitize_action_name(f"{action.name}_Baked_Deform")
-        baked_action = bpy.data.actions.new(name=clean_name)
+        baked_action = bdata_actions.new(name=clean_name)
 
         # Pre-allocate curve channels
         curves: Dict[Tuple[str, str, int], bpy.types.FCurve | None] = {}
@@ -415,9 +425,9 @@ class AnimationRigSanitizer:
                         logger.debug("F-Curve update bypassed: %s", exc)
             bake_succeeded = True
         finally:
-            if not bake_succeeded and bpy and hasattr(bpy.data, "actions"):
+            if not bake_succeeded and bdata_actions:
                 try:
-                    bpy.data.actions.remove(baked_action, do_unlink=True)
+                    bdata_actions.remove(baked_action, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as clean_exc:
                     logger.debug("Failed removing orphaned action: %s", clean_exc)
             scene.frame_set(orig_frame, subframe=orig_subframe)

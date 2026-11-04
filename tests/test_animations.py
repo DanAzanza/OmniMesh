@@ -341,3 +341,20 @@ def test_quaternion_sign_continuity():
     # Safe handling of None
     assert AnimationRigSanitizer.enforce_quaternion_continuity(None, q1) is None
     assert AnimationRigSanitizer.enforce_quaternion_continuity(q1, None) == q1
+
+
+def test_animation_rig_sanitizer_di_without_bpy_data():
+    """Verify bake_deform_animation handles missing actions container gracefully."""
+    from unittest.mock import MagicMock
+    from core.animations import AnimationRigSanitizer
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
+    mock_ctx = MagicMock()
+    mock_ctx.scene = MagicMock()
+    arm = MagicMock(type="ARMATURE")
+    act = MagicMock()
+
+    # When deform bones or valid bounds are missing, returns None gracefully
+    result = AnimationRigSanitizer.bake_deform_animation(mock_ctx, arm, act, blend_data=bdata)
+    assert result is None

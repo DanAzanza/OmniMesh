@@ -226,6 +226,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
                     hlod_name=f"{base_name}_HLOD_LOD2",
                     target_collection=hlod_coll,
                     weld_dist=0.002,
+                    blend_data=getattr(context, "blend_data", None),
                 )
                 if hlod_obj:
                     MeshDecimator.execute_decimate_qem(
