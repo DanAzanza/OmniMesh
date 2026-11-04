@@ -229,3 +229,17 @@ def test_operator_relink_project_textures():
     with patch("ui.pbr_ops.bpy", mock_bpy):
         res = op.execute(context)
         assert res == {"FINISHED"}
+
+
+def test_resolve_absolute_image_path_with_blend_data():
+
+    mock_bdata = MagicMock()
+
+    mock_bdata.filepath = "C:/TestProject/Art/scene.blend"
+
+    resolved = ProjectTextureRelinker.resolve_absolute_image_path(
+        "//Textures/diffuse.png",
+        blend_data=mock_bdata,
+    )
+
+    assert os.path.normpath(resolved) == os.path.normpath("C:/TestProject/Art/Textures/diffuse.png")

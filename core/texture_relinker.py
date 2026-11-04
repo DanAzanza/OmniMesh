@@ -14,11 +14,13 @@ from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bpy
     except ImportError:
         bpy = None
+        BlendData = object
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,12 @@ class ProjectTextureRelinker:
     """High-performance indexer and relinker for project asset textures."""
 
     @staticmethod
-    def is_image_valid(img: bpy.types.Image | None, blend_filepath: str | None = None) -> bool:
+    def is_image_valid(
+        img: bpy.types.Image | None,
+        blend_filepath: str | None = None,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> bool:
         """Determines if a Blender Image datablock has valid pixel data or exists on disk."""
         if img is None:
             return False
@@ -110,14 +117,21 @@ class ProjectTextureRelinker:
             return False
 
         # Evaluate absolute path
-        abs_path = ProjectTextureRelinker.resolve_absolute_image_path(raw_filepath, blend_filepath)
+        abs_path = ProjectTextureRelinker.resolve_absolute_image_path(
+            raw_filepath, blend_filepath, blend_data=blend_data
+        )
         if not abs_path:
             return False
 
         return os.path.isfile(abs_path)
 
     @staticmethod
-    def resolve_absolute_image_path(raw_filepath: str, blend_filepath: str | None = None) -> str:
+    def resolve_absolute_image_path(
+        raw_filepath: str,
+        blend_filepath: str | None = None,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> str:
         """Converts a Blender relative or absolute path into a normalized filesystem path."""
         if not raw_filepath:
             return ""
@@ -126,14 +140,14 @@ class ProjectTextureRelinker:
             base_dir = ""
             if blend_filepath:
                 base_dir = os.path.dirname(blend_filepath)
-            elif bpy and getattr(bpy.data, "filepath", None):
-                base_dir = os.path.dirname(bpy.data.filepath)
+            elif blend_data and getattr(blend_data, "filepath", None):
+                base_dir = os.path.dirname(blend_data.filepath)
 
             if base_dir:
                 rel_part = raw_filepath[2:].lstrip("/\\")
                 return os.path.normpath(os.path.join(base_dir, rel_part))
 
-        if bpy:
+        if bpy and hasattr(bpy, "path") and hasattr(bpy.path, "abspath"):
             try:
                 return os.path.normpath(bpy.path.abspath(raw_filepath))
             except (RuntimeError, ValueError, TypeError, OSError):
@@ -304,17 +318,21 @@ class ProjectTextureRelinker:
         blend_filepath: str | None = None,
         make_relative: bool = True,
         max_depth: int = 5,
+        *,
+        blend_data: BlendData | None = None,
     ) -> RelinkSummary:
         """Audits images and relinks any missing files discovered within search roots."""
         if not images or not search_roots:
             return RelinkSummary()
+
+        resolved_blend_path = blend_filepath or (getattr(blend_data, "filepath", None) if blend_data else None)
 
         # Filter candidates needing relinking
         missing_images: list[tuple[bpy.types.Image, str]] = []
         already_valid = 0
 
         for img in images:
-            if cls.is_image_valid(img, blend_filepath):
+            if cls.is_image_valid(img, resolved_blend_path, blend_data=blend_data):
                 already_valid += 1
                 continue
 
@@ -348,7 +366,7 @@ class ProjectTextureRelinker:
 
             # Compute target path string
             if make_relative:
-                new_path_str = cls.make_relative_path(match, blend_filepath)
+                new_path_str = cls.make_relative_path(match, resolved_blend_path)
             else:
                 new_path_str = str(match)
 

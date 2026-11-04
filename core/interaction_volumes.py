@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData
     from mathutils import Matrix, Vector
 else:
     try:
@@ -23,6 +24,7 @@ else:
         from mathutils import Matrix, Vector
     except ImportError:
         bpy = None
+        BlendData = object
         bmesh = None
         Matrix = None
         Vector = None
@@ -64,6 +66,8 @@ def create_interaction_volume(
     role: str = "BUTTON",
     size: Sequence[float] = (0.08, 0.08, 0.08),
     parent_obj: Optional[bpy.types.Object] = None,
+    *,
+    blend_data: BlendData | None = None,
 ) -> Optional[bpy.types.Object]:
     """
     Spawns a lightweight non-blocking interaction trigger volume into {AssetName}_Interactions.
@@ -76,6 +80,12 @@ def create_interaction_volume(
     if not bpy:
         return None
 
+    bdata = blend_data or getattr(context, "blend_data", None)
+    bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+    bdata_objs = getattr(bdata, "objects", None) if bdata else None
+    if bdata_meshes is None or bdata_objs is None:
+        return None
+
     clean_asset = str(asset_name).strip() or "Asset"
     clean_name = str(name).strip() or "Clickspot"
     shape_upper = str(shape).strip().upper()
@@ -86,7 +96,7 @@ def create_interaction_volume(
     sz = float(size[2]) if len(size) > 2 else 0.08
 
     obj_name = f"{clean_asset}_{role_upper}_{clean_name}"
-    mesh_data = bpy.data.meshes.new(name=f"{obj_name}_Mesh")
+    mesh_data = bdata_meshes.new(name=f"{obj_name}_Mesh")
 
     # Generate primitive wire geometry with bmesh
     if bmesh:
@@ -114,7 +124,7 @@ def create_interaction_volume(
         finally:
             bm.free()
 
-    obj = bpy.data.objects.new(obj_name, mesh_data)
+    obj = bdata_objs.new(obj_name, mesh_data)
     obj.display_type = "WIRE"
     obj.show_wire = True
 
@@ -122,6 +132,7 @@ def create_interaction_volume(
     invis_mat = create_or_update_material_preset(
         material_name="Mat_OmniMesh_Invisible_Trigger",
         preset_type="INVISIBLE_COLLIDER",
+        blend_data=bdata,
     )
     if invis_mat:
         mesh_data.materials.append(invis_mat)
@@ -136,7 +147,7 @@ def create_interaction_volume(
     obj["unity_is_trigger"] = True
 
     # Link to isolated Interactions collection under {AssetName}_Config
-    interact_col = get_or_create_engine_import_collection(context, clean_asset, "INTERACTIONS")
+    interact_col = get_or_create_engine_import_collection(context, clean_asset, "INTERACTIONS", blend_data=bdata)
     if interact_col and hasattr(interact_col, "objects"):
         interact_col.objects.link(obj)
     elif context and hasattr(context, "scene") and hasattr(context.scene, "collection"):

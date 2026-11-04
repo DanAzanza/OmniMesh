@@ -90,16 +90,16 @@ def test_create_interaction_volume_box(monkeypatch):
     mock_mesh = MagicMock()
     mock_mesh.materials = []
 
-    mock_bpy = MagicMock()
-    mock_bpy.data.meshes.new.return_value = mock_mesh
-    mock_bpy.data.objects.new.side_effect = lambda name, data: MockObject(name, data)
-    monkeypatch.setattr(iv, "bpy", mock_bpy)
+    mock_bdata = MagicMock()
+    mock_bdata.meshes.new.return_value = mock_mesh
+    mock_bdata.objects.new.side_effect = lambda name, data: MockObject(name, data)
+    monkeypatch.setattr(iv, "bpy", MagicMock())
 
     target_coll = MockCollection("Cessna_Interactions")
     monkeypatch.setattr(
         iv,
         "get_or_create_engine_import_collection",
-        lambda ctx, asset, role: target_coll,
+        lambda ctx, asset, role, **kw: target_coll,
     )
     monkeypatch.setattr(
         iv,
@@ -107,7 +107,7 @@ def test_create_interaction_volume_box(monkeypatch):
         lambda **kwargs: MagicMock(name="InvisMat"),
     )
 
-    ctx = MagicMock()
+    ctx = MagicMock(blend_data=mock_bdata)
     vol = create_interaction_volume(
         context=ctx,
         asset_name="Cessna",
@@ -140,15 +140,15 @@ def test_create_interaction_volume_parenting(monkeypatch):
     mock_mesh = MagicMock()
     mock_mesh.materials = []
 
-    mock_bpy = MagicMock()
-    mock_bpy.data.meshes.new.return_value = mock_mesh
-    mock_bpy.data.objects.new.side_effect = lambda name, data: MockObject(name, data)
-    monkeypatch.setattr(iv, "bpy", mock_bpy)
+    mock_bdata = MagicMock()
+    mock_bdata.meshes.new.return_value = mock_mesh
+    mock_bdata.objects.new.side_effect = lambda name, data: MockObject(name, data)
+    monkeypatch.setattr(iv, "bpy", MagicMock())
 
     monkeypatch.setattr(
         iv,
         "get_or_create_engine_import_collection",
-        lambda ctx, asset, role: MockCollection("Airbus_Interactions"),
+        lambda ctx, asset, role, **kw: MockCollection("Airbus_Interactions"),
     )
     monkeypatch.setattr(
         iv,
@@ -160,7 +160,7 @@ def test_create_interaction_volume_parenting(monkeypatch):
     parent_mesh.type = "MESH"
     parent_mesh.location = (0.2, 1.5, 0.8)
 
-    ctx = MagicMock()
+    ctx = MagicMock(blend_data=mock_bdata)
     vol = create_interaction_volume(
         context=ctx,
         asset_name="Airbus",
@@ -173,3 +173,17 @@ def test_create_interaction_volume_parenting(monkeypatch):
     assert vol is not None
     assert vol.parent == parent_mesh
     assert vol.location == (0.2, 1.5, 0.8)
+
+
+def test_create_interaction_volume_without_blend_data_fails_closed(monkeypatch):
+
+    monkeypatch.setattr(iv, "bpy", MagicMock())
+
+    vol = create_interaction_volume(
+        context=None,
+        asset_name="FailAsset",
+        name="Click",
+        blend_data=None,
+    )
+
+    assert vol is None
