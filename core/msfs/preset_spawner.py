@@ -19,14 +19,22 @@ except (ImportError, ValueError):
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData, Collection, Context, Object, PointLight, SpotLight
     from mathutils import Euler
 else:
     try:
         import bpy
+        from bpy.types import Collection, Context, Object, PointLight, SpotLight
         from mathutils import Euler
     except ImportError:
         bpy = None
         Euler = None
+        Collection = object
+        Context = object
+        Object = object
+        PointLight = object
+        SpotLight = object
+    BlendData = object
 
 
 def compute_preset_anchor_position(
@@ -154,21 +162,24 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_datum_if_missing(
         cls,
-        _bpy_in: object,
+        blend_data: BlendData | None,
         asset_name: str,
         spatial_col: bpy.types.Collection | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
-    ) -> tuple[bpy.types.Object, int]:
+    ) -> tuple[bpy.types.Object | None, int]:
         """Ensures the datum reference empty exists in spatial_col."""
-        _bpy_data = cast("bpy.types.BlendData", getattr(_bpy_in if _bpy_in is not None else bpy, "data", None))
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
         datum_id = "WEIGHT_AND_BALANCE:reference_datum_position"
         for o in getattr(spatial_col, "objects", []):
             if o.get("msfs_id") == datum_id:
                 return o, 0
 
+        if not bdata_objs:
+            return None, 0
+
         datum_pos = anchor_fn("AABB_ORIGIN", [0.0, 0.0, 0.0])
-        datum_obj = _bpy_data.objects.new(f"{asset_name}_Datum", None)
+        datum_obj = bdata_objs.new(f"{asset_name}_Datum", None)
         datum_obj.empty_display_type = "PLAIN_AXES"
         datum_obj.empty_display_size = 1.0
         datum_obj.location = datum_pos
@@ -185,7 +196,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_spatial_points(
         cls,
-        _bpy_in: object,
+        blend_data: BlendData | None,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -195,7 +206,10 @@ class ConfigPresetSpawner:
         detected_wheels: dict[str, tuple[float, float, float]] | None = None,
     ) -> int:
         """Spawns spatial contact points and markers, snapping wheel contact points to detected tire bottoms."""
-        _bpy_data = cast("bpy.types.BlendData", getattr(_bpy_in if _bpy_in is not None else bpy, "data", None))
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_cams = getattr(blend_data, "cameras", None) if blend_data else None
+        if not bdata_objs or not bdata_cams:
+            return 0
         count = 0
         datum_id = "WEIGHT_AND_BALANCE:reference_datum_position"
         for item in items:
@@ -232,7 +246,7 @@ class ConfigPresetSpawner:
             else:
                 pos = anchor_fn(item.get("anchor", "AABB_CENTER"), item.get("offset_normalized", [0.0, 0.0, 0.0]))
             p_name = f"{asset_name}_{item.get('name', 'Point')}"
-            obj = _bpy_data.objects.new(p_name, None)
+            obj = bdata_objs.new(p_name, None)
             is_class1 = item.get("point_class") == 1
             obj.empty_display_type = "CIRCLE" if is_class1 else "PLAIN_AXES"
             obj.empty_display_size = 0.3 if is_class1 else 0.2
@@ -257,7 +271,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_exits(
         cls,
-        _bpy_in: object,
+        blend_data: BlendData | None,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -266,7 +280,9 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns aircraft exits from preset."""
-        _bpy_data = cast("bpy.types.BlendData", getattr(_bpy_in if _bpy_in is not None else bpy, "data", None))
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        if not bdata_objs:
+            return 0
         count = 0
         for item in items:
             item_id = item.get("id", "")
@@ -275,7 +291,7 @@ class ConfigPresetSpawner:
 
             pos = anchor_fn(item.get("anchor", "AABB_CENTER"), item.get("offset_normalized", [0.0, 0.0, 0.0]))
             p_name = f"{asset_name}_{item.get('name', 'Exit')}"
-            obj = _bpy_data.objects.new(p_name, None)
+            obj = bdata_objs.new(p_name, None)
             obj.empty_display_type = "CUBE"
             obj.empty_display_size = 0.4
             obj.location = pos
@@ -297,7 +313,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_engines(
         cls,
-        _bpy_in: object,
+        blend_data: BlendData | None,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -306,7 +322,9 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns engine markers from preset."""
-        _bpy_data = cast("bpy.types.BlendData", getattr(_bpy_in if _bpy_in is not None else bpy, "data", None))
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        if not bdata_objs:
+            return 0
         count = 0
         for item in items:
             item_id = item.get("id", "")
@@ -315,7 +333,7 @@ class ConfigPresetSpawner:
 
             pos = anchor_fn(item.get("anchor", "EXTREMA_NOSE"), item.get("offset_normalized", [0.0, 0.0, 0.0]))
             p_name = f"{asset_name}_{item.get('name', 'Engine')}"
-            obj = _bpy_data.objects.new(p_name, None)
+            obj = bdata_objs.new(p_name, None)
             obj.empty_display_type = "SINGLE_ARROW"
             obj.empty_display_size = 0.6
             obj.location = pos
@@ -337,7 +355,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_station_loads(
         cls,
-        _bpy_in: object,
+        blend_data: BlendData | None,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -346,7 +364,9 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns payload station loads from preset."""
-        _bpy_data = cast("bpy.types.BlendData", getattr(_bpy_in if _bpy_in is not None else bpy, "data", None))
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        if not bdata_objs:
+            return 0
         count = 0
         for item in items:
             item_id = item.get("id", "")
@@ -355,7 +375,7 @@ class ConfigPresetSpawner:
 
             pos = anchor_fn(item.get("anchor", "EXTREMA_COCKPIT"), item.get("offset_normalized", [0.0, 0.0, 0.0]))
             p_name = f"{asset_name}_{item.get('name', 'Station')}"
-            obj = _bpy_data.objects.new(p_name, None)
+            obj = bdata_objs.new(p_name, None)
             obj.empty_display_type = "SPHERE"
             obj.empty_display_size = 0.25
             obj.location = pos
@@ -405,7 +425,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_lights(
         cls,
-        _bpy_in: object,
+        blend_data: BlendData | None,
         asset_name: str,
         items: list[dict[str, Any]],
         lights_col: bpy.types.Collection | None,
@@ -413,7 +433,10 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns lighting objects from preset."""
-        _bpy_data = cast("bpy.types.BlendData", getattr(_bpy_in if _bpy_in is not None else bpy, "data", None))
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_lights = getattr(blend_data, "lights", None) if blend_data else None
+        if not bdata_objs or not bdata_lights:
+            return 0
         count = 0
         for item in items:
             item_id = item.get("id", "")
@@ -425,12 +448,12 @@ class ConfigPresetSpawner:
             l_type = int(item.get("type", 1))
 
             is_spot = l_type in (5, 6)
-            light_data = _bpy_data.lights.new(name=p_name, type="SPOT" if is_spot else "POINT")
+            light_data = bdata_lights.new(name=p_name, type="SPOT" if is_spot else "POINT")
             col_rgb = item.get("color", [1.0, 1.0, 1.0, 1.0])
             light_data.color = (float(col_rgb[0]), float(col_rgb[1]), float(col_rgb[2]))
             cast("bpy.types.PointLight", light_data).energy = 250.0 if is_spot else 15.0
 
-            light_obj = _bpy_data.objects.new(p_name, light_data)
+            light_obj = bdata_objs.new(p_name, light_data)
             light_obj.location = pos
             if is_spot:
                 rot = (1.57079, 0.0, 0.0)
@@ -452,7 +475,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_cameras(
         cls,
-        _bpy_in: object,
+        blend_data: BlendData | None,
         asset_name: str,
         items: list[dict[str, Any]],
         cameras_col: bpy.types.Collection | None,
@@ -460,7 +483,10 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns cameras and ensures eyepoint marker exists."""
-        _bpy_data = cast("bpy.types.BlendData", getattr(_bpy_in if _bpy_in is not None else bpy, "data", None))
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_cams = getattr(blend_data, "cameras", None) if blend_data else None
+        if not bdata_objs or not bdata_cams:
+            return 0
         count = 0
         eyepoint_id = "CAMERAS:eyepoint"
         eyepoint_obj = None
@@ -471,7 +497,7 @@ class ConfigPresetSpawner:
 
         if not eyepoint_obj:
             eye_pos = anchor_fn("COCKPIT_ESTIMATE", [0.0, 0.0, 0.0])
-            eyepoint_obj = _bpy_data.objects.new(f"{asset_name}_Eyepoint", None)
+            eyepoint_obj = bdata_objs.new(f"{asset_name}_Eyepoint", None)
             eyepoint_obj.empty_display_type = "PLAIN_AXES"
             eyepoint_obj.empty_display_size = 0.3
             eyepoint_obj.location = eye_pos
@@ -491,9 +517,9 @@ class ConfigPresetSpawner:
                 continue
 
             cam_name = f"{asset_name}_{item.get('name', 'Camera')}"
-            cam_data = _bpy_data.cameras.new(cam_name)
+            cam_data = bdata_cams.new(cam_name)
             cam_data.lens = 28.0
-            cam_obj = _bpy_data.objects.new(cam_name, cam_data)
+            cam_obj = bdata_objs.new(cam_name, cam_data)
 
             if item.get("parent_to_eyepoint", False) and eyepoint_obj:
                 cam_obj.location = eyepoint_obj.location
@@ -525,6 +551,7 @@ class ConfigPresetSpawner:
         preset_data: dict[str, Any],
         cfg_props: object = None,
         *,
+        blend_data: BlendData | None = None,
         bpy_module: object = None,
         get_base_meshes_fn: Callable[[bpy.types.Context | None, str], list[bpy.types.Object]] | None = None,
         get_import_collection_fn: Callable[
@@ -652,14 +679,21 @@ class ConfigPresetSpawner:
 
         total_added = 0
 
+        bdata = blend_data
+        if bdata is None:
+            if bpy_module is not None and hasattr(bpy_module, "data"):
+                bdata = getattr(bpy_module, "data", None)
+            elif context is not None:
+                bdata = getattr(context, "blend_data", None)
+
         # 3. Datum
-        datum_obj, datum_added = cls._spawn_datum_if_missing(_bpy, asset_name, spatial_col, existing_ids, anchor_fn)
+        datum_obj, datum_added = cls._spawn_datum_if_missing(bdata, asset_name, spatial_col, existing_ids, anchor_fn)
         total_added += datum_added
 
         # 4. Spatial points & station loads
         if inc_spatial:
             total_added += cls._spawn_spatial_points(
-                _bpy,
+                bdata,
                 asset_name,
                 preset_data.get("spatial", []),
                 spatial_col,
@@ -669,19 +703,19 @@ class ConfigPresetSpawner:
                 detected_wheels,
             )
             total_added += cls._spawn_station_loads(
-                _bpy, asset_name, preset_data.get("station_loads", []), spatial_col, datum_obj, existing_ids, anchor_fn
+                bdata, asset_name, preset_data.get("station_loads", []), spatial_col, datum_obj, existing_ids, anchor_fn
             )
 
         # 5. Exits
         if inc_exits:
             total_added += cls._spawn_exits(
-                _bpy, asset_name, preset_data.get("exits", []), spatial_col, datum_obj, existing_ids, anchor_fn
+                bdata, asset_name, preset_data.get("exits", []), spatial_col, datum_obj, existing_ids, anchor_fn
             )
 
         # 6. Engines
         if inc_engines:
             total_added += cls._spawn_engines(
-                _bpy, asset_name, preset_data.get("engines", []), spatial_col, datum_obj, existing_ids, anchor_fn
+                bdata, asset_name, preset_data.get("engines", []), spatial_col, datum_obj, existing_ids, anchor_fn
             )
 
         # 7. Interactions
@@ -691,13 +725,13 @@ class ConfigPresetSpawner:
         # 8. Lights
         if inc_lights:
             total_added += cls._spawn_lights(
-                _bpy, asset_name, preset_data.get("lights", []), lights_col, existing_ids, anchor_fn
+                bdata, asset_name, preset_data.get("lights", []), lights_col, existing_ids, anchor_fn
             )
 
         # 9. Cameras
         if inc_cams:
             total_added += cls._spawn_cameras(
-                _bpy, asset_name, preset_data.get("cameras", []), cameras_col, existing_ids, anchor_fn
+                bdata, asset_name, preset_data.get("cameras", []), cameras_col, existing_ids, anchor_fn
             )
 
         return total_added

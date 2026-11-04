@@ -345,3 +345,30 @@ def test_consolidate_micro_materials_all_protected_guard():
     res = MaterialOptimizer.consolidate_micro_materials(obj, area_threshold_pct=1.0, protect_semantic_materials=True)
     assert res["consolidated_slots"] == 0
     assert res["faces_reassigned"] == 0
+
+
+def test_material_optimizer_pure_di():
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
+
+    # Test orphan purge
+    mat_orphan = MagicMock(name="OrphanMat", users=0)
+    mat_orphan.name = "OrphanMat"
+    bdata.materials._items["OrphanMat"] = mat_orphan
+
+    mat_active = MagicMock(name="ActiveMat", users=2)
+    mat_active.name = "ActiveMat"
+    bdata.materials._items["ActiveMat"] = mat_active
+
+    purged = MaterialOptimizer.purge_orphan_materials(blend_data=bdata)
+    assert purged == 1
+    assert "OrphanMat" not in bdata.materials
+    assert "ActiveMat" in bdata.materials
+
+    # Test clean_orphan_shader_nodes with None
+    assert MaterialOptimizer.clean_orphan_shader_nodes(None, blend_data=bdata) == 0
+
+    # Test None guards
+    assert MaterialOptimizer.merge_duplicate_materials_scene(blend_data=None) == 0
+    assert MaterialOptimizer.purge_orphan_materials(blend_data=None) == 0

@@ -127,6 +127,7 @@ class OMNIMESH_OT_add_config_preset(Operator):
             asset_name=asset_name,
             preset_data=preset_data,
             cfg_props=cfg_props,
+            blend_data=getattr(context, "blend_data", None),
             bpy_module=bpy,
             get_base_meshes_fn=get_asset_base_meshes,
             get_import_collection_fn=get_or_create_engine_import_collection,

@@ -20,13 +20,19 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData, Material, Node, Object
 else:
     try:
         import bmesh
         import bpy
+        from bpy.types import Material, Node, Object
     except ImportError:
         bpy = None
         bmesh = None
+        Material = object
+        Node = object
+        Object = object
+    BlendData = object
 
 
 class DeepMaterialHasher:
@@ -547,16 +553,18 @@ class MaterialOptimizer:
         return HeadlessSlotCompactor.compact_slots(obj, purge_empty=True, deduplicate_identical=False)
 
     @classmethod
-    def merge_duplicate_materials_scene(cls) -> int:
+    def merge_duplicate_materials_scene(cls, *, blend_data: BlendData | None = None) -> int:
         """
         Scans all scene materials, computes SHA-256 AST hashes via DeepMaterialHasher,
         and merges true duplicates into the canonical master material datablock.
         """
-        if not bpy:
+        bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
+        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        if not bdata_mats:
             return 0
 
         hash_to_materials: dict[str, list[Any]] = {}
-        for mat in bpy.data.materials:
+        for mat in bdata_mats:
             h = DeepMaterialHasher.hash_material(mat)
             hash_to_materials.setdefault(h, []).append(mat)
 
@@ -577,7 +585,7 @@ class MaterialOptimizer:
             return 0
 
         # Remap across all mesh objects
-        for obj in bpy.data.objects:
+        for obj in bdata_objs or []:
             if getattr(obj, "type", "") == "MESH":
                 for slot in getattr(obj, "material_slots", []):
                     if slot.material in mat_remap:
@@ -586,34 +594,42 @@ class MaterialOptimizer:
         # Purge remapped duplicates
         for dup_mat in mat_remap.keys():
             try:
-                bpy.data.materials.remove(dup_mat, do_unlink=True)
+                bdata_mats.remove(dup_mat, do_unlink=True)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Duplicate material remove exception: %s", exc)
 
         return merged_count
 
     @classmethod
-    def purge_orphan_materials(cls) -> int:
+    def purge_orphan_materials(cls, *, blend_data: BlendData | None = None) -> int:
         """Purges zero-user material datablocks from .blend file."""
-        if not bpy:
+        bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
+        if not bdata_mats:
             return 0
-        orphans = [m for m in bpy.data.materials if getattr(m, "users", 0) == 0]
+        orphans = [m for m in bdata_mats if getattr(m, "users", 0) == 0]
         for m in orphans:
             try:
-                bpy.data.materials.remove(m, do_unlink=True)
+                bdata_mats.remove(m, do_unlink=True)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Orphan material remove exception: %s", exc)
         return len(orphans)
 
     @classmethod
-    def clean_orphan_shader_nodes(cls, mat: bpy.types.Material | None = None) -> int:
+    def clean_orphan_shader_nodes(
+        cls,
+        mat: bpy.types.Material | None = None,
+        *,
+        blend_data: BlendData | None = None,
+    ) -> int:
         """Removes disconnected or orphan texture nodes from target material or all scene materials."""
         if mat is not None:
             return SemanticTextureAuditor.remove_orphan_texture_nodes(mat)
+        bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
+        if not bdata_mats:
+            return 0
         total = 0
-        if bpy:
-            for m in bpy.data.materials:
-                total += SemanticTextureAuditor.remove_orphan_texture_nodes(m)
+        for m in bdata_mats:
+            total += SemanticTextureAuditor.remove_orphan_texture_nodes(m)
         return total
 
     @classmethod
@@ -621,6 +637,8 @@ class MaterialOptimizer:
         cls,
         mesh_objs: list[bpy.types.Object],
         options: MaterialCleanOptions | None = None,
+        *,
+        blend_data: BlendData | None = None,
     ) -> dict[str, Any]:
         """
         Executes unified material cleanup pipeline across selected mesh objects.
@@ -663,12 +681,12 @@ class MaterialOptimizer:
         # Step 4: Scene-wide Duplicate Material Datablock Merge
         merged_datablocks = 0
         if opts.merge_duplicate_datablocks:
-            merged_datablocks = cls.merge_duplicate_materials_scene()
+            merged_datablocks = cls.merge_duplicate_materials_scene(blend_data=blend_data)
 
         # Step 5: Purge Orphan Materials from .blend (Critical Opt-In)
         purged_orphans = 0
         if opts.purge_orphans_blendfile:
-            purged_orphans = cls.purge_orphan_materials()
+            purged_orphans = cls.purge_orphan_materials(blend_data=blend_data)
 
         return {
             "slots_removed": total_slots_removed,

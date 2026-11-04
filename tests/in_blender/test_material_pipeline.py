@@ -109,7 +109,7 @@ class TestMaterialPipeline(unittest.TestCase):
             mesh.materials.append(mat_dup)
             self.assertEqual(obj.material_slots[0].material, mat_dup)
 
-            merged = MaterialOptimizer.merge_duplicate_materials_scene()
+            merged = MaterialOptimizer.merge_duplicate_materials_scene(blend_data=bpy.context.blend_data)
             self.assertGreaterEqual(merged, 1, "At least 1 duplicate material must be merged.")
 
             # Slot must now point to the canonical master material
@@ -155,7 +155,7 @@ class TestMaterialPipeline(unittest.TestCase):
             scene.collection.objects.link(obj2)
             mesh2.materials.append(m_dup1)
 
-            merged = MaterialOptimizer.merge_duplicate_materials_scene()
+            merged = MaterialOptimizer.merge_duplicate_materials_scene(blend_data=bpy.context.blend_data)
             self.assertEqual(merged, 2, "Both .002 and .001 duplicates must be merged.")
 
             # Both objects must now point strictly to canonical m_root, NOT None

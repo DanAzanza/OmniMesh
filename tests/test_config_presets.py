@@ -330,6 +330,7 @@ def test_add_config_preset_non_destructive(monkeypatch: pytest.MonkeyPatch):
     mock_bpy.data.objects.new.side_effect = lambda name, data: MockObject(name, data)
     mock_bpy.data.lights.new.return_value = MagicMock()
     mock_bpy.data.cameras.new.return_value = MagicMock()
+    mock_context.blend_data = mock_bpy.data
 
     def _mock_remove(obj, do_unlink=True):
         for col_list in (spatial_objects, lights_objects, cameras_objects):
