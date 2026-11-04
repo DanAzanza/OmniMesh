@@ -218,3 +218,13 @@ def test_adaptive_cell_clustering_logic():
     # Isolated boundary cell remains separate
     assert "Chunk_X3_Y0" in clusters
     assert len(clusters["Chunk_X3_Y0"]) == 50
+
+
+def test_mesh_chunk_slicer_di_without_bpy_data():
+    """Verify slice_and_partition handles missing bpy/blend_data gracefully."""
+    from core.chunking import MeshChunkSlicer, SpatialGridSpec
+
+    grid = SpatialGridSpec(num_cells_x=2, num_cells_y=2, num_cells_z=1)
+    # When source_obj is None or invalid, returns empty list without error
+    chunks = MeshChunkSlicer.slice_and_partition(None, grid, "Test", None)
+    assert chunks == []

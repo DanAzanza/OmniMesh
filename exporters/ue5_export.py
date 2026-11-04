@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
     import mathutils
     from .base import EngineExporterBase
     from .engine_export import AssetMeshResolver
@@ -28,6 +29,7 @@ else:
     except ImportError:
         bpy = None
         mathutils = None
+    BlendData = object
 
     try:
         from .base import EngineExporterBase
@@ -55,7 +57,11 @@ class UE5Exporter(EngineExporterBase):
         except OSError as exc:
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
-        bdata = getattr(context, "blend_data", None)
+        bdata_in = kwargs.get("blend_data")
+        bdata: BlendData | None = (
+            bdata_in if isinstance(bdata_in, BlendData) else (getattr(context, "blend_data", None) if context else None)
+        )
+        bdata_objs = getattr(bdata, "objects", None) if bdata else None
         payload = (
             AssetMeshResolver.resolve_payload(context, clean_name, blend_data=bdata) if AssetMeshResolver else None
         )
@@ -158,18 +164,21 @@ class UE5Exporter(EngineExporterBase):
                 context.view_layer.objects.active = export_objects[0]
             else:
                 empty_name = f"LODGroup_{clean_name}"
-                lod_group_empty = bpy.data.objects.get(empty_name)
-                if not lod_group_empty:
-                    lod_group_empty = bpy.data.objects.new(empty_name, None)
+                lod_group_empty = bdata_objs.get(empty_name) if bdata_objs else None
+                if not lod_group_empty and bdata_objs:
+                    lod_group_empty = bdata_objs.new(empty_name, None)
                     lod_group_empty.empty_display_type = "PLAIN_AXES"
                     context.scene.collection.objects.link(lod_group_empty)
                     created_empty = lod_group_empty
-                else:
+                elif lod_group_empty is not None:
                     if lod_group_empty.name not in context.scene.collection.objects:
                         try:
                             context.scene.collection.objects.link(lod_group_empty)
                         except RuntimeError as exc:
                             logger.debug("LODGroup empty already linked: %s", exc)
+
+                if lod_group_empty is None:
+                    return False, f"Could not create or retrieve LODGroup empty for '{clean_name}'."
 
                 try:
                     lod_group_empty.hide_set(False, view_layer=context.view_layer)
@@ -250,9 +259,9 @@ class UE5Exporter(EngineExporterBase):
                     logger.debug("Restoring collider parent failed: %s", exc)
 
             # Transactional rollback: remove temporary LODGroup empty if created
-            if created_empty and hasattr(bpy.data, "objects") and created_empty.name in bpy.data.objects:
+            if created_empty and bdata_objs and created_empty.name in bdata_objs:
                 try:
-                    bpy.data.objects.remove(created_empty, do_unlink=True)
+                    bdata_objs.remove(created_empty, do_unlink=True)
                 except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
                     logger.debug("Removing temporary LODGroup empty failed: %s", exc)
 

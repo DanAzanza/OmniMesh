@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bmesh
     import bpy
+    from bpy.types import BlendData
     import mathutils
     from mathutils import Matrix, Vector
 else:
@@ -35,6 +36,7 @@ else:
         mathutils = None
         Matrix = None
         Vector = None
+    BlendData = object
 
 try:
     import numpy as np
@@ -240,6 +242,8 @@ class MeshChunkSlicer:
         weld_dist: float = 1e-5,
         partitioning_mode: str = "UNIFORM_GRID",
         target_cluster_polys: int = 50000,
+        *,
+        blend_data: BlendData | None = None,
     ) -> list[bpy.types.Object]:
         """
         Slices source mesh along grid planes using BMesh, extracts non-empty cell chunks,
@@ -372,6 +376,7 @@ class MeshChunkSlicer:
                     chunk_name=chunk_name,
                     target_collection=target_collection,
                     grid_spec=grid_spec,
+                    blend_data=blend_data,
                 )
                 if chunk_obj:
                     created_chunk_objs.append(chunk_obj)
@@ -391,6 +396,8 @@ class MeshChunkSlicer:
         chunk_name: str,
         target_collection: bpy.types.Collection | None,
         grid_spec: SpatialGridSpec,
+        *,
+        blend_data: BlendData | None = None,
     ) -> bpy.types.Object | None:
         """Extracts specified face indices from sliced BMesh into an independent mesh object."""
         if not bpy or not bmesh:
@@ -468,11 +475,19 @@ class MeshChunkSlicer:
                             seam_vert_indices.add(v.index)
 
             # Create Mesh Data and Object
-            chunk_mesh = bpy.data.meshes.new(name=f"{chunk_name}_Mesh")
+            bdata = blend_data
+            bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+            bdata_objs = getattr(bdata, "objects", None) if bdata else None
+            bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
+
+            if not bdata_meshes or not bdata_objs:
+                return None
+
+            chunk_mesh = bdata_meshes.new(name=f"{chunk_name}_Mesh")
             chunk_bm.to_mesh(chunk_mesh)
             chunk_mesh.update()
 
-            chunk_obj = bpy.data.objects.new(name=chunk_name, object_data=chunk_mesh)
+            chunk_obj = bdata_objs.new(name=chunk_name, object_data=chunk_mesh)
             chunk_obj.matrix_world = source_obj.matrix_world.copy()
 
             # Assign matching materials (preserving global slots)
@@ -481,9 +496,7 @@ class MeshChunkSlicer:
                 chunk_mesh.materials.append(mat)
 
             # Link to collection
-            fallback_coll = target_collection or (
-                bpy.data.scenes[0].collection if bpy and getattr(bpy.data, "scenes", None) else None
-            )
+            fallback_coll = target_collection or (bdata_scenes[0].collection if bdata_scenes else None)
             if target_collection and hasattr(target_collection, "objects"):
                 target_collection.objects.link(chunk_obj)
             elif fallback_coll and hasattr(fallback_coll, "objects"):

@@ -94,6 +94,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
                 target_collection=lod0_coll,
                 partitioning_mode=part_mode,
                 target_cluster_polys=target_polys,
+                blend_data=getattr(context, "blend_data", None),
             )
         except Exception as exc:
             logger.error("Spatial slicing failed: %s", exc, exc_info=True)
