@@ -220,7 +220,7 @@ class UnrealLiveBridge(EngineBridgeBase):
                 if resp.status in (200, 201, 202):
                     return True, "Successfully dispatched live sync command via UE5 Web Remote Control."
                 return False, f"UE5 Web Remote returned HTTP {resp.status}"
-        except Exception as exc:
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
             return False, f"UE5 Web Remote Control failed: {str(exc)}"
 
     @classmethod

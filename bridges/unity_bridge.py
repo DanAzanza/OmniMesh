@@ -234,7 +234,7 @@ class UnityLiveBridge(EngineBridgeBase):
             with open(script_path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(cls.generate_postprocessor_csharp_code())
             return True, f"Installed Unity Postprocessor: {script_path}"
-        except Exception as e:
+        except OSError as e:
             return False, f"Failed to install Unity postprocessor: {str(e)}"
 
     @classmethod
@@ -297,7 +297,7 @@ class UnityLiveBridge(EngineBridgeBase):
                             os.chmod(dst, stat.S_IWRITE)
                             shutil.copy2(src, dst)
                             return
-                        except Exception as exc:
+                        except OSError as exc:
                             logger.debug("Retrying chmod copy on %s: %s", dst, exc)
                     if attempt == max_retries - 1:
                         raise

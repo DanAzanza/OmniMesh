@@ -94,7 +94,7 @@ class MSFS2024LiveBridge(EngineBridgeBase):
         if exe:
             try:
                 sdk_folder = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(exe))))
-            except Exception:
+            except (ValueError, TypeError):
                 sdk_folder = "MSFS SDK"
             return True, f"🟢 MSFS SDK Tool Found: {sdk_folder or 'MSFS SDK'}"
         return False, "⚪ MSFS SDK Tool not found on system (SDK installation required)"
@@ -150,7 +150,7 @@ class MSFS2024LiveBridge(EngineBridgeBase):
                             capture_output=True,
                             check=False,
                         )
-                    except Exception:
+                    except (OSError, subprocess.SubprocessError):
                         process.kill()
                 else:
                     process.kill()
