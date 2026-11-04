@@ -66,7 +66,7 @@ class AssetMeshResolver:
         props = getattr(context.scene, "lod_tool", None) if (context and hasattr(context, "scene")) else None
 
         effective_bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
-        has_collections = bool(effective_bdata and hasattr(effective_bdata, "collections"))
+        has_collections = bool(effective_bdata)
 
         root_col = None
         if has_collections and effective_bdata:
@@ -198,7 +198,7 @@ class AssetMeshResolver:
                     if obj.type == "MESH":
                         impostor_object = obj
                         break
-            if not impostor_object and effective_bdata and hasattr(effective_bdata, "objects"):
+            if not impostor_object and effective_bdata:
                 for obj in effective_bdata.objects:
                     o_name = obj.name
                     matches_asset = (
@@ -224,7 +224,7 @@ class AssetMeshResolver:
                 for obj in coll_col.objects:
                     if obj.type == "MESH" and obj not in collider_objects:
                         collider_objects.append(obj)
-            elif effective_bdata and hasattr(effective_bdata, "objects"):
+            elif effective_bdata:
                 for obj in effective_bdata.objects:
                     is_col = bool(obj.get("_is_collider", False))
                     o_name = obj.name

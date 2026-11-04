@@ -137,7 +137,10 @@ class MSFSExporter(EngineExporterBase):
         except OSError as exc:
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
-        bdata = getattr(context, "blend_data", None)
+        bdata_in = kwargs.get("blend_data")
+        bdata: BlendData | None = (
+            bdata_in if isinstance(bdata_in, BlendData) else (getattr(context, "blend_data", None) if context else None)
+        )
         payload = (
             AssetMeshResolver.resolve_payload(context, clean_name, blend_data=bdata) if AssetMeshResolver else None
         )
