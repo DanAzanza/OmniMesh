@@ -4,8 +4,6 @@
 [![Blender 5.0+ / 5.2 LTS](https://img.shields.io/badge/Blender-5.0%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-484%20passed%20%28100%25%29-brightgreen.svg)]()
-[![Code Quality](https://img.shields.io/badge/Ruff%20%26%20Pyright-0%20errors-brightgreen.svg)]()
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5.4%2B%20%7C%20Unity%206-purple.svg)]()
 
 > ⚠️ **Work in Progress (WIP):** This project is actively under development and may change significantly over time.
@@ -34,6 +32,8 @@ Optimizing 3D assets for modern real-time engines usually means choosing between
 | **PBR Texture Packing** | ❌ Manual Shader Nodes | ❌ Limited | **✔️ Auto-Packs ORM, MaskMap, COMP & Split** |
 | **Engine Live-Sync** | ❌ Manual export/import | ❌ File-based | **✔️ Real-Time Bridges (UE5, Unity, MSFS)** |
 | **Perceptual Error Metric** | ❌ Arbitrary % reduction | ✔️ Screen-Space Error | **✔️ Screen-Space Error Bound (SSE) in Pixels** |
+
+> *Decimation Architecture Note:* OmniMesh orchestrates Blender's native Garland-Heckbert Quadric Error Metric (QEM) decimate solver non-destructively, governing it via perceptual Screen-Space Error Bounds ($\tau_{\text{sse}}$), seam-locked vertex groups, and split normal transfer—delivering enterprise-grade pipeline automation without proprietary external software subscriptions.
 
 ---
 
@@ -182,7 +182,7 @@ OmniMesh provides a reproducible headless benchmark harness (`scripts/run_benchm
 | **In-Blender Headless Suite** | Automated test suite running inside headless Blender 5.0+ & 5.2 LTS via `--python-exit-code 1` |
 | **Normal & Shading Integrity** | High-precision custom split normal reprojection via `DATA_TRANSFER` and KDTree spatial fallback |
 | **Perceptual Error Metric** | Screen-Space Error Bound (SSE) pixel-accuracy projection based on distance, FOV, and AABB radius |
-| **Skeletal Rig Safety** | Normalized bone weight clamping (4 for mobile/glTF, 8 for UE5/Unity) and anchor bone singularity guards |
+| **Skeletal Rig Safety** | Normalized bone weight clamping (4 for mobile/glTF/Unity, 8 for UE5) and anchor bone singularity guards |
 | **Multi-Engine Package Export** | Automated export artifact verification (FBX & glTF/XML) for Unreal Engine 5, Unity 6, and MSFS 2024 |
 
 ---
@@ -217,7 +217,7 @@ Clone or copy the repository into your Blender scripts folder:
 
 ## 🛠️ Automated Testing & Quality Gate
 
-OmniMesh maintains a deterministic, strict CI quality gate with **484 automated unit & In-Blender integration tests** (450 unit tests + 34 headless in-Blender integration tests):
+OmniMesh maintains a deterministic, strict CI quality gate covering automated unit tests and headless in-Blender integration tests across all core algorithms, exporters, and UI operators:
 
 ```bash
 # Run CI verification (dependencies, linter, formatter, type checker, unit tests with coverage)
