@@ -183,7 +183,7 @@ class LOD_OT_bake_rig_animation(Operator):
             return {"CANCELLED"}
 
         action = armature.animation_data.action
-        baked = AnimationRigSanitizer.bake_deform_animation(context, armature, action)
+        baked = AnimationRigSanitizer.bake_deform_animation(context, armature, action, blend_data=context.blend_data)
         if baked:
             AnimationRigSanitizer.setup_clean_nla_export(armature, baked)
             self.report({"INFO"}, f"Successfully baked deform Action '{baked.name}' and assigned to solo NLA track.")

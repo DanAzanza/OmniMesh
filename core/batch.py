@@ -36,6 +36,7 @@ else:
     BlendData = object
 
 try:
+    from .compat import count_mesh_triangles, import_scene_asset
     from .decimator import MeshDecimator
     from .materials import MaterialOptimizer
     from .batch_worker_process import (
@@ -54,6 +55,7 @@ try:
     from .sanitizer import MeshSanitizer
     from .textures import TextureChannelPacker, TexturePoolManager
 except (ImportError, ValueError):
+    from core.compat import count_mesh_triangles, import_scene_asset
     from core.decimator import MeshDecimator
     from core.materials import MaterialOptimizer
     from core.batch_worker_process import (
@@ -248,20 +250,9 @@ class BatchProcessorEngine:
         existing_objs = (
             set(bdata_objs.keys()) if hasattr(bdata_objs, "keys") else {getattr(o, "name", "") for o in bdata_objs}
         )
-        ext = os.path.splitext(filepath)[1].lower()
 
         try:
-            if ext == ".fbx":
-                if hasattr(bpy.ops.import_scene, "fbx"):
-                    bpy.ops.import_scene.fbx(filepath=filepath)
-            elif ext == ".obj":
-                if hasattr(bpy.ops.wm, "obj_import"):
-                    bpy.ops.wm.obj_import(filepath=filepath)
-                elif hasattr(bpy.ops.import_scene, "obj"):
-                    cast(Any, bpy.ops.import_scene).obj(filepath=filepath)
-            elif ext in (".gltf", ".glb"):
-                if hasattr(bpy.ops.import_scene, "gltf"):
-                    bpy.ops.import_scene.gltf(filepath=filepath)
+            import_scene_asset(filepath)
         except (RuntimeError, ValueError) as exc:
             logger.error("Failed to import asset '%s': %s", filepath, exc)
             return []
@@ -312,7 +303,7 @@ class BatchProcessorEngine:
             result["message"] = f"Failed to import '{filepath}'"
             return result
 
-        mesh_objs = [o for o in imported_objs if getattr(o, "type", "") == "MESH"]
+        mesh_objs = [o for o in imported_objs if o.type == "MESH"]
         if not mesh_objs:
             cls.cleanup_imported_objects(imported_objs, blend_data=bdata)
             result["message"] = f"No valid mesh geometry found in '{filepath}'"
@@ -341,11 +332,8 @@ class BatchProcessorEngine:
                         bm.to_mesh(obj_mesh)
                     finally:
                         bm.free()
-                    polys = getattr(obj_mesh, "polygons", [])
-                    if polys and hasattr(polys[0], "vertices"):
-                        initial_tris += sum(max(1, len(p.vertices) - 2) for p in polys)
-                    else:
-                        initial_tris += len(polys)
+                    initial_tris += count_mesh_triangles(obj_mesh)
+
             result["initial_tris"] = initial_tris
 
             # 2. Compute Metric Extents & Tiers

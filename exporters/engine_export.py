@@ -81,24 +81,24 @@ class AssetMeshResolver:
         has_impostor_tier = False
 
         def is_valid_lod_mesh(obj: bpy.types.Object | None) -> bool:
-            if not obj or getattr(obj, "type", "") != "MESH":
+            if not obj or obj.type != "MESH":
                 return False
-            name = getattr(obj, "name", "")
-            if getattr(obj, "get", lambda *_: False)("_is_collider", False):
+            name = obj.name
+            if obj.get("_is_collider", False):
                 return False
-            if getattr(obj, "get", lambda *_: False)("_is_impostor", False):
+            if obj.get("_is_impostor", False):
                 return False
-            if getattr(obj, "get", lambda *_: False)("_is_trigger", False):
+            if obj.get("_is_trigger", False):
                 return False
-            if getattr(obj, "get", lambda *_: False)("_omnimesh_role", "") == "INTERACTION_VOLUME":
+            if obj.get("_omnimesh_role", "") == "INTERACTION_VOLUME":
                 return False
             if name.startswith("UCX_") or "_Collider_" in name:
                 return False
             # Exclude objects residing in technical auxiliary collections
-            users = getattr(obj, "users_collection", [])
+            users = obj.users_collection
             for c in users:
-                c_name = getattr(c, "name", "")
-                if getattr(c, "get", lambda *_: False)("_omnimesh_role", "") in (
+                c_name = c.name
+                if c.get("_omnimesh_role", "") in (
                     "SPATIAL",
                     "LIGHTS",
                     "CAMERAS",
@@ -148,11 +148,11 @@ class AssetMeshResolver:
 
             lod0_objs: list[bpy.types.Object] = []
             if lod0_col:
-                for obj in getattr(lod0_col, "objects", []):
+                for obj in lod0_col.objects:
                     if is_valid_lod_mesh(obj) and obj not in lod0_objs:
                         lod0_objs.append(obj)
             elif root_col.name == clean_name:
-                for obj in getattr(root_col, "objects", []):
+                for obj in root_col.objects:
                     if is_valid_lod_mesh(obj) and obj not in lod0_objs:
                         lod0_objs.append(obj)
 
@@ -181,7 +181,7 @@ class AssetMeshResolver:
                             break
                 if tier_col:
                     tier_objs: list[bpy.types.Object] = []
-                    for obj in getattr(tier_col, "objects", []):
+                    for obj in tier_col.objects:
                         if is_valid_lod_mesh(obj) and obj not in tier_objs:
                             tier_objs.append(obj)
                     if tier_objs:
@@ -194,19 +194,19 @@ class AssetMeshResolver:
             if not imp_col and has_collections and effective_bdata:
                 imp_col = effective_bdata.collections.get(f"{clean_name}_LOD_Impostor")
             if imp_col:
-                for obj in getattr(imp_col, "objects", []):
-                    if getattr(obj, "type", "") == "MESH":
+                for obj in imp_col.objects:
+                    if obj.type == "MESH":
                         impostor_object = obj
                         break
             if not impostor_object and effective_bdata and hasattr(effective_bdata, "objects"):
                 for obj in effective_bdata.objects:
-                    o_name = getattr(obj, "name", "")
+                    o_name = obj.name
                     matches_asset = (
                         o_name == clean_name
                         or o_name.startswith(f"{clean_name}_")
-                        or getattr(obj, "get", lambda *_: None)("_omnimesh_parent") == clean_name
+                        or obj.get("_omnimesh_parent") == clean_name
                     )
-                    if getattr(obj, "get", lambda *_: False)("_is_impostor", False) and matches_asset:
+                    if obj.get("_is_impostor", False) and matches_asset:
                         impostor_object = obj
                         break
             if impostor_object:
@@ -221,17 +221,17 @@ class AssetMeshResolver:
             if not coll_col and has_collections and effective_bdata:
                 coll_col = effective_bdata.collections.get(f"{clean_name}_Colliders")
             if coll_col:
-                for obj in getattr(coll_col, "objects", []):
-                    if getattr(obj, "type", "") == "MESH" and obj not in collider_objects:
+                for obj in coll_col.objects:
+                    if obj.type == "MESH" and obj not in collider_objects:
                         collider_objects.append(obj)
             elif effective_bdata and hasattr(effective_bdata, "objects"):
                 for obj in effective_bdata.objects:
-                    is_col = bool(getattr(obj, "get", lambda *_: False)("_is_collider", False))
-                    o_name = getattr(obj, "name", "")
+                    is_col = bool(obj.get("_is_collider", False))
+                    o_name = obj.name
                     matches_asset = (
                         o_name == clean_name
                         or o_name.startswith((f"{clean_name}_", f"UCX_{clean_name}_"))
-                        or getattr(obj, "get", lambda *_: None)("_omnimesh_parent") == clean_name
+                        or obj.get("_omnimesh_parent") == clean_name
                     )
                     if (is_col or o_name.startswith("UCX_")) and matches_asset:
                         if obj not in collider_objects:
@@ -252,12 +252,13 @@ class AssetMeshResolver:
         # Detect Armature / Rig
         all_export_objs = [o for objs in lod_tiers.values() for o in objs]
         for obj in all_export_objs:
-            if getattr(obj, "parent", None) and getattr(obj.parent, "type", "") == "ARMATURE":
-                armature_obj = obj.parent
+            parent = getattr(obj, "parent", None)
+            if parent and getattr(parent, "type", "") == "ARMATURE":
+                armature_obj = parent
                 break
             for mod in getattr(obj, "modifiers", []):
-                if getattr(mod, "type", "") == "ARMATURE" and getattr(mod, "object", None):
-                    armature_obj = mod.object
+                if mod.type == "ARMATURE" and getattr(mod, "object", None):
+                    armature_obj = getattr(mod, "object", None)
                     break
             if armature_obj:
                 break
@@ -265,8 +266,8 @@ class AssetMeshResolver:
         role = ""
         parent_asset = None
         if root_col:
-            role = str(getattr(root_col, "get", lambda *_: "")("_omnimesh_role", "") or "")
-            parent_asset = getattr(root_col, "get", lambda *_: None)("_omnimesh_parent", None)
+            role = str(root_col.get("_omnimesh_role", "") or "")
+            parent_asset = root_col.get("_omnimesh_parent", None)
 
         if not role or role == "MODEL_ROOT":
             if clean_name.endswith("_Interior"):
@@ -311,10 +312,10 @@ class AssetMeshResolver:
             candidate_cols.append(root_col)
 
             for col in candidate_cols:
-                for obj in getattr(col, "objects", []):
-                    o_name = getattr(obj, "name", "").upper()
+                for obj in col.objects:
+                    o_name = obj.name.upper()
                     if o_name.startswith(("ATTACH_", "FX_", "SOCKET_", "EYE_")) or "ATTACH_POINT" in o_name:
-                        if getattr(obj, "type", "") == "EMPTY" and obj not in attachment_nodes:
+                        if obj.type == "EMPTY" and obj not in attachment_nodes:
                             attachment_nodes.append(obj)
 
         return AssetExportPayload(
@@ -424,16 +425,16 @@ class PreFlightValidator:
 
         # Material checks
         if len(lod0_objs) == 1:
-            lod0_slots = len(getattr(lod0_objs[0], "material_slots", []))
+            lod0_slots = len(lod0_objs[0].material_slots)
             for i in range(len(props.lods)):
                 tier_objs = payload.lod_tiers.get(i, [])
-                if len(tier_objs) == 1 and lod0_slots > 0 and len(getattr(tier_objs[0], "material_slots", [])) == 0:
+                if len(tier_objs) == 1 and lod0_slots > 0 and len(tier_objs[0].material_slots) == 0:
                     errors.append(f"LOD{i} is missing material slots.")
 
         for i in range(len(props.lods)):
             for obj in payload.lod_tiers.get(i, []):
-                for slot_idx, slot in enumerate(getattr(obj, "material_slots", [])):
-                    if getattr(slot, "material", None) is None:
+                for slot_idx, slot in enumerate(obj.material_slots):
+                    if slot.material is None:
                         errors.append(f"LOD{i} has unassigned material in slot {slot_idx}.")
 
         # Asset name validation

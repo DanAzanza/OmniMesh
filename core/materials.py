@@ -47,7 +47,10 @@ class DeepMaterialHasher:
         if not mat or not hasattr(mat, "node_tree") or not mat.node_tree:
             diffuse = getattr(mat, "diffuse_color", (0.8, 0.8, 0.8, 1.0))
             if hasattr(diffuse, "__iter__"):
-                diff_list = [round(float(v), 4) for v in diffuse]
+                diff_list = [
+                    round(float(getattr(diffuse, "__getitem__", lambda i: 0.8)(i)), 4)
+                    for i in range(min(4, len(diffuse)))
+                ]
             else:
                 diff_list = [0.8, 0.8, 0.8, 1.0]
             return hashlib.sha256(f"NON_NODES:{diff_list}".encode("utf-8")).hexdigest()
@@ -188,7 +191,7 @@ class HeadlessSlotCompactor:
         # 1. Tally polygon material references
         used_indices: set[int] = set()
         for poly in mesh.polygons:
-            idx = getattr(poly, "material_index", 0)
+            idx = poly.material_index if hasattr(poly, "material_index") else 0
             if 0 <= idx < num_slots:
                 used_indices.add(idx)
 
@@ -236,7 +239,7 @@ class HeadlessSlotCompactor:
                     mesh.polygons.foreach_set("material_index", remapped_indices)
             else:
                 for poly in mesh.polygons:
-                    old_i = getattr(poly, "material_index", 0)
+                    old_i = poly.material_index if hasattr(poly, "material_index") else 0
                     new_i = slot_remap.get(old_i, 0)
                     if new_i != old_i:
                         poly.material_index = new_i
@@ -434,8 +437,8 @@ class MaterialOptimizer:
 
         areas: dict[int, float] = dict.fromkeys(range(num_slots), 0.0)
         for poly in mesh.polygons:
-            idx = getattr(poly, "material_index", 0)
-            area = getattr(poly, "area", 0.0) * area_scale
+            idx = poly.material_index if hasattr(poly, "material_index") else 0
+            area = (poly.area if hasattr(poly, "area") else 0.0) * area_scale
             if idx in areas:
                 areas[idx] += area
             elif len(areas) > 0:
@@ -453,14 +456,14 @@ class MaterialOptimizer:
         """Determines if a material is semantically protected (e.g. lights, decals, glass)."""
         if not mat:
             return False
-        name = getattr(mat, "name", "").lower()
+        name = mat.name.lower() if hasattr(mat, "name") else ""
         if any(kw in name for kw in cls.PROTECTED_KEYWORDS):
             return True
 
         if hasattr(mat, "node_tree") and mat.node_tree:
-            nodes = getattr(mat.node_tree, "nodes", [])
+            nodes = mat.node_tree.nodes if (mat.node_tree and hasattr(mat.node_tree, "nodes")) else []
             for node in nodes:
-                ntype = getattr(node, "type", "")
+                ntype = node.type if hasattr(node, "type") else ""
                 if ntype in ("EMISSION", "BSDF_GLASS", "BSDF_TRANSPARENT", "BSDF_TRANSLUCENT"):
                     return True
                 if ntype == "BSDF_PRINCIPLED":
@@ -586,8 +589,8 @@ class MaterialOptimizer:
 
         # Remap across all mesh objects
         for obj in bdata_objs or []:
-            if getattr(obj, "type", "") == "MESH":
-                for slot in getattr(obj, "material_slots", []):
+            if obj.type == "MESH":
+                for slot in obj.material_slots:
                     if slot.material in mat_remap:
                         slot.material = mat_remap[slot.material]
 
@@ -606,7 +609,7 @@ class MaterialOptimizer:
         bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
         if not bdata_mats:
             return 0
-        orphans = [m for m in bdata_mats if getattr(m, "users", 0) == 0]
+        orphans = [m for m in bdata_mats if (m.users if hasattr(m, "users") else 0) == 0]
         for m in orphans:
             try:
                 bdata_mats.remove(m, do_unlink=True)
@@ -653,7 +656,7 @@ class MaterialOptimizer:
         # Step 1: Missing texture audit and orphan node cleanup
         seen_materials: set[bpy.types.Material] = set()
         for obj in mesh_objs:
-            for slot in getattr(obj, "material_slots", []):
+            for slot in obj.material_slots:
                 mat = slot.material
                 if mat and mat not in seen_materials:
                     seen_materials.add(mat)

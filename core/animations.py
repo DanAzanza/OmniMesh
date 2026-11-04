@@ -293,8 +293,9 @@ class AnimationRigSanitizer:
                 if pb:
                     pb.rotation_mode = "QUATERNION"
 
-        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
-        bdata_actions = getattr(bdata, "actions", None) if bdata else None
+        if not blend_data:
+            return None
+        bdata_actions = getattr(blend_data, "actions", None)
 
         if not bdata_actions:
             return None

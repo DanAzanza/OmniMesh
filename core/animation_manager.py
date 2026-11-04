@@ -40,7 +40,7 @@ SIMVAR_MAPPINGS: dict[str, str] = {
 
 
 def scan_asset_animations(
-    blend_data: BlendData | None,
+    blend_data: BlendData,
     asset_name: str,
 ) -> list[dict[str, Any]]:
     """
@@ -48,7 +48,7 @@ def scan_asset_animations(
     returning detailed metadata for all actions and NLA tracks.
     """
     if blend_data is None:
-        return []
+        raise ValueError("blend_data must not be None when scanning asset animations.")
 
     clean_asset = str(asset_name).strip() or "Asset"
     discovered_actions: dict[str, dict[str, Any]] = {}
@@ -128,12 +128,12 @@ def _extract_action_info(action: Action | None, bound_object: Object | None) -> 
 def tag_action_category(
     action_name: str,
     category: str,
-    blend_data: BlendData | None,
+    blend_data: BlendData,
     custom_guid: Optional[str] = None,
 ) -> bool:
     """Assigns semantic category and optional custom GUID to a Blender action."""
     if blend_data is None:
-        return False
+        raise ValueError("blend_data must not be None when tagging actions.")
 
     act: Action | None = blend_data.actions.get(action_name)
     if act is None:

@@ -15,6 +15,8 @@ else:
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
 
 from core.animation_manager import (
     build_msfs_animation_xml_block,
@@ -121,9 +123,11 @@ def test_blend_data_injection_without_global_bpy_data():
     injected_blend_data.collections.get.side_effect = lambda name: root_coll if name == "Aircraft" else None
     injected_blend_data.actions.get.side_effect = lambda name: flap_act if name == "Flap_Deploy" else None
 
-    # Negative boundary: missing blend_data fails closed without touching global state
-    assert scan_asset_animations(None, "Aircraft") == []
-    assert tag_action_category("Flap_Deploy", "FLIGHT_CONTROL", None) is False
+    # Negative boundary: missing blend_data fails fast without touching global state
+    with pytest.raises(ValueError, match="blend_data must not be None"):
+        scan_asset_animations(None, "Aircraft")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="blend_data must not be None"):
+        tag_action_category("Flap_Deploy", "FLIGHT_CONTROL", None)  # type: ignore[arg-type]
 
     actions = scan_asset_animations(injected_blend_data, "Aircraft")
     assert len(actions) == 1

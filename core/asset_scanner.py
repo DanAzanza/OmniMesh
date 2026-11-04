@@ -96,7 +96,7 @@ def get_available_asset_names(
 
         has_mesh = False
         for obj in getattr(coll, "all_objects", getattr(coll, "objects", [])):
-            if getattr(obj, "type", "") == "MESH":
+            if obj.type == "MESH":
                 has_mesh = True
                 break
 
@@ -135,7 +135,7 @@ def resolve_effective_asset_name(context: bpy.types.Context | None, props: objec
 
     active_obj = getattr(context, "active_object", None)
     if active_obj:
-        raw_name = getattr(active_obj, "name", "")
+        raw_name = active_obj.name
         stem = _strip_collection_suffixes(raw_name)
         if stem and (not available or stem in available):
             return stem
@@ -180,19 +180,19 @@ def get_asset_base_meshes(
     coll = get_asset_collection(context, asset_name, blend_data=blend_data)
     if not coll:
         selected = getattr(context, "selected_objects", []) if context else []
-        meshes = [o for o in selected if getattr(o, "type", "") == "MESH"]
+        meshes = [o for o in selected if o.type == "MESH"]
         act_obj = getattr(context, "active_object", None) if context else None
         if not meshes and act_obj:
-            if getattr(act_obj, "type", "") == "MESH":
+            if act_obj.type == "MESH":
                 meshes = [act_obj]
         return meshes
 
     meshes = []
     all_objs = coll.all_objects if hasattr(coll, "all_objects") else getattr(coll, "objects", [])
     for obj in all_objs:
-        if getattr(obj, "type", "") != "MESH":
+        if obj.type != "MESH":
             continue
-        name = getattr(obj, "name", "")
+        name = obj.name
         is_col = bool(obj.get("_is_collider", False)) if hasattr(obj, "get") else False
         is_imp = bool(obj.get("_is_impostor", False)) if hasattr(obj, "get") else False
         if is_col or is_imp or name.startswith("UCX_") or "_Collider_" in name:

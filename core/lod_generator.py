@@ -80,40 +80,30 @@ except (ImportError, ValueError):
 
 
 def _count_triangles(mesh_data: bpy.types.Mesh | bmesh.types.BMesh | object | None) -> int:
-    """Computes true triangle count in O(1) via loop-poly invariant with safe fallbacks."""
+    """Computes true triangle count in O(1) via loop-poly invariant with safe fallback."""
     if not mesh_data:
         return 0
-    try:
-        loops = getattr(mesh_data, "loops", None)
-        polys = getattr(mesh_data, "polygons", None)
-        if loops is not None and polys is not None:
-            n_loops = len(loops)
-            n_polys = len(polys)
-            if n_polys == 0:
-                return 0
-            return max(0, n_loops - 2 * n_polys)
-    except (AttributeError, TypeError) as exc:
-        logger.debug("Loop-poly triangle count invariant fallback triggered: %s", exc)
-
-    # Safe fallback for bmesh or mock structures
-    polys = getattr(mesh_data, "polygons", getattr(mesh_data, "faces", []))
-    if not polys:
-        return 0
-    try:
-        first = polys[0]
-        if hasattr(first, "vertices"):
-            return sum(max(0, len(p.vertices) - 2) for p in polys)
-        elif hasattr(first, "verts"):
-            return sum(max(0, len(f.verts) - 2) for f in polys)
-        return len(polys)
-    except (IndexError, AttributeError, TypeError, ReferenceError, RuntimeError):
-        return len(polys)
+    loops = getattr(mesh_data, "loops", None)
+    polys = getattr(mesh_data, "polygons", None)
+    if loops is not None and polys is not None:
+        n_loops = len(loops)
+        n_polys = len(polys)
+        return max(0, n_loops - 2 * n_polys) if n_polys > 0 else 0
+    if polys is not None:
+        try:
+            return sum(max(0, len(getattr(p, "vertices", [])) - 2) for p in polys)
+        except (TypeError, AttributeError):
+            return len(polys)
+    faces = getattr(mesh_data, "faces", None)
+    if faces is not None:
+        return len(faces)
+    return 0
 
 
 def _compute_lod0_stats(mesh_objs: list[bpy.types.Object]) -> tuple[int, int]:
     """Calculates initial triangle count and material slot count for LOD0."""
     tier_tris = 0
-    tier_mats = sum(len(obj.material_slots) for obj in mesh_objs if hasattr(obj, "material_slots"))
+    tier_mats = sum(len(obj.material_slots) for obj in mesh_objs)
     for obj in mesh_objs:
         if ModifierManager.has_unapplied_modifiers(obj):
             eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
@@ -124,9 +114,9 @@ def _compute_lod0_stats(mesh_objs: list[bpy.types.Object]) -> tuple[int, int]:
                     if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
                         eval_obj.to_mesh_clear()
             else:
-                tier_tris += _count_triangles(getattr(obj, "data", None))
+                tier_tris += _count_triangles(obj.data)
         else:
-            tier_tris += _count_triangles(getattr(obj, "data", None))
+            tier_tris += _count_triangles(obj.data)
     return tier_tris, tier_mats
 
 
@@ -510,7 +500,7 @@ def generate_all_lods(
         return False, f"No mesh objects found for asset '{base_name}'."
 
     orig_pose_pos = None
-    arm_data = cast("bpy.types.Armature | None", getattr(armature_obj, "data", None) if armature_obj else None)
+    arm_data = cast("bpy.types.Armature | None", armature_obj.data if armature_obj else None)
     if arm_data and hasattr(arm_data, "pose_position"):
         orig_pose_pos = arm_data.pose_position
         arm_data.pose_position = "REST"
@@ -546,7 +536,7 @@ def generate_all_lods(
 
         all_coords = []
         for obj in mesh_objs:
-            obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
+            obj_data = cast("bpy.types.Mesh | None", obj.data)
             if hasattr(obj, "bound_box") and obj.bound_box and Vector is not None:
                 all_coords.extend([obj.matrix_world @ Vector(b) for b in obj.bound_box])
             elif obj_data and hasattr(obj_data, "vertices"):
@@ -566,7 +556,6 @@ def generate_all_lods(
         # Build Sibling Collections list
         all_tier_collections: list[bpy.types.Collection | None] = [src_coll]
         for i in range(1, len(lods_list)):
-            bdata = getattr(context, "blend_data", None) if context else None
             tier_c = CollectionCloneDAG.get_or_create_sibling_collection(
                 src_coll, i, base_name, scene=context.scene, blend_data=bdata
             )
@@ -725,7 +714,7 @@ def generate_all_lods(
     finally:
         bdata_objs = getattr(bdata, "objects", None) if bdata else None
         if shared_ref_merged_obj and bdata_objs:
-            ref_mesh = getattr(shared_ref_merged_obj, "data", None)
+            ref_mesh = shared_ref_merged_obj.data
             try:
                 bdata_objs.remove(shared_ref_merged_obj, do_unlink=True)
                 bdata_meshes = getattr(bdata, "meshes", None) if bdata else None

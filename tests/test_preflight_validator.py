@@ -60,6 +60,9 @@ class MockObject(_MockBase):
         self.scale = MockScale(*scale)
         self.data = MockMeshData(polys)
         self.material_slots = [MockMaterialSlot(f"Mat_{i}") for i in range(mat_slots)]
+        self.parent = None
+        self.modifiers = []
+        self.users_collection = []
 
 
 class MockLODTier(_MockBase):

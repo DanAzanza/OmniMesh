@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 import logging
 import math
+import os
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 import numpy as np
@@ -278,6 +279,42 @@ def count_mesh_triangles(mesh_data: bpy.types.Mesh | None) -> int:
     return 0
 
 
+def import_scene_asset(filepath: str) -> bool:
+    """Dispatches to the appropriate Blender scene import operator based on file extension.
+
+    Encapsulates Blender 3.x vs 4.x/5.x operator differences (e.g., bpy.ops.wm.obj_import vs
+    legacy bpy.ops.import_scene.obj) and format availability checks.
+    """
+    if bpy is None:
+        return False
+
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == ".fbx":
+        import_scene = getattr(bpy.ops, "import_scene", None)
+        fbx_op = getattr(import_scene, "fbx", None) if import_scene else None
+        if callable(fbx_op):
+            fbx_op(filepath=filepath)
+            return True
+    elif ext == ".obj":
+        wm = getattr(bpy.ops, "wm", None)
+        obj_import_op = getattr(wm, "obj_import", None) if wm else None
+        if callable(obj_import_op):
+            obj_import_op(filepath=filepath)
+            return True
+        import_scene = getattr(bpy.ops, "import_scene", None)
+        legacy_obj_op = getattr(import_scene, "obj", None) if import_scene else None
+        if callable(legacy_obj_op):
+            legacy_obj_op(filepath=filepath)
+            return True
+    elif ext in (".gltf", ".glb"):
+        import_scene = getattr(bpy.ops, "import_scene", None)
+        gltf_op = getattr(import_scene, "gltf", None) if import_scene else None
+        if callable(gltf_op):
+            gltf_op(filepath=filepath)
+            return True
+    return False
+
+
 __all__ = [
     "MatrixLike",
     "Vector",
@@ -285,6 +322,7 @@ __all__ = [
     "ensure_action_fcurve",
     "extract_action_fcurves",
     "get_socket_default_value",
+    "import_scene_asset",
     "safe_invert_matrix",
     "set_node_prop",
     "set_socket_default_value",

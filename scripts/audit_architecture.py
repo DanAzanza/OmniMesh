@@ -26,9 +26,6 @@ BPY_DATA_RATCHET_BASELINE = 0
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
 ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
-    "core/batch.py": {
-        "bpy.ops.import_scene": (1, "Blender stub defect: dynamic operator dispatch"),
-    },
     "core/decimator.py": {
         "ctx.temp_override": (3, "Blender stub defect: Context.temp_override callable/context manager return type"),
     },

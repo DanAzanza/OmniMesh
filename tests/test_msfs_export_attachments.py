@@ -23,6 +23,9 @@ class MockObject(_MockBase):
         self._selected = False
         self.data = MagicMock()
         self.data.polygons = [1, 2, 3]
+        self.users_collection: list[Any] = []
+        self.parent = None
+        self.modifiers: list[Any] = []
 
     def hide_get(self, view_layer=None):
         return self._hidden_layer
@@ -56,6 +59,9 @@ class MockCollection(_MockBase):
         self.name = name
         self.objects: list[Any] = []
         self.children = MockChildrenDict([])
+
+    def get(self, key: str, default=None):
+        return default
 
 
 class MockCollectionDict(_MockBase):
