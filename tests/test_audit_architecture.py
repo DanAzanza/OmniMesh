@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from scripts.audit_architecture import scan_repository
 
 
@@ -173,3 +175,73 @@ def test_audit_catches_bpy_data_and_ignores_obj_data(tmp_path: Path) -> None:
     assert "bpy.data references (3) exceed ratchet baseline (0)" in str(
         violations2["bpy_data_ratchet_in_core_exporters"][0][2]
     )
+
+
+def test_audit_catches_context_blend_data_leak_in_core(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True)
+    # File with legitimate self.blend_data
+    (core_dir / "clean_instance.py").write_text(
+        "class Rig:\n    def __init__(self, bdata):\n        self.blend_data = bdata\n",
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    assert violations["context_blend_data_leak_in_core"] == []
+
+    # File with context.blend_data backdoors
+    (core_dir / "leaky_blend_data.py").write_text(
+        "def bad(context, ctx):\n"
+        "    a = context.blend_data\n"
+        "    b = ctx.blend_data\n"
+        '    c = getattr(context, "blend_data", None)\n'
+        "    return a, b, c\n",
+        encoding="utf-8",
+    )
+    violations2 = scan_repository(tmp_path)
+    leaks = violations2["context_blend_data_leak_in_core"]
+    assert len(leaks) == 3
+
+
+def test_audit_catches_ui_import_layer_violations(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "bad_import.py").write_text(
+        "from ui.utils import get_asset_base_meshes\nimport ui\n",
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    ui_violations = violations["layer_violation_ui_in_core_exporters"]
+    assert len(ui_violations) == 2
+
+
+def test_audit_catches_hasattr_blend_data_leak(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "bad_hasattr.py").write_text(
+        "def bad(blend_data, obj):\n"
+        '    if hasattr(blend_data, "collections"):\n'
+        "        pass\n"
+        '    if hasattr(obj, "blend_data"):\n'
+        "        pass\n",
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    leaks = violations["hasattr_blend_data_leak_in_core_exporters"]
+    assert len(leaks) == 2
+
+
+def test_audit_catches_hasattr_ratchet_overflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.audit_architecture as audit_mod
+
+    monkeypatch.setattr(audit_mod, "HASATTR_RATCHET_BASELINE", 1)
+
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "hasattr_mod.py").write_text(
+        'def check(o):\n    return hasattr(o, "a") and hasattr(o, "b")\n',
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    ratchet = violations["hasattr_ratchet_in_core_exporters"]
+    assert len(ratchet) == 1
+    assert "exceed ratchet baseline" in str(ratchet[0][2])

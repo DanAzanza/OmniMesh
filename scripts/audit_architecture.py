@@ -23,6 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Monotonic ratchet baseline for direct and indirect bpy.data references in core/ and exporters/
 BPY_DATA_RATCHET_BASELINE = 0
 
+# Monotonic ratchet baseline for defensive hasattr calls in core/ and exporters/
+HASATTR_RATCHET_BASELINE = 433
+
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
 ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
@@ -123,12 +126,16 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
     root = repo_root or REPO_ROOT
     violations: dict[str, list[tuple[object, ...]]] = {
         "context_leak_in_core_exporters": [],
+        "context_blend_data_leak_in_core": [],
+        "layer_violation_ui_in_core_exporters": [],
         "deprecated_blender_apis": [],
         "bare_except_pass": [],
         "broad_except_in_core_exporters": [],
         "any_in_core_exporter_signatures": [],
         "unallowed_cast_any_in_core_exporters": [],
         "bpy_data_ratchet_in_core_exporters": [],
+        "hasattr_ratchet_in_core_exporters": [],
+        "hasattr_blend_data_leak_in_core_exporters": [],
         "commented_out_code_blocks": [],
         "file_length_over_750": [],
     }
@@ -140,6 +147,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
     ]
 
     total_bpy_data_count = 0
+    total_hasattr_count = 0
     cast_any_occurrences: dict[str, list[tuple[int, str]]] = {}
 
     for fpath in py_files:
@@ -187,9 +195,62 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         except SyntaxError:
             continue
 
-        is_core_or_exporter = rel_path.startswith("core/") or rel_path.startswith("exporters/")
+        is_core = rel_path.startswith("core/")
+        is_core_or_exporter = is_core or rel_path.startswith("exporters/")
 
         for node in ast.walk(tree):
+            # Check for hasattr duck typing in core/ and exporters/
+            if (
+                is_core_or_exporter
+                and isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "hasattr"
+            ):
+                total_hasattr_count += 1
+                if len(node.args) >= 2 and isinstance(node.args[0], ast.Name):
+                    if node.args[0].id in ("blend_data", "bdata", "effective_bdata", "effective_blend_data"):
+                        violations["hasattr_blend_data_leak_in_core_exporters"].append(
+                            (rel_path, node.lineno, f"{ast.unparse(node)}")
+                        )
+                if (
+                    len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value == "blend_data"
+                ):
+                    violations["hasattr_blend_data_leak_in_core_exporters"].append(
+                        (rel_path, node.lineno, f"{ast.unparse(node)}")
+                    )
+
+            # Check for context.blend_data backdoor leaks in core/
+            if is_core and isinstance(node, ast.Attribute) and node.attr == "blend_data":
+                val = node.value
+                is_ctx = (isinstance(val, ast.Name) and val.id in ("context", "ctx", "context_or_scene")) or (
+                    isinstance(val, ast.Attribute) and val.attr in ("context", "ctx")
+                )
+                if is_ctx:
+                    violations["context_blend_data_leak_in_core"].append(
+                        (rel_path, node.lineno, f"{ast.unparse(node.value)}.blend_data")
+                    )
+
+            if is_core and isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr":
+                if (
+                    len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value == "blend_data"
+                ):
+                    violations["context_blend_data_leak_in_core"].append(
+                        (rel_path, node.lineno, 'getattr(..., "blend_data")')
+                    )
+
+            # Check for presentation/UI layer imports in core/ and exporters/
+            if is_core_or_exporter and isinstance(node, ast.ImportFrom):
+                if node.module and (node.module == "ui" or node.module.startswith("ui.")):
+                    violations["layer_violation_ui_in_core_exporters"].append(
+                        (rel_path, node.lineno, f"from {node.module} import ...")
+                    )
+            if is_core_or_exporter and isinstance(node, ast.Import):
+                if any(alias.name == "ui" or alias.name.startswith("ui.") for alias in node.names):
+                    violations["layer_violation_ui_in_core_exporters"].append((rel_path, node.lineno, "import ui"))
             # Check for direct bpy.context, from bpy import context, or getattr(..., "context") in core/ and exporters/
             if is_core_or_exporter and isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id in ("bpy", "_bpy") and node.attr == "context":
@@ -328,6 +389,16 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
             )
         )
 
+    # Validate hasattr ratchet baseline in core/ and exporters/
+    if total_hasattr_count > HASATTR_RATCHET_BASELINE:
+        violations["hasattr_ratchet_in_core_exporters"].append(
+            (
+                "GLOBAL_RATCHET",
+                total_hasattr_count,
+                f"hasattr references ({total_hasattr_count}) exceed ratchet baseline ({HASATTR_RATCHET_BASELINE})",
+            )
+        )
+
     return violations
 
 
@@ -339,12 +410,16 @@ def main() -> int:
     violations = scan_repository()
     critical_categories = [
         "context_leak_in_core_exporters",
+        "context_blend_data_leak_in_core",
+        "layer_violation_ui_in_core_exporters",
         "deprecated_blender_apis",
         "bare_except_pass",
         "broad_except_in_core_exporters",
         "any_in_core_exporter_signatures",
         "unallowed_cast_any_in_core_exporters",
         "bpy_data_ratchet_in_core_exporters",
+        "hasattr_ratchet_in_core_exporters",
+        "hasattr_blend_data_leak_in_core_exporters",
     ]
     warning_categories = ["commented_out_code_blocks", "file_length_over_750"]
 
