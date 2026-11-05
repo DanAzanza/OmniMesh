@@ -112,7 +112,7 @@ def create_or_update_material_preset(
     metallic: float = 0.0,
     emission_strength: float = 5.0,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> Material | None:
     """
     Creates or updates a Blender Material datablock configured according to the selected preset.

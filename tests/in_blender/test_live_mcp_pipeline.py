@@ -81,7 +81,7 @@ def run_live_mcp_pipeline_tests() -> str:
         props.export_base_name = "Suzanne"
         project_preset_tiers(props, bpy.context, asset_name="Suzanne")
 
-        success, msg = generate_all_lods(bpy.context, props, [monkey], base_name="Suzanne")
+        success, msg = generate_all_lods(bpy.context, props, [monkey], base_name="Suzanne", blend_data=bpy.data)
         assert success, f"LOD generation failed: {msg}"
 
         # Verify created LOD collections
@@ -121,6 +121,7 @@ def run_live_mcp_pipeline_tests() -> str:
             atlas_resolution=512,
             target_engine="UE5",
             dilation_iterations=2,
+            blend_data=bpy.data,
         )
 
         assert "BaseColor" in bake_results, "BaseColor map was not generated"
@@ -153,14 +154,14 @@ def run_live_mcp_pipeline_tests() -> str:
         # Scrub at 10m, 40m, 120m
         scrub_evals = []
         for dist in [10.0, 40.0, 120.0]:
-            LODSimulatorEngine.evaluate_distance_scrub(bpy.context, dist)
+            LODSimulatorEngine.evaluate_distance_scrub(bpy.context, dist, blend_data=bpy.data)
             # Query collection visibility
             visible_cols = [
                 c.name for c in bpy.data.collections if "Suzanne" in c.name and not getattr(c, "hide_viewport", False)
             ]
             scrub_evals.append({"distance": dist, "visible_collections": visible_cols})
 
-        LODSimulatorEngine.reset_distance_scrub(bpy.context)
+        LODSimulatorEngine.reset_distance_scrub(bpy.context, blend_data=bpy.data)
         results["tests"]["distance_scrubber"] = {
             "status": "PASS",
             "evaluations": scrub_evals,

@@ -157,7 +157,9 @@ class OMNIMESH_OT_import_engine_project(Operator):
             target_models.append(("exterior", first_model))
 
         primary_model_name = target_models[0][0] if target_models else "exterior"
-        bdata = getattr(context, "blend_data", None)
+        bdata = getattr(context, "blend_data", None) or (getattr(bpy, "data", None) if bpy else None)
+        if bdata is None:
+            return [], {}
         for model_name, model_info in target_models:
             tag_lower = model_name.lower()
             is_exterior = tag_lower in ("exterior", "normal", "base")
@@ -314,6 +316,8 @@ class OMNIMESH_OT_import_engine_project(Operator):
 
         # Smart Replace: Remove existing objects in enabled categories before importing
         bdata = getattr(context, "blend_data", None) or (getattr(bpy, "data", None) if bpy else None)
+        if bdata is None:
+            return {"CANCELLED"}
         if do_spatial:
             spat_col = get_or_create_engine_import_collection(context, asset_name, "SPATIAL")
             safe_remove_collection_objects(spat_col, blend_data=bdata)
@@ -357,6 +361,7 @@ class OMNIMESH_OT_import_engine_project(Operator):
                         asset_name=asset_name,
                         blend_filepath=blend_file,
                         make_relative=True,
+                        blend_data=bdata,
                     )
                     relinked_count = summary.relinked
                     if summary.has_errors:

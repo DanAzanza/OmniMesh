@@ -55,7 +55,7 @@ def _strip_collection_suffixes(name: str) -> str:
 def get_available_asset_names(
     context: bpy.types.Context | None,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> list[str]:
     """Discovers available asset base names by scanning scene collections."""
     if not bpy or not context:
@@ -119,7 +119,7 @@ def get_available_asset_names(
 
 
 def resolve_effective_asset_name(
-    context: bpy.types.Context | None, props: object = None, *, blend_data: BlendData | None = None
+    context: bpy.types.Context | None, props: object = None, *, blend_data: BlendData
 ) -> str:
     """
     Resolves the active asset name to display or operate on:
@@ -167,7 +167,7 @@ def get_asset_collection(
     context: bpy.types.Context | None,
     asset_name: str,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> bpy.types.Collection | None:
     """Finds the root collection for asset_name (either '{BaseName}' or '{BaseName}_LOD0')."""
     bdata_cols = blend_data.collections if blend_data else None
@@ -194,7 +194,7 @@ def get_asset_base_meshes(
     context: bpy.types.Context | None,
     asset_name: str,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> list[bpy.types.Object]:
     """Retrieves all non-collider, non-impostor MESH objects from the root asset collection."""
     coll = get_asset_collection(context, asset_name, blend_data=blend_data)
@@ -228,7 +228,7 @@ def scan_asset_state(
     context: bpy.types.Context | None,
     asset_name: str,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> dict[str, Any]:
     """
     Scans scene collections for existing LODs and geometry for asset_name.

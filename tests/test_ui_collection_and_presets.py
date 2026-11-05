@@ -656,7 +656,7 @@ def test_callbacks_virtual_distance_and_persist_helpers(monkeypatch):
     # 2. When simulator is idle, distance scrubber evaluates and tags VIEW_3D redraw
     props.is_simulator_running = False
     cb.on_virtual_distance_updated(props, ctx)
-    eval_mock.assert_called_once_with(ctx, 25.0)
+    eval_mock.assert_called_once_with(ctx, 25.0, blend_data=ctx.blend_data)
     assert "HeroProp (LOD2, 1,250 tris, 25.0m)" in props.last_scrub_status
     area_3d.tag_redraw.assert_called_once()
 

@@ -150,25 +150,24 @@ class ConfigPresetSpawner:
         if not datum_obj or obj == datum_obj:
             return
         obj.parent = datum_obj
-        if hasattr(datum_obj, "matrix_world") and hasattr(obj, "matrix_parent_inverse"):
-            try:
-                obj.matrix_parent_inverse = datum_obj.matrix_world.inverted()
-            except (ValueError, AttributeError, RuntimeError) as exc:
-                logger.debug("Could not invert parent matrix: %s", exc)
+        try:
+            obj.matrix_parent_inverse = datum_obj.matrix_world.inverted()
+        except (ValueError, AttributeError, RuntimeError) as exc:
+            logger.debug("Could not invert parent matrix: %s", exc)
 
     @classmethod
     def _spawn_datum_if_missing(
         cls,
-        blend_data: BlendData | None,
+        blend_data: BlendData,
         asset_name: str,
         spatial_col: bpy.types.Collection | None,
         existing_ids: set[str],
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> tuple[bpy.types.Object | None, int]:
         """Ensures the datum reference empty exists in spatial_col."""
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
         datum_id = "WEIGHT_AND_BALANCE:reference_datum_position"
-        for o in getattr(spatial_col, "objects", []):
+        for o in spatial_col.objects if spatial_col else ():
             if o.get("msfs_id") == datum_id:
                 return o, 0
 
@@ -193,7 +192,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_spatial_points(
         cls,
-        blend_data: BlendData | None,
+        blend_data: BlendData,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -203,8 +202,8 @@ class ConfigPresetSpawner:
         detected_wheels: dict[str, tuple[float, float, float]] | None = None,
     ) -> int:
         """Spawns spatial contact points and markers, snapping wheel contact points to detected tire bottoms."""
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
-        bdata_cams = getattr(blend_data, "cameras", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
+        bdata_cams = blend_data.cameras if blend_data else None
         if not bdata_objs or not bdata_cams:
             return 0
         count = 0
@@ -268,7 +267,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_exits(
         cls,
-        blend_data: BlendData | None,
+        blend_data: BlendData,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -277,7 +276,7 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns aircraft exits from preset."""
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
         if not bdata_objs:
             return 0
         count = 0
@@ -310,7 +309,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_engines(
         cls,
-        blend_data: BlendData | None,
+        blend_data: BlendData,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -319,7 +318,7 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns engine markers from preset."""
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
         if not bdata_objs:
             return 0
         count = 0
@@ -352,7 +351,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_station_loads(
         cls,
-        blend_data: BlendData | None,
+        blend_data: BlendData,
         asset_name: str,
         items: list[dict[str, Any]],
         spatial_col: bpy.types.Collection | None,
@@ -361,7 +360,7 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns payload station loads from preset."""
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
         if not bdata_objs:
             return 0
         count = 0
@@ -398,6 +397,8 @@ class ConfigPresetSpawner:
         context: bpy.types.Context | None,
         asset_name: str,
         items: list[dict[str, Any]],
+        *,
+        blend_data: BlendData,
     ) -> int:
         """Spawns interaction volumes from preset if defined."""
         count = 0
@@ -413,6 +414,7 @@ class ConfigPresetSpawner:
                     shape=item.get("shape", "BOX"),
                     role=item.get("role", "BUTTON"),
                     size=item.get("size", (0.08, 0.08, 0.08)),
+                    blend_data=blend_data,
                 )
                 count += 1
             except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
@@ -422,7 +424,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_lights(
         cls,
-        blend_data: BlendData | None,
+        blend_data: BlendData,
         asset_name: str,
         items: list[dict[str, Any]],
         lights_col: bpy.types.Collection | None,
@@ -430,8 +432,8 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns lighting objects from preset."""
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
-        bdata_lights = getattr(blend_data, "lights", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
+        bdata_lights = blend_data.lights if blend_data else None
         if not bdata_objs or not bdata_lights:
             return 0
         count = 0
@@ -472,7 +474,7 @@ class ConfigPresetSpawner:
     @classmethod
     def _spawn_cameras(
         cls,
-        blend_data: BlendData | None,
+        blend_data: BlendData,
         asset_name: str,
         items: list[dict[str, Any]],
         cameras_col: bpy.types.Collection | None,
@@ -480,14 +482,14 @@ class ConfigPresetSpawner:
         anchor_fn: Callable[[str, list[float]], Vector],
     ) -> int:
         """Spawns cameras and ensures eyepoint marker exists."""
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
-        bdata_cams = getattr(blend_data, "cameras", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
+        bdata_cams = blend_data.cameras if blend_data else None
         if not bdata_objs or not bdata_cams:
             return 0
         count = 0
         eyepoint_id = "CAMERAS:eyepoint"
         eyepoint_obj = None
-        for o in getattr(cameras_col, "objects", []):
+        for o in cameras_col.objects if cameras_col else ():
             if o.get("msfs_id") == eyepoint_id:
                 eyepoint_obj = o
                 break
@@ -548,7 +550,7 @@ class ConfigPresetSpawner:
         preset_data: dict[str, Any],
         cfg_props: object = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
         bpy_module: object = None,
         get_base_meshes_fn: Callable[[bpy.types.Context | None, str], list[bpy.types.Object]] | None = None,
         get_import_collection_fn: Callable[
@@ -567,11 +569,23 @@ class ConfigPresetSpawner:
 
         mesh_fn = get_base_meshes_fn
         if not mesh_fn:
-            from ..asset_scanner import get_asset_base_meshes as mesh_fn
+            from ..asset_scanner import get_asset_base_meshes as _get_base_meshes
+
+            def _default_mesh_fn(ctx: bpy.types.Context | None, name: str) -> list[bpy.types.Object]:
+                return _get_base_meshes(ctx, name, blend_data=blend_data)
+
+            mesh_fn = _default_mesh_fn
 
         col_fn = get_import_collection_fn
         if not col_fn:
-            from ..hierarchy import get_or_create_engine_import_collection as col_fn
+            from ..hierarchy import get_or_create_engine_import_collection as _get_import_col
+
+            def _default_col_fn(
+                ctx: bpy.types.Context | bpy.types.Scene | None, name: str, role: str
+            ) -> bpy.types.Collection | None:
+                return _get_import_col(ctx, name, role, blend_data=blend_data)
+
+            col_fn = _default_col_fn
 
         from .geometry import (
             detect_airframe_extrema,
@@ -628,8 +642,8 @@ class ConfigPresetSpawner:
         if spatial_col:
 
             def _spatial_predicate(o: bpy.types.Object) -> bool:
-                m_type = str(o.get("msfs_type", "") if hasattr(o, "get") else "")
-                m_sec = str(o.get("msfs_section", "") if hasattr(o, "get") else "")
+                m_type = str(o.get("msfs_type", ""))
+                m_sec = str(o.get("msfs_section", ""))
                 if inc_spatial and (
                     m_type in ("CONTACT_POINT", "PAYLOAD_STATION", "DATUM", "CG")
                     or m_sec in ("CONTACT_POINTS", "WEIGHT_AND_BALANCE", "FUEL")
@@ -641,31 +655,31 @@ class ConfigPresetSpawner:
                     return True
                 return False
 
-            safe_remove_collection_objects(spatial_col, bpy_module=_bpy, predicate=_spatial_predicate)
+            safe_remove_collection_objects(
+                spatial_col, bpy_module=_bpy, predicate=_spatial_predicate, blend_data=blend_data
+            )
 
         if lights_col and inc_lights:
-            safe_remove_collection_objects(lights_col, bpy_module=_bpy)
+            safe_remove_collection_objects(lights_col, bpy_module=_bpy, blend_data=blend_data)
 
         if cameras_col and inc_cams:
-            safe_remove_collection_objects(cameras_col, bpy_module=_bpy)
+            safe_remove_collection_objects(cameras_col, bpy_module=_bpy, blend_data=blend_data)
 
         if interact_col and inc_interactions:
-            safe_remove_collection_objects(interact_col, bpy_module=_bpy)
+            safe_remove_collection_objects(interact_col, bpy_module=_bpy, blend_data=blend_data)
 
         # Map remaining existing IDs
         existing_ids: set[str] = set()
         for col in (spatial_col, lights_col, cameras_col, interact_col):
-            if col and hasattr(col, "objects"):
+            if col and col.objects is not None:
                 for o in col.objects:
-                    mid = o.get("msfs_id") if hasattr(o, "get") else None
+                    mid = o.get("msfs_id")
                     if mid:
                         existing_ids.add(mid)
 
         total_added = 0
 
-        bdata = blend_data
-        if bdata is None and bpy_module is not None and hasattr(bpy_module, "data"):
-            bdata = getattr(bpy_module, "data", None)
+        bdata: BlendData = blend_data
 
         # 3. Datum
         datum_obj, datum_added = cls._spawn_datum_if_missing(bdata, asset_name, spatial_col, existing_ids, anchor_fn)
@@ -701,7 +715,9 @@ class ConfigPresetSpawner:
 
         # 7. Interactions
         if inc_interactions:
-            total_added += cls._spawn_interactions(context, asset_name, preset_data.get("interactions", []))
+            total_added += cls._spawn_interactions(
+                context, asset_name, preset_data.get("interactions", []), blend_data=bdata
+            )
 
         # 8. Lights
         if inc_lights:

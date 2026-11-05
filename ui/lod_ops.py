@@ -182,6 +182,8 @@ class LOD_OT_generate_all(Operator):
         base_name = base_name.split("_LOD")[0]
 
         bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
         success, msg = generate_all_lods(
             context=context,
             props=props,

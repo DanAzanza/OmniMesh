@@ -32,7 +32,7 @@ def detect_engine_project(
     target_engine: str,
     max_depth: int = 8,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> Optional[str]:
     """Crawls upward from export directory to identify engine project root.
 

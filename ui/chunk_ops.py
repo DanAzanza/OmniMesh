@@ -85,6 +85,9 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
             context.scene.collection.children.link(lod0_coll)
 
         try:
+            bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+            if bdata is None:
+                return None
             part_mode = getattr(props, "chunk_partitioning_mode", "UNIFORM_GRID")
             target_polys = int(getattr(props, "adaptive_cluster_target_polys", 50000))
             chunk_objs_lod0 = MeshChunkSlicer.slice_and_partition(
@@ -94,7 +97,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
                 target_collection=lod0_coll,
                 partitioning_mode=part_mode,
                 target_cluster_polys=target_polys,
-                blend_data=getattr(context, "blend_data", None),
+                blend_data=bdata,
             )
         except Exception as exc:
             logger.error("Spatial slicing failed: %s", exc, exc_info=True)
@@ -181,6 +184,9 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
             vl = getattr(context, "view_layer", None)
             with LayerCollectionGuard(vl, [hlod_coll]):
                 try:
+                    bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+                    if bdata is None:
+                        continue
                     tier_hlod_objs = RecursiveHLODManager.build_hierarchical_tier(
                         parent_clusters=clusters,
                         base_name=base_name,
@@ -192,6 +198,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
                         use_voxel_shell=(is_terminal and use_voxel_shell),
                         voxel_size=voxel_size,
                         context=context,
+                        blend_data=bdata,
                     )
                     logger.info(
                         "Generated Hierarchical HLOD LOD%d: %d clusters (ratio %.3f)",
@@ -221,12 +228,15 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
         vl = getattr(context, "view_layer", None)
         with LayerCollectionGuard(vl, [hlod_coll]):
             try:
+                bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+                if bdata is None:
+                    return
                 hlod_obj = HLODClusterMerger.merge_chunks_for_hlod(
                     chunk_objs=chunk_objs_lod1,
                     hlod_name=f"{base_name}_HLOD_LOD2",
                     target_collection=hlod_coll,
                     weld_dist=0.002,
-                    blend_data=getattr(context, "blend_data", None),
+                    blend_data=bdata,
                 )
                 if hlod_obj:
                     MeshDecimator.execute_decimate_qem(

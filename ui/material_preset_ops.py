@@ -61,6 +61,10 @@ class OMNIMESH_OT_assign_material_preset(Operator):
         emission_strength = getattr(mat_props, "emission_strength", 5.0) if mat_props else 5.0
         apply_to_selected = getattr(mat_props, "apply_to_selected", True) if mat_props else True
 
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
+
         mat = create_or_update_material_preset(
             material_name=mat_name,
             preset_type=preset_type,
@@ -68,7 +72,7 @@ class OMNIMESH_OT_assign_material_preset(Operator):
             roughness=roughness,
             metallic=metallic,
             emission_strength=emission_strength,
-            blend_data=getattr(context, "blend_data", None) if context else None,
+            blend_data=bdata,
         )
 
         if not mat:

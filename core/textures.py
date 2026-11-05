@@ -17,11 +17,13 @@ import numpy as np
 
 if TYPE_CHECKING:
     import bpy
+    from bpy.types import BlendData
 else:
     try:
         import bpy
     except ImportError:
         bpy = None
+    BlendData = object
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,8 @@ class TextureChannelPacker:
         strategy: str = "SMART_AUTO",
         naming_pattern: str = DEFAULT_NAMING_PATTERN,
         context: Optional[bpy.types.Context] = None,
+        *,
+        blend_data: BlendData,
     ) -> list[concurrent.futures.Future[bool]]:
         """
         Dynamically packs and exports all enabled PBR maps defined in the active preset.
@@ -89,31 +93,40 @@ class TextureChannelPacker:
             found_sizes: list[tuple[int, int]] = []
 
             def _get_dim(im: bpy.types.Image | object | None) -> tuple[int, int]:
-                sz = getattr(im, "size", (0, 0))
-                return (int(sz[0]), int(sz[1]))
+                if not im:
+                    return (0, 0)
+                try:
+                    sz = getattr(im, "size", (0, 0))
+                    return (int(sz[0]), int(sz[1]))
+                except (AttributeError, IndexError, TypeError):
+                    return (0, 0)
 
             if "rgb" in channels:
                 rgb_target = channels["rgb"].get("target", "")
                 if rgb_target == "Normal":
                     n_img = cls.get_material_normal_image(material)
-                    if n_img and getattr(n_img, "size", (0, 0))[0] > 0:
-                        found_sizes.append(_get_dim(n_img))
+                    dim = _get_dim(n_img)
+                    if dim[0] > 0:
+                        found_sizes.append(dim)
                 else:
                     s_img, _, _, _ = cls.trace_upstream_channel(material, rgb_target)
-                    if s_img and getattr(s_img, "size", (0, 0))[0] > 0:
-                        found_sizes.append(_get_dim(s_img))
+                    dim = _get_dim(s_img)
+                    if dim[0] > 0:
+                        found_sizes.append(dim)
                 if "a" in channels:
                     a_target = channels["a"].get("target", "")
                     a_img, _, _, _ = cls.trace_upstream_channel(material, a_target)
-                    if a_img and getattr(a_img, "size", (0, 0))[0] > 0:
-                        found_sizes.append(_get_dim(a_img))
+                    dim = _get_dim(a_img)
+                    if dim[0] > 0:
+                        found_sizes.append(dim)
             else:
                 for ch_key in ("r", "g", "b", "a"):
                     if ch_key in channels:
                         ch_t = channels[ch_key].get("target", "")
                         ch_img, _, _, _ = cls.trace_upstream_channel(material, ch_t)
-                        if ch_img and getattr(ch_img, "size", (0, 0))[0] > 0:
-                            found_sizes.append(_get_dim(ch_img))
+                        dim = _get_dim(ch_img)
+                        if dim[0] > 0:
+                            found_sizes.append(dim)
 
             if found_sizes and strategy != "BAKE":
                 map_w = max(s[0] for s in found_sizes)
@@ -202,7 +215,12 @@ class TextureChannelPacker:
                     )
                     baked_arr = (
                         cls.bake_material_socket(
-                            material, rgb_target, (map_w, map_h), bit_depth=bit_depth, context=context
+                            material,
+                            rgb_target,
+                            (map_w, map_h),
+                            bit_depth=bit_depth,
+                            context=context,
+                            blend_data=blend_data,
                         )
                         if should_bake_rgb
                         else None
@@ -253,7 +271,12 @@ class TextureChannelPacker:
                         )
                         baked_arr = (
                             cls.bake_material_socket(
-                                material, target_sock, (map_w, map_h), bit_depth=bit_depth, context=context
+                                material,
+                                target_sock,
+                                (map_w, map_h),
+                                bit_depth=bit_depth,
+                                context=context,
+                                blend_data=blend_data,
                             )
                             if should_bake
                             else None

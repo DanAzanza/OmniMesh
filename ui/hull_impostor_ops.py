@@ -268,6 +268,8 @@ class LOD_OT_setup_impostor_preview_rig(Operator):
             base_name = resolve_asset_base_name(context, mesh_objs)
 
         bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
         tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""), blend_data=bdata)
         target_engine = getattr(props, "target_engine", "UE5")
 
@@ -353,7 +355,9 @@ class LOD_OT_remove_impostor_preview_rig(Operator):
         except (ImportError, ValueError) as exc:
             logger.debug("Impostor viewport ops timer not loaded: %s", exc)
 
-        bdata = getattr(context, "blend_data", None)
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
         success = teardown_impostor_preview_rig(context, base_name, blend_data=bdata)
 
         if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:

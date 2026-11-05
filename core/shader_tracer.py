@@ -451,21 +451,21 @@ class ShaderTracer:
         active_obj: Optional[bpy.types.Object] = None,
         scene: Optional[bpy.types.Scene] = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> Optional[np.ndarray]:
         """Bakes an evaluated shader socket to an image array using Cycles Emission bake."""
         if not bpy or not material or not material.use_nodes or not material.node_tree:
             return None
 
         bdata = blend_data
-        bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
-        bdata_images = getattr(bdata, "images", None) if bdata else None
+        bdata_scenes = bdata.scenes if bdata else None
+        bdata_images = bdata.images if bdata else None
 
         sc = scene or (context.scene if context else None) or (bdata_scenes[0] if bdata_scenes else None)
         act_obj = active_obj or (context.active_object if context else None)
         if (not act_obj or act_obj.type != "MESH") and sc and sc.objects:
             for obj in sc.objects:
-                if obj.type == "MESH" and material in getattr(obj.data, "materials", []):
+                if obj.type == "MESH" and obj.data and material in (cast("bpy.types.Mesh", obj.data).materials or ()):
                     act_obj = obj
                     break
         if not act_obj or act_obj.type != "MESH":
@@ -488,15 +488,11 @@ class ShaderTracer:
             return None
 
         out_node = next(
-            (
-                n
-                for n in nodes
-                if getattr(n, "type", None) == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True)
-            ),
+            (n for n in nodes if n.type == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True)),
             None,
         )
         if not out_node:
-            out_node = next((n for n in nodes if getattr(n, "type", None) == "OUTPUT_MATERIAL"), None)
+            out_node = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None)
         if not out_node or "Surface" not in out_node.inputs:
             return None
 
@@ -507,7 +503,8 @@ class ShaderTracer:
         if not scene:
             return None
         old_engine = scene.render.engine
-        old_samples = getattr(getattr(scene, "cycles", None), "samples", 1)
+        cycles_mod = getattr(scene, "cycles", None)
+        old_samples = cycles_mod.samples if cycles_mod and hasattr(cycles_mod, "samples") else 1
         temp_nodes: list[bpy.types.Node] = []
         temp_img = None
 

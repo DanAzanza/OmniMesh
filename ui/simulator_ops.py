@@ -146,9 +146,10 @@ class LOD_OT_toggle_simulator(Operator):
         if self._is_running or props.is_simulator_active or props.is_simulator_running:
             return self.cancel_simulation(context)
 
-        tracked_count = LODSimulatorEngine.index_scene_assets(
-            context.scene, blend_data=getattr(context, "blend_data", None)
-        )
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
+        tracked_count = LODSimulatorEngine.index_scene_assets(context.scene, blend_data=bdata)
         if tracked_count == 0:
             if hasattr(self, "report"):
                 self.report({"WARNING"}, "No LOD collections found in scene. Generate LODs first.")
@@ -216,7 +217,9 @@ class LOD_OT_reset_virtual_distance(Operator):
 
         props.virtual_distance_override = 0.0
         props.last_scrub_status = ""
-        LODSimulatorEngine.reset_distance_scrub(context, blend_data=getattr(context, "blend_data", None))
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is not None:
+            LODSimulatorEngine.reset_distance_scrub(context, blend_data=bdata)
 
         screen = getattr(context, "screen", None)
         if screen:

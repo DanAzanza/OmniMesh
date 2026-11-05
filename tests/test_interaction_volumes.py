@@ -178,6 +178,7 @@ def test_create_interaction_volume_parenting(monkeypatch):
 
 
 def test_create_interaction_volume_without_blend_data_fails_closed(monkeypatch):
+    from typing import Any, cast
 
     monkeypatch.setattr(iv, "bpy", MagicMock())
 
@@ -185,7 +186,7 @@ def test_create_interaction_volume_without_blend_data_fails_closed(monkeypatch):
         context=None,
         asset_name="FailAsset",
         name="Click",
-        blend_data=None,
+        blend_data=cast(Any, None),
     )
 
     assert vol is None

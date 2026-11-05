@@ -46,7 +46,7 @@ class EphemeralBakeSceneGuard:
         orig_scene: bpy.types.Scene | None = None,
         context: bpy.types.Context | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ):
         self.temp_scene_name = scene_name
         self.context = context
@@ -61,12 +61,12 @@ class EphemeralBakeSceneGuard:
             return None
 
         if not self.orig_scene:
-            bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
-            self.orig_scene = getattr(ctx, "scene", None) or (
+            bdata_scenes = bdata.scenes if bdata else None
+            self.orig_scene = (ctx.scene if ctx and hasattr(ctx, "scene") else None) or (
                 bdata_scenes[0] if bdata_scenes and len(bdata_scenes) > 0 else None
             )
 
-        bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
+        bdata_scenes = bdata.scenes if bdata else None
         if not bdata_scenes:
             return None
 
@@ -75,11 +75,11 @@ class EphemeralBakeSceneGuard:
             return None
 
         # Configure minimal, fast unlit rendering environment
-        render = getattr(self.bake_scene, "render", None)
+        render = self.bake_scene.render
         if render:
             render.film_transparent = True
             render.dither_intensity = 0.0
-            is_bg = getattr(getattr(bpy, "app", None), "background", False) if bpy else False
+            is_bg = getattr(bpy.app, "background", False) if (bpy and hasattr(bpy, "app")) else False
             preferred = (
                 ("CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")
                 if is_bg
@@ -128,24 +128,24 @@ class EphemeralBakeSceneGuard:
         if not bdata and not bpy:
             return
 
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
-        bdata_cams = getattr(bdata, "cameras", None) if bdata else None
-        bdata_worlds = getattr(bdata, "worlds", None) if bdata else None
-        bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
+        bdata_objs = bdata.objects if bdata else None
+        bdata_cams = bdata.cameras if bdata else None
+        bdata_worlds = bdata.worlds if bdata else None
+        bdata_scenes = bdata.scenes if bdata else None
 
         try:
-            win = getattr(ctx, "window", None)
+            win = ctx.window if ctx and hasattr(ctx, "window") else None
             if self.orig_scene and win:
                 win.scene = self.orig_scene
             if self.bake_scene:
-                if getattr(self.bake_scene, "camera", None):
+                if self.bake_scene.camera is not None:
                     cam_obj = self.bake_scene.camera
-                    cam_data = getattr(cam_obj, "data", None)
+                    cam_data = cast("bpy.types.Camera", cam_obj.data) if cam_obj else None
                     if bdata_objs:
                         bdata_objs.remove(cam_obj, do_unlink=True)
                     if cam_data and bdata_cams:
                         bdata_cams.remove(cam_data, do_unlink=True)
-                if getattr(self.bake_scene, "world", None):
+                if self.bake_scene.world is not None:
                     w = self.bake_scene.world
                     self.bake_scene.world = None
                     if bdata_worlds and w:
@@ -180,16 +180,16 @@ class ImpostorCameraRig:
         angle_rad: float = 0.0,
         pitch_rad: float = 0.0,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bpy.types.Object | None:
         if not scene:
             return None
 
         bdata = blend_data
-        bdata_cams = getattr(bdata, "cameras", None) if bdata else None
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata_cams = bdata.cameras if bdata else None
+        bdata_objs = bdata.objects if bdata else None
 
-        if scene.camera is not None and getattr(scene.camera, "data", None) is not None:
+        if scene.camera is not None and scene.camera.data is not None:
             cam_data = cast("bpy.types.Camera", scene.camera.data)
         elif bdata_cams:
             cam_data = cast("bpy.types.Camera", bdata_cams.new("OMNIMESH_Bake_Cam"))
@@ -203,12 +203,12 @@ class ImpostorCameraRig:
         cam_data.clip_start = max(0.001, dist - radius * 1.5)
         cam_data.clip_end = dist + radius * 1.5
 
-        if not getattr(scene, "camera", None):
+        if not scene.camera:
             if not bdata_objs:
                 return None
             cam_obj = bdata_objs.new("OMNIMESH_Bake_Cam_Obj", cam_data)
-            coll = getattr(scene, "collection", None)
-            if coll and hasattr(coll, "objects"):
+            coll = scene.collection
+            if coll and coll.objects is not None:
                 coll.objects.link(cam_obj)
             scene.camera = cam_obj
         else:
@@ -222,7 +222,7 @@ class ImpostorCameraRig:
         offset = Vector((dist * cp * math.sin(angle_rad), -dist * cp * math.cos(angle_rad), dist * math.sin(pitch_rad)))
         cam_obj.location = center_v + offset
         dir_vec = center_v - cam_obj.location
-        if getattr(dir_vec, "length", 0.0) > 1e-6 and hasattr(dir_vec, "to_track_quat"):
+        if dir_vec.length > 1e-6 and hasattr(dir_vec, "to_track_quat"):
             rot_quat = dir_vec.to_track_quat("-Z", "Y")
             cam_obj.rotation_euler = rot_quat.to_euler()
 

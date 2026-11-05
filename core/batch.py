@@ -217,7 +217,7 @@ class BatchProcessorEngine:
         cls,
         filepath: str,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> list[bpy.types.Object]:
         """Imports 3D model file and returns newly created objects."""
         if not bpy or not os.path.exists(filepath):
@@ -250,7 +250,7 @@ class BatchProcessorEngine:
         tau_sse: float = 0.8,
         cull_screen_size_pct: float = 0.5,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> dict[str, Any]:
         """
         Executes complete LOD pipeline on a single model file with complete teardown and memory cleanup.
@@ -457,6 +457,7 @@ class BatchProcessorEngine:
                         strategy=strategy,
                         naming_pattern=naming_pattern,
                         context=context,
+                        blend_data=bdata,
                     )
                     if futs:
                         all_tex_futures.extend(futs)
@@ -554,7 +555,7 @@ class BatchProcessorEngine:
     def cleanup_imported_objects(
         objects: list[bpy.types.Object],
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> None:
         """Removes objects and their mesh datablocks cleanly from Blender memory."""
         bdata_objs = blend_data.objects if blend_data else None

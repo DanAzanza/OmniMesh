@@ -74,11 +74,13 @@ def test_deduplicate_materials_remaps_and_purges() -> None:
 
 
 def test_deduplicate_materials_empty_or_none_bdata() -> None:
+    from typing import Any, cast
+
     # None blend_data should be resilient and not crash
     slot = DummyMaterialSlot(material=DummyMaterial("Fuselage.001"))
     obj = DummyObject("Mesh", material_slots=[slot])
-    assert GLTFAssemblyEngine.deduplicate_materials([obj], blend_data=None) == 0
-    assert GLTFAssemblyEngine.deduplicate_materials([], blend_data=None) == 0
+    assert GLTFAssemblyEngine.deduplicate_materials([obj], blend_data=cast(Any, None)) == 0
+    assert GLTFAssemblyEngine.deduplicate_materials([], blend_data=cast(Any, None)) == 0
 
 
 def test_retarget_armatures_to_master() -> None:
@@ -112,6 +114,8 @@ def test_retarget_armatures_to_master() -> None:
 
 
 def test_retarget_armatures_none_or_empty() -> None:
-    assert GLTFAssemblyEngine.retarget_armatures_to_master(None, [], blend_data=None) == 0
+    from typing import Any, cast
+
+    assert GLTFAssemblyEngine.retarget_armatures_to_master(None, [], blend_data=cast(Any, None)) == 0
     obj = DummyObject("Mesh")
-    assert GLTFAssemblyEngine.retarget_armatures_to_master(None, [obj], blend_data=None) == 0
+    assert GLTFAssemblyEngine.retarget_armatures_to_master(None, [obj], blend_data=cast(Any, None)) == 0

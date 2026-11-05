@@ -347,7 +347,9 @@ def resolve_export_asset_name(context: bpy.types.Context | None, props: object =
         except ImportError:
             from core.asset_scanner import resolve_effective_asset_name
 
-        raw_name = resolve_effective_asset_name(context, props_obj)
+        bdata = getattr(context, "blend_data", None)
+        if bdata is not None:
+            raw_name = resolve_effective_asset_name(context, props_obj, blend_data=bdata)
     except (ImportError, AttributeError, TypeError, ValueError) as e:
         logger.debug("Failed resolving effective asset name: %s", e)
     if not raw_name or raw_name in ("AUTO", "NONE", "Asset"):
@@ -399,29 +401,35 @@ class PreFlightValidator:
 
         # Pivot / origin matching (single-object tiers)
         lod0_objs = payload.lod_tiers.get(0, [])
-        if lod0_objs and hasattr(lod0_objs[0], "matrix_world") and hasattr(lod0_objs[0].matrix_world, "translation"):
-            lod0_pivot = lod0_objs[0].matrix_world.translation
-            for i in range(len(props.lods)):
-                tier_objs = payload.lod_tiers.get(i, [])
-                if len(lod0_objs) == 1 and len(tier_objs) == 1:
-                    obj = tier_objs[0]
-                    if hasattr(obj, "matrix_world") and hasattr(obj.matrix_world, "translation"):
-                        if (obj.matrix_world.translation - lod0_pivot).length > 1e-4:
+        if lod0_objs and lod0_objs[0] is not None:
+            try:
+                lod0_pivot = lod0_objs[0].matrix_world.translation
+                for i in range(len(props.lods)):
+                    tier_objs = payload.lod_tiers.get(i, [])
+                    if len(lod0_objs) == 1 and len(tier_objs) == 1:
+                        obj = tier_objs[0]
+                        if obj is not None and (obj.matrix_world.translation - lod0_pivot).length > 1e-4:
                             errors.append(f"LOD{i} origin does not match LOD0 pivot.")
+            except (AttributeError, TypeError):
+                pass
 
         # Scale application check
         for i in range(len(props.lods)):
             for obj in payload.lod_tiers.get(i, []):
-                scale = getattr(obj, "scale", None)
-                if scale:
-                    sx = getattr(scale, "x", scale[0] if isinstance(scale, (list, tuple)) else 1.0)
-                    sy = getattr(scale, "y", scale[1] if isinstance(scale, (list, tuple)) else 1.0)
-                    sz = getattr(scale, "z", scale[2] if isinstance(scale, (list, tuple)) else 1.0)
-                    if abs(sx - 1.0) > 1e-4 or abs(sy - 1.0) > 1e-4 or abs(sz - 1.0) > 1e-4:
-                        errors.append(
-                            f"LOD{i} has unapplied scale ({round(sx, 2)}, {round(sy, 2)}, {round(sz, 2)}). Apply transforms."
-                        )
-                        break
+                if obj is not None and getattr(obj, "scale", None) is not None:
+                    try:
+                        scale = obj.scale
+                        if hasattr(scale, "x"):
+                            sx, sy, sz = float(scale.x), float(scale.y), float(scale.z)
+                        else:
+                            sx, sy, sz = float(scale[0]), float(scale[1]), float(scale[2])
+                        if abs(sx - 1.0) > 1e-4 or abs(sy - 1.0) > 1e-4 or abs(sz - 1.0) > 1e-4:
+                            errors.append(
+                                f"LOD{i} has unapplied scale ({round(sx, 2)}, {round(sy, 2)}, {round(sz, 2)}). Apply transforms."
+                            )
+                            break
+                    except (IndexError, TypeError, ValueError):
+                        pass
 
         # Material checks
         if len(lod0_objs) == 1:

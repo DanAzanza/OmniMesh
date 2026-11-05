@@ -63,7 +63,7 @@ def create_interaction_volume(
     size: Sequence[float] = (0.08, 0.08, 0.08),
     parent_obj: Optional[bpy.types.Object] = None,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> Optional[bpy.types.Object]:
     """
     Spawns a lightweight non-blocking interaction trigger volume into {AssetName}_Interactions.

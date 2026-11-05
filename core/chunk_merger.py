@@ -44,7 +44,7 @@ class HLODClusterMerger:
         target_collection: bpy.types.Collection | None,
         weld_dist: float = 0.002,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bpy.types.Object | None:
         """
         Combines child chunk objects into a single unified mesh,

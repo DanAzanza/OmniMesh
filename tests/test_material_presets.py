@@ -241,9 +241,10 @@ def test_assign_material_to_objects():
 
 def test_create_material_preset_without_blend_data_fails_closed(monkeypatch):
     """Verify calling create_or_update_material_preset without blend_data fails closed returning None."""
+    from typing import Any, cast
 
     monkeypatch.setattr(mp, "bpy", MagicMock())
 
-    mat = create_or_update_material_preset("FailMat", "PBR_STANDARD", blend_data=None)
+    mat = create_or_update_material_preset("FailMat", "PBR_STANDARD", blend_data=cast(Any, None))
 
     assert mat is None

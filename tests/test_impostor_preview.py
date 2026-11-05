@@ -19,14 +19,17 @@ from core.impostor_preview import (
 
 def test_preview_rig_headless_safety():
     """Verify that all preview rig functions fail safely and gracefully without throwing errors in headless/no-bpy environments."""
-    assert safe_load_image("") is None
-    assert safe_load_image("non_existent_path.png") is None
+    from tests.conftest import MockBlendData
 
-    assert setup_impostor_tracking(None) is None
-    assert setup_preview_turntable(None, (0.0, 0.0, 0.0), 5.0, 2.0) is False
+    bdata = MockBlendData()
+    assert safe_load_image("", blend_data=bdata) is None
+    assert safe_load_image("non_existent_path.png", blend_data=bdata) is None
 
-    assert setup_impostor_preview_rig(None, [], "Test", "/tmp") == {}
-    assert teardown_impostor_preview_rig(None, "Test") is False
+    assert setup_impostor_tracking(None, blend_data=bdata) is None
+    assert setup_preview_turntable(None, (0.0, 0.0, 0.0), 5.0, 2.0, blend_data=bdata) is False
+
+    assert setup_impostor_preview_rig(None, [], "Test", "/tmp", blend_data=bdata) == {}
+    assert teardown_impostor_preview_rig(None, "Test", blend_data=bdata) is False
 
     from ui.impostor_viewport_ops import (
         is_impostor_viewport_timer_running,
@@ -137,12 +140,13 @@ def test_mock_preview_material_construction(monkeypatch):
 
 def test_impostor_preview_pure_di_missing_blend_data_fails_closed():
     """Verify pure DI fail-closed invariants when blend_data is None."""
+    from typing import Any, cast
     import core.impostor_preview as preview_mod
 
-    assert preview_mod.safe_load_image("dummy.png", blend_data=None) is None
-    assert preview_mod.create_octahedral_preview_material("M_Fail", "dummy.png", blend_data=None) is None
-    assert preview_mod.setup_impostor_preview_rig(None, [], "Test", "/tmp", blend_data=None) == {}
-    assert preview_mod.teardown_impostor_preview_rig(None, "Test", blend_data=None) is False
+    assert preview_mod.safe_load_image("dummy.png", blend_data=cast(Any, None)) is None
+    assert preview_mod.create_octahedral_preview_material("M_Fail", "dummy.png", blend_data=cast(Any, None)) is None
+    assert preview_mod.setup_impostor_preview_rig(None, [], "Test", "/tmp", blend_data=cast(Any, None)) == {}
+    assert preview_mod.teardown_impostor_preview_rig(None, "Test", blend_data=cast(Any, None)) is False
 
 
 def test_impostor_preview_pure_di_lifecycle_with_mock_blend_data(tmp_path, monkeypatch):

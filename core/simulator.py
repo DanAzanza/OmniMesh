@@ -46,18 +46,26 @@ def calculate_effective_distance_pure(
     safe_radius = max(0.0, r_val)
 
     try:
-        cx = center[0] if isinstance(center, (list, tuple)) else getattr(center, "x", 0.0)
-        cy = center[1] if isinstance(center, (list, tuple)) else getattr(center, "y", 0.0)
-        cz = center[2] if isinstance(center, (list, tuple)) else getattr(center, "z", 0.0)
-    except (IndexError, TypeError, AttributeError):
-        cx, cy, cz = 0.0, 0.0, 0.0
+        c_seq = cast("Sequence[float] | Vector", center)
+        cx, cy, cz = float(c_seq[0]), float(c_seq[1]), float(c_seq[2])
+    except (IndexError, TypeError, KeyError):
+        try:
+            cx = float(getattr(center, "x", 0.0))
+            cy = float(getattr(center, "y", 0.0))
+            cz = float(getattr(center, "z", 0.0))
+        except (AttributeError, TypeError):
+            cx, cy, cz = 0.0, 0.0, 0.0
 
     try:
-        px = cam_pos[0] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "x", 0.0)
-        py = cam_pos[1] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "y", 0.0)
-        pz = cam_pos[2] if isinstance(cam_pos, (list, tuple)) else getattr(cam_pos, "z", 0.0)
-    except (IndexError, TypeError, AttributeError):
-        px, py, pz = 0.0, 0.0, 0.0
+        p_seq = cast("Sequence[float] | Vector", cam_pos)
+        px, py, pz = float(p_seq[0]), float(p_seq[1]), float(p_seq[2])
+    except (IndexError, TypeError, KeyError):
+        try:
+            px = float(getattr(cam_pos, "x", 0.0))
+            py = float(getattr(cam_pos, "y", 0.0))
+            pz = float(getattr(cam_pos, "z", 0.0))
+        except (AttributeError, TypeError):
+            px, py, pz = 0.0, 0.0, 0.0
 
     try:
         dx = float(px) - float(cx)
@@ -195,7 +203,7 @@ class LODAssetRecord:
         self.current_tier: int = 0
         self.is_valid: bool = False
 
-    def update_bounds_and_tiers(self, *, blend_data: BlendData | None = None) -> None:
+    def update_bounds_and_tiers(self, *, blend_data: BlendData) -> None:
         if not bpy:
             return
         bdata_cols = blend_data.collections if blend_data else None
@@ -249,7 +257,7 @@ class LODSimulatorEngine:
         cls,
         scene: bpy.types.Scene | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> int:
         if not bpy:
             return 0
@@ -413,7 +421,13 @@ class LODSimulatorEngine:
     _visibility_snapshot: dict[str, bool] = {}
 
     @classmethod
-    def evaluate_distance_scrub(cls, context: bpy.types.Context | None, distance_m: float) -> dict[str, Any]:
+    def evaluate_distance_scrub(
+        cls,
+        context: bpy.types.Context | None,
+        distance_m: float,
+        *,
+        blend_data: BlendData,
+    ) -> dict[str, Any]:
         """Evaluates and applies distance-based LOD tier visibility across tracked assets
 
         without requiring an active modal timer loop. Preserves previous visibility state
@@ -423,7 +437,7 @@ class LODSimulatorEngine:
             return {}
 
         if distance_m <= 0.0:
-            cls.reset_distance_scrub(context)
+            cls.reset_distance_scrub(context, blend_data=blend_data)
             return {}
 
         scene = getattr(context, "scene", None)
@@ -431,7 +445,7 @@ class LODSimulatorEngine:
             return {}
 
         if not cls._tracked_assets:
-            cls.index_scene_assets(scene)
+            cls.index_scene_assets(scene, blend_data=blend_data)
 
         if not cls._tracked_assets:
             return {}
@@ -449,15 +463,16 @@ class LODSimulatorEngine:
         space_3d = None
         region_3d = None
         region = None
-        wm = getattr(context, "window_manager", None)
-        if wm:
-            for window in getattr(wm, "windows", []):
+        wm = context.window_manager if context and hasattr(context, "window_manager") else None
+        if wm and getattr(wm, "windows", None):
+            for window in wm.windows:
                 screen = getattr(window, "screen", None)
-                if not screen:
+                if not screen or not getattr(screen, "areas", None):
                     continue
-                for area in getattr(screen, "areas", []):
+                for area in screen.areas:
                     if getattr(area, "type", "") == "VIEW_3D":
-                        space_3d = getattr(area.spaces, "active", None)
+                        spaces = getattr(area, "spaces", None)
+                        space_3d = getattr(spaces, "active", None) if spaces else None
                         for reg in getattr(area, "regions", []):
                             if getattr(reg, "type", "") == "WINDOW":
                                 region_3d = getattr(reg, "data", None)
@@ -529,7 +544,7 @@ class LODSimulatorEngine:
         cls,
         context: bpy.types.Context | None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> None:
         """Restores exact pre-scrub visibility state from snapshot."""
         if not bpy or not context:

@@ -95,7 +95,7 @@ class ProjectTextureRelinker:
         img: bpy.types.Image | None,
         blend_filepath: str | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bool:
         """Determines if a Blender Image datablock has valid pixel data or exists on disk."""
         if img is None:
@@ -130,7 +130,7 @@ class ProjectTextureRelinker:
         raw_filepath: str,
         blend_filepath: str | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> str:
         """Converts a Blender relative or absolute path into a normalized filesystem path."""
         if not raw_filepath:
@@ -319,7 +319,7 @@ class ProjectTextureRelinker:
         make_relative: bool = True,
         max_depth: int = 5,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> RelinkSummary:
         """Audits images and relinks any missing files discovered within search roots."""
         if not images or not search_roots:

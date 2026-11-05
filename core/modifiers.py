@@ -55,43 +55,42 @@ class ModifierManager:
             mod_synced = False
 
             # 1. Subsurf & Multires: sync render_levels to levels
-            if hasattr(mod, "levels") and hasattr(mod, "render_levels"):
+            if mod.type in ("SUBSURF", "MULTIRES"):
                 sub_mod = cast("bpy.types.SubsurfModifier", mod)
-                if sub_mod.render_levels != sub_mod.levels:
-                    try:
+                try:
+                    if sub_mod.render_levels != sub_mod.levels:
                         sub_mod.render_levels = sub_mod.levels
                         mod_synced = True
-                    except (TypeError, ValueError, AttributeError) as exc:
-                        logger.debug("Could not sync render_levels on %s: %s", mod.name, exc)
+                except (TypeError, ValueError, AttributeError) as exc:
+                    logger.debug("Could not sync render_levels on %s: %s", mod.name, exc)
 
             # 2. Screw: sync render_steps to steps
-            if hasattr(mod, "steps") and hasattr(mod, "render_steps"):
+            elif mod.type == "SCREW":
                 screw_mod = cast("bpy.types.ScrewModifier", mod)
-                if screw_mod.render_steps != screw_mod.steps:
-                    try:
+                try:
+                    if screw_mod.render_steps != screw_mod.steps:
                         screw_mod.render_steps = screw_mod.steps
                         mod_synced = True
-                    except (TypeError, ValueError, AttributeError) as exc:
-                        logger.debug("Could not sync render_steps on %s: %s", mod.name, exc)
+                except (TypeError, ValueError, AttributeError) as exc:
+                    logger.debug("Could not sync render_steps on %s: %s", mod.name, exc)
 
             # 3. Ocean: sync resolution to viewport_resolution
-            if hasattr(mod, "viewport_resolution") and hasattr(mod, "resolution"):
+            elif mod.type == "OCEAN":
                 ocean_mod = cast("bpy.types.OceanModifier", mod)
-                if ocean_mod.resolution != ocean_mod.viewport_resolution:
-                    try:
+                try:
+                    if ocean_mod.resolution != ocean_mod.viewport_resolution:
                         ocean_mod.resolution = ocean_mod.viewport_resolution
                         mod_synced = True
-                    except (TypeError, ValueError, AttributeError) as exc:
-                        logger.debug("Could not sync ocean resolution on %s: %s", mod.name, exc)
+                except (TypeError, ValueError, AttributeError) as exc:
+                    logger.debug("Could not sync ocean resolution on %s: %s", mod.name, exc)
 
             # 4. Global visibility: sync show_render to show_viewport
-            if hasattr(mod, "show_viewport") and hasattr(mod, "show_render"):
+            try:
                 if mod.show_render != mod.show_viewport:
-                    try:
-                        mod.show_render = mod.show_viewport
-                        mod_synced = True
-                    except (TypeError, ValueError, AttributeError) as exc:
-                        logger.debug("Could not sync show_render on %s: %s", mod.name, exc)
+                    mod.show_render = mod.show_viewport
+                    mod_synced = True
+            except (TypeError, ValueError, AttributeError) as exc:
+                logger.debug("Could not sync show_render on %s: %s", mod.name, exc)
 
             if mod_synced:
                 synced_count += 1

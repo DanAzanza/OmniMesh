@@ -179,6 +179,10 @@ class OMNIMESH_OT_initialize_asset(Operator):
         if self.configure_scene and hasattr(context, "scene"):
             configure_game_scene_settings(context.scene, context=context)
 
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
+
         # 2. Setup Standard Collections
         colls = setup_asset_collections(
             context,
@@ -190,6 +194,7 @@ class OMNIMESH_OT_initialize_asset(Operator):
                 create_config=self.create_config,
                 apply_color_tags=self.apply_color_tags,
             ),
+            blend_data=bdata,
         )
 
         if not colls or "root" not in colls:

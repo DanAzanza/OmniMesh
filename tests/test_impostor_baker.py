@@ -83,18 +83,22 @@ def test_impostor_atlas_tile_composition_and_dilation():
 
 
 def test_impostor_baker_null_safety():
+    from typing import Any, cast
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
     # Verify headless execution without blender runs cleanly without crashing
-    guard = EphemeralBakeSceneGuard()
+    guard = EphemeralBakeSceneGuard(blend_data=cast(Any, None))
     with guard as scene:
         assert scene is None
 
-    cam = ImpostorCameraRig.setup_camera(None, (0, 0, 0), 1.0, 2.0)
+    cam = ImpostorCameraRig.setup_camera(None, (0, 0, 0), 1.0, 2.0, blend_data=bdata)
     assert cam is None
 
-    mat = ImpostorShaderHarness.create_unlit_override_material(None)
+    mat = ImpostorShaderHarness.create_unlit_override_material(None, blend_data=bdata)
     assert mat is None
 
-    res = ImpostorAtlasBaker.bake_impostor_textures([], "TestAsset", "/tmp")
+    res = ImpostorAtlasBaker.bake_impostor_textures([], "TestAsset", "/tmp", blend_data=bdata)
     assert res == {}
 
 
@@ -129,17 +133,36 @@ def test_morphological_dilate_channels_preserves_zero_depth():
 def test_impostor_harness_depth_and_reexport():
     from core.impostor_harness import ImpostorShaderHarness as HarnessDirect
     from core.impostor_baker import ImpostorShaderHarness as HarnessReexport
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
 
     # Confirm backward compatibility of re-export
     assert HarnessDirect is HarnessReexport
 
     # Headless calls should return None safely
-    assert HarnessDirect.create_unlit_override_material(None, channel_layer="BASE_COLOR") is None
-    assert HarnessDirect.create_unlit_override_material(None, channel_layer="NORMAL", target_engine="UE5") is None
-    assert HarnessDirect.create_unlit_override_material(None, channel_layer="NORMAL", target_engine="UNITY") is None
-    assert HarnessDirect.create_unlit_override_material(None, channel_layer="DEPTH") is None
-    assert HarnessDirect.create_unlit_override_material(None, channel_layer="ORM", target_engine="UE5") is None
-    assert HarnessDirect.create_unlit_override_material(None, channel_layer="ORM", target_engine="UNITY") is None
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="BASE_COLOR", blend_data=bdata) is None
+    assert (
+        HarnessDirect.create_unlit_override_material(
+            None, channel_layer="NORMAL", target_engine="UE5", blend_data=bdata
+        )
+        is None
+    )
+    assert (
+        HarnessDirect.create_unlit_override_material(
+            None, channel_layer="NORMAL", target_engine="UNITY", blend_data=bdata
+        )
+        is None
+    )
+    assert HarnessDirect.create_unlit_override_material(None, channel_layer="DEPTH", blend_data=bdata) is None
+    assert (
+        HarnessDirect.create_unlit_override_material(None, channel_layer="ORM", target_engine="UE5", blend_data=bdata)
+        is None
+    )
+    assert (
+        HarnessDirect.create_unlit_override_material(None, channel_layer="ORM", target_engine="UNITY", blend_data=bdata)
+        is None
+    )
 
 
 def test_ue5_setup_guide_generation():

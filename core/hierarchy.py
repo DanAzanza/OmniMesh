@@ -143,7 +143,7 @@ class MeshMergeEngine:
         armature_obj: bpy.types.Object | None = None,
         pivot_obj: bpy.types.Object | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bpy.types.Object | None:
         """
         Merges multiple static and skinned meshes into a single optimized draw-call mesh
@@ -340,7 +340,7 @@ class CollectionCloneDAG:
         base_name: str,
         scene: bpy.types.Scene | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bpy.types.Collection | None:
         """
         Creates or retrieves a sibling collection for LOD tier i (e.g. Model_LOD1).
@@ -389,7 +389,7 @@ class CollectionCloneDAG:
         pivot_obj: bpy.types.Object | None = None,
         context: bpy.types.Context | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> dict[str, Any]:
         """
         Builds sibling collection hierarchy for tier_idx:
@@ -433,7 +433,7 @@ class CollectionCloneDAG:
         scene: bpy.types.Scene | None = None,
         context: bpy.types.Context | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> tuple[bpy.types.Collection | None, bpy.types.Object | None]:
         """
         Auto-wraps loose selected scene objects into a clean root Collection {base_name}
@@ -523,7 +523,7 @@ def get_or_create_engine_import_collection(
     use_lod0_suffix: bool = True,
     bpy_module: object = None,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> bpy.types.Collection | None:
     """Finds or creates a collection adhering to OmniMesh's neutral engine package hierarchy:
     {AssetName} -> {_Config (Spatial, Lights, Cameras), _LOD0..N, _Colliders}.
@@ -669,7 +669,7 @@ def safe_remove_collection_objects(
     bpy_module: object = None,
     predicate: Callable[[bpy.types.Object], bool] | None = None,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> int:
     """
     Safely and cleanly removes objects belonging to a collection and their unshared datablocks.

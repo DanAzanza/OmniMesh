@@ -70,9 +70,7 @@ class BatchMeshIterator:
         self.preserve_boundaries = preserve_boundaries
         self.planar_dissolve = planar_dissolve
 
-    def iterate(
-        self, context: Optional[bpy.types.Context] = None, *, blend_data: BlendData | None = None
-    ) -> Iterator[BatchProgress]:
+    def iterate(self, context: Optional[bpy.types.Context] = None, *, blend_data: BlendData) -> Iterator[BatchProgress]:
         """
         Yields BatchProgress for each mesh processed.
         Performs periodic orphan cleanup and explicit garbage collection.

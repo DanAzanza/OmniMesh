@@ -620,7 +620,7 @@ def resolve_impostor_export_dir(
     raw_dir: str = "",
     default_subfolder: str = "Textures",
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
     blend_filepath: str = "",
 ) -> str:
     """Safely resolves export directories handling Blender relative paths, unsaved scenes,

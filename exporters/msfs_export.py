@@ -18,7 +18,7 @@ import logging
 import os
 import re
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -312,12 +312,8 @@ class MSFSExporter(EngineExporterBase):
 
         # 2. Export Interior if present
         bdata_in = kwargs.get("blend_data")
-        bdata = (
-            bdata_in
-            if bdata_in is not None and hasattr(bdata_in, "collections")
-            else (getattr(context, "blend_data", None) if context else None)
-        )
-        bdata_cols = getattr(bdata, "collections", None) if bdata else None
+        bdata = bdata_in if bdata_in is not None else (getattr(context, "blend_data", None) if context else None)
+        bdata_cols = cast("BlendData", bdata).collections if bdata else None
 
         interior_name = f"{clean_base}_Interior"
         has_interior = False

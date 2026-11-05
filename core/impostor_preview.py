@@ -36,7 +36,7 @@ else:
     BlendData = object  # runtime fallback for type annotations
 
 
-def _resolve_scene(context: bpy.types.Context | None, blend_data: BlendData | None) -> bpy.types.Scene | None:
+def _resolve_scene(context: bpy.types.Context | None, blend_data: BlendData) -> bpy.types.Scene | None:
     if context and context.scene:
         return context.scene
     if blend_data and len(blend_data.scenes) > 0:
@@ -47,7 +47,7 @@ def _resolve_scene(context: bpy.types.Context | None, blend_data: BlendData | No
 def safe_load_image(
     filepath: str,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> Optional[bpy.types.Image]:
     """
     Loads an image from filepath while preventing duplicate datablocks in Blender.
@@ -90,7 +90,7 @@ def create_octahedral_preview_material(
     grid_size: int = 8,
     target_engine: str = "UE5",
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> Optional[bpy.types.Material]:
     """
     Constructs a native Blender Shader Node material that evaluates the upper-hemisphere
@@ -399,7 +399,7 @@ def setup_impostor_tracking(
     camera_obj: Optional[bpy.types.Object] = None,
     context: bpy.types.Context | None = None,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> Optional[bpy.types.Constraint]:
     """
     Configures a TRACK_TO constraint on the proxy quad to orient continuously toward the camera.
@@ -435,7 +435,7 @@ def setup_preview_turntable(
     num_frames: int = 72,
     context: bpy.types.Context | None = None,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> bool:
     """
     Keyframes an elevated circular camera orbit around target_center over frames 1..num_frames.
@@ -495,7 +495,7 @@ def setup_impostor_preview_rig(
     target_engine: str = "UE5",
     create_turntable: bool = False,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> dict[str, Any]:
     """
     Constructs an isolated, complete In-Blender preview test rig for Octahedral Impostors.
@@ -680,7 +680,7 @@ def teardown_impostor_preview_rig(
     context: bpy.types.Context | None,
     base_name: str,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> bool:
     """
     Cleanly destroys all preview rig elements and removes the '{base_name}_Preview_Rig' collection.

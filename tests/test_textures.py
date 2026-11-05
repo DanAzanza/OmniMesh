@@ -20,6 +20,7 @@ from PIL import Image
 from core.pbr_presets import PBRImporterPresetManager
 from core.shader_tracer import ShaderTracer
 from core.textures import TextureChannelPacker, TexturePoolManager, write_png_direct
+from tests.conftest import MockBlendData
 
 
 class DummySocket(_MockBase):
@@ -421,6 +422,7 @@ def test_pack_material_preset_ue5():
             bit_depth=8,
             strategy="CONVERT_PNG",
             naming_pattern="{asset}_{material}{suffix}",
+            blend_data=MockBlendData(),
         )
         assert len(futures) > 0
         results = TexturePoolManager.wait_all(futures, timeout=10.0)
@@ -430,7 +432,6 @@ def test_pack_material_preset_ue5():
         assert os.path.exists(orm_file)
         with Image.open(orm_file) as img:
             arr = np.asarray(img)
-            # In DummyMaterial: AO = 1.0 (255), Roughness = 0.25 (64), Metallic = 0.75 (191)
             assert np.allclose(arr[:, :, 0], 255, atol=1)
             assert np.allclose(arr[:, :, 1], 64, atol=1)
             assert np.allclose(arr[:, :, 2], 191, atol=1)
@@ -449,6 +450,7 @@ def test_pack_material_preset_16bit():
             bit_depth=16,
             strategy="CONVERT_PNG",
             naming_pattern="{material}{suffix}",
+            blend_data=MockBlendData(),
         )
         assert len(futures) > 0
         results = TexturePoolManager.wait_all(futures, timeout=10.0)
@@ -458,7 +460,7 @@ def test_pack_material_preset_16bit():
         assert os.path.exists(orm_file)
         with open(orm_file, "rb") as f:
             header = f.read(30)
-            assert header[24] == 16  # Bit depth is 16
+            assert header[24] == 16
 
 
 def test_pack_material_preset_passthrough():
@@ -473,6 +475,7 @@ def test_pack_material_preset_passthrough():
             target_size=(32, 32),
             bit_depth=8,
             strategy="PASSTHROUGH",
+            blend_data=MockBlendData(),
         )
         assert len(futures) > 0
         results = TexturePoolManager.wait_all(futures, timeout=10.0)
@@ -512,8 +515,7 @@ def test_trace_upstream_channel_decouple_ao():
 
 def test_bake_material_socket_graceful_fallback():
     mat = DummyMaterial()
-    # In headless non-interactive mode without active MESH object, bake must safely return None
-    result = TextureChannelPacker.bake_material_socket(mat, "Roughness", (32, 32))
+    result = TextureChannelPacker.bake_material_socket(mat, "Roughness", (32, 32), blend_data=MockBlendData())
     assert result is None
 
 
@@ -580,8 +582,9 @@ def test_pack_material_preset_dominant_resolution():
             preset=preset,
             export_dir=tmpdir,
             asset_name="SM_Dominant",
-            target_size=(32, 32),  # Target size is 32, but dominant image is 128!
+            target_size=(32, 32),
             strategy="SMART_AUTO",
+            blend_data=MockBlendData(),
         )
         assert len(futures) > 0
         results = TexturePoolManager.wait_all(futures, timeout=10.0)
@@ -737,13 +740,6 @@ def test_shader_tracer_pillow_absent_fallback_parity():
 def test_shader_tracer_bake_socket_di_without_bpy_data():
     """Verify bake_material_socket safely fails closed when images container is absent."""
     from unittest.mock import MagicMock
-    from tests.conftest import MockBlendData
 
-    bdata = MockBlendData()
-    mat = MagicMock()
-    mat.use_nodes = True
-    mat.node_tree = MagicMock()
-
-    # When no images or scene are available in bdata, returns None gracefully
-    result = ShaderTracer.bake_material_socket(mat, "Base Color", (32, 32), blend_data=bdata)
-    assert result is None
+    mat = MagicMock(use_nodes=True, node_tree=MagicMock())
+    assert ShaderTracer.bake_material_socket(mat, "Base Color", (32, 32), blend_data=MockBlendData()) is None

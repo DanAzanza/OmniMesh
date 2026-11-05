@@ -108,9 +108,11 @@ def on_target_engine_updated(self: Any, context: Any) -> None:
                 from core.project_detector import detect_engine_project
 
             engine = getattr(self, "target_engine", "UE5")
-            detected = detect_engine_project(self.export_directory, engine)
-            if detected and getattr(self, "engine_project_path", "") != detected:
-                self.engine_project_path = detected
+            bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+            if bdata is not None:
+                detected = detect_engine_project(self.export_directory, engine, blend_data=bdata)
+                if detected and getattr(self, "engine_project_path", "") != detected:
+                    self.engine_project_path = detected
         except Exception as exc:
             logger.debug("Auto engine project detection skipped: %s", exc)
     update_bridge_status_cached(self, context)
@@ -252,10 +254,12 @@ def on_export_directory_updated(self: Any, context: Any) -> None:
             from core.project_detector import detect_engine_project
 
         engine = getattr(self, "target_engine", "UE5")
-        detected = detect_engine_project(val, engine)
-        if detected and getattr(self, "engine_project_path", "") != detected:
-            self.engine_project_path = detected
-            update_bridge_status_cached(self, context)
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is not None:
+            detected = detect_engine_project(val, engine, blend_data=bdata)
+            if detected and getattr(self, "engine_project_path", "") != detected:
+                self.engine_project_path = detected
+                update_bridge_status_cached(self, context)
     except Exception as exc:
         logger.debug("Project auto-detection on export dir update: %s", exc)
 
@@ -657,8 +661,11 @@ def on_virtual_distance_updated(self: Any, context: Any) -> None:
     except (ImportError, ValueError):
         from core.simulator import LODSimulatorEngine
 
+    bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+    if bdata is None:
+        return
     dist = float(getattr(self, "virtual_distance_override", 0.0))
-    summary = LODSimulatorEngine.evaluate_distance_scrub(context, dist)
+    summary = LODSimulatorEngine.evaluate_distance_scrub(context, dist, blend_data=bdata)
     if summary:
         props.last_scrub_status = f"Active: {summary['root_name']} (LOD{summary['current_tier']}, {summary['active_tris']:,} tris, {summary['distance_m']:.1f}m)"
     else:

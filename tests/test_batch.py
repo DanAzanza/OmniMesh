@@ -58,21 +58,24 @@ def test_batch_processor_single_asset_no_bpy():
         context=None,
         filepath="dummy_path.fbx",
         export_base_dir="dummy_export",
+        blend_data=MockBlendData(),
     )
     assert res["success"] is False
     assert "Blender" in res["message"] or "not available" in res["message"]
 
 
 def test_batch_processor_import_asset_file_guards():
-    assert BatchProcessorEngine.import_asset_file("") == []
-    assert BatchProcessorEngine.import_asset_file("non_existent_path.fbx") == []
+    bdata = MockBlendData()
+    assert BatchProcessorEngine.import_asset_file("", blend_data=bdata) == []
+    assert BatchProcessorEngine.import_asset_file("non_existent_path.fbx", blend_data=bdata) == []
 
 
 def test_batch_processor_cleanup_imported_objects():
+    bdata = MockBlendData()
     # Should not throw on empty/None
-    BatchProcessorEngine.cleanup_imported_objects([])
+    BatchProcessorEngine.cleanup_imported_objects([], blend_data=bdata)
     empty_obj = type("MockEmpty", (), {"name": "EmptyObj", "type": "EMPTY", "data": None})()
-    BatchProcessorEngine.cleanup_imported_objects(cast(Any, [None, empty_obj]))
+    BatchProcessorEngine.cleanup_imported_objects(cast(Any, [None, empty_obj]), blend_data=bdata)
 
     # Test explicit BlendData dependency injection cleanup
     bdata = MockBlendData()

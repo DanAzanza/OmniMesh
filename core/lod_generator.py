@@ -10,7 +10,7 @@ from .exceptions import OmniMeshError
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, Sequence, cast
 
 
 class LODSettingsProtocol(Protocol):
@@ -64,20 +64,23 @@ def _count_triangles(mesh_data: bpy.types.Mesh | bmesh.types.BMesh | object | No
     """Computes true triangle count in O(1) via loop-poly invariant with safe fallback."""
     if not mesh_data:
         return 0
-    loops = getattr(mesh_data, "loops", None)
-    polys = getattr(mesh_data, "polygons", None)
-    if loops is not None and polys is not None:
-        n_loops = len(loops)
-        n_polys = len(polys)
-        return max(0, n_loops - 2 * n_polys) if n_polys > 0 else 0
-    if polys is not None:
-        try:
-            return sum(max(0, len(getattr(p, "vertices", [])) - 2) for p in polys)
-        except (TypeError, AttributeError):
-            return len(polys)
-    faces = getattr(mesh_data, "faces", None)
-    if faces is not None:
-        return len(faces)
+    try:
+        loops = mesh_data.loops  # type: ignore[union-attr]
+        polys = mesh_data.polygons  # type: ignore[union-attr]
+        if loops is not None and polys is not None:
+            n_loops = len(loops)
+            n_polys = len(polys)
+            return max(0, n_loops - 2 * n_polys) if n_polys > 0 else 0
+        if polys is not None:
+            return sum(max(0, len(cast("Sequence[int]", p.vertices)) - 2) for p in polys)
+    except (AttributeError, TypeError):
+        pass
+    try:
+        faces = mesh_data.faces  # type: ignore[union-attr]
+        if faces is not None:
+            return len(faces)
+    except (AttributeError, TypeError):
+        pass
     return 0
 
 
@@ -118,7 +121,7 @@ def _process_merged_tier(
     ref_merged_obj: bpy.types.Object | None = None,
     context: bpy.types.Context | None = None,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> tuple[int, int, int, bpy.types.Object | None]:
     """Processes a merged LOD tier, combining meshes and applying decimation pipeline."""
     tier = tier_in
@@ -223,7 +226,7 @@ def _process_merged_tier(
         if not target_ref:
             ref_merged_name = f"__OM_Ref_Merged_LOD0_{tier_idx}__"
             target_ref = MeshMergeEngine.consolidate_and_merge_meshes(
-                mesh_objs, ref_merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot
+                mesh_objs, ref_merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot, blend_data=bdata
             )
             owned_ref = True
         NormalManager.reproject_custom_split_normals(tier_obj, target_ref, tolerances["delta_world"], context=context)
@@ -298,7 +301,7 @@ def _process_unmerged_tier(
     max_influences: int,
     context: bpy.types.Context | None = None,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> tuple[int, int, int, bpy.types.Object | None]:
     """Processes an unmerged multi-mesh LOD tier, decimating each object individually."""
     tier = tier_in
@@ -453,7 +456,7 @@ def generate_all_lods(
     base_name: str = "",
     only_out_of_sync: bool = False,
     *,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> tuple[bool, str]:
     """
     Execute the full multi-tier LOD generation pipeline across selected meshes.
@@ -576,6 +579,7 @@ def generate_all_lods(
                     armature_obj=armature_obj,
                     pivot_obj=root_pivot,
                     context=context,
+                    blend_data=bdata,
                 )
                 tier_pivot = dag_info.get("pivot")
 

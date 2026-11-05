@@ -249,7 +249,7 @@ class AnimationRigSanitizer:
         bake_step: float = 1.0,
         keyframe_reduction_tolerance: float = 0.0,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> Optional[bpy.types.Action]:
         """Bakes evaluated depsgraph world matrices of all deforming bones into a clean FK Action.
 
@@ -263,7 +263,7 @@ class AnimationRigSanitizer:
         if source_armature.type != "ARMATURE":
             return None
 
-        scene = context.scene if hasattr(context, "scene") else None
+        scene = context.scene if context else None
         if not scene:
             return None
 

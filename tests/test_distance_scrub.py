@@ -52,10 +52,12 @@ class MockCollection(_MockBase):
 
 def test_distance_scrub_empty_tracked_assets():
     """Verify distance scrubber handles unindexed scenes cleanly without exception."""
+    from tests.conftest import MockBlendData
+
     LODSimulatorEngine._tracked_assets.clear()
     LODSimulatorEngine._visibility_snapshot.clear()
     ctx = MagicMock()
-    res = LODSimulatorEngine.evaluate_distance_scrub(ctx, distance_m=25.0)
+    res = LODSimulatorEngine.evaluate_distance_scrub(ctx, distance_m=25.0, blend_data=MockBlendData())
     assert res == {}
 
 
@@ -108,7 +110,7 @@ def test_distance_scrub_differential_visibility_and_snapshot():
 
     try:
         # Step A: Scrub to a close distance (e.g. 5m -> LOD0)
-        res_close = LODSimulatorEngine.evaluate_distance_scrub(mock_context, distance_m=5.0)
+        res_close = LODSimulatorEngine.evaluate_distance_scrub(mock_context, distance_m=5.0, blend_data=mock_bpy.data)
         assert res_close["root_name"] == "Hero_Asset"
         assert res_close["current_tier"] == 0
         assert obj_lod0.hide_get() is False
@@ -121,14 +123,14 @@ def test_distance_scrub_differential_visibility_and_snapshot():
         assert LODSimulatorEngine._visibility_snapshot["Hero_LOD1"] is True
 
         # Step B: Scrub to distant range (e.g. 150m -> LOD2)
-        res_far = LODSimulatorEngine.evaluate_distance_scrub(mock_context, distance_m=150.0)
+        res_far = LODSimulatorEngine.evaluate_distance_scrub(mock_context, distance_m=150.0, blend_data=mock_bpy.data)
         assert res_far["current_tier"] == 2
         assert obj_lod0.hide_get() is True
         assert obj_lod1.hide_get() is True
         assert obj_lod2.hide_get() is False
 
         # Step C: Return to 0.0m (Scrub reset)
-        res_reset = LODSimulatorEngine.evaluate_distance_scrub(mock_context, distance_m=0.0)
+        res_reset = LODSimulatorEngine.evaluate_distance_scrub(mock_context, distance_m=0.0, blend_data=mock_bpy.data)
         assert res_reset == {}
         # Snapshot must be cleared and original visibility restored
         assert len(LODSimulatorEngine._visibility_snapshot) == 0
@@ -145,16 +147,18 @@ def test_distance_scrub_differential_visibility_and_snapshot():
 def test_distance_scrub_headless_safety():
     """Verify evaluate_distance_scrub handles None/headless contexts without throwing errors."""
     import core.simulator as sim_mod
+    from tests.conftest import MockBlendData
 
+    bdata = MockBlendData()
     orig_bpy = sim_mod.bpy
     sim_mod.bpy = MagicMock()
     try:
         # None context
-        assert LODSimulatorEngine.evaluate_distance_scrub(None, distance_m=50.0) == {}
+        assert LODSimulatorEngine.evaluate_distance_scrub(None, distance_m=50.0, blend_data=bdata) == {}
 
         # Context with no scene
         ctx_no_scene = MagicMock()
         ctx_no_scene.scene = None
-        assert LODSimulatorEngine.evaluate_distance_scrub(ctx_no_scene, distance_m=50.0) == {}
+        assert LODSimulatorEngine.evaluate_distance_scrub(ctx_no_scene, distance_m=50.0, blend_data=bdata) == {}
     finally:
         sim_mod.bpy = orig_bpy

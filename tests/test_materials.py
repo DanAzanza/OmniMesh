@@ -233,7 +233,10 @@ def test_material_protection_keywords():
 
 
 def test_clean_materials_full_null_and_summary():
-    stats = MaterialOptimizer.clean_materials_full([])
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
+    stats = MaterialOptimizer.clean_materials_full([], blend_data=bdata)
     assert stats["slots_removed"] == 0
     assert stats["faces_remapped"] == 0
     assert stats["consolidated_slots"] == 0
@@ -248,7 +251,7 @@ def test_clean_materials_full_null_and_summary():
         deduplicate_slots=True,
         merge_duplicate_datablocks=False,
     )
-    stats2 = MaterialOptimizer.clean_materials_full([], options=options)
+    stats2 = MaterialOptimizer.clean_materials_full([], options=options, blend_data=bdata)
     assert stats2["slots_removed"] == 0
 
 
@@ -371,5 +374,7 @@ def test_material_optimizer_pure_di():
     assert MaterialOptimizer.clean_orphan_shader_nodes(None, blend_data=bdata) == 0
 
     # Test None guards
-    assert MaterialOptimizer.merge_duplicate_materials_scene(blend_data=None) == 0
-    assert MaterialOptimizer.purge_orphan_materials(blend_data=None) == 0
+    from typing import Any, cast
+
+    assert MaterialOptimizer.merge_duplicate_materials_scene(blend_data=cast(Any, None)) == 0
+    assert MaterialOptimizer.purge_orphan_materials(blend_data=cast(Any, None)) == 0

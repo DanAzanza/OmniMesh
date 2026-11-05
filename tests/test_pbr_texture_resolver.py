@@ -216,10 +216,13 @@ def test_resolve_material_textures_relinks_and_reports_unresolved():
 
         mat = MockMaterial("FUSELAGE", MockNodeTree([node_albd, node_norm]))
 
+        from tests.conftest import MockBlendData
+
         summary = PBRTextureResolver.resolve_material_textures(
             materials=[mat],  # type: ignore
             search_roots=[temp_dir],
             asset_name="SimpleAircraft",
+            blend_data=MockBlendData(),
         )
 
         assert isinstance(summary, TextureResolutionSummary)
@@ -251,10 +254,13 @@ def test_resolve_material_textures_ignores_unassigned_optional_slots():
 
         mat = MockMaterial("FUSELAGE", MockNodeTree([node_detail, node_mask]))
 
+        from tests.conftest import MockBlendData
+
         summary = PBRTextureResolver.resolve_material_textures(
             materials=[mat],  # type: ignore
             search_roots=[temp_dir],
             asset_name="SimpleAircraft",
+            blend_data=MockBlendData(),
         )
 
         assert isinstance(summary, TextureResolutionSummary)

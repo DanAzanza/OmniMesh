@@ -239,7 +239,7 @@ class MeshChunkSlicer:
         partitioning_mode: str = "UNIFORM_GRID",
         target_cluster_polys: int = 50000,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> list[bpy.types.Object]:
         """
         Slices source mesh along grid planes using BMesh, extracts non-empty cell chunks,
@@ -393,7 +393,7 @@ class MeshChunkSlicer:
         target_collection: bpy.types.Collection | None,
         grid_spec: SpatialGridSpec,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bpy.types.Object | None:
         """Extracts specified face indices from sliced BMesh into an independent mesh object."""
         if not bpy or not bmesh:

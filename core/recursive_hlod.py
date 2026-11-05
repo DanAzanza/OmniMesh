@@ -137,7 +137,7 @@ class RecursiveHLODManager:
         voxel_size: float = 0.5,
         context: bpy.types.Context | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> list[bpy.types.Object]:
         """
         Merges chunk clusters for a specific HLOD tier, recents pivots stationary,
@@ -233,7 +233,7 @@ class RecursiveHLODManager:
         voxel_size_m: float = 0.5,
         context: bpy.types.Context | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bool:
         """
         Evaluates a watertight voxel remesh modifier via depsgraph (without UI bpy.ops context crash),

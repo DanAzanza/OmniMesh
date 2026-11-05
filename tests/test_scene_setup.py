@@ -267,6 +267,7 @@ def test_setup_asset_collections_hierarchy():
             apply_color_tags=True,
         ),
         bpy_module=dummy_bpy,
+        blend_data=dummy_bpy.data,
     )
 
     assert "root" in colls
@@ -321,6 +322,7 @@ def test_assign_objects_to_asset_hierarchy():
             create_config=True,
         ),
         bpy_module=dummy_bpy,
+        blend_data=dummy_bpy.data,
     )
 
     # Prepare loose objects in scene collection

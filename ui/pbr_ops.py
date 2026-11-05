@@ -169,6 +169,10 @@ class LOD_OT_import_pbr_set(Operator):
         preset_id = getattr(props, "pbr_import_preset", "") if props else DEFAULT_PRESET_ID
         preset = PBRImportPresetManager.get_preset(preset_id)
 
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
+
         # 4. Resolve textures across material nodes
         summary = PBRTextureResolver.resolve_material_textures(
             materials=unique_materials,
@@ -177,6 +181,7 @@ class LOD_OT_import_pbr_set(Operator):
             preset=preset,
             blend_filepath=blend_file,
             make_relative=True,
+            blend_data=bdata,
         )
 
         # 5. Populate shader graphs for materials with 0 texture nodes if matching folder textures exist
@@ -195,7 +200,6 @@ class LOD_OT_import_pbr_set(Operator):
                         if not tex_nodes:
                             matched = BatchMaterialSlotMatcher.match_directory_to_slots(obj, primary_dir, preset=preset)
                             if matched and slot.name in matched:
-                                bdata = getattr(context, "blend_data", None)
                                 if ShaderGraphBuilder.build_pbr_graph(
                                     mat,
                                     matched[slot.name],
@@ -325,7 +329,9 @@ class LOD_OT_auto_match_pbr_folder(Operator):
                     else:
                         active_obj.data.materials.append(slot_mat)
 
-            bdata = getattr(context, "blend_data", None)
+            bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+            if bdata is None:
+                continue
             if ShaderGraphBuilder.build_pbr_graph(
                 slot_mat,
                 tex_dict,

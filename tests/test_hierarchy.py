@@ -78,16 +78,22 @@ def test_get_rest_world_matrix_for_static_missing_bone():
 
 
 def test_consolidate_and_merge_meshes_null_or_empty():
-    assert MeshMergeEngine.consolidate_and_merge_meshes([], "Merged") is None
-    assert MeshMergeEngine.consolidate_and_merge_meshes(cast(Any, None), "Merged") is None
-    assert MeshMergeEngine.consolidate_and_merge_meshes(cast(Any, [None, object()]), "Merged") is None
+    bdata = MockBlendData()
+    assert MeshMergeEngine.consolidate_and_merge_meshes([], "Merged", blend_data=cast(Any, bdata)) is None
+    assert MeshMergeEngine.consolidate_and_merge_meshes(cast(Any, None), "Merged", blend_data=cast(Any, bdata)) is None
+    assert (
+        MeshMergeEngine.consolidate_and_merge_meshes(cast(Any, [None, object()]), "Merged", blend_data=cast(Any, bdata))
+        is None
+    )
 
 
 def test_consolidate_and_merge_meshes_missing_blend_data_fails_closed():
     """Verify consolidate_and_merge_meshes returns None when blend_data is omitted."""
     dummy_mesh_obj = DummyObject([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
     dummy_mesh_obj.data = object()
-    res = MeshMergeEngine.consolidate_and_merge_meshes([cast(Any, dummy_mesh_obj)], "Merged", blend_data=None)
+    res = MeshMergeEngine.consolidate_and_merge_meshes(
+        [cast(Any, dummy_mesh_obj)], "Merged", blend_data=cast(Any, None)
+    )
     assert res is None
 
 
@@ -111,7 +117,9 @@ def test_collection_clone_dag_sibling_collection_lifecycle():
     assert c1_cached is c1
 
     # 4. Missing blend_data fails closed
-    assert CollectionCloneDAG.get_or_create_sibling_collection(root_c, 2, "Aircraft", blend_data=None) is None
+    assert (
+        CollectionCloneDAG.get_or_create_sibling_collection(root_c, 2, "Aircraft", blend_data=cast(Any, None)) is None
+    )
 
 
 def test_collection_clone_dag_wrap_loose_objects():

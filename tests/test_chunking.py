@@ -155,10 +155,12 @@ def test_recenter_pivot_stationary_logic():
 
 
 def test_hlod_cluster_merger_guards():
-    assert HLODClusterMerger.merge_chunks_for_hlod([], "Test", None) is None
     from typing import Any, cast
+    from tests.conftest import MockBlendData
 
-    assert HLODClusterMerger.merge_chunks_for_hlod(cast(Any, [None]), "Test", None) is None
+    bdata = MockBlendData()
+    assert HLODClusterMerger.merge_chunks_for_hlod([], "Test", None, blend_data=bdata) is None
+    assert HLODClusterMerger.merge_chunks_for_hlod(cast(Any, [None]), "Test", None, blend_data=bdata) is None
 
 
 def test_lock_chunk_boundaries_guard():
@@ -223,8 +225,9 @@ def test_adaptive_cell_clustering_logic():
 def test_mesh_chunk_slicer_di_without_bpy_data():
     """Verify slice_and_partition handles missing bpy/blend_data gracefully."""
     from core.chunking import MeshChunkSlicer, SpatialGridSpec
+    from tests.conftest import MockBlendData
 
     grid = SpatialGridSpec(num_cells_x=2, num_cells_y=2, num_cells_z=1)
     # When source_obj is None or invalid, returns empty list without error
-    chunks = MeshChunkSlicer.slice_and_partition(None, grid, "Test", None)
+    chunks = MeshChunkSlicer.slice_and_partition(None, grid, "Test", None, blend_data=MockBlendData())
     assert chunks == []

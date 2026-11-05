@@ -12,7 +12,7 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Sequence, cast
 
 if TYPE_CHECKING:
     import bpy
@@ -90,13 +90,12 @@ class PBRTextureResolver:
     @staticmethod
     def deduce_texture_type_from_sockets(node: bpy.types.Node) -> str:
         """Traces downstream node sockets to infer the semantic texture map type."""
-        for out_sock in getattr(node, "outputs", []):
-            links = getattr(out_sock, "links", [])
-            for link in links:
-                to_sock = getattr(link, "to_socket", None)
-                sock_name = getattr(to_sock, "name", "").lower()
-                to_node = getattr(link, "to_node", None)
-                node_type = getattr(to_node, "type", "")
+        for out_sock in node.outputs if node and node.outputs else ():
+            for link in out_sock.links if out_sock and out_sock.links else ():
+                to_sock = link.to_socket
+                sock_name = to_sock.name.lower() if to_sock else ""
+                to_node = link.to_node
+                node_type = to_node.type if to_node else ""
 
                 if "base color" in sock_name or "color" in sock_name:
                     return "ALBEDO"
@@ -142,11 +141,11 @@ class PBRTextureResolver:
         visited_trees.add(tree_id)
 
         results: list[bpy.types.ShaderNodeTexImage] = []
-        for node in getattr(node_tree, "nodes", []):
-            if getattr(node, "type", "") == "TEX_IMAGE":
+        for node in node_tree.nodes if node_tree and node_tree.nodes else ():
+            if node.type == "TEX_IMAGE":
                 results.append(node)  # type: ignore[arg-type]
-            elif getattr(node, "type", "") == "GROUP":
-                nested_tree = getattr(node, "node_tree", None)
+            elif node.type == "GROUP":
+                nested_tree = cast("bpy.types.ShaderNodeGroup", node).node_tree
                 if nested_tree:
                     results.extend(PBRTextureResolver.extract_all_texture_nodes(nested_tree, visited_trees))
 
@@ -246,7 +245,7 @@ class PBRTextureResolver:
         make_relative: bool = True,
         max_depth: int = 5,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> TextureResolutionSummary:
         """Audits all ShaderNodeTexImage nodes in materials and resolves missing textures from search roots."""
         if not materials or not search_roots:
@@ -283,7 +282,9 @@ class PBRTextureResolver:
                 img = getattr(node, "image", None)
 
                 # 1. Path already valid?
-                if img is not None and ProjectTextureRelinker.is_image_valid(img, blend_filepath):
+                if img is not None and ProjectTextureRelinker.is_image_valid(
+                    img, blend_filepath, blend_data=blend_data
+                ):
                     total_checked += 1
                     already_valid += 1
                     continue
@@ -378,12 +379,12 @@ class PBRTextureResolver:
         seen: set[str] = set()
 
         for obj in objects:
-            if not obj or getattr(obj, "type", "") != "MESH":
+            if not obj or obj.type != "MESH":
                 continue
-            for slot in getattr(obj, "material_slots", []):
-                mat = getattr(slot, "material", None)
+            for slot in obj.material_slots if obj and obj.material_slots else ():
+                mat = slot.material
                 if mat is not None:
-                    mat_name = getattr(mat, "name", "")
+                    mat_name = mat.name
                     if mat_name and mat_name not in seen:
                         seen.add(mat_name)
                         mats.append(mat)

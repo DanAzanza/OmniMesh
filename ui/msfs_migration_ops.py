@@ -102,15 +102,21 @@ class OMNIMESH_OT_convert_asobo_hierarchy(Operator):
         if not asset_name:
             asset_name = "MSFS_Asset"
 
-        get_or_create_engine_import_collection(context, asset_name, "ROOT")
-        get_or_create_engine_import_collection(context, asset_name, "CONFIG")
-        helpers_col = get_or_create_engine_import_collection(context, asset_name, "HELPERS")
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
+
+        get_or_create_engine_import_collection(context, asset_name, "ROOT", blend_data=bdata)
+        get_or_create_engine_import_collection(context, asset_name, "CONFIG", blend_data=bdata)
+        helpers_col = get_or_create_engine_import_collection(context, asset_name, "HELPERS", blend_data=bdata)
 
         migrated_objects_count = 0
 
         for tier_idx, _sub_name, old_col in sorted(asobo_colls, key=lambda x: x[0]):
             target_lod_role = f"LOD{tier_idx}"
-            target_lod_col = get_or_create_engine_import_collection(context, asset_name, target_lod_role)
+            target_lod_col = get_or_create_engine_import_collection(
+                context, asset_name, target_lod_role, blend_data=bdata
+            )
 
             for obj in list(getattr(old_col, "objects", [])):
                 obj_name_upper = getattr(obj, "name", "").upper()
@@ -182,6 +188,7 @@ class OMNIMESH_OT_convert_asobo_hierarchy(Operator):
                     search_roots=relink_roots,
                     blend_filepath=blend_file,
                     make_relative=True,
+                    blend_data=bdata,
                 )
                 if summary.relinked > 0:
                     relink_suffix = f" ({summary.relinked} textures relinked)"

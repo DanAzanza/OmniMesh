@@ -117,7 +117,7 @@ class GLTFAssemblyEngine:
         asset_name: str = "",
         is_interior: bool = False,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> list[bpy.types.Object]:
         """Imports a glTF file into target_collection while strictly isolating created objects.
 
@@ -175,7 +175,9 @@ class GLTFAssemblyEngine:
                         obj.data = mesh_data.copy()
                     except (RuntimeError, AttributeError) as exc:
                         logger.debug("Could not copy interaction mesh datablock: %s", exc)
-                interact_col = get_or_create_engine_import_collection(context, effective_asset, "INTERACTIONS")
+                interact_col = get_or_create_engine_import_collection(
+                    context, effective_asset, "INTERACTIONS", blend_data=bdata
+                )
                 if interact_col:
                     interact_col.objects.link(obj)
                 obj.display_type = "WIRE"
@@ -189,7 +191,9 @@ class GLTFAssemblyEngine:
                         obj.data = mesh_data.copy()
                     except (RuntimeError, AttributeError) as exc:
                         logger.debug("Could not copy collider mesh datablock: %s", exc)
-                coll_col = get_or_create_engine_import_collection(context, effective_asset, "COLLIDERS")
+                coll_col = get_or_create_engine_import_collection(
+                    context, effective_asset, "COLLIDERS", blend_data=bdata
+                )
                 if coll_col:
                     coll_col.objects.link(obj)
                 obj.display_type = "WIRE"
@@ -237,7 +241,7 @@ class GLTFAssemblyEngine:
         cls,
         objects: list[bpy.types.Object],
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> int:
         """Detects duplicated material datablocks (e.g. Fuselage.001) across imported objects,
 
@@ -286,7 +290,7 @@ class GLTFAssemblyEngine:
         master_armature: Optional[bpy.types.Object],
         lod_objects: list[bpy.types.Object],
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> int:
         """Retargets ARMATURE modifiers on LOD mesh objects to the Master Rig (LOD0 Armature)
 

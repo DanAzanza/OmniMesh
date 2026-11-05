@@ -46,12 +46,9 @@ class DeepMaterialHasher:
     def hash_material(cls, mat: bpy.types.Material | None) -> str:
         if not mat or not mat.node_tree:
             diffuse = getattr(mat, "diffuse_color", (0.8, 0.8, 0.8, 1.0))
-            if hasattr(diffuse, "__iter__"):
-                diff_list = [
-                    round(float(getattr(diffuse, "__getitem__", lambda i: 0.8)(i)), 4)
-                    for i in range(min(4, len(diffuse)))
-                ]
-            else:
+            try:
+                diff_list = [round(float(c), 4) for c in diffuse[:4]]
+            except (TypeError, IndexError, ValueError):
                 diff_list = [0.8, 0.8, 0.8, 1.0]
             return hashlib.sha256(f"NON_NODES:{diff_list}".encode("utf-8")).hexdigest()
 
@@ -91,12 +88,15 @@ class DeepMaterialHasher:
             }
 
             # Capture node-specific internal properties
-            if hasattr(curr, "operation"):
-                node_data["operation"] = str(getattr(curr, "operation", ""))
-            if hasattr(curr, "blend_type"):
-                node_data["blend_type"] = str(getattr(curr, "blend_type", ""))
-            if hasattr(curr, "color_space"):
-                node_data["color_space"] = str(getattr(curr, "color_space", ""))
+            op = getattr(curr, "operation", None)
+            if op is not None:
+                node_data["operation"] = str(op)
+            bt = getattr(curr, "blend_type", None)
+            if bt is not None:
+                node_data["blend_type"] = str(bt)
+            cs = getattr(curr, "color_space", None)
+            if cs is not None:
+                node_data["color_space"] = str(cs)
             curr_img = cast("bpy.types.Image | None", getattr(curr, "image", None))
             if curr_img is not None:
                 img = curr_img
@@ -225,7 +225,7 @@ class HeadlessSlotCompactor:
         faces_remapped = 0
         poly_count = len(mesh.polygons)
         if poly_count > 0:
-            if hasattr(mesh.polygons, "foreach_get") and hasattr(mesh.polygons, "foreach_set"):
+            try:
                 import numpy as np
 
                 orig_indices = np.empty(poly_count, dtype=np.int32)
@@ -237,7 +237,7 @@ class HeadlessSlotCompactor:
                 faces_remapped = int(np.count_nonzero(remapped_indices != orig_indices))
                 if faces_remapped > 0:
                     mesh.polygons.foreach_set("material_index", remapped_indices)
-            else:
+            except (AttributeError, ImportError, TypeError):
                 for poly in mesh.polygons:
                     old_i = poly.material_index
                     new_i = slot_remap.get(old_i, 0)
@@ -556,7 +556,7 @@ class MaterialOptimizer:
         return HeadlessSlotCompactor.compact_slots(obj, purge_empty=True, deduplicate_identical=False)
 
     @classmethod
-    def merge_duplicate_materials_scene(cls, *, blend_data: BlendData | None = None) -> int:
+    def merge_duplicate_materials_scene(cls, *, blend_data: BlendData) -> int:
         """
         Scans all scene materials, computes SHA-256 AST hashes via DeepMaterialHasher,
         and merges true duplicates into the canonical master material datablock.
@@ -604,7 +604,7 @@ class MaterialOptimizer:
         return merged_count
 
     @classmethod
-    def purge_orphan_materials(cls, *, blend_data: BlendData | None = None) -> int:
+    def purge_orphan_materials(cls, *, blend_data: BlendData) -> int:
         """Purges zero-user material datablocks from .blend file."""
         bdata_mats = blend_data.materials if blend_data else None
         if not bdata_mats:
@@ -622,7 +622,7 @@ class MaterialOptimizer:
         cls,
         mat: bpy.types.Material | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> int:
         """Removes disconnected or orphan texture nodes from target material or all scene materials."""
         if mat is not None:
@@ -641,7 +641,7 @@ class MaterialOptimizer:
         mesh_objs: list[bpy.types.Object],
         options: MaterialCleanOptions | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> dict[str, Any]:
         """
         Executes unified material cleanup pipeline across selected mesh objects.

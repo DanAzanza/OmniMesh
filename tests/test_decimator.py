@@ -174,7 +174,10 @@ def test_temporary_vertex_group_context_manager():
 
 def test_lod_generator_graceful_handling(monkeypatch):
     """Verify generate_all_lods handles None/empty context and objects defensively."""
-    success, msg = generate_all_lods(context=None, props=None, mesh_objs=[])
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
+    success, msg = generate_all_lods(context=None, props=None, mesh_objs=[], blend_data=bdata)
     assert success is True  # Blender context not available in headless test mock
     assert "not available" in msg.lower()
 
@@ -183,13 +186,15 @@ def test_lod_generator_graceful_handling(monkeypatch):
     mock_ctx = MagicMock()
     mock_props = MagicMock()
     mock_props.lods = []
-    success, msg = generate_all_lods(context=mock_ctx, props=mock_props, mesh_objs=[])
+    success, msg = generate_all_lods(context=mock_ctx, props=mock_props, mesh_objs=[], blend_data=bdata)
     assert success is False
     assert "no mesh objects" in msg.lower()
 
 
 def test_lod_generator_exception_rollback_and_pose_restoration(monkeypatch):
     """Verify generate_all_lods restores armature pose_position and returns failure cleanly on error."""
+    from tests.conftest import MockBlendData
+
     monkeypatch.setattr("core.lod_generator.bpy", MagicMock())
     monkeypatch.setattr(
         "core.lod_generator.CollectionCloneDAG.wrap_loose_objects_into_root_collection",
@@ -218,6 +223,7 @@ def test_lod_generator_exception_rollback_and_pose_restoration(monkeypatch):
         props=mock_props,
         mesh_objs=[broken_obj],
         armature_obj=mock_armature,
+        blend_data=MockBlendData(),
     )
     # Must fail safely without uncaught exception and restore pose_position
     assert success is False

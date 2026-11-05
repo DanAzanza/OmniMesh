@@ -62,33 +62,33 @@ class PivotPreservationEngine:
         all_objs = getattr(collection, "all_objects", getattr(collection, "objects", []))
 
         for obj in all_objs:
-            if not obj or not hasattr(obj, "type"):
+            if not obj:
                 continue
             obj_type = obj.type
-            name_upper = getattr(obj, "name", "").upper()
+            name_upper = obj.name.upper()
 
             if obj_type == "EMPTY":
-                has_pivot_prop = bool(obj.get("is_pivot", False)) if hasattr(obj, "get") else False
+                has_pivot_prop = bool(obj.get("is_pivot", False))
                 if any(tag in name_upper for tag in cls.PIVOT_TAGS) or has_pivot_prop:
                     if not pivot_obj:
                         pivot_obj = obj
                 else:
-                    has_socket_prop = bool(obj.get("is_socket", False)) if hasattr(obj, "get") else False
+                    has_socket_prop = bool(obj.get("is_socket", False))
                     if name_upper.startswith(cls.SOCKET_PREFIXES) or has_socket_prop:
                         sockets.append(obj)
                     elif not pivot_obj and name_upper == "PIVOT":
                         pivot_obj = obj
             elif obj_type == "MESH":
-                is_collider = bool(obj.get("_is_collider", False)) if hasattr(obj, "get") else False
+                is_collider = bool(obj.get("_is_collider", False))
                 if not is_collider and not name_upper.startswith("UCX_"):
                     meshes.append(obj)
             elif obj_type == "ARMATURE":
                 armatures.append(obj)
 
         # Fallback: parent empty of top-level collection elements
-        if not pivot_obj:
-            for obj in getattr(collection, "objects", []):
-                if getattr(obj, "parent", None) and getattr(obj.parent, "type", "") == "EMPTY":
+        if not pivot_obj and collection.objects is not None:
+            for obj in collection.objects:
+                if obj.parent and obj.parent.type == "EMPTY":
                     pivot_obj = obj.parent
                     break
 
@@ -106,7 +106,7 @@ class PivotPreservationEngine:
         if not obj:
             return fallback_identity
 
-        obj_world = getattr(obj, "matrix_world", None)
+        obj_world = obj.matrix_world
         if obj_world is None:
             return fallback_identity
 
@@ -164,7 +164,7 @@ class PivotPreservationEngine:
         tier_idx: int,
         base_name: str,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bpy.types.Object | None:
         """
         Duplicates or creates a matching Pivot Empty in the target LOD collection.
@@ -184,7 +184,7 @@ class PivotPreservationEngine:
                 target_collection.objects.link(existing)
             return existing
 
-        if pivot_obj and hasattr(pivot_obj, "copy"):
+        if pivot_obj:
             cloned_pivot = pivot_obj.copy()
             if cloned_pivot is not None:
                 cloned_pivot.name = pivot_name
@@ -224,7 +224,7 @@ class PivotPreservationEngine:
 
         cloned_sockets = []
         for sock in sockets:
-            if not sock or not hasattr(sock, "copy"):
+            if not sock:
                 continue
             sock_clone = sock.copy()
             if sock_clone is None:
@@ -245,7 +245,7 @@ class PivotPreservationEngine:
                 sock_clone.matrix_world = sock_world
             else:
                 sock_clone.parent = target_pivot
-                if target_pivot is not None and hasattr(target_pivot.matrix_world, "inverted"):
+                if target_pivot is not None and target_pivot.matrix_world is not None:
                     try:
                         sock_clone.matrix_parent_inverse = target_pivot.matrix_world.inverted()
                     except (ValueError, AttributeError, RuntimeError) as exc:

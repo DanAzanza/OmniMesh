@@ -129,6 +129,10 @@ class LOD_OT_pack_pbr_textures(Operator):
         all_futures: list[Any] = []
         packed_count = 0
 
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
+
         for mat in materials:
             try:
                 futs = TextureChannelPacker.pack_material_preset(
@@ -141,6 +145,7 @@ class LOD_OT_pack_pbr_textures(Operator):
                     strategy=strategy,
                     naming_pattern=naming_pattern,
                     context=context,
+                    blend_data=bdata,
                 )
                 if futs:
                     all_futures.extend(futs)
@@ -365,9 +370,11 @@ class LOD_OT_toggle_live_bridge(Operator):
         try:
             from ..core.project_detector import detect_engine_project
 
-            detected = detect_engine_project(props.export_directory, engine)
-            if detected:
-                props.engine_project_path = detected
+            bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+            if bdata is not None:
+                detected = detect_engine_project(props.export_directory, engine, blend_data=bdata)
+                if detected:
+                    props.engine_project_path = detected
         except Exception as exc:
             logger.debug("Project detection during toggle: %s", exc)
 

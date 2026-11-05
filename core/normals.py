@@ -34,7 +34,7 @@ class NormalManager:
         Ensures the 'sharp_edge' boolean edge attribute exists on the mesh data-block,
         which is required in Blender 4.1+ and 5.x for custom normal and auto-smooth shading.
         """
-        if not bpy or not mesh or not hasattr(mesh, "attributes"):
+        if not bpy or not mesh or getattr(mesh, "attributes", None) is None:
             return None
         try:
             sharp_attr = mesh.attributes.get("sharp_edge")
@@ -192,11 +192,11 @@ class NormalManager:
                 kd.insert((float(world_co[0]), float(world_co[1]), float(world_co[2])), i)
             kd.balance()
 
-            src_rot = src_mat.to_3x3() if (src_mat is not None and hasattr(src_mat, "to_3x3")) else None
-            tgt_rot = tgt_mat.to_3x3() if (tgt_mat is not None and hasattr(tgt_mat, "to_3x3")) else None
+            src_rot = src_mat.to_3x3() if src_mat is not None else None
+            tgt_rot = tgt_mat.to_3x3() if tgt_mat is not None else None
 
             src_norm_to_world = None
-            if src_rot and hasattr(src_rot, "determinant") and abs(src_rot.determinant()) > 1e-9:
+            if src_rot is not None and abs(src_rot.determinant()) > 1e-9:
                 try:
                     src_norm_to_world = src_rot.inverted().transposed()
                 except (ValueError, AttributeError, ReferenceError):
@@ -222,17 +222,21 @@ class NormalManager:
                     else:
                         tgt_norm = world_norm
 
-                    if hasattr(tgt_norm, "normalized"):
+                    try:
                         tgt_norm = tgt_norm.normalized()
+                    except (AttributeError, TypeError):
+                        pass
                 else:
                     tgt_norm = Vector((0.0, 0.0, 1.0)) if Vector else (0.0, 0.0, 1.0)
                 custom_normals.append(tgt_norm)
 
-            if hasattr(tgt_mesh, "normals_split_custom_set"):
+            try:
                 tgt_mesh.normals_split_custom_set(custom_normals)
                 cls.ensure_sharp_edge_attribute(tgt_mesh)
                 tgt_mesh.update()
                 return True
+            except (AttributeError, RuntimeError) as exc:
+                logger.debug("Failed setting custom normals: %s", exc)
             return False
         except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
             logger.error("KDTree normal fallback failed: %s", exc)

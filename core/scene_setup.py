@@ -135,37 +135,37 @@ def configure_game_scene_settings(
     opts = options or SceneStandardOptions()
 
     # 1. Metric Unit Standards
-    if hasattr(scene, "unit_settings"):
-        try:
-            unit_settings = scene.unit_settings
+    try:
+        unit_settings = scene.unit_settings
+        if unit_settings is not None:
             unit_settings.system = "METRIC"
             unit_settings.scale_length = float(opts.unit_scale)
             unit_settings.length_unit = opts.length_unit  # type: ignore[assignment]
-        except (AttributeError, TypeError, ValueError) as exc:
-            logger.debug("Could not set unit_settings: %s", exc)
+    except (AttributeError, TypeError, ValueError) as exc:
+        logger.debug("Could not set unit_settings: %s", exc)
 
     # 2. Game Frame Rate Standards (fps + fps_base)
-    if hasattr(scene, "render"):
-        try:
+    try:
+        if scene.render is not None:
             scene.render.fps = int(opts.fps)
             scene.render.fps_base = 1.0
-        except (AttributeError, TypeError, ValueError) as exc:
-            logger.debug("Could not set render.fps: %s", exc)
+    except (AttributeError, TypeError, ValueError) as exc:
+        logger.debug("Could not set render.fps: %s", exc)
 
     result["scene_configured"] = True
 
     # 3. Viewport Shading, Clipping & Overlay Inspections (Safely traversed)
     ctx = context
-    wm = getattr(ctx, "window_manager", None) if ctx else None
+    wm = ctx.window_manager if ctx and hasattr(ctx, "window_manager") else None
     viewports_count = 0
 
-    if wm and hasattr(wm, "windows"):
+    if wm and getattr(wm, "windows", None):
         try:
-            for window in getattr(wm, "windows", []):
+            for window in wm.windows:
                 screen = getattr(window, "screen", None)
-                if not screen or not hasattr(screen, "areas"):
+                if not screen or not getattr(screen, "areas", None):
                     continue
-                for area in getattr(screen, "areas", []):
+                for area in screen.areas:
                     if getattr(area, "type", "") == "VIEW_3D":
                         for space in getattr(area, "spaces", []):
                             if getattr(space, "type", "") == "VIEW_3D":
@@ -196,23 +196,30 @@ def _apply_viewport_space_settings(
 ) -> None:
     """Applies clipping and overlay/shading options to a single SpaceView3D instance."""
     space = cast("bpy.types.SpaceView3D", space_in)
-    if hasattr(space, "clip_start"):
+    try:
         space.clip_start = float(clip_start)
-    if hasattr(space, "clip_end"):
+    except (AttributeError, TypeError):
+        pass
+    try:
         space.clip_end = float(clip_end)
+    except (AttributeError, TypeError):
+        pass
 
-    overlay = getattr(space, "overlay", None)
-    if overlay and hasattr(overlay, "show_stats"):
-        overlay.show_stats = bool(enable_stats)
+    try:
+        overlay = space.overlay
+        if overlay is not None:
+            overlay.show_stats = bool(enable_stats)
+    except (AttributeError, TypeError):
+        pass
 
-    shading = getattr(space, "shading", None)
-    if shading:
-        if hasattr(shading, "show_cavity"):
+    try:
+        shading = space.shading
+        if shading is not None:
             shading.show_cavity = bool(enable_cavity)
-        if hasattr(shading, "cavity_type"):
             shading.cavity_type = "BOTH"
-        if hasattr(shading, "show_backface_culling"):
             shading.show_backface_culling = bool(enable_backface_culling)
+    except (AttributeError, TypeError):
+        pass
 
 
 def setup_asset_collections(
@@ -221,7 +228,7 @@ def setup_asset_collections(
     options: AssetCollectionOptions | None = None,
     *,
     bpy_module: object = None,
-    blend_data: BlendData | None = None,
+    blend_data: BlendData,
 ) -> dict[str, Any]:
     """
     Creates or retrieves the standardized OmniMesh asset collection hierarchy:
@@ -241,12 +248,12 @@ def setup_asset_collections(
         bdata = getattr(bpy_module, "data", None)
     if not bdata:
         return {}
-    bdata_cols = getattr(bdata, "collections", None)
+    bdata_cols = bdata.collections if bdata else None
     if bdata_cols is None:
         return {}
 
-    scene = getattr(context, "scene", None)
-    if not scene or not hasattr(scene, "collection"):
+    scene = context.scene if context else None
+    if not scene or not getattr(scene, "collection", None):
         return {}
 
     opts = options or AssetCollectionOptions()

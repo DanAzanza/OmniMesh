@@ -1,0 +1,27 @@
+# Auto-detect text files and perform LF normalization in Git index
+* text=auto
+
+# Explicitly declare source & configuration files as text
+*.py text
+*.md text
+*.toml text
+*.json text
+*.yml text
+*.yaml text
+*.xml text
+*.cfg text
+*.flt text
+*.cs text
+*.hlsl text
+*.ush text
+*.usf text
+
+# Binary assets
+*.blend binary
+*.fbx binary
+*.glb binary
+*.bin binary
+*.png binary
+*.jpg binary
+*.dds binary
+*.zip binary

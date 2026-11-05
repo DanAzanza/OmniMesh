@@ -290,8 +290,11 @@ def test_safe_invert_matrix_singularity():
 
 
 def test_bake_and_nla_guards():
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
     # Calling bake / nla with null arguments returns None / False gracefully
-    assert AnimationRigSanitizer.bake_deform_animation(None, None, None) is None
+    assert AnimationRigSanitizer.bake_deform_animation(None, None, None, blend_data=bdata) is None
     assert AnimationRigSanitizer.setup_clean_nla_export(None, None) is False
 
 

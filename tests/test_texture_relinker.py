@@ -34,27 +34,30 @@ class MockImage:
 
 
 def test_is_image_valid_cases():
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
     # 1. None image
-    assert not ProjectTextureRelinker.is_image_valid(None)
+    assert not ProjectTextureRelinker.is_image_valid(None, blend_data=bdata)
 
     # 2. Generated image
     gen_img = MockImage("Canvas", "", source="GENERATED")
-    assert ProjectTextureRelinker.is_image_valid(gen_img)  # type: ignore
+    assert ProjectTextureRelinker.is_image_valid(gen_img, blend_data=bdata)  # type: ignore
 
     # 3. Packed image
     packed_img = MockImage("Packed", "missing.png", source="FILE", packed_file=object())
-    assert ProjectTextureRelinker.is_image_valid(packed_img)  # type: ignore
+    assert ProjectTextureRelinker.is_image_valid(packed_img, blend_data=bdata)  # type: ignore
 
     # 4. Existing disk file
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
         tf_path = tf.name
     try:
         disk_img = MockImage("Disk", tf_path, source="FILE")
-        assert ProjectTextureRelinker.is_image_valid(disk_img)  # type: ignore
+        assert ProjectTextureRelinker.is_image_valid(disk_img, blend_data=bdata)  # type: ignore
 
         # 5. Non-existent disk file
         missing_img = MockImage("Missing", "C:/non/existent/path/tex.png", source="FILE")
-        assert not ProjectTextureRelinker.is_image_valid(missing_img)  # type: ignore
+        assert not ProjectTextureRelinker.is_image_valid(missing_img, blend_data=bdata)  # type: ignore
     finally:
         if os.path.exists(tf_path):
             os.remove(tf_path)
@@ -191,11 +194,14 @@ def test_relink_images_end_to_end():
 
         images = [broken_img, valid_img, packed_img, missing_img]
 
+        from tests.conftest import MockBlendData
+
         summary = ProjectTextureRelinker.relink_images(
             images=images,  # type: ignore
             search_roots=[temp_dir],
             blend_filepath=blend_file,
             make_relative=True,
+            blend_data=MockBlendData(),
         )
 
         assert isinstance(summary, RelinkSummary)

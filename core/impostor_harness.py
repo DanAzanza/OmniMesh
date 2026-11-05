@@ -48,7 +48,7 @@ class ImpostorShaderHarness:
         radius: float = 1.0,
         cam_distance: float = 2.5,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> Optional[bpy.types.Material]:
         """
         Creates an ephemeral unlit material for baking a specific PBR or depth pass.

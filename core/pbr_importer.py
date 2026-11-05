@@ -173,7 +173,7 @@ class ShaderGraphBuilder:
         raw_path: str,
         mode: str = "RELATIVE",
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> tuple[str, bool]:
         """
         Resolves a texture path according to requested mode ('RELATIVE' vs 'ABSOLUTE').
@@ -220,7 +220,7 @@ class ShaderGraphBuilder:
         ao_blend_mode: str = "MULTIPLY",
         path_mode: str = "RELATIVE",
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bool:
         """
         Constructs a deterministic PBR shader network driven by the active preset.
@@ -240,13 +240,13 @@ class ShaderGraphBuilder:
         links = nt.links
 
         # 1. Locate or create Output Material node
-        output_node = next((n for n in nodes if getattr(n, "type", "") == "OUTPUT_MATERIAL"), None)
+        output_node = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None)
         if not output_node:
             output_node = nodes.new(type="ShaderNodeOutputMaterial")
             output_node.location = (600, 300)
 
         # 2. Locate or create Principled BSDF node
-        bsdf_node = next((n for n in nodes if getattr(n, "type", "") == "BSDF_PRINCIPLED"), None)
+        bsdf_node = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
         if not bsdf_node:
             bsdf_node = nodes.new(type="ShaderNodeBsdfPrincipled")
             bsdf_node.location = (200, 300)
@@ -260,12 +260,12 @@ class ShaderGraphBuilder:
                     nodes.remove(node)
 
         # 3. Coordinate Mapping (Reuse existing nodes to ensure idempotency when preserve_existing=True)
-        tex_coord = next((n for n in nodes if getattr(n, "type", "") == "TEX_COORD"), None)
+        tex_coord = next((n for n in nodes if n.type == "TEX_COORD"), None)
         if not tex_coord:
             tex_coord = nodes.new(type="ShaderNodeTexCoord")
             tex_coord.location = (-1200, 0)
 
-        mapping = next((n for n in nodes if getattr(n, "type", "") == "MAPPING"), None)
+        mapping = next((n for n in nodes if n.type == "MAPPING"), None)
         if not mapping:
             mapping = nodes.new(type="ShaderNodeMapping")
             mapping.location = (-1000, 0)
@@ -376,15 +376,15 @@ class ShaderGraphBuilder:
             filepath = route["filepath"]
             ch = route["channel"]
             invert = route["invert"]
-            t_node = get_or_create_tex_node(filepath, route["color_space"])
-            if not t_node or not getattr(t_node, "image", None):
+            t_node = cast("bpy.types.ShaderNodeTexImage | None", get_or_create_tex_node(filepath, route["color_space"]))
+            if not t_node or not t_node.image:
                 continue
-            img = getattr(t_node, "image", None)
+            img = t_node.image
 
             # Resolve source output socket
             source_sock = None
             if ch == "rgb":
-                source_sock = t_node.outputs.get("Color")
+                source_sock = t_node.outputs.get("Color") if t_node.outputs else None
             elif ch == "a":
                 # Guard against 100% mirror chrome on missing alpha channel
                 num_channels = getattr(img, "channels", 4)
@@ -395,7 +395,7 @@ class ShaderGraphBuilder:
                         num_channels,
                     )
                     continue
-                source_sock = t_node.outputs.get("Alpha")
+                source_sock = t_node.outputs.get("Alpha") if t_node.outputs else None
             elif ch in {"r", "g", "b"}:
                 sep_node = get_or_create_sep_node(t_node, t_node.location.y)
                 sock_name = {"r": "Red", "g": "Green", "b": "Blue"}[ch]

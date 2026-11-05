@@ -64,8 +64,11 @@ class LOD_OT_batch_generate_modal(Operator):
         props = getattr(context.scene, "lod_tool", None)
         target_ratio = getattr(props, "global_target_ratio", 0.5) if props else 0.5
 
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
         iterator_obj = BatchMeshIterator(selected_meshes, target_ratio=target_ratio)
-        self._iterator = iterator_obj.iterate(context)
+        self._iterator = iterator_obj.iterate(context, blend_data=bdata)
         self._total_count = iterator_obj.total
         self._completed_count = 0
         self._failed_count = 0

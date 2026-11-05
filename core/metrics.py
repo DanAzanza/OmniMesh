@@ -50,15 +50,11 @@ def compute_bounding_sphere(
     Works with mathutils.Vector or list/tuple of (x, y, z).
     """
     if not coords:
-        if mathutils and hasattr(mathutils, "Vector"):
-            return mathutils.Vector((0.0, 0.0, 0.0)), 1.0
-        return (0.0, 0.0, 0.0), 1.0
+        return Vector((0.0, 0.0, 0.0)), 1.0
 
     valid_coords = [c for c in coords if c is not None]
     if not valid_coords:
-        if mathutils and hasattr(mathutils, "Vector"):
-            return mathutils.Vector((0.0, 0.0, 0.0)), 1.0
-        return (0.0, 0.0, 0.0), 1.0
+        return Vector((0.0, 0.0, 0.0)), 1.0
 
     min_x = min(float(c[0]) for c in valid_coords)
     max_x = max(float(c[0]) for c in valid_coords)
@@ -71,11 +67,10 @@ def compute_bounding_sphere(
     cy = (min_y + max_y) * 0.5
     cz = (min_z + max_z) * 0.5
 
-    if mathutils and hasattr(mathutils, "Vector") and isinstance(valid_coords[0], mathutils.Vector):
-        center = mathutils.Vector((cx, cy, cz))
-        radius = max((v - center).length for v in valid_coords)
+    center = Vector((cx, cy, cz))
+    if isinstance(valid_coords[0], Vector):
+        radius = max((v - center).length for v in valid_coords)  # type: ignore[operator]
     else:
-        center = mathutils.Vector((cx, cy, cz)) if (mathutils and hasattr(mathutils, "Vector")) else (cx, cy, cz)
         radius = max(
             math.sqrt((float(c[0]) - cx) ** 2 + (float(c[1]) - cy) ** 2 + (float(c[2]) - cz) ** 2) for c in valid_coords
         )

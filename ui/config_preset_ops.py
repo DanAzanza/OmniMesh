@@ -69,19 +69,19 @@ if not TYPE_CHECKING and Vector is None:
 
 try:
     from ..core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
-    from ..core.hierarchy import get_or_create_engine_import_collection
     from ..core.msfs.preset_spawner import ConfigPresetSpawner
     from .utils import (
         get_asset_base_meshes,
+        get_or_create_engine_import_collection,
         resolve_effective_asset_name,
         safe_report,
     )
 except (ImportError, ValueError):
     from core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
-    from core.hierarchy import get_or_create_engine_import_collection
     from core.msfs.preset_spawner import ConfigPresetSpawner
     from ui.utils import (
         get_asset_base_meshes,
+        get_or_create_engine_import_collection,
         resolve_effective_asset_name,
         safe_report,
     )
@@ -122,12 +122,16 @@ class OMNIMESH_OT_add_config_preset(Operator):
             safe_report(self, {"ERROR"}, f"Could not load config preset '{preset_id}'.")
             return {"CANCELLED"}
 
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
+
         added_count = ConfigPresetSpawner.spawn_preset_objects(
             context=context,
             asset_name=asset_name,
             preset_data=preset_data,
             cfg_props=cfg_props,
-            blend_data=getattr(context, "blend_data", None),
+            blend_data=bdata,
             bpy_module=bpy,
             get_base_meshes_fn=get_asset_base_meshes,
             get_import_collection_fn=get_or_create_engine_import_collection,

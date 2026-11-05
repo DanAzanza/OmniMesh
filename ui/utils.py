@@ -640,6 +640,8 @@ def get_or_create_engine_import_collection(
                 bdata = ctx_bdata
     if bdata is None and bpy is not None:
         bdata = getattr(bpy, "data", None)
+    if bdata is None:
+        return None
 
     return _impl(context, asset_name, role, use_lod0_suffix, blend_data=bdata)
 

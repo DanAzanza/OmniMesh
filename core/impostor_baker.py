@@ -183,7 +183,7 @@ class ImpostorAtlasBaker:
         grid_size: int = 8,
         context: bpy.types.Context | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> dict[str, str]:
         """
         Bakes an NxN Octahedral Impostor atlas using an ephemeral animation timeline render.
@@ -444,7 +444,7 @@ class ImpostorAtlasBaker:
         impostor_obj: Optional[bpy.types.Object] = None,
         context: bpy.types.Context | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> dict[str, str]:
         """
         Bakes BaseColor, Tangent Normal, and ORM (AO/Roughness/Metallic) maps using Cycles Selected-to-Active

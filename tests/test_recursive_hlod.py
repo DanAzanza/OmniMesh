@@ -100,18 +100,24 @@ def test_group_chunks_quadtree_odd_3x3_grid():
 
 
 def test_build_hierarchical_tier_guards():
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
     # Null or empty cluster dictionary returns empty list safely
-    assert RecursiveHLODManager.build_hierarchical_tier({}, "SM_Test", 2, None) == []
-    assert RecursiveHLODManager.build_hierarchical_tier({(0, 0, 0): []}, "SM_Test", 2, None) == []
+    assert RecursiveHLODManager.build_hierarchical_tier({}, "SM_Test", 2, None, blend_data=bdata) == []
+    assert RecursiveHLODManager.build_hierarchical_tier({(0, 0, 0): []}, "SM_Test", 2, None, blend_data=bdata) == []
 
 
 def test_apply_voxel_proxy_shell_guards():
+    from tests.conftest import MockBlendData
+
+    bdata = MockBlendData()
     # Null or invalid object
-    assert RecursiveHLODManager.apply_voxel_proxy_shell(None) is False
+    assert RecursiveHLODManager.apply_voxel_proxy_shell(None, blend_data=bdata) is False
 
     mock_empty = MagicMock()
     mock_empty.type = "EMPTY"
-    assert RecursiveHLODManager.apply_voxel_proxy_shell(mock_empty) is False
+    assert RecursiveHLODManager.apply_voxel_proxy_shell(mock_empty, blend_data=bdata) is False
 
 
 def test_multitier_recursive_quadtree_reduction():

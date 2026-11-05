@@ -69,7 +69,9 @@ class OMNIMESH_OT_add_interaction_volume(Operator):
             active_obj if parent_to_active and active_obj and getattr(active_obj, "type", "") == "MESH" else None
         )
 
-        bdata = getattr(context, "blend_data", None)
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return {"CANCELLED"}
         vol = create_interaction_volume(
             context=context,
             asset_name=asset_name,
