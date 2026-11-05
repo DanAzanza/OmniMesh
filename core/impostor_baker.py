@@ -36,10 +36,7 @@ else:
         bpy = None
         mathutils = None
         Matrix = None  # type: ignore
-        try:
-            from .impostor_math import Vector
-        except (ImportError, ValueError):
-            from core.impostor_math import Vector
+        from .impostor_math import Vector
     BlendData = object
 
 
@@ -198,10 +195,7 @@ class ImpostorAtlasBaker:
         if not bpy or not mesh_objs:
             return {}
 
-        try:
-            from .impostor import resolve_impostor_export_dir
-        except (ImportError, ValueError):
-            from core.impostor import resolve_impostor_export_dir
+        from .impostor import resolve_impostor_export_dir
 
         bdata = blend_data
         output_dir = resolve_impostor_export_dir(output_dir, blend_data=bdata)
@@ -209,10 +203,10 @@ class ImpostorAtlasBaker:
 
         all_coords: list[Vector] = []
         for obj in mesh_objs:
-            obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
-            if hasattr(obj, "bound_box") and obj.bound_box:
+            obj_data = cast("bpy.types.Mesh | None", obj.data)
+            if obj.bound_box:
                 all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
-            elif obj_data and hasattr(obj_data, "vertices"):
+            elif obj_data and obj_data.vertices:
                 all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
 
         if not all_coords:
@@ -275,8 +269,8 @@ class ImpostorAtlasBaker:
                 for chan_name, harness_layer in passes:
                     orig_materials: list[tuple[bpy.types.Object, list[bpy.types.Material | None]]] = []
                     for obj in mesh_objs:
-                        obj_data = getattr(obj, "data", None)
-                        if obj_data and hasattr(obj_data, "materials"):
+                        obj_data = cast("bpy.types.Mesh | None", obj.data)
+                        if obj_data and obj_data.materials is not None:
                             mats = list(obj_data.materials)
                             orig_materials.append((obj, mats))
                             bake_mats = mats if mats else [None]
@@ -328,7 +322,7 @@ class ImpostorAtlasBaker:
                                 f"Octahedral animation render failed for pass '{chan_name}': {render_exc}"
                             ) from render_exc
 
-                        bdata_imgs = getattr(bdata, "images", None) if bdata else None
+                        bdata_imgs = bdata.images if bdata else None
                         for frame_idx in range(1, total_frames + 1):
                             col, row = (frame_idx - 1) % grid_size, (frame_idx - 1) // grid_size
                             frame_file = f"{chan_prefix}{frame_idx:04d}.png"
@@ -344,8 +338,8 @@ class ImpostorAtlasBaker:
                                 )
                     finally:
                         for obj, mats in orig_materials:
-                            m_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
-                            if m_data is not None and hasattr(m_data, "materials"):
+                            m_data = cast("bpy.types.Mesh | None", obj.data)
+                            if m_data is not None and m_data.materials is not None:
                                 m_data.materials.clear()
                                 for m in mats:
                                     m_data.materials.append(m)
@@ -474,15 +468,12 @@ class ImpostorAtlasBaker:
                 blend_data=bdata,
             )
 
-        try:
-            from .impostor import resolve_impostor_export_dir
-        except (ImportError, ValueError):
-            from core.impostor import resolve_impostor_export_dir
+        from .impostor import resolve_impostor_export_dir
 
         output_dir = resolve_impostor_export_dir(output_dir, blend_data=bdata)
         results: dict[str, str] = {}
 
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata_objs = bdata.objects if bdata else None
         target_impostor = impostor_obj or (bdata_objs.get(f"{base_name}_LOD_Impostor") if bdata_objs else None)
         if not target_impostor:
             logger.warning("No target impostor object found for baking '%s'", base_name)
@@ -491,16 +482,16 @@ class ImpostorAtlasBaker:
         # Calculate bounding dimensions to set ray cast distance
         all_coords = []
         for obj in mesh_objs:
-            obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
-            if hasattr(obj, "bound_box") and obj.bound_box:
+            obj_data = cast("bpy.types.Mesh | None", obj.data)
+            if obj.bound_box:
                 all_coords.extend([obj.matrix_world @ Vector(c) for c in obj.bound_box])
-            elif obj_data and hasattr(obj_data, "vertices"):
+            elif obj_data and obj_data.vertices:
                 all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
 
         max_span = max((max(c[i] for c in all_coords) - min(c[i] for c in all_coords) for i in range(3)), default=4.0)
 
         ctx = context
-        bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
+        bdata_scenes = bdata.scenes if bdata else None
         scene = getattr(ctx, "scene", None) or (bdata_scenes[0] if bdata_scenes and len(bdata_scenes) > 0 else None)
         if not scene:
             return {}
@@ -520,9 +511,8 @@ class ImpostorAtlasBaker:
         # Ensure objects are visible in view layer
         orig_vis: list[tuple[bpy.types.Object, bool]] = []
         for o in mesh_objs + [target_impostor]:
-            if hasattr(o, "hide_viewport"):
-                orig_vis.append((o, o.hide_viewport))
-                o.hide_viewport = False
+            orig_vis.append((o, o.hide_viewport))
+            o.hide_viewport = False
 
         # Prepare selection
         bpy.ops.object.select_all(action="DESELECT")
@@ -532,7 +522,7 @@ class ImpostorAtlasBaker:
         vl = getattr(ctx, "view_layer", None) if ctx else None
         if not vl and scene and hasattr(scene, "view_layers") and len(scene.view_layers) > 0:
             vl = scene.view_layers[0]
-        if vl and hasattr(vl, "objects"):
+        if vl and vl.objects is not None:
             vl.objects.active = target_impostor
 
         # Bake configuration & temporary bake images
@@ -540,7 +530,7 @@ class ImpostorAtlasBaker:
         bk.use_selected_to_active, bk.margin, bk.target = True, 4, "IMAGE_TEXTURES"
         bk.cage_extrusion, bk.max_ray_distance = max(1.0, max_span * 1.0), max(4.0, max_span * 2.5)
         res = atlas_resolution
-        bdata_imgs = getattr(bdata, "images", None) if bdata else None
+        bdata_imgs = bdata.images if bdata else None
         if not bdata_imgs:
             return {}
         img_diff = bdata_imgs.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
@@ -552,12 +542,12 @@ class ImpostorAtlasBaker:
         img_ao = bdata_imgs.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
         img_ao.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
-        imp_data = cast("bpy.types.Mesh | None", getattr(target_impostor, "data", None))
-        mat = imp_data.materials[0] if (imp_data and hasattr(imp_data, "materials") and imp_data.materials) else None
-        bdata_mats = getattr(bdata, "materials", None) if bdata else None
+        imp_data = cast("bpy.types.Mesh | None", target_impostor.data)
+        mat = imp_data.materials[0] if (imp_data and imp_data.materials) else None
+        bdata_mats = bdata.materials if bdata else None
         if not mat and bdata_mats:
             mat = bdata_mats.new(name=f"M_{base_name}_Impostor")
-            if imp_data and hasattr(imp_data, "materials"):
+            if imp_data and imp_data.materials is not None:
                 imp_data.materials.append(mat)
 
         if not mat:
@@ -569,6 +559,12 @@ class ImpostorAtlasBaker:
         nodes = mat.node_tree.nodes
         bake_slot = cast("bpy.types.ShaderNodeTexImage", nodes.new("ShaderNodeTexImage"))
         nodes.active = bake_slot
+
+        muted_unbound_nodes: list[tuple[bpy.types.Node, bool]] = []
+        for n in nodes:
+            if n != bake_slot and n.type == "TEX_IMAGE" and getattr(n, "image", None) is None:
+                muted_unbound_nodes.append((n, bool(getattr(n, "mute", False))))
+                n.mute = True
 
         try:
             # 1. Bake BaseColor (Diffuse Color pass)
@@ -619,6 +615,11 @@ class ImpostorAtlasBaker:
         except (RuntimeError, ValueError, OSError) as b_err:
             raise ImpostorBakeError(f"Selected-to-active impostor bake failed for '{base_name}': {b_err}") from b_err
         finally:
+            for n, orig_mute in muted_unbound_nodes:
+                try:
+                    n.mute = orig_mute
+                except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    logger.debug("Restoring node mute state failed: %s", exc)
             nodes.remove(bake_slot)
             for temp_img in [img_diff, img_norm, img_rough, img_ao]:
                 try:
@@ -626,8 +627,7 @@ class ImpostorAtlasBaker:
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Failed removing temp image: %s", exc)
             for o, vis in orig_vis:
-                if hasattr(o, "hide_viewport"):
-                    o.hide_viewport = vis
+                o.hide_viewport = vis
             scene.render.engine = orig_engine
 
         return results

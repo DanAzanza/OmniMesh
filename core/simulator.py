@@ -198,7 +198,7 @@ class LODAssetRecord:
     def update_bounds_and_tiers(self, *, blend_data: BlendData | None = None) -> None:
         if not bpy:
             return
-        bdata_cols = getattr(blend_data, "collections", None) if blend_data else None
+        bdata_cols = blend_data.collections if blend_data else None
         if not bdata_cols:
             self.is_valid = False
             return
@@ -263,15 +263,15 @@ class LODSimulatorEngine:
 
         # Scope to collections linked to the target scene
         scene_colls: set[bpy.types.Collection] = set()
-        bdata_cols = getattr(blend_data, "collections", None) if blend_data else None
+        bdata_cols = blend_data.collections if blend_data else None
 
-        if scene and hasattr(scene, "collection"):
+        if scene and scene.collection:
 
             def collect_children(p_coll: bpy.types.Collection | None) -> None:
                 if p_coll is None:
                     return
                 scene_colls.add(p_coll)
-                for c in getattr(p_coll, "children", []):
+                for c in p_coll.children:
                     collect_children(c)
 
             collect_children(scene.collection)
@@ -443,15 +443,14 @@ class LODSimulatorEngine:
             for record in cls._tracked_assets.values():
                 for objs in record.tier_objects.values():
                     for obj in objs:
-                        if hasattr(obj, "hide_get"):
-                            cls._visibility_snapshot[obj.name] = obj.hide_get(view_layer=view_layer)
+                        cls._visibility_snapshot[obj.name] = obj.hide_get(view_layer=view_layer)
 
         # 2. Extract viewport or default camera parameters safely
         space_3d = None
         region_3d = None
         region = None
         wm = getattr(context, "window_manager", None)
-        if wm and hasattr(wm, "windows"):
+        if wm:
             for window in getattr(wm, "windows", []):
                 screen = getattr(window, "screen", None)
                 if not screen:
@@ -490,14 +489,14 @@ class LODSimulatorEngine:
                 is_active = tier_idx == target_tier
                 should_hide = not is_active
                 for obj in objs:
-                    if hasattr(obj, "hide_get") and obj.hide_get(view_layer=view_layer) != should_hide:
+                    if obj.hide_get(view_layer=view_layer) != should_hide:
                         obj.hide_set(should_hide, view_layer=view_layer)
 
             active_objs = record.tier_objects.get(target_tier, [])
             active_tris = sum(
                 len(cast("bpy.types.Mesh", o.data).polygons)
                 for o in active_objs
-                if hasattr(o, "data") and hasattr(o.data, "polygons")
+                if o.type == "MESH" and o.data is not None
             )
 
             updates.append(
@@ -543,15 +542,14 @@ class LODSimulatorEngine:
             for record in cls._tracked_assets.values():
                 for t_objs in record.tier_objects.values():
                     for o in t_objs:
-                        if hasattr(o, "name"):
-                            resolved_objs[o.name] = o
+                        resolved_objs[o.name] = o
             bdata_objs = resolved_objs
 
         view_layer = getattr(context, "view_layer", None)
         if cls._visibility_snapshot:
             for obj_name, was_hidden in cls._visibility_snapshot.items():
-                obj = bdata_objs.get(obj_name) if hasattr(bdata_objs, "get") else None
-                if obj and hasattr(obj, "hide_get") and obj.hide_get(view_layer=view_layer) != was_hidden:
+                obj = bdata_objs.get(obj_name)
+                if obj and obj.hide_get(view_layer=view_layer) != was_hidden:
                     obj.hide_set(was_hidden, view_layer=view_layer)
             cls._visibility_snapshot.clear()
         else:

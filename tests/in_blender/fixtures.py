@@ -40,26 +40,35 @@ def in_blender_sandbox() -> Generator[bpy.types.Scene | None, None, None]:
         yield None
         return
 
-    orig_scene = (
-        bpy.context.window.scene if hasattr(bpy.context, "window") and bpy.context.window else bpy.context.scene
-    )
+    win = getattr(bpy.context, "window", None)
+    orig_scene = win.scene if win is not None else bpy.context.scene
     test_scene = bpy.data.scenes.new("OmniMesh_Test_Sandbox")
 
-    if hasattr(bpy.context, "window") and bpy.context.window:
-        bpy.context.window.scene = test_scene
+    if win is not None:
+        win.scene = test_scene
+    elif orig_scene is not None:
+        for default_name in ("Cube", "Camera", "Light"):
+            default_obj = orig_scene.objects.get(default_name)
+            if default_obj is not None:
+                bpy.data.objects.remove(default_obj, do_unlink=True)
 
     # Reset add-on scene props
     scene_props = getattr(test_scene, "lod_tool", None)
     if scene_props:
         scene_props.lods.clear()
         scene_props.is_configured = False
+    if win is None and orig_scene is not None:
+        orig_props = getattr(orig_scene, "lod_tool", None)
+        if orig_props:
+            orig_props.lods.clear()
+            orig_props.is_configured = False
 
     try:
         yield test_scene
     finally:
         # Restore active workspace scene first
-        if hasattr(bpy.context, "window") and bpy.context.window:
-            bpy.context.window.scene = orig_scene
+        if win is not None and orig_scene is not None:
+            win.scene = orig_scene
 
         # Clear global simulator engine class state (prevent dead RNA Object pointers)
         try:
@@ -67,18 +76,22 @@ def in_blender_sandbox() -> Generator[bpy.types.Scene | None, None, None]:
         except Exception as exc:
             logger.debug("Failed clearing simulator state: %s", exc)
 
-        # Purge test scene datablocks
-        test_objects = list(test_scene.objects)
-        for obj in test_objects:
-            mesh_data = obj.data
-            bpy.data.objects.remove(obj, do_unlink=True)
-            if isinstance(mesh_data, bpy.types.Mesh) and getattr(mesh_data, "users", 0) == 0:
-                bpy.data.meshes.remove(mesh_data, do_unlink=True)
+        # Purge test scene datablocks (and headless fallback scene objects)
+        scenes_to_purge = [test_scene]
+        if win is None and orig_scene is not None and orig_scene != test_scene:
+            scenes_to_purge.append(orig_scene)
 
-        for coll in list(test_scene.collection.children):
-            for sub_obj in list(coll.objects):
-                bpy.data.objects.remove(sub_obj, do_unlink=True)
-            bpy.data.collections.remove(coll)
+        for scn in scenes_to_purge:
+            for obj in list(scn.objects):
+                mesh_data = obj.data
+                bpy.data.objects.remove(obj, do_unlink=True)
+                if isinstance(mesh_data, bpy.types.Mesh) and getattr(mesh_data, "users", 0) == 0:
+                    bpy.data.meshes.remove(mesh_data, do_unlink=True)
+
+            for coll in list(scn.collection.children):
+                for sub_obj in list(coll.objects):
+                    bpy.data.objects.remove(sub_obj, do_unlink=True)
+                bpy.data.collections.remove(coll)
 
         bpy.data.scenes.remove(test_scene, do_unlink=True)
 

@@ -34,12 +34,8 @@ else:
         bpy = None
     BlendData = object
 
-    try:
-        from .base import EngineExporterBase
-        from .engine_export import AssetMeshResolver
-    except (ImportError, ValueError):
-        from exporters.base import EngineExporterBase
-        from exporters.engine_export import AssetMeshResolver
+    from .base import EngineExporterBase
+    from .engine_export import AssetMeshResolver
 
 try:
     from ..core.msfs.project_scanner import MSFSModelOptions

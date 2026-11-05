@@ -5,7 +5,7 @@ Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture, Animatio
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     import bpy
@@ -131,7 +131,7 @@ class AssetMeshResolver:
 
             # LOD0: inspect child collection, then sibling, then direct objects
             lod0_col = None
-            if hasattr(root_col, "children"):
+            if root_col.children is not None:
                 lod0_col = (
                     root_col.children.get(f"{clean_name}_LOD0")
                     or root_col.children.get(f"{clean_name}_Mesh")
@@ -169,7 +169,7 @@ class AssetMeshResolver:
                     f"x{i}",
                     f"x{i}_{clean_name}",
                 )
-                if hasattr(root_col, "children"):
+                if root_col.children is not None:
                     for alias in aliases:
                         tier_col = root_col.children.get(alias)
                         if tier_col:
@@ -189,7 +189,7 @@ class AssetMeshResolver:
 
             # Impostor
             imp_col = None
-            if hasattr(root_col, "children"):
+            if root_col.children is not None:
                 imp_col = root_col.children.get(f"{clean_name}_LOD_Impostor")
             if not imp_col and has_collections and effective_bdata:
                 imp_col = effective_bdata.collections.get(f"{clean_name}_LOD_Impostor")
@@ -216,7 +216,7 @@ class AssetMeshResolver:
 
             # Colliders
             coll_col = None
-            if hasattr(root_col, "children"):
+            if root_col.children is not None:
                 coll_col = root_col.children.get(f"{clean_name}_Colliders")
             if not coll_col and has_collections and effective_bdata:
                 coll_col = effective_bdata.collections.get(f"{clean_name}_Colliders")
@@ -252,11 +252,11 @@ class AssetMeshResolver:
         # Detect Armature / Rig
         all_export_objs = [o for objs in lod_tiers.values() for o in objs]
         for obj in all_export_objs:
-            parent = getattr(obj, "parent", None)
-            if parent and getattr(parent, "type", "") == "ARMATURE":
+            parent = obj.parent
+            if parent and parent.type == "ARMATURE":
                 armature_obj = parent
                 break
-            for mod in getattr(obj, "modifiers", []):
+            for mod in obj.modifiers:
                 if mod.type == "ARMATURE" and getattr(mod, "object", None):
                     armature_obj = getattr(mod, "object", None)
                     break
@@ -295,7 +295,7 @@ class AssetMeshResolver:
         attachment_nodes: list[bpy.types.Object] = []
         if has_collections and root_col:
             candidate_cols = []
-            if hasattr(root_col, "children"):
+            if root_col.children is not None:
                 h_col = root_col.children.get(f"{clean_name}_Helpers")
                 if h_col:
                     candidate_cols.append(h_col)
@@ -392,9 +392,9 @@ class PreFlightValidator:
         # Empty geometry check
         for i in range(len(props.lods)):
             for obj in payload.lod_tiers.get(i, []):
-                mesh_data = getattr(obj, "data", None)
-                polys = getattr(mesh_data, "polygons", None)
-                if getattr(obj, "type", "") == "MESH" and polys is not None and len(polys) == 0:
+                mesh_data = cast("bpy.types.Mesh | None", obj.data)
+                polys = mesh_data.polygons if mesh_data else None
+                if obj.type == "MESH" and polys is not None and len(polys) == 0:
                     errors.append(f"LOD{i} ('{obj.name}') has 0 polygons (empty geometry).")
 
         # Pivot / origin matching (single-object tiers)

@@ -110,7 +110,7 @@ class PivotPreservationEngine:
         if obj_world is None:
             return fallback_identity
 
-        if not pivot_obj or not hasattr(pivot_obj, "matrix_world") or pivot_obj.matrix_world is None:
+        if not pivot_obj or pivot_obj.matrix_world is None:
             return obj_world.copy() if hasattr(obj_world, "copy") else obj_world
 
         pivot_world = pivot_obj.matrix_world
@@ -176,7 +176,7 @@ class PivotPreservationEngine:
         pivot_name = f"{tier_name}_Pivot"
 
         bdata = blend_data
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata_objs = bdata.objects if bdata else None
 
         existing = bdata_objs.get(pivot_name) if bdata_objs else None
         if existing:
@@ -234,14 +234,13 @@ class PivotPreservationEngine:
             if target_collection is not None:
                 target_collection.objects.link(sock_clone)
 
-            sock_parent = getattr(sock, "parent", None)
-            sock_parent_type = getattr(sock, "parent_type", "")
+            sock_parent = sock.parent
+            sock_parent_type = sock.parent_type
             if sock_parent_type == "BONE" and sock_parent is not None:
                 # Retain bone attachment on Master Armature
                 sock_clone.parent = sock_parent
                 sock_clone.parent_type = "BONE"
-                if hasattr(sock, "parent_bone"):
-                    sock_clone.parent_bone = sock.parent_bone
+                sock_clone.parent_bone = sock.parent_bone
                 sock_clone.matrix_parent_inverse = sock.matrix_parent_inverse.copy()
                 sock_clone.matrix_world = sock_world
             else:

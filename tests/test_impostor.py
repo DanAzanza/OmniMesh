@@ -93,8 +93,8 @@ def test_impostor_mesh_builder_null_safety():
 
 
 def test_impostor_manager_null_safety():
-    assert ImpostorManager.create_impostor_material("TestAsset") is None
-    assert ImpostorManager.generate_impostor_for_objects([], "TestAsset") is None
+    assert ImpostorManager.create_impostor_material("TestAsset", blend_data=None) is None  # type: ignore[arg-type]
+    assert ImpostorManager.generate_impostor_for_objects([], "TestAsset", blend_data=None) is None  # type: ignore[arg-type]
 
 
 def test_morphological_dilate_no_toroidal_wrap():
@@ -233,5 +233,22 @@ def test_bind_baked_textures_to_material_di(tmp_path, monkeypatch):
 
     assert t_base.image is not None
     assert t_base.image.filepath == base_file
+    assert t_base.mute is False
     assert t_norm.image is not None
     assert t_norm.image.filepath == norm_file
+    assert t_norm.mute is False
+
+
+def test_create_impostor_material_mutes_unbound_tex_nodes(monkeypatch):
+    """Verify unbound ShaderNodeTexImage nodes start muted to prevent Cycles empty-image errors."""
+    from unittest.mock import MagicMock
+    import core.impostor as imp_mod
+
+    monkeypatch.setattr(imp_mod, "bpy", MagicMock())
+    bdata = MockBlendData()
+    mat = ImpostorManager.create_impostor_material("MutedTest", target_engine="UNITY_6", blend_data=bdata)
+    assert mat is not None and mat.node_tree is not None
+    for node_name in ("Tex_BaseColor", "Tex_Normal", "Tex_ORM"):
+        n = mat.node_tree.nodes.get(node_name)
+        assert n is not None
+        assert getattr(n, "mute", False) is True

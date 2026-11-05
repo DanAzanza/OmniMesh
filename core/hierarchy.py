@@ -37,12 +37,8 @@ else:
         Matrix = None
         Vector = None
 
-try:
-    from .modifiers import ModifierManager
-    from .pivot import PivotPreservationEngine
-except (ImportError, ValueError):
-    from core.modifiers import ModifierManager
-    from core.pivot import PivotPreservationEngine
+from .modifiers import ModifierManager
+from .pivot import PivotPreservationEngine
 
 
 class LayerCollectionGuard:
@@ -54,17 +50,17 @@ class LayerCollectionGuard:
 
     def __init__(self, view_layer: bpy.types.ViewLayer | None, target_collections: list[bpy.types.Collection]):
         self.vl = view_layer
-        self.targets = {c.name for c in target_collections if c and hasattr(c, "name")}
+        self.targets = {c.name for c in target_collections if c and c.name}
         self.saved_states: dict[str, tuple[bool, bool]] = {}
 
     def _traverse(self, layer_coll: bpy.types.LayerCollection | None) -> bool:
-        if not layer_coll or not hasattr(layer_coll, "collection") or not layer_coll.collection:
+        if not layer_coll or not layer_coll.collection:
             return False
-        name = getattr(layer_coll.collection, "name", "")
+        name = layer_coll.collection.name
         is_target = name in self.targets
 
         has_target_child = False
-        if hasattr(layer_coll, "children"):
+        if layer_coll.children:
             for child in layer_coll.children:
                 if self._traverse(child):
                     has_target_child = True
@@ -75,35 +71,32 @@ class LayerCollectionGuard:
                     getattr(layer_coll, "exclude", False),
                     getattr(layer_coll, "hide_viewport", False),
                 )
-            if hasattr(layer_coll, "exclude"):
-                layer_coll.exclude = False
-            if is_target and hasattr(layer_coll, "hide_viewport"):
+            layer_coll.exclude = False
+            if is_target:
                 layer_coll.hide_viewport = False
             return True
 
         return False
 
     def _restore(self, layer_coll: bpy.types.LayerCollection | None):
-        if not layer_coll or not hasattr(layer_coll, "collection") or not layer_coll.collection:
+        if not layer_coll or not layer_coll.collection:
             return
-        name = getattr(layer_coll.collection, "name", "")
+        name = layer_coll.collection.name
         if name in self.saved_states:
             exc, hide = self.saved_states[name]
-            if hasattr(layer_coll, "exclude"):
-                layer_coll.exclude = exc
-            if hasattr(layer_coll, "hide_viewport"):
-                layer_coll.hide_viewport = hide
-        if hasattr(layer_coll, "children"):
+            layer_coll.exclude = exc
+            layer_coll.hide_viewport = hide
+        if layer_coll.children:
             for child in layer_coll.children:
                 self._restore(child)
 
     def __enter__(self):
-        if self.vl and hasattr(self.vl, "layer_collection"):
+        if self.vl and self.vl.layer_collection:
             self._traverse(self.vl.layer_collection)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.vl and hasattr(self.vl, "layer_collection"):
+        if self.vl and self.vl.layer_collection:
             self._restore(self.vl.layer_collection)
 
 
@@ -114,7 +107,7 @@ def get_rest_world_matrix_for_static(
     Computes the exact World Transform of a static object in the Armature's REST pose,
     bypassing any active Pose Mode or animation transformations.
     """
-    if not static_obj or not hasattr(static_obj, "matrix_world"):
+    if not static_obj or static_obj.matrix_world is None:
         return None
 
     def _copy_matrix(m: Matrix) -> Matrix:
@@ -319,12 +312,12 @@ class MeshMergeEngine:
             merged_obj.parent = armature_obj
             arm_mod = cast("bpy.types.ArmatureModifier", merged_obj.modifiers.new(name="Armature", type="ARMATURE"))
             arm_mod.object = armature_obj
-            if pivot_obj and hasattr(pivot_obj, "matrix_world"):
+            if pivot_obj and pivot_obj.matrix_world is not None:
                 merged_obj.matrix_world = pivot_obj.matrix_world.copy()
             else:
                 merged_obj.matrix_world = armature_obj.matrix_world.copy()
 
-        elif pivot_obj and hasattr(pivot_obj, "matrix_world"):
+        elif pivot_obj and pivot_obj.matrix_world is not None:
             merged_obj.parent = pivot_obj
             if Matrix:
                 merged_obj.matrix_parent_inverse = Matrix.Identity(4)
@@ -380,7 +373,7 @@ class CollectionCloneDAG:
 
         if not linked:
             sc = scene or (blend_data.scenes[0] if len(blend_data.scenes) > 0 else None)
-            if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
+            if sc and sc.collection and sc.collection.children is not None:
                 sc.collection.children.link(target_coll)
 
         return target_coll
@@ -456,7 +449,7 @@ class CollectionCloneDAG:
         coll = effective_blend_data.collections.get(base_name)
         if not coll:
             coll = effective_blend_data.collections.new(base_name)
-            if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
+            if sc and sc.collection and sc.collection.children is not None:
                 sc.collection.children.link(coll)
 
         coll["_is_lod_root"] = True
@@ -465,10 +458,10 @@ class CollectionCloneDAG:
         for obj in objects:
             if obj.name not in coll.objects:
                 coll.objects.link(obj)
-            for c in list(getattr(obj, "users_collection", [])):
+            for c in list(obj.users_collection or []):
                 if c != coll:
                     c.objects.unlink(obj)
-            if sc and hasattr(sc, "collection") and obj.name in sc.collection.objects:
+            if sc and sc.collection and obj.name in sc.collection.objects:
                 sc.collection.objects.unlink(obj)
 
         # Check for existing Pivot
@@ -516,7 +509,7 @@ class CollectionCloneDAG:
 
         # Parent unparented objects to Pivot
         for obj in objects:
-            if not getattr(obj, "parent", None) and obj != pivot_obj:
+            if not obj.parent and obj != pivot_obj:
                 obj.parent = pivot_obj
                 obj.matrix_parent_inverse = pivot_obj.matrix_world.inverted()
 
@@ -627,7 +620,7 @@ def get_or_create_engine_import_collection(
         # Legacy migration: check if sub_col was previously linked under _LOD0
         lod0_name = f"{clean_asset}_LOD0" if use_lod0_suffix else f"{clean_asset}_Mesh"
         lod0_col = bpy_data.collections.get(lod0_name)
-        if lod0_col and hasattr(lod0_col, "children"):
+        if lod0_col and lod0_col.children is not None:
             has_old = False
             old_sub = None
             try:
@@ -698,10 +691,10 @@ def safe_remove_collection_objects(
     for obj in objs_to_remove:
         try:
             # Unparent children safely
-            for child in list(getattr(obj, "children", [])):
+            for child in list(obj.children or []):
                 if child:
                     child.parent = None
-            if getattr(obj, "parent", None):
+            if obj.parent:
                 obj.parent = None
 
             # Deselect if selected

@@ -41,42 +41,23 @@ else:
         Vector = None
     BlendData = object
 
-try:
-    from .decimator import MeshDecimator
-    from .exceptions import DecimationError
-    from .hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
-    from .material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
-    from .materials import MaterialOptimizer
-    from .metrics import (
-        compute_bounding_sphere,
-        compute_coupled_tolerances,
-        compute_vertical_fov,
-    )
-    from .modifiers import ModifierManager
-    from .normals import NormalManager
-    from .occlusion import HardenedOcclusionCuller
-    from .pivot import PivotPreservationEngine
-    from .rigging import KinematicBonePruner, WeightSanitizer
-    from .sanitizer import MeshSanitizer, SanitizeOptions
-    from .slender import SlenderFeatureCuller
-except (ImportError, ValueError):
-    from core.decimator import MeshDecimator
-    from core.exceptions import DecimationError
-    from core.hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
-    from core.material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
-    from core.materials import MaterialOptimizer
-    from core.metrics import (
-        compute_bounding_sphere,
-        compute_coupled_tolerances,
-        compute_vertical_fov,
-    )
-    from core.modifiers import ModifierManager
-    from core.normals import NormalManager
-    from core.occlusion import HardenedOcclusionCuller
-    from core.pivot import PivotPreservationEngine
-    from core.rigging import KinematicBonePruner, WeightSanitizer
-    from core.sanitizer import MeshSanitizer, SanitizeOptions
-    from core.slender import SlenderFeatureCuller
+from .decimator import MeshDecimator
+from .exceptions import DecimationError
+from .hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
+from .material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
+from .materials import MaterialOptimizer
+from .metrics import (
+    compute_bounding_sphere,
+    compute_coupled_tolerances,
+    compute_vertical_fov,
+)
+from .modifiers import ModifierManager
+from .normals import NormalManager
+from .occlusion import HardenedOcclusionCuller
+from .pivot import PivotPreservationEngine
+from .rigging import KinematicBonePruner, WeightSanitizer
+from .sanitizer import MeshSanitizer, SanitizeOptions
+from .slender import SlenderFeatureCuller
 
 
 def _count_triangles(mesh_data: bpy.types.Mesh | bmesh.types.BMesh | object | None) -> int:
@@ -111,7 +92,7 @@ def _compute_lod0_stats(mesh_objs: list[bpy.types.Object]) -> tuple[int, int]:
                 try:
                     tier_tris += _count_triangles(eval_mesh)
                 finally:
-                    if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+                    if eval_obj:
                         eval_obj.to_mesh_clear()
             else:
                 tier_tris += _count_triangles(obj.data)
@@ -144,14 +125,14 @@ def _process_merged_tier(
     props = props_in
     render = cast("bpy.types.RenderSettings", render_in)
     bdata = blend_data
-    bdata_objs = getattr(bdata, "objects", None) if bdata else None
+    bdata_objs = bdata.objects if bdata else None
     merged_name = f"{base_name}_LOD{tier_idx}"
     existing = bdata_objs.get(merged_name) if bdata_objs else None
     if existing and existing not in mesh_objs and bdata_objs:
         old_mesh = cast("bpy.types.Mesh | None", existing.data)
         bdata_objs.remove(existing, do_unlink=True)
-        bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
-        if old_mesh and getattr(old_mesh, "users", 1) == 0 and bdata_meshes:
+        bdata_meshes = bdata.meshes if bdata else None
+        if old_mesh and old_mesh.users == 0 and bdata_meshes:
             try:
                 bdata_meshes.remove(old_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
@@ -265,13 +246,13 @@ def _process_merged_tier(
                     fb_exc,
                 )
     finally:
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata_objs = bdata.objects if bdata else None
         if owned_ref and target_ref and bdata_objs:
             ref_mesh = cast("bpy.types.Mesh | None", target_ref.data)
             try:
                 bdata_objs.remove(target_ref, do_unlink=True)
-                bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
-                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and bdata_meshes:
+                bdata_meshes = bdata.meshes if bdata else None
+                if ref_mesh and ref_mesh.users == 0 and bdata_meshes:
                     bdata_meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Cleanup ref_merged_obj exception: %s", exc)
@@ -329,8 +310,8 @@ def _process_unmerged_tier(
     first_generated_obj = None
 
     bdata = blend_data
-    bdata_objs = getattr(bdata, "objects", None) if bdata else None
-    bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+    bdata_objs = bdata.objects if bdata else None
+    bdata_meshes = bdata.meshes if bdata else None
 
     for obj_idx, source_obj in enumerate(mesh_objs):
         sub_name = f"{source_obj.name}_LOD{tier_idx}" if len(mesh_objs) > 1 else f"{base_name}_LOD{tier_idx}"
@@ -338,7 +319,7 @@ def _process_unmerged_tier(
         if existing and existing not in mesh_objs and existing != source_obj and bdata_objs:
             old_mesh = cast("bpy.types.Mesh | None", existing.data)
             bdata_objs.remove(existing, do_unlink=True)
-            if old_mesh and getattr(old_mesh, "users", 1) == 0 and bdata_meshes:
+            if old_mesh and old_mesh.users == 0 and bdata_meshes:
                 try:
                     bdata_meshes.remove(old_mesh)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
@@ -501,7 +482,7 @@ def generate_all_lods(
 
     orig_pose_pos = None
     arm_data = cast("bpy.types.Armature | None", armature_obj.data if armature_obj else None)
-    if arm_data and hasattr(arm_data, "pose_position"):
+    if arm_data:
         orig_pose_pos = arm_data.pose_position
         arm_data.pose_position = "REST"
 
@@ -518,7 +499,7 @@ def generate_all_lods(
             and context.collection.name == base_name
         ):
             src_coll = context.collection
-        elif mesh_objs and getattr(mesh_objs[0], "users_collection", []):
+        elif mesh_objs and mesh_objs[0].users_collection:
             for c in mesh_objs[0].users_collection:
                 if c.name in (base_name, f"{base_name}_LOD0") and c != context.scene.collection:
                     src_coll = c
@@ -537,9 +518,9 @@ def generate_all_lods(
         all_coords = []
         for obj in mesh_objs:
             obj_data = cast("bpy.types.Mesh | None", obj.data)
-            if hasattr(obj, "bound_box") and obj.bound_box and Vector is not None:
+            if obj.bound_box and Vector is not None:
                 all_coords.extend([obj.matrix_world @ Vector(b) for b in obj.bound_box])
-            elif obj_data and hasattr(obj_data, "vertices"):
+            elif obj_data and obj_data.vertices:
                 all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
         _, radius = compute_bounding_sphere(all_coords)
 
@@ -579,7 +560,7 @@ def generate_all_lods(
                 # Check if tier is already baked and in sync when only_out_of_sync is requested
                 last_target = getattr(tier, "last_baked_target_pct", -1.0)
                 tier_coll = all_tier_collections[i]
-                has_mesh_in_scene = bool(tier_coll and getattr(tier_coll, "objects", None))
+                has_mesh_in_scene = bool(tier_coll and tier_coll.objects)
                 is_in_sync = has_mesh_in_scene and last_target > 0.0 and abs(tier.target_tris_pct - last_target) <= 0.01
                 if only_out_of_sync and is_in_sync:
                     continue
@@ -712,13 +693,13 @@ def generate_all_lods(
         return False, f"LOD generation failed: {exc}"
 
     finally:
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata_objs = bdata.objects if bdata else None
         if shared_ref_merged_obj and bdata_objs:
-            ref_mesh = shared_ref_merged_obj.data
+            ref_mesh = cast("bpy.types.Mesh | None", shared_ref_merged_obj.data)
             try:
                 bdata_objs.remove(shared_ref_merged_obj, do_unlink=True)
-                bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
-                if ref_mesh and getattr(ref_mesh, "users", 1) == 0 and bdata_meshes:
+                bdata_meshes = bdata.meshes if bdata else None
+                if ref_mesh and ref_mesh.users == 0 and bdata_meshes:
                     bdata_meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.debug("Cleanup shared_ref_merged_obj exception: %s", exc)

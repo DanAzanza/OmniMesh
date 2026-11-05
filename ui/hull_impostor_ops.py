@@ -90,6 +90,9 @@ class LOD_OT_generate_impostor(Operator):
 
         target_coll_name = f"{base_name}_LOD_Impostor"
         bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            safe_report(self, {"ERROR"}, "Missing BlendData context for impostor generation.")
+            return {"CANCELLED"}
 
         # Resolution calculation
         if getattr(props, "auto_impostor_resolution", True):
@@ -399,6 +402,9 @@ class LOD_OT_generate_collision_hulls(Operator):
             base_name = resolve_asset_base_name(context, mesh_objs)
 
         bdata = getattr(context, "blend_data", None)
+        if bdata is None:
+            safe_report(self, {"ERROR"}, "Missing BlendData context for collision generation.")
+            return {"CANCELLED"}
         created_hulls = CollisionManager.generate_colliders_for_objects(
             mesh_objs,
             base_name,
@@ -440,6 +446,8 @@ class LOD_OT_remove_collision_hulls(Operator):
             base_name = resolve_asset_base_name(context, mesh_objs)
 
         bdata = getattr(context, "blend_data", None)
+        if bdata is None:
+            return {"CANCELLED"}
         removed = CollisionManager.remove_colliders_for_objects(
             mesh_objs,
             base_name,

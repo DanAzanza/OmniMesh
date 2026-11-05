@@ -29,10 +29,7 @@ else:
 
 from .compat import get_socket_default_value, set_socket_default_value
 
-try:
-    from .exceptions import ImpostorBakeError
-except (ImportError, ValueError):
-    from core.exceptions import ImpostorBakeError
+from .exceptions import ImpostorBakeError
 
 
 class ImpostorShaderHarness:

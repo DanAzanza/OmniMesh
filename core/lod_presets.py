@@ -19,10 +19,7 @@ else:
     except ImportError:
         bpy = None
 
-try:
-    from .pbr_presets import BasePresetManager
-except (ImportError, ValueError):
-    from core.pbr_presets import BasePresetManager
+from .pbr_presets import BasePresetManager
 
 logger = logging.getLogger(__name__)
 

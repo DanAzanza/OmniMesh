@@ -45,6 +45,9 @@ class MockVector(_MockBase):
     def length(self) -> float:
         return (self.x**2 + self.y**2 + self.z**2) ** 0.5
 
+    def copy(self) -> MockVector:
+        return MockVector(self.x, self.y, self.z)
+
 
 class MockScale(_MockBase):
     def __init__(self, x: float = 1.0, y: float = 1.0, z: float = 1.0):
@@ -82,6 +85,9 @@ class MockObject(_MockBase):
 
     def hide_set(self, state: bool, view_layer: Any = None) -> None:
         self.hide_viewport = state
+
+    def hide_get(self, view_layer: Any = None) -> bool:
+        return self.hide_viewport
 
     def __getitem__(self, key: str) -> Any:
         return self._custom_props[key]

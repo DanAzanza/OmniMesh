@@ -36,12 +36,8 @@ else:
         mathutils = None
     BlendData = object  # runtime fallback for type annotations
 
-try:
-    from .exceptions import ImpostorBakeError
-    from .impostor_math import ImpostorMath, Vector
-except (ImportError, ValueError):
-    from core.exceptions import ImpostorBakeError
-    from core.impostor_math import ImpostorMath, Vector
+from .exceptions import ImpostorBakeError
+from .impostor_math import ImpostorMath, Vector
 
 __all__ = [
     "ImpostorMath",
@@ -289,7 +285,7 @@ class ImpostorManager:
         target_engine: str = "UE5",
         is_two_sided: bool = True,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bpy.types.Material | None:
         """
         Creates or updates a dedicated PBR Impostor Material in Blender.
@@ -310,23 +306,19 @@ class ImpostorManager:
         links = mat.node_tree.links
 
         # Configure material transparency & two-sided
-        if hasattr(mat, "surface_render_method"):
-            try:
-                mat.surface_render_method = "DITHERED"
-            except (TypeError, ValueError, AttributeError) as exc:
-                logger.debug("Could not set surface_render_method: %s", exc)
-        if hasattr(mat, "use_transparent_shadow"):
-            try:
-                mat.use_transparent_shadow = True
-            except (TypeError, ValueError, AttributeError) as exc:
-                logger.debug("Could not set use_transparent_shadow: %s", exc)
-        if hasattr(mat, "use_backface_culling"):
-            mat.use_backface_culling = True
-        if hasattr(mat, "use_backface_culling_shadow"):
-            try:
-                mat.use_backface_culling_shadow = True
-            except (TypeError, ValueError, AttributeError) as exc:
-                logger.debug("Could not set use_backface_culling_shadow: %s", exc)
+        try:
+            mat.surface_render_method = "DITHERED"
+        except (TypeError, ValueError, AttributeError) as exc:
+            logger.debug("Could not set surface_render_method: %s", exc)
+        try:
+            mat.use_transparent_shadow = True
+        except (TypeError, ValueError, AttributeError) as exc:
+            logger.debug("Could not set use_transparent_shadow: %s", exc)
+        mat.use_backface_culling = True
+        try:
+            mat.use_backface_culling_shadow = True
+        except (TypeError, ValueError, AttributeError) as exc:
+            logger.debug("Could not set use_backface_culling_shadow: %s", exc)
 
         nodes.clear()
 
@@ -342,6 +334,7 @@ class ImpostorManager:
         tex_base.name = "Tex_BaseColor"
         tex_base.label = "Base Color & Alpha"
         tex_base.location = (-400, 200)
+        tex_base.mute = True
 
         # Connect Color and Alpha
         links.new(tex_base.outputs["Color"], node_bsdf.inputs["Base Color"])
@@ -353,9 +346,7 @@ class ImpostorManager:
         tex_norm.name = "Tex_Normal"
         tex_norm.label = "Normal Map"
         tex_norm.location = (-400, -100)
-        norm_img = getattr(tex_norm, "image", None)
-        if norm_img and getattr(norm_img, "colorspace_settings", None):
-            norm_img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
+        tex_norm.mute = True
 
         node_norm_map = nodes.new(type="ShaderNodeNormalMap")
         node_norm_map.location = (-150, -100)
@@ -368,9 +359,7 @@ class ImpostorManager:
         tex_orm.name = "Tex_ORM"
         tex_orm.label = "ORM / MaskMap"
         tex_orm.location = (-400, -350)
-        orm_img = getattr(tex_orm, "image", None)
-        if orm_img and getattr(orm_img, "colorspace_settings", None):
-            orm_img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
+        tex_orm.mute = True
 
         node_separate = nodes.new(type="ShaderNodeSeparateColor")
         node_separate.location = (-150, -350)
@@ -402,36 +391,42 @@ class ImpostorManager:
         normal_path: str = "",
         orm_path: str = "",
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> None:
         """Loads and assigns baked PNG files into TexImage shader nodes on Impostor material."""
-        if not bpy or not mat or blend_data is None or not getattr(mat, "use_nodes", False) or not mat.node_tree:
+        if not bpy or not mat or blend_data is None or not mat.node_tree:
             return
 
         nodes = mat.node_tree.nodes
 
         if base_color_path and os.path.exists(base_color_path):
             tex_base = nodes.get("Tex_BaseColor")
-            if tex_base and getattr(tex_base, "type", "") == "TEX_IMAGE":
+            if tex_base and tex_base.type == "TEX_IMAGE":
                 img = blend_data.images.load(base_color_path)
-                cast("bpy.types.ShaderNodeTexImage", tex_base).image = img
-                if hasattr(img, "colorspace_settings") and img.colorspace_settings:
+                tex_base_node = cast("bpy.types.ShaderNodeTexImage", tex_base)
+                tex_base_node.image = img
+                tex_base_node.mute = False
+                if img.colorspace_settings:
                     img.colorspace_settings.name = "sRGB"  # type: ignore[assignment]
 
         if normal_path and os.path.exists(normal_path):
             tex_norm = nodes.get("Tex_Normal")
-            if tex_norm and getattr(tex_norm, "type", "") == "TEX_IMAGE":
+            if tex_norm and tex_norm.type == "TEX_IMAGE":
                 img = blend_data.images.load(normal_path)
-                cast("bpy.types.ShaderNodeTexImage", tex_norm).image = img
-                if hasattr(img, "colorspace_settings") and img.colorspace_settings:
+                tex_norm_node = cast("bpy.types.ShaderNodeTexImage", tex_norm)
+                tex_norm_node.image = img
+                tex_norm_node.mute = False
+                if img.colorspace_settings:
                     img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
         if orm_path and os.path.exists(orm_path):
             tex_orm = nodes.get("Tex_ORM")
-            if tex_orm and getattr(tex_orm, "type", "") == "TEX_IMAGE":
+            if tex_orm and tex_orm.type == "TEX_IMAGE":
                 img = blend_data.images.load(orm_path)
-                cast("bpy.types.ShaderNodeTexImage", tex_orm).image = img
-                if hasattr(img, "colorspace_settings") and img.colorspace_settings:
+                tex_orm_node = cast("bpy.types.ShaderNodeTexImage", tex_orm)
+                tex_orm_node.image = img
+                tex_orm_node.mute = False
+                if img.colorspace_settings:
                     img.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
     @classmethod
@@ -446,7 +441,7 @@ class ImpostorManager:
         scene: bpy.types.Scene | None = None,
         context: bpy.types.Context | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> bpy.types.Object | None:
         """
         Constructs and links the Impostor billboard object in Blender.
@@ -470,7 +465,7 @@ class ImpostorManager:
         target_coll = effective_bdata.collections.get(coll_name)
         if not target_coll:
             target_coll = effective_bdata.collections.new(coll_name)
-            if sc and hasattr(sc, "collection") and hasattr(sc.collection, "children"):
+            if sc and sc.collection:
                 sc.collection.children.link(target_coll)
 
         if not target_coll:

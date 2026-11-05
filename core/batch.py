@@ -35,43 +35,24 @@ else:
         Object = object
     BlendData = object
 
-try:
-    from .compat import count_mesh_triangles, import_scene_asset
-    from .decimator import MeshDecimator
-    from .materials import MaterialOptimizer
-    from .batch_worker_process import (
-        BatchWorkerProcessManager,
-        WorkerProcessHandle,
-        build_hierarchical_export_path,
-    )
-    from .metrics import (
-        compute_bounding_sphere,
-        compute_coupled_tolerances,
-        compute_distance_from_screen_size,
-        generate_logarithmic_screen_tiers,
-    )
-    from .normals import NormalManager
-    from .pbr_presets import PBRImporterPresetManager
-    from .sanitizer import MeshSanitizer
-    from .textures import TextureChannelPacker, TexturePoolManager
-except (ImportError, ValueError):
-    from core.compat import count_mesh_triangles, import_scene_asset
-    from core.decimator import MeshDecimator
-    from core.materials import MaterialOptimizer
-    from core.batch_worker_process import (
-        BatchWorkerProcessManager,
-        build_hierarchical_export_path,
-    )
-    from core.metrics import (
-        compute_bounding_sphere,
-        compute_coupled_tolerances,
-        compute_distance_from_screen_size,
-        generate_logarithmic_screen_tiers,
-    )
-    from core.normals import NormalManager
-    from core.pbr_presets import PBRImporterPresetManager
-    from core.sanitizer import MeshSanitizer
-    from core.textures import TextureChannelPacker, TexturePoolManager
+from .compat import count_mesh_triangles, import_scene_asset
+from .decimator import MeshDecimator
+from .materials import MaterialOptimizer
+from .batch_worker_process import (
+    BatchWorkerProcessManager,
+    WorkerProcessHandle,
+    build_hierarchical_export_path,
+)
+from .metrics import (
+    compute_bounding_sphere,
+    compute_coupled_tolerances,
+    compute_distance_from_screen_size,
+    generate_logarithmic_screen_tiers,
+)
+from .normals import NormalManager
+from .pbr_presets import PBRImporterPresetManager
+from .sanitizer import MeshSanitizer
+from .textures import TextureChannelPacker, TexturePoolManager
 
 logger = logging.getLogger(__name__)
 
@@ -243,13 +224,11 @@ class BatchProcessorEngine:
             return []
 
         bdata = blend_data
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata_objs = bdata.objects if bdata else None
         if not bdata_objs:
             return []
 
-        existing_objs = (
-            set(bdata_objs.keys()) if hasattr(bdata_objs, "keys") else {getattr(o, "name", "") for o in bdata_objs}
-        )
+        existing_objs = {o.name for o in bdata_objs}
 
         try:
             import_scene_asset(filepath)
@@ -257,8 +236,7 @@ class BatchProcessorEngine:
             logger.error("Failed to import asset '%s': %s", filepath, exc)
             return []
 
-        all_keys = bdata_objs.keys() if hasattr(bdata_objs, "keys") else [getattr(o, "name", "") for o in bdata_objs]
-        new_objs = [bdata_objs[k] for k in all_keys if k not in existing_objs]
+        new_objs = [o for o in bdata_objs if o.name not in existing_objs]
         return new_objs
 
     @classmethod
@@ -295,8 +273,8 @@ class BatchProcessorEngine:
             return result
 
         bdata = blend_data
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
-        bdata_cols = getattr(bdata, "collections", None) if bdata else None
+        bdata_objs = bdata.objects if bdata else None
+        bdata_cols = bdata.collections if bdata else None
 
         imported_objs = cls.import_asset_file(filepath, blend_data=bdata)
         if not imported_objs:
@@ -315,14 +293,14 @@ class BatchProcessorEngine:
         try:
             # Primary mesh object selection
             primary_obj = mesh_objs[0]
-            if hasattr(context, "view_layer") and hasattr(context.view_layer, "objects"):
+            if context.view_layer and context.view_layer.objects is not None:
                 context.view_layer.objects.active = primary_obj
 
             # 1. Sanitize Master Mesh
             initial_tris = 0
             for obj in mesh_objs:
                 obj_mesh = cast("bpy.types.Mesh | None", obj.data)
-                if obj_mesh and hasattr(obj_mesh, "polygons") and len(obj_mesh.polygons) > 0:
+                if obj_mesh and obj_mesh.polygons and len(obj_mesh.polygons) > 0:
                     import bmesh
 
                     bm = bmesh.new()
@@ -339,7 +317,7 @@ class BatchProcessorEngine:
             # 2. Compute Metric Extents & Tiers
             coords = []
             primary_mesh = cast("bpy.types.Mesh | None", primary_obj.data)
-            if primary_mesh and hasattr(primary_mesh, "vertices"):
+            if primary_mesh and primary_mesh.vertices:
                 for v in primary_mesh.vertices:
                     try:
                         coords.append(
@@ -358,7 +336,7 @@ class BatchProcessorEngine:
             coll = bdata_cols.get(coll_name) if bdata_cols else None
             if not coll and bdata_cols:
                 coll = bdata_cols.new(coll_name)
-                if hasattr(context, "scene") and hasattr(context.scene, "collection"):
+                if context.scene and context.scene.collection:
                     context.scene.collection.children.link(coll)
 
             props = getattr(getattr(context, "scene", None), "lod_tool", None)
@@ -417,7 +395,7 @@ class BatchProcessorEngine:
                         )
                         MaterialOptimizer.purge_unused_materials(lod_obj)
 
-                current_tris = len(lod_mesh.polygons) if (lod_mesh is not None and hasattr(lod_mesh, "polygons")) else 0
+                current_tris = len(lod_mesh.polygons) if (lod_mesh is not None and lod_mesh.polygons is not None) else 0
                 if i == len(screen_tiers) - 1:
                     final_lod_tris = current_tris
 
@@ -430,7 +408,7 @@ class BatchProcessorEngine:
                     item.delta_world = delta_w
                     item.target_tris = int(initial_tris * tolerances["qem_ratio"])
                     item.actual_tris = current_tris
-                    item.mat_slots_count = len(getattr(lod_obj, "material_slots", []))
+                    item.mat_slots_count = len(lod_obj.material_slots)
                     item.generated_obj = lod_obj
 
             # 4. Pack PBR Textures
@@ -440,7 +418,7 @@ class BatchProcessorEngine:
 
             unique_mats = set()
             for o in mesh_objs:
-                for slot in getattr(o, "material_slots", []):
+                for slot in o.material_slots:
                     if slot.material:
                         unique_mats.add(slot.material)
 
@@ -579,14 +557,14 @@ class BatchProcessorEngine:
         blend_data: BlendData | None = None,
     ) -> None:
         """Removes objects and their mesh datablocks cleanly from Blender memory."""
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
-        bdata_meshes = getattr(blend_data, "meshes", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
+        bdata_meshes = blend_data.meshes if blend_data else None
 
         meshes_to_remove = set()
         for obj in objects:
             if not obj:
                 continue
-            if getattr(obj, "type", "") == "MESH" and getattr(obj, "data", None):
+            if obj.type == "MESH" and obj.data:
                 meshes_to_remove.add(obj.data)
             if bdata_objs:
                 try:

@@ -30,10 +30,7 @@ else:
 
         BoolProperty = EnumProperty = FloatProperty = StringProperty = _mock_prop
 
-try:
-    from .enums import MSFS_GEAR_STATE_ITEMS, MSFS_TARGET_VERSION_ITEMS
-except (ImportError, ValueError):
-    from ui.properties.enums import MSFS_GEAR_STATE_ITEMS, MSFS_TARGET_VERSION_ITEMS
+from .enums import MSFS_GEAR_STATE_ITEMS, MSFS_TARGET_VERSION_ITEMS
 
 
 class OMNIMESH_MSFSConfigSettings(PropertyGroup):

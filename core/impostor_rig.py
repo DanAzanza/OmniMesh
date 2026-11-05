@@ -27,10 +27,7 @@ else:
         Object = object
         Scene = object
         World = object
-        try:
-            from .impostor_math import Vector
-        except (ImportError, ValueError):
-            from core.impostor_math import Vector
+        from .impostor_math import Vector
     BlendData = object
 
 from .metrics import compute_bounding_sphere

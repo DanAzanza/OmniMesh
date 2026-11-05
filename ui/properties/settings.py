@@ -20,10 +20,7 @@ from .material_properties import OMNIMESH_MaterialPresetSettings
 from .msfs_cfg_properties import OMNIMESH_MSFSConfigSettings
 from .pbr_properties import PBRExportMapItem, PBRMapItem
 
-try:
-    from ..utils import get_asset_enum_items
-except (ImportError, ValueError):
-    from ui.utils import get_asset_enum_items
+from ..utils import get_asset_enum_items
 
 if TYPE_CHECKING:
     import bpy

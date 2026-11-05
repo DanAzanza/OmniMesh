@@ -27,28 +27,16 @@ else:
         bpy = None
         Panel = object
 
-try:
-    from .utils import _get_popover_props
-except (ImportError, ValueError):
-    from ui.utils import _get_popover_props
+from .utils import _get_popover_props
 
 # Re-export preset popovers from ui.popover_presets
-try:
-    from .popover_presets import (
-        OMNIMESH_PT_popover_config_preset,
-        OMNIMESH_PT_popover_engine_import_preset,
-        OMNIMESH_PT_popover_export_preset,
-        OMNIMESH_PT_popover_import_preset,
-        OMNIMESH_PT_popover_lod_preset,
-    )
-except (ImportError, ValueError):
-    from ui.popover_presets import (
-        OMNIMESH_PT_popover_config_preset,
-        OMNIMESH_PT_popover_engine_import_preset,
-        OMNIMESH_PT_popover_export_preset,
-        OMNIMESH_PT_popover_import_preset,
-        OMNIMESH_PT_popover_lod_preset,
-    )
+from .popover_presets import (
+    OMNIMESH_PT_popover_config_preset,
+    OMNIMESH_PT_popover_engine_import_preset,
+    OMNIMESH_PT_popover_export_preset,
+    OMNIMESH_PT_popover_import_preset,
+    OMNIMESH_PT_popover_lod_preset,
+)
 
 
 # =========================================================================

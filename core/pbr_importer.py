@@ -36,20 +36,12 @@ else:
         Object = object
     BlendData = object
 
-try:
-    from .pbr_classifier import PBRSemanticClassifier
-    from .pbr_presets import (
-        DEFAULT_PRESET_ID,
-        PBRImportPresetManager,
-        PBRImporterPresetManager,
-    )
-except (ImportError, ValueError):
-    from core.pbr_classifier import PBRSemanticClassifier
-    from core.pbr_presets import (
-        DEFAULT_PRESET_ID,
-        PBRImportPresetManager,
-        PBRImporterPresetManager,
-    )
+from .pbr_classifier import PBRSemanticClassifier
+from .pbr_presets import (
+    DEFAULT_PRESET_ID,
+    PBRImportPresetManager,
+    PBRImporterPresetManager,
+)
 
 logger = logging.getLogger(__name__)
 

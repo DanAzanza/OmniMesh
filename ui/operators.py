@@ -85,15 +85,9 @@ from .utils import (
     resolve_lod_context,
 )
 
-try:
-    from .export_ops import EXPORT_OPS_CLASSES
-except (ImportError, ValueError):
-    EXPORT_OPS_CLASSES = ()
+from .export_ops import EXPORT_OPS_CLASSES
 
-try:
-    from .preset_ops import PRESET_OPERATOR_CLASSES
-except (ImportError, ValueError):
-    PRESET_OPERATOR_CLASSES = ()
+from .preset_ops import PRESET_OPERATOR_CLASSES
 
 OPERATOR_CLASSES = [
     *CLEANUP_OPERATOR_CLASSES,

@@ -37,7 +37,7 @@ else:
 
 
 def _resolve_scene(context: bpy.types.Context | None, blend_data: BlendData | None) -> bpy.types.Scene | None:
-    if context and hasattr(context, "scene") and context.scene:
+    if context and context.scene:
         return context.scene
     if blend_data and len(blend_data.scenes) > 0:
         return blend_data.scenes[0]
@@ -338,7 +338,7 @@ def create_octahedral_preview_material(
     if normal_path and os.path.exists(normal_path):
         norm_img = safe_load_image(normal_path, blend_data=blend_data)
         if norm_img:
-            if hasattr(norm_img, "colorspace_settings") and norm_img.colorspace_settings:
+            if norm_img.colorspace_settings:
                 cast(Any, norm_img.colorspace_settings).name = "Non-Color"
 
             tex_norm = nodes.new(type="ShaderNodeTexImage")
@@ -375,7 +375,7 @@ def create_octahedral_preview_material(
     if orm_path and os.path.exists(orm_path):
         orm_img = safe_load_image(orm_path, blend_data=blend_data)
         if orm_img:
-            if hasattr(orm_img, "colorspace_settings") and orm_img.colorspace_settings:
+            if orm_img.colorspace_settings:
                 cast(Any, orm_img.colorspace_settings).name = "Non-Color"
 
             tex_orm = nodes.new(type="ShaderNodeTexImage")
@@ -404,7 +404,7 @@ def setup_impostor_tracking(
     """
     Configures a TRACK_TO constraint on the proxy quad to orient continuously toward the camera.
     """
-    if not bpy or not proxy_obj or not hasattr(proxy_obj, "constraints") or proxy_obj.constraints is None:
+    if not bpy or not proxy_obj or proxy_obj.constraints is None:
         return None
 
     effective_bdata = blend_data
@@ -518,7 +518,7 @@ def setup_impostor_preview_rig(
     rig_coll = effective_bdata.collections.get(rig_coll_name)
     if not rig_coll:
         rig_coll = effective_bdata.collections.new(rig_coll_name)
-        if hasattr(scene, "collection") and hasattr(scene.collection, "children"):
+        if scene.collection and scene.collection.children is not None:
             scene.collection.children.link(rig_coll)
 
     if not rig_coll:
@@ -699,14 +699,14 @@ def teardown_impostor_preview_rig(
         return False
 
     # Capture objects and unshared datablocks
-    for obj in list(getattr(rig_coll, "objects", [])):
-        if getattr(obj, "animation_data", None):
+    for obj in list(rig_coll.objects):
+        if obj.animation_data:
             try:
                 obj.animation_data_clear()
             except (AttributeError, RuntimeError):
                 pass
 
-        obj_data = getattr(obj, "data", None)
+        obj_data = obj.data
         try:
             effective_bdata.objects.remove(obj, do_unlink=True)
         except (TypeError, RuntimeError):
@@ -728,8 +728,8 @@ def teardown_impostor_preview_rig(
     effective_bdata.collections.remove(rig_coll)
 
     # Remove preview material
-    mats = getattr(effective_bdata, "materials", None)
-    if mats and hasattr(mats, "remove"):
+    mats = effective_bdata.materials
+    if mats:
         mat = mats.get(f"M_{base_name}_Octahedral_Preview")
         if mat:
             mats.remove(mat)

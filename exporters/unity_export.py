@@ -28,12 +28,8 @@ else:
         bpy = None
     BlendData = object
 
-    try:
-        from .base import EngineExporterBase
-        from .engine_export import AssetMeshResolver
-    except (ImportError, ValueError):
-        from exporters.base import EngineExporterBase
-        from exporters.engine_export import AssetMeshResolver
+    from .base import EngineExporterBase
+    from .engine_export import AssetMeshResolver
 
 
 class UnityExporter(EngineExporterBase):
@@ -64,7 +60,7 @@ class UnityExporter(EngineExporterBase):
         if not payload or not payload.lod_tiers:
             return False, f"No generated LOD objects found for '{asset_name}'"
 
-        if hasattr(bpy.ops.object, "mode_set") and getattr(context, "mode", "") != "OBJECT":
+        if getattr(context, "mode", "") != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
             except (RuntimeError, AttributeError, TypeError) as exc:
@@ -90,8 +86,8 @@ class UnityExporter(EngineExporterBase):
         for o in all_export_items:
             if not o:
                 continue
-            hv = getattr(o, "hide_viewport", False)
-            hg = o.hide_get(view_layer=vl) if (hasattr(o, "hide_get") and vl) else hv
+            hv = o.hide_viewport
+            hg = o.hide_get(view_layer=vl) if vl else hv
             orig_hide_states[o] = (hv, hg)
 
         orig_collider_names: dict[bpy.types.Object, str] = {}
@@ -100,10 +96,9 @@ class UnityExporter(EngineExporterBase):
         try:
             # Normalize collider names for Unity C# postprocessor regex (_Collider\d*|UCX_)
             for idx, c_obj in enumerate(collider_objects, start=1):
-                if hasattr(c_obj, "name"):
-                    orig_collider_names[c_obj] = c_obj.name
-                    if not (c_obj.name.startswith("UCX_") or "_Collider" in c_obj.name):
-                        c_obj.name = f"{clean_name}_Collider_{idx:02d}"
+                orig_collider_names[c_obj] = c_obj.name
+                if not (c_obj.name.startswith("UCX_") or "_Collider" in c_obj.name):
+                    c_obj.name = f"{clean_name}_Collider_{idx:02d}"
 
             # Unhide all objects in view layer
             for obj in all_export_items:
@@ -118,12 +113,12 @@ class UnityExporter(EngineExporterBase):
                 obj.select_set(True)
             for c_obj in collider_objects:
                 c_obj.select_set(True)
-            if armature_obj and hasattr(armature_obj, "select_set"):
+            if armature_obj:
                 armature_obj.select_set(True)
 
-            if armature_obj and vl and hasattr(vl, "objects"):
+            if armature_obj and vl:
                 vl.objects.active = armature_obj
-            elif export_objects and vl and hasattr(vl, "objects"):
+            elif export_objects and vl:
                 vl.objects.active = export_objects[0]
 
             bpy.ops.export_scene.fbx(
@@ -163,19 +158,18 @@ class UnityExporter(EngineExporterBase):
             for obj, (hv, hg) in orig_hide_states.items():
                 try:
                     obj.hide_viewport = hv
-                    if hasattr(obj, "hide_set") and vl:
+                    if vl:
                         obj.hide_set(hg, view_layer=vl)
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
-            if bpy and hasattr(bpy.ops.object, "select_all"):
+            if bpy:
                 try:
                     bpy.ops.object.select_all(action="DESELECT")
                     for o in orig_selected:
-                        if hasattr(o, "select_set"):
-                            o.select_set(True)
-                    if vl and hasattr(vl, "objects") and orig_active:
+                        o.select_set(True)
+                    if vl and orig_active:
                         vl.objects.active = orig_active
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore selection state: %s", exc)

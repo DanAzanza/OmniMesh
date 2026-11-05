@@ -39,21 +39,13 @@ class MockVector(_MockBase):
             self.z = float(z)
 
     def __getitem__(self, idx: int) -> float:
-        if idx == 0:
-            return self.x
-        elif idx == 1:
-            return self.y
-        elif idx == 2:
-            return self.z
+        if idx in (0, 1, 2):
+            return (self.x, self.y, self.z)[idx]
         raise IndexError(f"Index {idx} out of range for MockVector (dim=3)")
 
     def __setitem__(self, idx: int, val: float) -> None:
-        if idx == 0:
-            self.x = float(val)
-        elif idx == 1:
-            self.y = float(val)
-        elif idx == 2:
-            self.z = float(val)
+        if idx in (0, 1, 2):
+            setattr(self, ("x", "y", "z")[idx], float(val))
         else:
             raise IndexError(f"Index {idx} out of range for MockVector (dim=3)")
 
@@ -276,6 +268,12 @@ class MockMaterial(_MockBase):
         self.name = name
         self.use_nodes = use_nodes
         self.diffuse_color = (0.8, 0.8, 0.8, 1.0)
+        self.users = 1
+        self.blend_method = "OPAQUE"
+        self.surface_render_method = "DITHERED"
+        self.use_transparent_shadow = True
+        self.use_backface_culling = False
+        self.use_backface_culling_shadow = False
 
         if use_nodes:
             self.bsdf = MockShaderNode(
@@ -359,6 +357,12 @@ class MockMeshObject(_MockBase):
         self.matrix_basis = MagicMock()
         self.matrix_local = MagicMock()
         self.parent_bone: str = ""
+        self.parent_type: str = "OBJECT"
+        self.vertex_groups = MockBlendDataContainer()
+        self.scale = MockVector(1.0, 1.0, 1.0)
+        self.location = MockVector(0.0, 0.0, 0.0)
+        self.rotation_euler = MockVector(0.0, 0.0, 0.0)
+        self.library: Optional[Any] = None
         self.constraints = MockConstraintList()
         self.animation_data: Optional[Any] = None
 
@@ -436,6 +440,7 @@ class MockCollection(_MockBase):
 
     def __init__(self, name: str = "Collection"):
         self.name = name
+        self.color_tag: str = "NONE"
         self.hide_viewport: bool = False
         self.hide_render: bool = False
         self.objects: MockCollectionObjects = MockCollectionObjects()

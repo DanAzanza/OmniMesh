@@ -91,13 +91,13 @@ class NormalManager:
 
         orig_pose_pos = None
         arm_data = cast("bpy.types.Armature | None", getattr(arm, "data", None) if arm else None)
-        if arm_data and hasattr(arm_data, "pose_position"):
+        if arm_data:
             orig_pose_pos = arm_data.pose_position
             arm_data.pose_position = "REST"
 
         mod_name = "__LOD_NORMAL_TRANSFER__"
         dt_mod: bpy.types.DataTransferModifier | None = None
-        if hasattr(lod_obj, "modifiers"):
+        if lod_obj.modifiers is not None:
             existing_mod = lod_obj.modifiers.get(mod_name)
             if existing_mod:
                 lod_obj.modifiers.remove(existing_mod)
@@ -147,18 +147,18 @@ class NormalManager:
                 bpy.ops.object.modifier_apply(modifier=dt_mod.name)
             lod_data = cast("bpy.types.Mesh | None", lod_obj.data)
             cls.ensure_sharp_edge_attribute(lod_data)
-            if lod_data and hasattr(lod_data, "update"):
+            if lod_data:
                 lod_data.update()
             return True
         except (RuntimeError, ValueError, AttributeError) as exc:
             logger.debug("DATA_TRANSFER modifier failed (%s), attempting KDTree normal transfer fallback", exc)
-            if hasattr(lod_obj, "modifiers") and dt_mod.name in lod_obj.modifiers:
+            if lod_obj.modifiers is not None and dt_mod.name in lod_obj.modifiers:
                 lod_obj.modifiers.remove(dt_mod)
 
             # Fallback: Spatial KDTree nearest-normal transfer
             return cls._kdtree_normal_transfer_fallback(lod_obj, source_lod0)
         finally:
-            if arm_data and orig_pose_pos is not None and hasattr(arm_data, "pose_position"):
+            if arm_data and orig_pose_pos is not None:
                 arm_data.pose_position = orig_pose_pos
 
     @classmethod

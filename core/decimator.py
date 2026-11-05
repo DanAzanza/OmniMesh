@@ -38,7 +38,7 @@ def temporary_vertex_group(obj: bpy.types.Object | None, group_name: str):
     try:
         yield
     finally:
-        if obj and hasattr(obj, "vertex_groups"):
+        if obj and obj.vertex_groups is not None:
             vg = obj.vertex_groups.get(group_name)
             if vg:
                 try:
@@ -64,7 +64,7 @@ class MeshDecimator:
         5. UV seams across active/all UV layers (if pin_uv_seams)
         """
         pinned_vert_indices: set[int] = set()
-        if not bm or not hasattr(bm, "verts") or not hasattr(bm, "edges"):
+        if not bm or bm.verts is None or bm.edges is None:
             return pinned_vert_indices
 
         try:
@@ -106,7 +106,7 @@ class MeshDecimator:
 
         # 4. Tag UV Seams across Face Loops (Winding-Order Invariant)
         uv_layers = []
-        if pin_uv_seams and hasattr(bm, "loops") and hasattr(bm.loops, "layers") and hasattr(bm.loops.layers, "uv"):
+        if pin_uv_seams and bm.loops is not None and bm.loops.layers is not None and bm.loops.layers.uv is not None:
             uv_layers = (
                 list(bm.loops.layers.uv.values()) if hasattr(bm.loops.layers.uv, "values") else list(bm.loops.layers.uv)
             )
@@ -157,7 +157,7 @@ class MeshDecimator:
         """
         if not bmesh or not bm or angle_limit_rad < 1e-4:
             return
-        if not hasattr(bm, "faces") or not hasattr(bm, "edges"):
+        if bm.faces is None or bm.edges is None:
             return
         if len(bm.faces) <= 1 or len(bm.edges) == 0:
             return
@@ -197,10 +197,10 @@ class MeshDecimator:
         Computes maximum dihedral angle across link edges for each vertex and writes weights
         to the deform layer (vertex group). Tagged pinned vertices receive a weight of 1.0.
         """
-        if not obj or not bm or not hasattr(bm, "verts"):
+        if not obj or not bm or bm.verts is None:
             return
 
-        if not hasattr(obj, "vertex_groups"):
+        if obj.vertex_groups is None:
             return
 
         vg = obj.vertex_groups.get(group_name)
@@ -417,13 +417,17 @@ class MeshDecimator:
             if ctx and hasattr(ctx, "temp_override"):
                 with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                     bpy.ops.object.modifier_apply(modifier=dec_mod.name)
-            elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
+            elif ctx and ctx.view_layer and ctx.view_layer.objects:
                 ctx.view_layer.objects.active = obj
                 bpy.ops.object.modifier_apply(modifier=dec_mod.name)
             else:
                 bpy.ops.object.modifier_apply(modifier=dec_mod.name)
+
+            mesh_data = cast("bpy.types.Mesh | None", obj.data)
+            if mesh_data is not None and hasattr(mesh_data, "validate"):
+                mesh_data.validate()
         except (RuntimeError, ValueError, AttributeError) as exc:
-            obj_name = getattr(obj, "name", "Unnamed")
+            obj_name = obj.name or "Unnamed"
             logger.error("QEM Decimate modifier apply failed on '%s' (ratio=%.4f): %s", obj_name, clamped_ratio, exc)
             if dec_mod.name in obj.modifiers:
                 obj.modifiers.remove(dec_mod)
@@ -483,7 +487,7 @@ class MeshDecimator:
                     if hasattr(obj, "shape_key_clear"):
                         obj.shape_key_clear()
                     bpy.ops.object.shape_key_remove(all=True)
-            elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
+            elif ctx and ctx.view_layer and ctx.view_layer.objects:
                 ctx.view_layer.objects.active = obj
                 if hasattr(obj, "shape_key_clear"):
                     obj.shape_key_clear()

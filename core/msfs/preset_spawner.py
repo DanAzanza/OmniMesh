@@ -12,10 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 logger = logging.getLogger(__name__)
 
-try:
-    from ..compat import Vector
-except (ImportError, ValueError):
-    from core.compat import Vector
+from ..compat import Vector
 
 if TYPE_CHECKING:
     import bpy
@@ -570,17 +567,11 @@ class ConfigPresetSpawner:
 
         mesh_fn = get_base_meshes_fn
         if not mesh_fn:
-            try:
-                from ..asset_scanner import get_asset_base_meshes as mesh_fn
-            except (ImportError, ValueError):
-                from core.asset_scanner import get_asset_base_meshes as mesh_fn
+            from ..asset_scanner import get_asset_base_meshes as mesh_fn
 
         col_fn = get_import_collection_fn
         if not col_fn:
-            try:
-                from ..hierarchy import get_or_create_engine_import_collection as col_fn
-            except (ImportError, ValueError):
-                from core.hierarchy import get_or_create_engine_import_collection as col_fn
+            from ..hierarchy import get_or_create_engine_import_collection as col_fn
 
         from .geometry import (
             detect_airframe_extrema,
@@ -589,10 +580,7 @@ class ConfigPresetSpawner:
             extract_world_vertices_numpy,
         )
 
-        try:
-            from ..hierarchy import safe_remove_collection_objects
-        except (ImportError, ValueError):
-            from core.hierarchy import safe_remove_collection_objects
+        from ..hierarchy import safe_remove_collection_objects
 
         # 1. Inspect geometry extrema & detected wheels
         base_meshes = mesh_fn(context, asset_name)

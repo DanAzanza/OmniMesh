@@ -23,10 +23,7 @@ else:
         BlendData = object
         Object = object
 
-try:
-    from .animations import AnimationRigSanitizer
-except (ImportError, ValueError):
-    from core.animations import AnimationRigSanitizer
+from .animations import AnimationRigSanitizer
 
 
 SIMVAR_MAPPINGS: dict[str, str] = {

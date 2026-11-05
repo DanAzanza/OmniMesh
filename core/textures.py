@@ -26,16 +26,10 @@ else:
 logger = logging.getLogger(__name__)
 
 
-try:
-    from .pbr_presets import DEFAULT_NAMING_PATTERN, format_texture_name
-    from .png_writer import write_png_direct
-    from .shader_tracer import ShaderTracer
-    from .texture_pool import TexturePoolManager
-except (ImportError, ValueError):
-    from core.pbr_presets import DEFAULT_NAMING_PATTERN, format_texture_name
-    from core.png_writer import write_png_direct
-    from core.shader_tracer import ShaderTracer
-    from core.texture_pool import TexturePoolManager
+from .pbr_presets import DEFAULT_NAMING_PATTERN, format_texture_name
+from .png_writer import write_png_direct
+from .shader_tracer import ShaderTracer
+from .texture_pool import TexturePoolManager
 
 
 class TextureChannelPacker:

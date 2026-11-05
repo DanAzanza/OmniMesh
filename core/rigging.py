@@ -205,16 +205,10 @@ class WeightSanitizer:
         - Safely purges unused vertex groups by name to prevent index-shift corruption.
         - Guarantees BMesh memory safety via try...finally block.
         """
-        if not bpy or not bmesh or not obj or getattr(obj, "type", None) != "MESH":
+        if not bpy or not bmesh or not obj or obj.type != "MESH":
             return {"normalized": 0, "singularities_fixed": 0, "purged_vgs": 0}
-        mesh = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
-        if (
-            not hasattr(obj, "vertex_groups")
-            or len(obj.vertex_groups) == 0
-            or not mesh
-            or not hasattr(mesh, "vertices")
-            or len(mesh.vertices) == 0
-        ):
+        mesh = cast("bpy.types.Mesh | None", obj.data)
+        if not obj.vertex_groups or len(obj.vertex_groups) == 0 or not mesh or len(mesh.vertices) == 0:
             return {"normalized": 0, "singularities_fixed": 0, "purged_vgs": 0}
         bm = bmesh.new()
         singularities_fixed = 0
@@ -284,20 +278,19 @@ class WeightSanitizer:
         # Protect skeletal hierarchy: never purge vertex groups matching bones in an active armature
         protected_bone_names: set[str] = set()
         armature = None
-        if hasattr(obj, "find_armature"):
-            try:
-                armature = obj.find_armature()
-            except (RuntimeError, AttributeError) as exc:
-                logger.debug("find_armature failed: %s", exc)
-        if not armature and hasattr(obj, "modifiers"):
+        try:
+            armature = obj.find_armature()
+        except (RuntimeError, AttributeError) as exc:
+            logger.debug("find_armature failed: %s", exc)
+        if not armature and obj.modifiers:
             for m in obj.modifiers:
                 if m.type == "ARMATURE":
                     arm_mod = cast("bpy.types.ArmatureModifier", m)
-                    if getattr(arm_mod, "object", None):
+                    if arm_mod.object:
                         armature = arm_mod.object
                         break
         arm_data_prot = cast("bpy.types.Armature | None", armature.data if armature else None)
-        if arm_data_prot and hasattr(arm_data_prot, "bones"):
+        if arm_data_prot and arm_data_prot.bones:
             protected_bone_names = {b.name for b in arm_data_prot.bones}
 
         # Collect unused vertex groups first, then safely remove by reference
@@ -335,18 +328,11 @@ class KinematicBonePruner:
         Collapses bones whose vertex bounding sphere screen diameter < pixel_threshold
         into their immediate parent bone.
         """
-        if not bpy or not lod_obj or not armature_obj or getattr(lod_obj, "type", None) != "MESH":
+        if not bpy or not lod_obj or not armature_obj or lod_obj.type != "MESH":
             return 0
-        mesh = cast("bpy.types.Mesh | None", getattr(lod_obj, "data", None))
-        arm_data = cast("bpy.types.Armature | None", getattr(armature_obj, "data", None))
-        if (
-            not mesh
-            or not hasattr(mesh, "vertices")
-            or len(mesh.vertices) == 0
-            or not arm_data
-            or not hasattr(arm_data, "bones")
-            or len(arm_data.bones) == 0
-        ):
+        mesh = cast("bpy.types.Mesh | None", lod_obj.data)
+        arm_data = cast("bpy.types.Armature | None", armature_obj.data)
+        if not mesh or len(mesh.vertices) == 0 or not arm_data or len(arm_data.bones) == 0:
             return 0
 
         vg_map = {vg.name: vg.index for vg in lod_obj.vertex_groups}

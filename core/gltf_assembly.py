@@ -46,13 +46,7 @@ def find_layer_collection(
     return None
 
 
-try:
-    from .hierarchy import get_or_create_engine_import_collection
-except (ImportError, ValueError):
-    try:
-        from core.hierarchy import get_or_create_engine_import_collection
-    except (ImportError, ValueError):
-        get_or_create_engine_import_collection = None
+from .hierarchy import get_or_create_engine_import_collection
 
 
 def classify_imported_mesh_node(obj: bpy.types.Object | None, is_interior: bool = False) -> str:

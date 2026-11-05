@@ -31,7 +31,7 @@ class ModifierManager:
     @staticmethod
     def has_unapplied_modifiers(obj: bpy.types.Object | None, ignore_armature: bool = True) -> bool:
         """Returns True if the object has one or more unapplied non-armature modifiers."""
-        if not obj or not hasattr(obj, "modifiers"):
+        if not obj or obj.modifiers is None:
             return False
         for mod in obj.modifiers:
             if ignore_armature and mod.type == "ARMATURE":
@@ -47,7 +47,7 @@ class ModifierManager:
         the interactive viewport representation (e.g. render_levels = levels, show_render = show_viewport).
         Returns the count of modifiers updated.
         """
-        if not obj or not hasattr(obj, "modifiers"):
+        if not obj or obj.modifiers is None:
             return 0
 
         synced_count = 0
@@ -133,7 +133,7 @@ class ModifierManager:
 
         # Temporarily disable armature modifiers if requested to prevent skin deformation
         disabled_armatures: list[bpy.types.Modifier] = []
-        if preserve_armature and hasattr(obj, "modifiers"):
+        if preserve_armature and obj.modifiers is not None:
             for mod in obj.modifiers:
                 if mod.type == "ARMATURE" and mod.show_viewport:
                     mod.show_viewport = False
@@ -179,14 +179,14 @@ class ModifierManager:
         if not bpy or not obj or obj.type != "MESH":
             return False
 
-        if not hasattr(obj, "modifiers") or len(obj.modifiers) == 0:
+        if not obj.modifiers or len(obj.modifiers) == 0:
             return True
 
         # 1. Synchronize viewport settings into render settings so render properties match viewport
         ModifierManager.sync_viewport_to_render_settings(obj)
 
         # 2. Unlink multi-user mesh data to prevent "Modifier cannot be applied to a multi-user mesh" crash
-        if hasattr(obj, "data") and obj.data and obj.data.users > 1:
+        if obj.data and obj.data.users > 1:
             try:
                 obj.data = obj.data.copy()
                 logger.info("Unlinked multi-user mesh data for %s prior to applying modifiers", obj.name)
@@ -222,7 +222,7 @@ class ModifierManager:
                 if ctx and hasattr(ctx, "temp_override"):
                     with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                         bpy.ops.object.modifier_apply(modifier=mod_name)
-                elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
+                elif ctx and ctx.view_layer and ctx.view_layer.objects:
                     ctx.view_layer.objects.active = obj
                     bpy.ops.object.modifier_apply(modifier=mod_name)
                 else:

@@ -71,7 +71,8 @@ def test_batch_processor_import_asset_file_guards():
 def test_batch_processor_cleanup_imported_objects():
     # Should not throw on empty/None
     BatchProcessorEngine.cleanup_imported_objects([])
-    BatchProcessorEngine.cleanup_imported_objects(cast(Any, [None, object()]))
+    empty_obj = type("MockEmpty", (), {"name": "EmptyObj", "type": "EMPTY", "data": None})()
+    BatchProcessorEngine.cleanup_imported_objects(cast(Any, [None, empty_obj]))
 
     # Test explicit BlendData dependency injection cleanup
     bdata = MockBlendData()

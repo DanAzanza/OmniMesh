@@ -8,10 +8,7 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
-try:
-    from .compat import Vector
-except (ImportError, ValueError):
-    from core.compat import Vector
+from .compat import Vector
 
 try:
     import mathutils

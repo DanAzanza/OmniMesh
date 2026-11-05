@@ -13,7 +13,6 @@ else:
     _MockBase = object
 
 from typing import Any
-from typing import cast
 from unittest.mock import MagicMock, patch
 
 from core.modifiers import ModifierManager
@@ -54,7 +53,9 @@ class MockObject(_MockBase):
 
 def test_has_unapplied_modifiers_null_or_empty():
     assert not ModifierManager.has_unapplied_modifiers(None)
-    assert not ModifierManager.has_unapplied_modifiers(cast(Any, object()))
+    obj_null_mods = MockObject()
+    obj_null_mods.modifiers = None  # type: ignore[assignment]
+    assert not ModifierManager.has_unapplied_modifiers(obj_null_mods)
 
     obj = MockObject()
     assert not ModifierManager.has_unapplied_modifiers(obj)
@@ -155,7 +156,9 @@ def test_apply_all_modifiers_in_place_no_modifiers():
 
 def test_sync_viewport_to_render_settings():
     assert ModifierManager.sync_viewport_to_render_settings(None) == 0
-    assert ModifierManager.sync_viewport_to_render_settings(cast(Any, object())) == 0
+    obj_null_mods = MockObject()
+    obj_null_mods.modifiers = None  # type: ignore[assignment]
+    assert ModifierManager.sync_viewport_to_render_settings(obj_null_mods) == 0
 
     obj = MockObject()
 

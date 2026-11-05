@@ -29,12 +29,8 @@ else:
         Matrix = None
         Vector = None
 
-try:
-    from .hierarchy import get_or_create_engine_import_collection
-    from .material_presets import create_or_update_material_preset
-except (ImportError, ValueError):
-    from core.hierarchy import get_or_create_engine_import_collection
-    from core.material_presets import create_or_update_material_preset
+from .hierarchy import get_or_create_engine_import_collection
+from .material_presets import create_or_update_material_preset
 
 
 def get_engine_interaction_name(asset_name: str, role: str, name: str, engine: str = "GENERIC") -> str:

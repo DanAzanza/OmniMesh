@@ -265,7 +265,7 @@ def setup_asset_collections(
             logger.debug("Root collection link skipped: %s", exc)
 
     root_col["_omnimesh_role"] = "MODEL_ROOT"
-    if opts.apply_color_tags and hasattr(root_col, "color_tag"):
+    if opts.apply_color_tags:
         root_col.color_tag = cast(Any, COLLECTION_COLOR_TAGS.get("ROOT", "COLOR_08"))
 
     collections["root"] = root_col
@@ -283,14 +283,14 @@ def setup_asset_collections(
                 except RuntimeError as exc:
                     logger.debug("Subcollection link skipped: %s", exc)
             # Unlink from scene.collection if misplaced there directly
-            if hasattr(scene.collection, "children") and sub_col.name in scene.collection.children:
+            if scene.collection.children is not None and sub_col.name in scene.collection.children:
                 try:
                     scene.collection.children.unlink(sub_col)
                 except RuntimeError as exc:
                     logger.debug("Subcollection unlink from scene skipped: %s", exc)
 
         sub_col["_omnimesh_role"] = role_key
-        if opts.apply_color_tags and hasattr(sub_col, "color_tag"):
+        if opts.apply_color_tags:
             sub_col.color_tag = cast(Any, COLLECTION_COLOR_TAGS.get(role_key, "NONE"))
         return sub_col
 
@@ -354,14 +354,14 @@ def assign_objects_to_asset_hierarchy(
         if not obj:
             continue
 
-        obj_name = getattr(obj, "name", "Unnamed")
+        obj_name = obj.name or "Unnamed"
 
         # 1. Library-linked datablock guard (cannot modify external library membership)
         if getattr(obj, "library", None) is not None:
             summary["skipped_library"].append(obj_name)
             continue
 
-        obj_type = getattr(obj, "type", "")
+        obj_type = obj.type
         target_col: Optional[bpy.types.Collection] = None
         target_category = ""
 
@@ -407,7 +407,7 @@ def assign_objects_to_asset_hierarchy(
             continue
 
         # 2. Defensive link-first, unlink-after pattern
-        if hasattr(target_col, "objects") and obj_name not in target_col.objects:
+        if target_col.objects is not None and obj_name not in target_col.objects:
             try:
                 target_col.objects.link(obj)
             except RuntimeError as exc:
@@ -415,16 +415,15 @@ def assign_objects_to_asset_hierarchy(
                 continue
 
         if unlink_from_others:
-            if hasattr(obj, "users_collection"):
-                for col in list(getattr(obj, "users_collection", [])):
-                    if col != target_col and hasattr(col, "objects") and obj_name in col.objects:
-                        try:
-                            col.objects.unlink(obj)
-                        except (RuntimeError, ReferenceError) as exc:
-                            logger.debug("Object unlink from collection skipped: %s", exc)
+            for col in list(obj.users_collection or []):
+                if col != target_col and col.objects is not None and obj_name in col.objects:
+                    try:
+                        col.objects.unlink(obj)
+                    except (RuntimeError, ReferenceError) as exc:
+                        logger.debug("Object unlink from collection skipped: %s", exc)
 
-            if scene and hasattr(scene, "collection") and scene.collection != target_col:
-                if hasattr(scene.collection, "objects") and obj_name in scene.collection.objects:
+            if scene and scene.collection and scene.collection != target_col:
+                if scene.collection.objects is not None and obj_name in scene.collection.objects:
                     try:
                         scene.collection.objects.unlink(obj)
                     except (RuntimeError, ReferenceError) as exc:

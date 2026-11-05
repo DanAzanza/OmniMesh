@@ -43,12 +43,8 @@ try:
 except ImportError:
     np = None
 
-try:
-    from .modifiers import ModifierManager
-    from .normals import NormalManager
-except (ImportError, ValueError):
-    from core.modifiers import ModifierManager
-    from core.normals import NormalManager
+from .modifiers import ModifierManager
+from .normals import NormalManager
 
 
 SEAM_GROUP_NAME = "OMNIMESH_SEAM_LOCKED"
@@ -80,7 +76,7 @@ class SpatialGridSpec:
         z_cell_size: float = 32.0,
     ) -> SpatialGridSpec:
         """Computes world-space AABB and cutting planes for a Blender mesh object."""
-        if not obj or not hasattr(obj, "bound_box") or not obj.bound_box:
+        if not obj or not obj.bound_box:
             return cls()
 
         mat = getattr(obj, "matrix_world", None)
@@ -250,12 +246,12 @@ class MeshChunkSlicer:
         re-centers local pivots, marks boundary seams, and transfers exact split normals.
         Supports uniform 2.5D grid and adaptive quadtree clustering.
         """
-        if not bpy or not bmesh or not source_obj or getattr(source_obj, "type", "") != "MESH":
+        if not bpy or not bmesh or not source_obj or source_obj.type != "MESH":
             return []
 
         eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(source_obj, preserve_armature=True)
         if not eval_mesh or len(getattr(eval_mesh, "polygons", [])) == 0:
-            if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+            if eval_obj:
                 eval_obj.to_mesh_clear()
             return []
 
@@ -385,7 +381,7 @@ class MeshChunkSlicer:
 
         finally:
             bm.free()
-            if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+            if eval_obj:
                 eval_obj.to_mesh_clear()
 
     @staticmethod
@@ -457,7 +453,7 @@ class MeshChunkSlicer:
             )
 
             for edge in chunk_bm.edges:
-                if getattr(edge, "is_boundary", False):
+                if edge.is_boundary:
                     for v in edge.verts:
                         if has_cuts:
                             wco = world_mat @ v.co if world_mat else v.co
@@ -476,9 +472,9 @@ class MeshChunkSlicer:
 
             # Create Mesh Data and Object
             bdata = blend_data
-            bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
-            bdata_objs = getattr(bdata, "objects", None) if bdata else None
-            bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
+            bdata_meshes = bdata.meshes if bdata else None
+            bdata_objs = bdata.objects if bdata else None
+            bdata_scenes = bdata.scenes if bdata else None
 
             if not bdata_meshes or not bdata_objs:
                 return None
@@ -497,9 +493,9 @@ class MeshChunkSlicer:
 
             # Link to collection
             fallback_coll = target_collection or (bdata_scenes[0].collection if bdata_scenes else None)
-            if target_collection and hasattr(target_collection, "objects"):
+            if target_collection:
                 target_collection.objects.link(chunk_obj)
-            elif fallback_coll and hasattr(fallback_coll, "objects"):
+            elif fallback_coll:
                 fallback_coll.objects.link(chunk_obj)
 
             # Center local pivot to chunk's local bounding box center
@@ -508,7 +504,7 @@ class MeshChunkSlicer:
             # Transfer loop normals from uncut source mesh
             mesh_data = cast("bpy.types.Mesh | None", chunk_obj.data)
             NormalManager.ensure_sharp_edge_attribute(mesh_data)
-            if mesh_data is not None and hasattr(mesh_data, "update"):
+            if mesh_data is not None:
                 mesh_data.update()
 
             # Create OMNIMESH_SEAM_LOCKED vertex group on final mesh data-block
@@ -527,10 +523,10 @@ class MeshChunkSlicer:
         Recalculates object origin to its local bounding box center
         while compensating vertex coordinates so world geometry remains stationary.
         """
-        if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
+        if not obj or obj.type != "MESH" or not obj.data:
             return
         mesh = cast("bpy.types.Mesh", obj.data)
-        if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
+        if not mesh.vertices or len(mesh.vertices) == 0:
             return
 
         verts = mesh.vertices
@@ -552,12 +548,11 @@ class MeshChunkSlicer:
                 v.co = type(v.co)([v.co[i] - center_coords[i] for i in range(3)])
 
         # Compensate object world transform by +center_local
-        if hasattr(obj, "matrix_world") and obj.matrix_world is not None and Matrix is not None:
+        if obj.matrix_world is not None and Matrix is not None:
             trans_mat = Matrix.Translation(center_coords)
             obj.matrix_world = obj.matrix_world @ trans_mat
 
-        if hasattr(mesh, "update"):
-            mesh.update()
+        mesh.update()
 
 
 from .chunk_merger import HLODClusterMerger

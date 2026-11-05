@@ -31,12 +31,8 @@ else:
         mathutils = None
     BlendData = object
 
-    try:
-        from .base import EngineExporterBase
-        from .engine_export import AssetMeshResolver
-    except (ImportError, ValueError):
-        from exporters.base import EngineExporterBase
-        from exporters.engine_export import AssetMeshResolver
+    from .base import EngineExporterBase
+    from .engine_export import AssetMeshResolver
 
 
 class UE5Exporter(EngineExporterBase):
@@ -68,7 +64,7 @@ class UE5Exporter(EngineExporterBase):
         if not payload or not payload.lod_tiers:
             return False, f"No generated LOD objects found for '{asset_name}'"
 
-        if hasattr(bpy.ops.object, "mode_set") and getattr(context, "mode", "") != "OBJECT":
+        if getattr(context, "mode", "") != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
             except (RuntimeError, AttributeError, TypeError) as exc:
@@ -96,8 +92,8 @@ class UE5Exporter(EngineExporterBase):
         for o in all_export_items:
             if not o:
                 continue
-            hv = getattr(o, "hide_viewport", False)
-            hg = o.hide_get(view_layer=vl) if (hasattr(o, "hide_get") and vl) else hv
+            hv = o.hide_viewport
+            hg = o.hide_get(view_layer=vl) if vl else hv
             orig_hide_states[o] = (hv, hg)
 
         orig_collider_names: dict[bpy.types.Object, str] = {}
@@ -187,13 +183,13 @@ class UE5Exporter(EngineExporterBase):
                     logger.debug("Could not unhide lod_group_empty: %s", exc)
 
                 lod_group_empty["fbx_type"] = "LodGroup"
-                if mathutils and hasattr(mathutils, "Matrix"):
+                if mathutils:
                     lod_group_empty.matrix_world = mathutils.Matrix.Identity(4)
 
                 orig_matrices = {
-                    obj: obj.matrix_world.copy() if hasattr(obj.matrix_world, "copy") else obj.matrix_world
+                    obj: obj.matrix_world.copy()
                     for obj in export_objects + collider_objects
-                    if hasattr(obj, "matrix_world")
+                    if obj.matrix_world is not None
                 }
                 for obj in export_objects:
                     if obj.parent != lod_group_empty:
@@ -283,19 +279,18 @@ class UE5Exporter(EngineExporterBase):
             for obj, (hv, hg) in orig_hide_states.items():
                 try:
                     obj.hide_viewport = hv
-                    if hasattr(obj, "hide_set") and vl:
+                    if vl:
                         obj.hide_set(hg, view_layer=vl)
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
-            if bpy and hasattr(bpy.ops.object, "select_all"):
+            if bpy:
                 try:
                     bpy.ops.object.select_all(action="DESELECT")
                     for o in orig_selected:
-                        if hasattr(o, "select_set"):
-                            o.select_set(True)
-                    if vl and hasattr(vl, "objects") and orig_active:
+                        o.select_set(True)
+                    if vl and orig_active:
                         vl.objects.active = orig_active
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore selection state: %s", exc)

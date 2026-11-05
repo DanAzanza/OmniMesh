@@ -11,16 +11,10 @@ import os
 import re
 from typing import Any, Optional
 
-try:
-    from .pbr_presets import (
-        DEFAULT_PRESET_ID,
-        PBRImporterPresetManager,
-    )
-except (ImportError, ValueError):
-    from core.pbr_presets import (
-        DEFAULT_PRESET_ID,
-        PBRImporterPresetManager,
-    )
+from .pbr_presets import (
+    DEFAULT_PRESET_ID,
+    PBRImporterPresetManager,
+)
 
 logger = logging.getLogger(__name__)
 

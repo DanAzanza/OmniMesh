@@ -44,7 +44,7 @@ class DeepMaterialHasher:
 
     @classmethod
     def hash_material(cls, mat: bpy.types.Material | None) -> str:
-        if not mat or not hasattr(mat, "node_tree") or not mat.node_tree:
+        if not mat or not mat.node_tree:
             diffuse = getattr(mat, "diffuse_color", (0.8, 0.8, 0.8, 1.0))
             if hasattr(diffuse, "__iter__"):
                 diff_list = [
@@ -109,7 +109,7 @@ class DeepMaterialHasher:
                 node_data["image_filepath"] = filepath or img.name
                 sz = getattr(img, "size", (0, 0))
                 node_data["image_size"] = [int(sz[0]), int(sz[1])]
-                if hasattr(img, "colorspace_settings") and img.colorspace_settings:
+                if img.colorspace_settings:
                     node_data["image_colorspace"] = img.colorspace_settings.name
 
             # Capture unlinked input default values
@@ -178,10 +178,10 @@ class HeadlessSlotCompactor:
         Compacts material slots, removes unassigned/empty slots, deduplicates repeated material slots,
         and atomically remaps polygon material indices in-place.
         """
-        if not obj or not hasattr(obj, "data") or not obj.data:
+        if not obj or not obj.data:
             return {"slots_removed": 0, "faces_remapped": 0}
         mesh = cast("bpy.types.Mesh", obj.data)
-        if not hasattr(mesh, "polygons") or not hasattr(obj, "material_slots"):
+        if mesh.polygons is None or obj.material_slots is None:
             return {"slots_removed": 0, "faces_remapped": 0}
 
         num_slots = len(obj.material_slots)
@@ -191,7 +191,7 @@ class HeadlessSlotCompactor:
         # 1. Tally polygon material references
         used_indices: set[int] = set()
         for poly in mesh.polygons:
-            idx = poly.material_index if hasattr(poly, "material_index") else 0
+            idx = poly.material_index
             if 0 <= idx < num_slots:
                 used_indices.add(idx)
 
@@ -239,14 +239,14 @@ class HeadlessSlotCompactor:
                     mesh.polygons.foreach_set("material_index", remapped_indices)
             else:
                 for poly in mesh.polygons:
-                    old_i = poly.material_index if hasattr(poly, "material_index") else 0
+                    old_i = poly.material_index
                     new_i = slot_remap.get(old_i, 0)
                     if new_i != old_i:
                         poly.material_index = new_i
                         faces_remapped += 1
 
         # 4. In-place update of material slots and pop trailing excess
-        if hasattr(obj, "material_slots") and hasattr(mesh, "materials"):
+        if obj.material_slots is not None and mesh.materials is not None:
             for i, mat in enumerate(new_materials):
                 if i < len(obj.material_slots):
                     obj.material_slots[i].material = mat
@@ -260,7 +260,7 @@ class HeadlessSlotCompactor:
                 except TypeError:
                     # Standard Python list accepts positional argument: pop(idx)
                     mesh.materials.pop(idx_to_pop)  # type: ignore[call-arg]
-        elif hasattr(mesh, "materials"):
+        elif mesh.materials is not None:
             mesh.materials.clear()
             for mat in new_materials:
                 mesh.materials.append(mat)
@@ -416,10 +416,10 @@ class MaterialOptimizer:
     @classmethod
     def calculate_material_areas(cls, obj: bpy.types.Object | None) -> dict[int, float]:
         """Calculates cumulative surface area per material slot index, scaled by matrix_world if available."""
-        if not obj or not hasattr(obj, "data") or not obj.data:
+        if not obj or not obj.data:
             return {}
         mesh = cast("bpy.types.Mesh", obj.data)
-        if not hasattr(mesh, "polygons") or not hasattr(obj, "material_slots"):
+        if mesh.polygons is None or obj.material_slots is None:
             return {}
 
         num_slots = len(obj.material_slots)
@@ -428,7 +428,7 @@ class MaterialOptimizer:
 
         # Compute surface area scale factor from matrix_world if present
         area_scale = 1.0
-        if hasattr(obj, "matrix_world") and obj.matrix_world is not None:
+        if obj.matrix_world is not None:
             try:
                 scale = obj.matrix_world.to_scale()
                 area_scale = abs(float(scale.x) * float(scale.y) * float(scale.z)) ** (2.0 / 3.0)
@@ -437,8 +437,8 @@ class MaterialOptimizer:
 
         areas: dict[int, float] = dict.fromkeys(range(num_slots), 0.0)
         for poly in mesh.polygons:
-            idx = poly.material_index if hasattr(poly, "material_index") else 0
-            area = (poly.area if hasattr(poly, "area") else 0.0) * area_scale
+            idx = poly.material_index
+            area = poly.area * area_scale
             if idx in areas:
                 areas[idx] += area
             elif len(areas) > 0:
@@ -456,14 +456,14 @@ class MaterialOptimizer:
         """Determines if a material is semantically protected (e.g. lights, decals, glass)."""
         if not mat:
             return False
-        name = mat.name.lower() if hasattr(mat, "name") else ""
+        name = mat.name.lower() if mat.name else ""
         if any(kw in name for kw in cls.PROTECTED_KEYWORDS):
             return True
 
-        if hasattr(mat, "node_tree") and mat.node_tree:
-            nodes = mat.node_tree.nodes if (mat.node_tree and hasattr(mat.node_tree, "nodes")) else []
+        if mat.node_tree:
+            nodes = mat.node_tree.nodes or []
             for node in nodes:
-                ntype = node.type if hasattr(node, "type") else ""
+                ntype = node.type
                 if ntype in ("EMISSION", "BSDF_GLASS", "BSDF_TRANSPARENT", "BSDF_TRANSLUCENT"):
                     return True
                 if ntype == "BSDF_PRINCIPLED":
@@ -490,7 +490,7 @@ class MaterialOptimizer:
         (or absolute area < area_crit in m²) to the dominant material slot,
         preserving semantically protected shaders.
         """
-        if not bpy or not bmesh or not obj or not hasattr(obj, "material_slots") or len(obj.material_slots) <= 1:
+        if not bpy or not bmesh or not obj or not obj.material_slots or len(obj.material_slots) <= 1:
             return {"consolidated_slots": 0, "faces_reassigned": 0}
 
         areas = cls.calculate_material_areas(obj)
@@ -561,8 +561,8 @@ class MaterialOptimizer:
         Scans all scene materials, computes SHA-256 AST hashes via DeepMaterialHasher,
         and merges true duplicates into the canonical master material datablock.
         """
-        bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
+        bdata_mats = blend_data.materials if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
         if not bdata_mats:
             return 0
 
@@ -606,10 +606,10 @@ class MaterialOptimizer:
     @classmethod
     def purge_orphan_materials(cls, *, blend_data: BlendData | None = None) -> int:
         """Purges zero-user material datablocks from .blend file."""
-        bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
+        bdata_mats = blend_data.materials if blend_data else None
         if not bdata_mats:
             return 0
-        orphans = [m for m in bdata_mats if (m.users if hasattr(m, "users") else 0) == 0]
+        orphans = [m for m in bdata_mats if m.users == 0]
         for m in orphans:
             try:
                 bdata_mats.remove(m, do_unlink=True)
@@ -627,7 +627,7 @@ class MaterialOptimizer:
         """Removes disconnected or orphan texture nodes from target material or all scene materials."""
         if mat is not None:
             return SemanticTextureAuditor.remove_orphan_texture_nodes(mat)
-        bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
+        bdata_mats = blend_data.materials if blend_data else None
         if not bdata_mats:
             return 0
         total = 0

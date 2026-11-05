@@ -28,10 +28,7 @@ else:
 
 logger = logging.getLogger(__name__)
 
-try:
-    from .exceptions import DependencyInjectionError
-except (ImportError, ValueError):
-    from core.exceptions import DependencyInjectionError
+from .exceptions import DependencyInjectionError
 
 # Re-export for backward compatibility
 __all__ = ["CollisionDecomposer", "CollisionManager"]
@@ -56,7 +53,7 @@ class CollisionManager:
         target_engine: str = "",
         scene: bpy.types.Scene | None = None,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> List[bpy.types.Object]:
         if blend_data is None:
             raise DependencyInjectionError("Explicit 'blend_data' dependency is required for collider generation.")
@@ -93,23 +90,13 @@ class CollisionManager:
                 elif hasattr(c_children, "append"):
                     c_children.append(target_coll)
             # Unlink from scene root if nested under root_coll
-            if (
-                sc
-                and hasattr(sc, "collection")
-                and hasattr(sc.collection, "children")
-                and hasattr(sc.collection.children, "unlink")
-            ):
+            if sc and sc.collection:
                 try:
                     if target_coll.name in sc.collection.children:
                         sc.collection.children.unlink(target_coll)
                 except (RuntimeError, ReferenceError, AttributeError) as e:
                     logger.debug("Failed unlinking target collection from scene root: %s", e)
-        elif (
-            sc
-            and hasattr(sc, "collection")
-            and hasattr(sc.collection, "children")
-            and target_coll.name not in sc.collection.children
-        ):
+        elif sc and sc.collection and target_coll.name not in sc.collection.children:
             sc.collection.children.link(target_coll)
 
         # Resolve target engine for naming if not explicitly passed
@@ -250,7 +237,7 @@ class CollisionManager:
         mesh_objs: List[bpy.types.Object],
         base_name: str,
         *,
-        blend_data: BlendData | None = None,
+        blend_data: BlendData,
     ) -> int:
         """
         Purges existing collider objects and meshes scoped strictly to `{base_name}`.
@@ -301,7 +288,7 @@ class CollisionManager:
                 blend_data.objects.remove(obj, do_unlink=True)
             except TypeError:
                 blend_data.objects.remove(obj)
-            if mesh_data and hasattr(mesh_data, "users") and mesh_data.users == 0:
+            if mesh_data and mesh_data.users == 0:
                 try:
                     blend_data.meshes.remove(mesh_data, do_unlink=True)
                 except TypeError:

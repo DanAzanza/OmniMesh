@@ -145,7 +145,7 @@ class TopologyRepairEngine:
         into independent vertices, preserving UV layers, deform weights (vertex groups),
         face attributes, and smoothing.
         """
-        if not bm or not hasattr(bm, "verts"):
+        if not bm or bm.verts is None:
             return 0
         try:
             bm.verts.ensure_lookup_table()
@@ -161,7 +161,7 @@ class TopologyRepairEngine:
         )
         uv_layers = (
             list(bm.loops.layers.uv.values())
-            if (hasattr(bm, "loops") and hasattr(bm.loops, "layers") and hasattr(bm.loops.layers, "uv"))
+            if (bm.loops is not None and bm.loops.layers is not None and bm.loops.layers.uv is not None)
             else []
         )
 
@@ -210,7 +210,7 @@ class TopologyRepairEngine:
         Detects and splits non-manifold edges connected to > 2 faces into separate manifold edges,
         preserving UV layers, deform weights (vertex groups), face attributes, and smoothing.
         """
-        if not bm or not hasattr(bm, "edges"):
+        if not bm or bm.edges is None:
             return 0
         try:
             bm.edges.ensure_lookup_table()
@@ -230,7 +230,7 @@ class TopologyRepairEngine:
         )
         uv_layers = (
             list(bm.loops.layers.uv.values())
-            if (hasattr(bm, "loops") and hasattr(bm.loops, "layers") and hasattr(bm.loops.layers, "uv"))
+            if (bm.loops is not None and bm.loops.layers is not None and bm.loops.layers.uv is not None)
             else []
         )
 
@@ -320,7 +320,7 @@ class TopologyRepairEngine:
         Detects open boundary loops with <= max_edges, seals them, and executes
         MANDATORY immediate local beauty triangulation to prevent non-planar N-gons.
         """
-        if not bmesh or not bm or not hasattr(bm, "edges") or max_edges < 3:
+        if not bmesh or not bm or bm.edges is None or max_edges < 3:
             return 0
         try:
             bm.edges.ensure_lookup_table()
@@ -357,7 +357,7 @@ class TopologyRepairEngine:
         Removes disconnected mesh islands whose bounding diagonal in world space is < w_crit.
         Protects against deleting the entire mesh if all components are small.
         """
-        if not bmesh or not bm or not hasattr(bm, "faces") or w_crit <= 1e-6:
+        if not bmesh or not bm or bm.faces is None or w_crit <= 1e-6:
             return 0
         try:
             bm.faces.ensure_lookup_table()
@@ -467,7 +467,7 @@ class TopologyRepairEngine:
             stats["filled_holes"] = cls.fill_small_boundary_holes(bm, max_edges=opts.hole_max_edges)
 
         # 4. Triangulate Remaining N-Gons (>4 vertices) if requested
-        if opts.enable_triangulate_ngons and hasattr(bm, "faces"):
+        if opts.enable_triangulate_ngons and bm.faces is not None:
             try:
                 bm.faces.ensure_lookup_table()
                 ngons = [f for f in bm.faces if f.is_valid and len(f.verts) > 4]

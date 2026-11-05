@@ -364,10 +364,10 @@ def test_collision_manager_pure_di_missing_blend_data_fails_closed():
 
     dummy_obj = MagicMock()
     with pytest.raises(DependencyInjectionError, match="Explicit 'blend_data' dependency is required"):
-        CollisionManager.generate_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None)
+        CollisionManager.generate_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None)  # type: ignore[arg-type]
 
     with pytest.raises(DependencyInjectionError, match="Explicit 'blend_data' dependency is required"):
-        CollisionManager.remove_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None)
+        CollisionManager.remove_colliders_for_objects([dummy_obj], "SM_Asset", blend_data=None)  # type: ignore[arg-type]
 
 
 def test_collision_manager_pure_di_lifecycle_with_mock_blend_data(monkeypatch):

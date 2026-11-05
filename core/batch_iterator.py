@@ -32,12 +32,8 @@ else:
         BlendData = object
         bmesh = None
 
-try:
-    from .decimator import MeshDecimator
-    from .sanitizer import MeshSanitizer
-except (ImportError, ValueError):
-    from core.decimator import MeshDecimator
-    from core.sanitizer import MeshSanitizer
+from .decimator import MeshDecimator
+from .sanitizer import MeshSanitizer
 
 
 @dataclass

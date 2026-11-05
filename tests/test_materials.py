@@ -54,6 +54,7 @@ class DummyMeshObject(_MockBase):
         self.data = DummyMeshData(polygons)
         self.data.materials = [s.material for s in material_slots if s.material is not None]
         self.active_material_index = 0
+        self.matrix_world = None
 
 
 def test_calculate_material_areas():

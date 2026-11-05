@@ -32,10 +32,7 @@ else:
 
 logger = logging.getLogger(__name__)
 
-try:
-    from .utils import resolve_lod_context
-except (ImportError, ValueError):
-    from ui.utils import resolve_lod_context
+from .utils import resolve_lod_context
 
 
 class SplitPreviewEngine:

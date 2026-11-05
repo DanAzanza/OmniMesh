@@ -62,12 +62,12 @@ def get_available_asset_names(
         return []
 
     scene = getattr(context, "scene", None)
-    if not scene or not hasattr(scene, "collection"):
+    if not scene or not scene.collection:
         return []
 
     if blend_data:
         bdata_cols = blend_data.collections
-    elif hasattr(scene, "collection"):
+    elif scene.collection:
         stack = [scene.collection]
         bdata_cols = []
         while stack:
@@ -151,9 +151,9 @@ def resolve_effective_asset_name(
         stem = _strip_collection_suffixes(raw_name)
         if stem and (not available or stem in available):
             return stem
-        if hasattr(active_obj, "users_collection"):
+        if active_obj.users_collection:
             for uc in active_obj.users_collection:
-                u_stem = _strip_collection_suffixes(getattr(uc, "name", ""))
+                u_stem = _strip_collection_suffixes(uc.name)
                 if u_stem and (not available or u_stem in available):
                     return u_stem
 
@@ -263,7 +263,7 @@ def scan_asset_state(
             c_name = f"{asset_name}_LOD{i}"
             c = bdata_cols.get(c_name)
             if c:
-                meshes = [o for o in getattr(c, "objects", []) if getattr(o, "type", "") == "MESH"]
+                meshes = [o for o in list(c.objects) if o.type == "MESH"]
                 t_count = sum(
                     count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in meshes
                 )
@@ -277,7 +277,7 @@ def scan_asset_state(
         imp_name = f"{asset_name}_LOD_Impostor"
         c_imp = bdata_cols.get(imp_name)
         if c_imp:
-            meshes = [o for o in getattr(c_imp, "objects", []) if getattr(o, "type", "") == "MESH"]
+            meshes = [o for o in list(c_imp.objects) if o.type == "MESH"]
             t_count = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in meshes)
             existing_tiers[-1] = {
                 "collection_name": imp_name,
