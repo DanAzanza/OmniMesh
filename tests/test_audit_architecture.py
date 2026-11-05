@@ -262,3 +262,20 @@ def test_audit_catches_getattr_ratchet_overflow(tmp_path: Path, monkeypatch: pyt
     ratchet = violations["getattr_ratchet_in_core_exporters"]
     assert len(ratchet) == 1
     assert "exceed ratchet baseline" in str(ratchet[0][2])
+
+
+def test_audit_catches_optional_blend_data_in_core(tmp_path: Path) -> None:
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "optional_bdata.py").write_text(
+        "def bad1(*, blend_data: BlendData | None = None):\n"
+        "    pass\n"
+        "def bad2(blend_data: BlendData | None):\n"
+        "    pass\n"
+        "def good(*, blend_data: BlendData):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    opt_violations = violations["optional_blend_data_in_core"]
+    assert len(opt_violations) == 2

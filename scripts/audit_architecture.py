@@ -24,8 +24,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BPY_DATA_RATCHET_BASELINE = 0
 
 # Monotonic ratchet baseline for defensive hasattr and getattr calls in core/ and exporters/
-HASATTR_RATCHET_BASELINE = 246
-GETATTR_RATCHET_BASELINE = 528
+HASATTR_RATCHET_BASELINE = 197
+GETATTR_RATCHET_BASELINE = 450
 
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
@@ -138,6 +138,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         "hasattr_ratchet_in_core_exporters": [],
         "getattr_ratchet_in_core_exporters": [],
         "hasattr_blend_data_leak_in_core_exporters": [],
+        "optional_blend_data_in_core": [],
         "commented_out_code_blocks": [],
         "file_length_over_750": [],
     }
@@ -351,6 +352,27 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
                         (rel_path, node.lineno, f"{node.name}() -> {ast.unparse(node.returns)}")
                     )
 
+                if is_core:
+                    pos_defaults_offset = len(node.args.args) - len(node.args.defaults)
+                    for idx_arg, arg in enumerate(node.args.args):
+                        if arg.arg == "blend_data":
+                            has_default = idx_arg >= pos_defaults_offset
+                            ann_str = ast.unparse(arg.annotation) if arg.annotation else ""
+                            if has_default or "None" in ann_str or "Optional" in ann_str:
+                                violations["optional_blend_data_in_core"].append(
+                                    (rel_path, node.lineno, f"{node.name}(blend_data: {ann_str})")
+                                )
+                    for idx_kw, kw_arg in enumerate(node.args.kwonlyargs):
+                        if kw_arg.arg == "blend_data":
+                            has_default = (
+                                idx_kw < len(node.args.kw_defaults) and node.args.kw_defaults[idx_kw] is not None
+                            )
+                            ann_str = ast.unparse(kw_arg.annotation) if kw_arg.annotation else ""
+                            if has_default or "None" in ann_str or "Optional" in ann_str:
+                                violations["optional_blend_data_in_core"].append(
+                                    (rel_path, node.lineno, f"{node.name}(*, blend_data: {ann_str})")
+                                )
+
             # Check for non-dict Any in annotated variable assignments in core/ and exporters/
             if is_core_or_exporter and isinstance(node, ast.AnnAssign):
                 if node.annotation is not None and _has_non_dict_any(node.annotation):
@@ -435,6 +457,7 @@ def main() -> int:
         "hasattr_ratchet_in_core_exporters",
         "getattr_ratchet_in_core_exporters",
         "hasattr_blend_data_leak_in_core_exporters",
+        "optional_blend_data_in_core",
     ]
     warning_categories = ["commented_out_code_blocks", "file_length_over_750"]
 
