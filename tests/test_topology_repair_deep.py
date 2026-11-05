@@ -154,8 +154,9 @@ def test_find_connected_face_fans_bowtie_two_fans():
 
     fans = _find_connected_face_fans(v_center)  # type: ignore[arg-type]
     assert len(fans) == 2
-    assert set(fans[0]) == {f1}
-    assert set(fans[1]) == {f2}
+    fan_sets = [set(f) for f in fans]
+    assert {f1} in fan_sets
+    assert {f2} in fan_sets
 
 
 # ==============================================================================

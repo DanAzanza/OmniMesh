@@ -293,9 +293,9 @@ class MeshDecimator:
                     n2_len_sq = n2[0] * n2[0] + n2[1] * n2[1] + n2[2] * n2[2]
                     if n1_len_sq > 1e-8 and n2_len_sq > 1e-8:
                         try:
-                            if hasattr(n1, "angle"):
+                            try:
                                 angle = n1.angle(n2, 0.0)
-                            else:
+                            except (AttributeError, TypeError):
                                 dot_val = max(
                                     -1.0,
                                     min(
@@ -424,8 +424,11 @@ class MeshDecimator:
                 bpy.ops.object.modifier_apply(modifier=dec_mod.name)
 
             mesh_data = cast("bpy.types.Mesh | None", obj.data)
-            if mesh_data is not None and hasattr(mesh_data, "validate"):
-                mesh_data.validate()
+            if mesh_data is not None:
+                try:
+                    mesh_data.validate()
+                except (AttributeError, TypeError):
+                    pass
         except (RuntimeError, ValueError, AttributeError) as exc:
             obj_name = obj.name or "Unnamed"
             logger.error("QEM Decimate modifier apply failed on '%s' (ratio=%.4f): %s", obj_name, clamped_ratio, exc)
@@ -484,13 +487,17 @@ class MeshDecimator:
         try:
             if ctx and hasattr(ctx, "temp_override"):
                 with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
-                    if hasattr(obj, "shape_key_clear"):
+                    try:
                         obj.shape_key_clear()
+                    except (AttributeError, TypeError):
+                        pass
                     bpy.ops.object.shape_key_remove(all=True)
             elif ctx and ctx.view_layer and ctx.view_layer.objects:
                 ctx.view_layer.objects.active = obj
-                if hasattr(obj, "shape_key_clear"):
+                try:
                     obj.shape_key_clear()
+                except (AttributeError, TypeError):
+                    pass
                 bpy.ops.object.shape_key_remove(all=True)
         except (RuntimeError, AttributeError, TypeError) as exc:
             logger.debug("Shape key purge bypassed: %s", exc)
