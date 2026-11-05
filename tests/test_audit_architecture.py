@@ -245,3 +245,20 @@ def test_audit_catches_hasattr_ratchet_overflow(tmp_path: Path, monkeypatch: pyt
     ratchet = violations["hasattr_ratchet_in_core_exporters"]
     assert len(ratchet) == 1
     assert "exceed ratchet baseline" in str(ratchet[0][2])
+
+
+def test_audit_catches_getattr_ratchet_overflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.audit_architecture as audit_mod
+
+    monkeypatch.setattr(audit_mod, "GETATTR_RATCHET_BASELINE", 1)
+
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "getattr_mod.py").write_text(
+        'def check(o):\n    return getattr(o, "a", 1) + getattr(o, "b", 2)\n',
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    ratchet = violations["getattr_ratchet_in_core_exporters"]
+    assert len(ratchet) == 1
+    assert "exceed ratchet baseline" in str(ratchet[0][2])

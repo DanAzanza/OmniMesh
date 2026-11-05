@@ -23,8 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Monotonic ratchet baseline for direct and indirect bpy.data references in core/ and exporters/
 BPY_DATA_RATCHET_BASELINE = 0
 
-# Monotonic ratchet baseline for defensive hasattr calls in core/ and exporters/
-HASATTR_RATCHET_BASELINE = 433
+# Monotonic ratchet baseline for defensive hasattr and getattr calls in core/ and exporters/
+HASATTR_RATCHET_BASELINE = 246
+GETATTR_RATCHET_BASELINE = 528
 
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
@@ -135,6 +136,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         "unallowed_cast_any_in_core_exporters": [],
         "bpy_data_ratchet_in_core_exporters": [],
         "hasattr_ratchet_in_core_exporters": [],
+        "getattr_ratchet_in_core_exporters": [],
         "hasattr_blend_data_leak_in_core_exporters": [],
         "commented_out_code_blocks": [],
         "file_length_over_750": [],
@@ -148,6 +150,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
 
     total_bpy_data_count = 0
     total_hasattr_count = 0
+    total_getattr_count = 0
     cast_any_occurrences: dict[str, list[tuple[int, str]]] = {}
 
     for fpath in py_files:
@@ -266,6 +269,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
 
             if is_core_or_exporter and isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Name) and node.func.id == "getattr":
+                    total_getattr_count += 1
                     if len(node.args) >= 2:
                         second_arg = node.args[1]
                         if isinstance(second_arg, ast.Constant) and second_arg.value == "context":
@@ -399,6 +403,16 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
             )
         )
 
+    # Validate getattr ratchet baseline in core/ and exporters/
+    if total_getattr_count > GETATTR_RATCHET_BASELINE:
+        violations["getattr_ratchet_in_core_exporters"].append(
+            (
+                "GLOBAL_RATCHET",
+                total_getattr_count,
+                f"getattr references ({total_getattr_count}) exceed ratchet baseline ({GETATTR_RATCHET_BASELINE})",
+            )
+        )
+
     return violations
 
 
@@ -419,6 +433,7 @@ def main() -> int:
         "unallowed_cast_any_in_core_exporters",
         "bpy_data_ratchet_in_core_exporters",
         "hasattr_ratchet_in_core_exporters",
+        "getattr_ratchet_in_core_exporters",
         "hasattr_blend_data_leak_in_core_exporters",
     ]
     warning_categories = ["commented_out_code_blocks", "file_length_over_750"]
