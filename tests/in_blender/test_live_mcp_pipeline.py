@@ -1,5 +1,5 @@
-"""
-OmniMesh Live MCP In-Blender Pipeline Verification Suite.
+"""OmniMesh Live MCP In-Blender Pipeline Verification Suite.
+
 Blender 5.2 LTS Compatible.
 
 Executes live end-to-end testing directly inside an active Blender session:
@@ -18,6 +18,7 @@ import shutil
 import tempfile
 import time
 from typing import Any, cast
+import unittest
 
 import bpy
 
@@ -111,11 +112,23 @@ def run_live_mcp_pipeline_tests() -> str:
     # Step 3: Bake PBR Impostor Textures
     tmp_dir = tempfile.mkdtemp(prefix="om_mcp_test_")
     try:
+        from core.impostor import ImpostorManager
         from core.impostor_baker import ImpostorAtlasBaker
+
+        imp_obj = ImpostorManager.generate_impostor_for_objects(
+            mesh_objs=[monkey],
+            base_name="Suzanne",
+            mode="ORTHO_3_AXES",
+            target_engine="UE5",
+            atlas_resolution=512,
+            scene=bpy.context.scene,
+            blend_data=bpy.data,
+        )
 
         bake_results = ImpostorAtlasBaker.bake_impostor_textures(
             mesh_objs=[monkey],
             base_name="Suzanne",
+            impostor_obj=imp_obj,
             output_dir=tmp_dir,
             mode="ORTHO_3_AXES",
             atlas_resolution=512,
@@ -173,6 +186,19 @@ def run_live_mcp_pipeline_tests() -> str:
     results["all_passed"] = all(t.get("status") == "PASS" for t in results["tests"].values())
     results["duration_seconds"] = round(time.time() - test_start, 3)
     return json.dumps(results, indent=2)
+
+
+class TestLiveMCPPipeline(unittest.TestCase):
+    """Live end-to-end integration test exercising mesh, LODs, PBR impostor bake, and scrubber."""
+
+    def setUp(self) -> None:
+        if not bpy:
+            self.skipTest("Blender bpy runtime not available.")
+
+    def test_live_mcp_pipeline_end_to_end(self) -> None:
+        raw_json = run_live_mcp_pipeline_tests()
+        data = json.loads(raw_json)
+        self.assertTrue(data.get("all_passed"), f"Live MCP pipeline failed: {data}")
 
 
 if __name__ == "__main__":

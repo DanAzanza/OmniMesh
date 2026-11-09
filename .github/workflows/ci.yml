@@ -104,5 +104,5 @@ jobs:
       - name: Run In-Blender Test Suite
         env:
           BLENDER_PATH: /opt/blender/blender
-        run: python scripts/run_blender_tests.py
+        run: python scripts/run_blender_tests.py --coverage
 

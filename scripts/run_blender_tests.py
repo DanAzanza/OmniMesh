@@ -1,5 +1,5 @@
-"""
-Cross-Platform CLI Runner for OmniMesh In-Blender Integration Tests.
+"""Cross-Platform CLI Runner for OmniMesh In-Blender Integration Tests.
+
 Executes headless Blender with factory startup and streams results.
 """
 
@@ -126,6 +126,17 @@ def main() -> int:
     if target_zip:
         env["OMNIMESH_EXTENSION_ZIP"] = target_zip
         print(f"Using Extension ZIP: {target_zip}")
+
+    try:
+        import site
+
+        host_site = os.pathsep.join(site.getsitepackages())
+        env["OMNIMESH_HOST_SITE_PACKAGES"] = host_site
+    except Exception as exc:
+        logger.debug("Failed resolving host site-packages: %s", exc)
+
+    if "--coverage" in sys.argv or os.environ.get("OMNIMESH_COVERAGE") == "1":
+        env["OMNIMESH_COVERAGE"] = "1"
 
     cmd = [
         blender_bin,

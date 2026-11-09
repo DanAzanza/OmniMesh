@@ -1,11 +1,12 @@
 """
 OmniMesh Central Local CI & Dependency Parity Verification Script.
 Validates clean dependency declarations against pyproject.toml, runs static type checkers,
-linters, formatters, and full test suite.
+linters, formatters, and full dual-runtime test suite (Pytest + Headless Blender Coverage).
 """
 
 from __future__ import annotations
 
+import glob
 import os
 import re
 import subprocess
@@ -67,10 +68,51 @@ def run_command(cmd: list[str], desc: str) -> bool:
     return True
 
 
+def merge_dual_runtime_coverage(repo_root: str) -> bool:
+    """Combines host pytest coverage with in-Blender integration test coverage."""
+    primary_cov = os.path.join(repo_root, ".coverage")
+    blender_cov = os.path.join(repo_root, ".coverage.in_blender")
+
+    if not os.path.isfile(blender_cov):
+        print("[INFO] No in-Blender coverage artifact found to merge.")
+        return False
+
+    try:
+        from coverage.data import CoverageData
+
+        primary = CoverageData(primary_cov)
+        primary.read()
+        secondary = CoverageData(blender_cov)
+        secondary.read()
+        primary.update(secondary)
+        primary.write()
+
+        # Clean up intermediate in-blender artifact
+        try:
+            os.remove(blender_cov)
+        except OSError:
+            pass
+
+        print(f"[PASS] Merged in-Blender coverage into unified report database: {primary_cov}")
+        return True
+    except Exception as exc:
+        print(f"[WARN] Failed to merge in-Blender coverage: {exc}")
+        return False
+
+
 def main() -> int:
     print("=" * 60)
     print("OmniMesh Pre-Commit Quality & CI Parity Gate")
     print("=" * 60)
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # 1. Clean stale coverage artifacts
+    for f in glob.glob(os.path.join(repo_root, ".coverage*")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
     if not check_dependency_parity():
         return 1
@@ -117,15 +159,25 @@ def main() -> int:
     except Exception:
         blender_bin = None
 
+    blender_tested = False
     if blender_bin and not skip_blender:
         blender_test_script = os.path.join(os.path.dirname(__file__), "run_blender_tests.py")
-        if not run_command([sys.executable, blender_test_script], "In-Blender Integration Test Suite"):
+        if not run_command([sys.executable, blender_test_script, "--coverage"], "In-Blender Integration Test Suite"):
             return 1
+        blender_tested = True
     elif require_blender:
         print("[FAIL] [BlenderGate] Blender binary required but not found!")
         return 1
     else:
         print("\n[SKIP] Blender executable not detected. Skipping in-Blender integration tests.")
+
+    # 3. Dual-runtime coverage evaluation & ratcheting
+    if blender_tested:
+        merged = merge_dual_runtime_coverage(repo_root)
+        if merged:
+            report_cmd = [sys.executable, "-m", "coverage", "report", "--fail-under=65"]
+            if not run_command(report_cmd, "Unified Dual-Runtime Coverage Gate (Target: >= 65%)"):
+                return 1
 
     print("\n" + "=" * 60)
     print("ALL GATES PASSED DETERMINISTICALLY! Ready for Commit & Push.")

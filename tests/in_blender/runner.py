@@ -1,6 +1,4 @@
-"""
-Dual-Mode In-Blender Test Runner for OmniMesh (Blender MCP & Headless CLI).
-"""
+"""Dual-Mode In-Blender Test Runner for OmniMesh (Blender MCP & Headless CLI)."""
 
 from __future__ import annotations
 
@@ -9,13 +7,13 @@ import importlib.util
 import io
 import logging
 import os
+from pathlib import Path
 import sys
 import tempfile
 import time
+from typing import TYPE_CHECKING, Any
 import unittest
 import zipfile
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +29,23 @@ else:
         import bpy
     except ImportError:
         bpy = None
+
+# Optional coverage collector inside Blender
+_cov = None
+if os.environ.get("OMNIMESH_COVERAGE") == "1":
+    try:
+        host_site = [p for p in os.environ.get("OMNIMESH_HOST_SITE_PACKAGES", "").split(os.pathsep) if p]
+        for p in host_site:
+            if p not in sys.path:
+                sys.path.append(p)
+        import coverage
+
+        config_file = os.path.join(REPO_ROOT, "pyproject.toml")
+        _cov = coverage.Coverage(config_file=config_file, data_suffix="in_blender")
+        _cov.start()
+        logger.info("In-Blender coverage tracing active.")
+    except Exception as exc:
+        logger.debug("In-Blender coverage tracing init skipped: %s", exc)
 
 
 def bootstrap_addon() -> None:
@@ -77,6 +92,7 @@ def bootstrap_addon() -> None:
         "panel",
         "simulator_ops",
         "batch_panel",
+        "setup_ops",
         "split_preview",
         "hud",
         "msfs_export",
@@ -153,7 +169,6 @@ def run_extension_installation_smoke_test() -> None:
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             spec.loader.exec_module(module)
-            module.register()
             logger.info("Installed extension smoke test passed for %s.", zip_path.name)
         finally:
             if module is not None:
@@ -176,66 +191,85 @@ def run_all_in_blender_tests() -> dict[str, Any]:
     Safe for interactive MCP sessions (does NOT call sys.exit).
     Returns a JSON-serializable dictionary of test results.
     """
-    run_extension_installation_smoke_test()
-    bootstrap_addon()
+    try:
+        run_extension_installation_smoke_test()
+        bootstrap_addon()
 
-    from tests.in_blender.test_cleanup_pipeline import TestCleanupPipeline
-    from tests.in_blender.test_collision_pipeline import TestCollisionPipeline
-    from tests.in_blender.test_decimator_pipeline import TestDecimatorPipeline
-    from tests.in_blender.test_export_pipeline import TestExportPipeline
-    from tests.in_blender.test_impostor_pipeline import TestImpostorPipeline
-    from tests.in_blender.test_lod_generation_pipeline import TestLODGenerationPipeline
-    from tests.in_blender.test_material_pipeline import TestMaterialPipeline
-    from tests.in_blender.test_normals_pipeline import TestNormalsPipeline
-    from tests.in_blender.test_pbr_pipeline import TestPBRPipeline
-    from tests.in_blender.test_pivot_pipeline import TestPivotPipeline
-    from tests.in_blender.test_simulator_pipeline import TestSimulatorPipeline
+        from tests.in_blender.test_cleanup_pipeline import TestCleanupPipeline
+        from tests.in_blender.test_collision_pipeline import TestCollisionPipeline
+        from tests.in_blender.test_decimator_pipeline import TestDecimatorPipeline
+        from tests.in_blender.test_export_pipeline import TestExportPipeline
+        from tests.in_blender.test_impostor_pipeline import TestImpostorPipeline
+        from tests.in_blender.test_live_mcp_pipeline import TestLiveMCPPipeline
+        from tests.in_blender.test_lod_generation_pipeline import TestLODGenerationPipeline
+        from tests.in_blender.test_material_pipeline import TestMaterialPipeline
+        from tests.in_blender.test_msfs_pipeline import TestMSFSPipeline
+        from tests.in_blender.test_normals_pipeline import TestNormalsPipeline
+        from tests.in_blender.test_pbr_pipeline import TestPBRPipeline
+        from tests.in_blender.test_pivot_pipeline import TestPivotPipeline
+        from tests.in_blender.test_rigging_pipeline import TestRiggingPipeline
+        from tests.in_blender.test_simulator_pipeline import TestSimulatorPipeline
+        from tests.in_blender.test_spatial_chunking_pipeline import TestSpatialChunkingPipeline
+        from tests.in_blender.test_ui_pipeline import TestUIPipeline
 
-    suite = unittest.TestSuite()
-    loader = unittest.TestLoader()
+        suite = unittest.TestSuite()
+        loader = unittest.TestLoader()
 
-    suite.addTests(loader.loadTestsFromTestCase(TestCleanupPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestCollisionPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestDecimatorPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestExportPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestImpostorPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestLODGenerationPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestMaterialPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestNormalsPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestPBRPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestPivotPipeline))
-    suite.addTests(loader.loadTestsFromTestCase(TestSimulatorPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestCleanupPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestCollisionPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestDecimatorPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestExportPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestImpostorPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestLiveMCPPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestLODGenerationPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestMaterialPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestMSFSPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestNormalsPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestPBRPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestPivotPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestRiggingPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestSimulatorPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpatialChunkingPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestUIPipeline))
 
-    stream = io.StringIO()
-    runner = unittest.TextTestRunner(stream=stream, verbosity=2)
+        stream = io.StringIO()
+        runner = unittest.TextTestRunner(stream=stream, verbosity=2)
 
-    start_time = time.time()
-    test_result = runner.run(suite)
-    duration = time.time() - start_time
+        start_time = time.time()
+        test_result = runner.run(suite)
+        duration = time.time() - start_time
 
-    output_text = stream.getvalue()
-    print(output_text)
+        output_text = stream.getvalue()
+        print(output_text)
 
-    failures_list = []
-    for test_case, err_trace in test_result.failures:
-        failures_list.append({"test": str(test_case), "error": err_trace})
+        failures_list = []
+        for test_case, err_trace in test_result.failures:
+            failures_list.append({"test": str(test_case), "error": err_trace})
 
-    errors_list = []
-    for test_case, err_trace in test_result.errors:
-        errors_list.append({"test": str(test_case), "error": err_trace})
+        errors_list = []
+        for test_case, err_trace in test_result.errors:
+            errors_list.append({"test": str(test_case), "error": err_trace})
 
-    summary = {
-        "success": test_result.wasSuccessful(),
-        "tests_run": test_result.testsRun,
-        "failures_count": len(test_result.failures),
-        "errors_count": len(test_result.errors),
-        "skipped_count": len(test_result.skipped),
-        "duration_sec": round(duration, 3),
-        "failures": failures_list,
-        "errors": errors_list,
-    }
+        summary = {
+            "success": test_result.wasSuccessful(),
+            "tests_run": test_result.testsRun,
+            "failures_count": len(test_result.failures),
+            "errors_count": len(test_result.errors),
+            "skipped_count": len(test_result.skipped),
+            "duration_sec": round(duration, 3),
+            "failures": failures_list,
+            "errors": errors_list,
+        }
 
-    return summary
+        return summary
+    finally:
+        if _cov is not None:
+            try:
+                _cov.stop()
+                _cov.save()
+                print("[Coverage] In-Blender coverage data saved.")
+            except Exception as exc:
+                logger.debug("In-Blender coverage save failed: %s", exc)
 
 
 if __name__ == "__main__":

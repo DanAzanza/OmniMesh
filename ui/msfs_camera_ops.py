@@ -483,12 +483,13 @@ class OMNIMESH_OT_look_through_msfs_camera(Operator):
         scene.camera = cam_obj
 
         # Set 3D viewport to camera view if in 3D area
-        for area in context.screen.areas:
-            if area.type == "VIEW_3D":
-                for space in area.spaces:
-                    if space.type == "VIEW_3D":
-                        space.region_3d.view_perspective = "CAMERA"
-                        break
+        if hasattr(context, "screen") and context.screen:
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    for space in area.spaces:
+                        if space.type == "VIEW_3D":
+                            space.region_3d.view_perspective = "CAMERA"
+                            break
 
         self.report({"INFO"}, f"Looking through {cam_obj.name}")
         return {"FINISHED"}
@@ -561,14 +562,15 @@ class OMNIMESH_OT_align_msfs_camera_to_view(Operator):
 
         # Find active 3D view region matrix
         r3d = None
-        for area in context.screen.areas:
-            if area.type == "VIEW_3D":
-                for space in area.spaces:
-                    if space.type == "VIEW_3D":
-                        r3d = space.region_3d
+        if hasattr(context, "screen") and context.screen:
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    for space in area.spaces:
+                        if space.type == "VIEW_3D":
+                            r3d = space.region_3d
+                            break
+                    if r3d:
                         break
-                if r3d:
-                    break
 
         if not r3d:
             self.report({"ERROR"}, "Could not access 3D Viewport perspective.")

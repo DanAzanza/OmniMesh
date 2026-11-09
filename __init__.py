@@ -115,6 +115,7 @@ if __package__:
         popovers,
         preset_ops,
         properties,
+        setup_ops,
         simulator_ops,
         split_preview,
         utils,
@@ -208,6 +209,7 @@ else:
         popovers,
         preset_ops,
         properties,
+        setup_ops,
         simulator_ops,
         split_preview,
         utils,
@@ -318,6 +320,7 @@ if _OMNIMESH_RELOAD:
         msfs_camera_ops,
         msfs_migration_ops,
         msfs_attachment_ops,
+        setup_ops,
     ):
         importlib.reload(mod)
 
@@ -337,6 +340,7 @@ def register():
     msfs_camera_ops.register()
     msfs_migration_ops.register()
     msfs_attachment_ops.register()
+    setup_ops.register()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
     batch_panel.register_batch_ops()
@@ -353,6 +357,7 @@ def unregister():
         batch_panel.unregister_batch_ops,
         simulator_ops.unregister_simulator_ops,
         panel.unregister_panel,
+        setup_ops.unregister,
         msfs_attachment_ops.unregister,
         msfs_migration_ops.unregister,
         msfs_camera_ops.unregister,
