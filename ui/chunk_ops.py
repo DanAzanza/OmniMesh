@@ -35,14 +35,28 @@ try:
     from ..core.hierarchy import LayerCollectionGuard
     from ..core.materials import MaterialOptimizer
     from ..core.recursive_hlod import RecursiveHLODManager
-    from .utils import get_selected_mesh_objects, resolve_lod_context, safe_report
+    from .utils import (
+        get_lod0_mesh_objects,
+        get_selected_mesh_objects,
+        resolve_asset_base_name,
+        resolve_effective_asset_name,
+        resolve_lod_context,
+        safe_report,
+    )
 except (ImportError, ValueError):
     from core.chunking import HLODClusterMerger, MeshChunkSlicer, SpatialGridSpec
     from core.decimator import MeshDecimator
     from core.hierarchy import LayerCollectionGuard
     from core.materials import MaterialOptimizer
     from core.recursive_hlod import RecursiveHLODManager
-    from ui.utils import get_selected_mesh_objects, resolve_lod_context, safe_report
+    from ui.utils import (
+        get_lod0_mesh_objects,
+        get_selected_mesh_objects,
+        resolve_asset_base_name,
+        resolve_effective_asset_name,
+        resolve_lod_context,
+        safe_report,
+    )
 
 
 class LOD_OT_spatial_chunk_and_generate(Operator):
@@ -54,7 +68,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(context and get_selected_mesh_objects(context))
+        return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
 
     @staticmethod
     def _resolve_decimation_ratios(props: Any) -> tuple[float, float]:
@@ -73,7 +87,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
     def _slice_lod0_chunks(
         self,
         context: Any,
-        source_obj: Any,
+        mesh_objs: list[Any],
         grid_spec: SpatialGridSpec,
         base_name: str,
         props: Any,
@@ -84,21 +98,31 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
             lod0_coll = bpy.data.collections.new(name=lod0_coll_name)
             context.scene.collection.children.link(lod0_coll)
 
+        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
+        if bdata is None:
+            return None
+        part_mode = getattr(props, "chunk_partitioning_mode", "UNIFORM_GRID")
+        target_polys = int(getattr(props, "adaptive_cluster_target_polys", 50000))
+
+        chunk_objs_lod0: list[Any] = []
+        multi_mesh = len(mesh_objs) > 1
         try:
-            bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
-            if bdata is None:
-                return None
-            part_mode = getattr(props, "chunk_partitioning_mode", "UNIFORM_GRID")
-            target_polys = int(getattr(props, "adaptive_cluster_target_polys", 50000))
-            chunk_objs_lod0 = MeshChunkSlicer.slice_and_partition(
-                source_obj=source_obj,
-                grid_spec=grid_spec,
-                base_name=base_name,
-                target_collection=lod0_coll,
-                partitioning_mode=part_mode,
-                target_cluster_polys=target_polys,
-                blend_data=bdata,
-            )
+            for source_obj in mesh_objs:
+                obj_base = (
+                    source_obj.name.split("_LOD")[0].split("_Chunk")[0]
+                    if multi_mesh and getattr(source_obj, "name", "")
+                    else base_name
+                )
+                objs = MeshChunkSlicer.slice_and_partition(
+                    source_obj=source_obj,
+                    grid_spec=grid_spec,
+                    base_name=obj_base,
+                    target_collection=lod0_coll,
+                    partitioning_mode=part_mode,
+                    target_cluster_polys=target_polys,
+                    blend_data=bdata,
+                )
+                chunk_objs_lod0.extend(objs)
         except Exception as exc:
             logger.error("Spatial slicing failed: %s", exc, exc_info=True)
             safe_report(self, {"ERROR"}, f"Spatial slicing failed: {exc}")
@@ -292,25 +316,45 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
         if not props:
             props = context.scene.lod_tool
 
-        mesh_objs = get_selected_mesh_objects(context)
+        mesh_objs = get_lod0_mesh_objects(context)
         if not mesh_objs:
-            safe_report(self, {"WARNING"}, "No mesh objects selected for spatial partitioning.")
+            mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found for spatial partitioning.")
             return {"CANCELLED"}
 
         source_obj = context.active_object if context.active_object in mesh_objs else mesh_objs[0]
-        base_name = props.export_base_name or source_obj.name
+        eff_asset = resolve_effective_asset_name(context, props)
+        base_name = (
+            getattr(props, "export_base_name", "")
+            or (
+                eff_asset
+                if eff_asset and eff_asset not in {"AUTO", "NONE"}
+                else resolve_asset_base_name(context, mesh_objs)
+            )
+            or getattr(source_obj, "name", "Asset")
+        )
         base_name = base_name.split("_LOD")[0].split("_Chunk")[0]
 
-        # 1. Compute Spatial Grid Specification
+        # 1. Compute Spatial Grid Specification across all LOD0 meshes
         cell_size = float(props.chunk_cell_size)
         split_z = bool(props.chunk_split_z)
         z_cell_size = float(props.chunk_cell_size_z)
 
-        grid_spec = SpatialGridSpec.from_object(
-            source_obj,
-            cell_size_meters=cell_size,
-            split_z=split_z,
-            z_cell_size=z_cell_size,
+        grid_spec = (
+            SpatialGridSpec.from_objects(
+                mesh_objs,
+                cell_size_meters=cell_size,
+                split_z=split_z,
+                z_cell_size=z_cell_size,
+            )
+            if len(mesh_objs) > 1
+            else SpatialGridSpec.from_object(
+                source_obj,
+                cell_size_meters=cell_size,
+                split_z=split_z,
+                z_cell_size=z_cell_size,
+            )
         )
 
         total_cells = grid_spec.num_cells_x * grid_spec.num_cells_y * (grid_spec.num_cells_z if split_z else 1)
@@ -331,10 +375,10 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
             grid_spec.cell_size_y,
         )
 
-        # 2. Slice LOD0 Chunks
+        # 2. Slice LOD0 Chunks across all LOD0 meshes
         lod0_result = self._slice_lod0_chunks(
             context=context,
-            source_obj=source_obj,
+            mesh_objs=mesh_objs,
             grid_spec=grid_spec,
             base_name=base_name,
             props=props,
@@ -374,7 +418,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
 
 
 class LOD_OT_voxel_scan_cleanup(Operator):
-    """Opt-in Pre-Processing: Remeshes raw, non-manifold photogrammetry scans into a clean watertight shell."""
+    """Opt-in Pre-Processing: Remeshes raw, non-manifold photogrammetry scans into a clean watertight shell across LOD0 meshes."""
 
     bl_idname = "lod_tool.voxel_scan_cleanup"
     bl_label = "Voxel Reconstruct Scan"
@@ -382,36 +426,62 @@ class LOD_OT_voxel_scan_cleanup(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(context and context.active_object and getattr(context.active_object, "type", "") == "MESH")
+        if not context:
+            return False
+        if get_lod0_mesh_objects(context) or get_selected_mesh_objects(context):
+            return True
+        active = getattr(context, "active_object", None)
+        return bool(active and getattr(active, "type", "") == "MESH")
 
     def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"FINISHED"}
 
-        obj = context.active_object
         props, _, _ = resolve_lod_context(context)
         if not props:
             props = context.scene.lod_tool
 
+        mesh_objs = get_lod0_mesh_objects(context)
+        if not mesh_objs:
+            mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            active = getattr(context, "active_object", None)
+            if active and getattr(active, "type", "") == "MESH":
+                mesh_objs = [active]
+        if not mesh_objs:
+            safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found for voxel reconstruction.")
+            return {"CANCELLED"}
+
         voxel_size = max(0.005, min(1.0, float(props.scan_remesh_voxel_size)))
 
+        target_cols = [c for obj in mesh_objs for c in getattr(obj, "users_collection", [])]
+        remeshed_count = 0
         try:
-            if hasattr(obj.data, "remesh_voxel_size"):
-                obj.data.remesh_voxel_size = voxel_size
-                obj.data.remesh_mode = "VOXEL"
-                ctx = context or getattr(bpy, "context", None)
-                if ctx and hasattr(ctx, "temp_override"):
-                    with cast(Any, ctx).temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+            with LayerCollectionGuard(getattr(context, "view_layer", None), target_cols):
+                for obj in mesh_objs:
+                    mesh_data = getattr(obj, "data", None)
+                    if not mesh_data or not hasattr(mesh_data, "remesh_voxel_size"):
+                        continue
+                    mesh_data.remesh_voxel_size = voxel_size
+                    mesh_data.remesh_mode = "VOXEL"
+                    ctx = context or getattr(bpy, "context", None)
+                    if ctx and hasattr(ctx, "temp_override"):
+                        with cast(Any, ctx).temp_override(active_object=obj, object=obj, selected_objects=[obj]):
+                            bpy.ops.object.voxel_remesh()
+                    elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
+                        ctx.view_layer.objects.active = obj
                         bpy.ops.object.voxel_remesh()
-                elif ctx and hasattr(ctx, "view_layer") and hasattr(ctx.view_layer, "objects"):
-                    ctx.view_layer.objects.active = obj
-                    bpy.ops.object.voxel_remesh()
+                    remeshed_count += 1
 
-                safe_report(self, {"INFO"}, f"Voxel surface reconstruction applied (voxel={voxel_size:.3f}m).")
+            if remeshed_count > 0:
+                safe_report(
+                    self,
+                    {"INFO"},
+                    f"Voxel surface reconstruction applied to {remeshed_count} LOD0 mesh(es) (voxel={voxel_size:.3f}m).",
+                )
                 return {"FINISHED"}
-            else:
-                safe_report(self, {"WARNING"}, "Voxel remeshing is not supported on this Blender version.")
-                return {"CANCELLED"}
+            safe_report(self, {"WARNING"}, "Voxel remeshing is not supported on this Blender version.")
+            return {"CANCELLED"}
         except Exception as exc:
             logger.error("Voxel scan cleanup failed: %s", exc, exc_info=True)
             safe_report(self, {"ERROR"}, f"Voxel reconstruction failed: {exc}")

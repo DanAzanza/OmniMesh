@@ -187,6 +187,7 @@ class LODToolSettings(PropertyGroup):
     cleanup_enable_fill_holes: BoolProperty(name="Fill Small Holes", default=False)
     cleanup_hole_max_edges: IntProperty(name="Max Hole Edges", default=4, min=3, max=16)
     cleanup_enable_triangulate_ngons: BoolProperty(name="Triangulate N-Gons", default=False)
+    cleanup_cull_interior_faces: BoolProperty(name="Remove Interior Polygons", default=False)
     cleanup_normal_policy: EnumProperty(
         name="Normal Alignment", items=enums.CLEANUP_NORMAL_POLICY_ITEMS, default="MANIFOLD_ONLY"
     )

@@ -165,3 +165,95 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
             for comp in ("SIMPLE", "EXPERT"):
                 props.ui_complexity = comp
                 self.assertEqual(props.ui_complexity, comp)
+
+    def test_cull_interior_faces_operator(self) -> None:
+        """Verify lod_tool.cull_interior_faces removes occluded interior geometry across LOD0 meshes."""
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+
+            import bmesh
+
+            # Create outer cube and interior occluded cube in the same mesh
+            mesh = bpy.data.meshes.new("NestedMesh")
+            obj = bpy.data.objects.new("SM_Nested", mesh)
+            scene.collection.objects.link(obj)
+
+            bm = bmesh.new()
+            bmesh.ops.create_cube(bm, size=4.0)  # Outer shell
+            bmesh.ops.create_cube(bm, size=1.0)  # Fully occluded interior cube
+            bm.to_mesh(mesh)
+            bm.free()
+
+            for o in bpy.data.objects:
+                o.select_set(o == obj)
+            bpy.context.view_layer.objects.active = obj
+
+            ops_lod: Any = cast(Any, bpy.ops).lod_tool
+            res_cull = ops_lod.cull_interior_faces()
+            self.assertEqual(res_cull, {"FINISHED"})
+
+            props = getattr(scene, "lod_tool", None)
+            if props:
+                self.assertGreaterEqual(props.last_culled_faces_count, 6)
+
+    def test_clean_and_repair_mesh_with_interior_culling_option(self) -> None:
+        """Verify lod_tool.clean_and_repair_mesh executes interior culling when enabled."""
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+
+            import bmesh
+
+            mesh = bpy.data.meshes.new("SanitizeNestedMesh")
+            obj = bpy.data.objects.new("SM_SanitizeNested", mesh)
+            scene.collection.objects.link(obj)
+
+            bm = bmesh.new()
+            bmesh.ops.create_cube(bm, size=4.0)
+            bmesh.ops.create_cube(bm, size=1.0)
+            bm.to_mesh(mesh)
+            bm.free()
+
+            for o in bpy.data.objects:
+                o.select_set(o == obj)
+            bpy.context.view_layer.objects.active = obj
+
+            props = getattr(scene, "lod_tool", None)
+            if props:
+                props.cleanup_cull_interior_faces = True
+
+            ops_lod: Any = cast(Any, bpy.ops).lod_tool
+            res_clean = ops_lod.clean_and_repair_mesh()
+            self.assertEqual(res_clean, {"FINISHED"})
+            if props:
+                self.assertIn("interior faces removed", props.last_cleanup_summary)
+
+    def test_voxel_scan_cleanup_operator(self) -> None:
+        """Verify lod_tool.voxel_scan_cleanup runs on LOD0 meshes in real Blender runtime."""
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+
+            import bmesh
+
+            mesh = bpy.data.meshes.new("VoxelTargetMesh")
+            obj = bpy.data.objects.new("SM_VoxelScan", mesh)
+            scene.collection.objects.link(obj)
+
+            bm = bmesh.new()
+            bmesh.ops.create_cube(bm, size=2.0)
+            bm.to_mesh(mesh)
+            bm.free()
+
+            for o in bpy.data.objects:
+                o.select_set(o == obj)
+            bpy.context.view_layer.objects.active = obj
+
+            props = getattr(scene, "lod_tool", None)
+            if props:
+                props.scan_remesh_voxel_size = 0.2
+
+            ops_lod: Any = cast(Any, bpy.ops).lod_tool
+            res_voxel = ops_lod.voxel_scan_cleanup()
+            self.assertEqual(res_voxel, {"FINISHED"})

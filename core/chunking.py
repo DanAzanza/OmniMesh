@@ -78,19 +78,41 @@ class SpatialGridSpec:
         """Computes world-space AABB and cutting planes for a Blender mesh object."""
         if not obj or not obj.bound_box:
             return cls()
+        return cls.from_objects(
+            [obj],
+            cell_size_meters=cell_size_meters,
+            split_z=split_z,
+            z_cell_size=z_cell_size,
+        )
 
-        mat = getattr(obj, "matrix_world", None)
-        if mat is None or Matrix is None:
-            corners = [Vector(b) if Vector else b for b in obj.bound_box]
-        else:
-            corners = [mat @ Vector(b) for b in obj.bound_box]
+    @classmethod
+    def from_objects(
+        cls,
+        objs: Sequence[bpy.types.Object | None],
+        cell_size_meters: float = 32.0,
+        split_z: bool = False,
+        z_cell_size: float = 32.0,
+    ) -> SpatialGridSpec:
+        """Computes combined world-space AABB and cutting planes across multiple mesh objects."""
+        all_corners: list[Sequence[float] | Vector] = []
+        for obj in objs:
+            if not obj or not obj.bound_box:
+                continue
+            mat = getattr(obj, "matrix_world", None)
+            if mat is None or Matrix is None:
+                all_corners.extend(Vector(b) if Vector else b for b in obj.bound_box)
+            else:
+                all_corners.extend(mat @ Vector(b) for b in obj.bound_box)
 
-        min_x = min(c[0] for c in corners)
-        max_x = max(c[0] for c in corners)
-        min_y = min(c[1] for c in corners)
-        max_y = max(c[1] for c in corners)
-        min_z = min(c[2] for c in corners)
-        max_z = max(c[2] for c in corners)
+        if not all_corners:
+            return cls()
+
+        min_x = min(c[0] for c in all_corners)
+        max_x = max(c[0] for c in all_corners)
+        min_y = min(c[1] for c in all_corners)
+        max_y = max(c[1] for c in all_corners)
+        min_z = min(c[2] for c in all_corners)
+        max_z = max(c[2] for c in all_corners)
 
         dx = max(1e-4, max_x - min_x)
         dy = max(1e-4, max_y - min_y)

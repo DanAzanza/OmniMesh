@@ -94,6 +94,45 @@ class TestUIPipeline(unittest.TestCase):
             # Sync selection settings
             self.assertEqual(ops_lod.sync_selection_settings(), {"FINISHED"})
 
+    def test_add_panel_interaction_volume_and_colliders(self) -> None:
+        """Verify Add panel workflows: interaction clickspots and physics collision hulls."""
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+
+            mesh_objs = create_hierarchy_fixture("SM_AddAsset")
+            for obj in mesh_objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = mesh_objs[0]
+
+            ops_om: Any = cast(Any, bpy.ops).omnimesh
+            ops_lod: Any = cast(Any, bpy.ops).lod_tool
+
+            # Initialize asset hierarchy
+            ops_om.initialize_asset(asset_name="SM_AddAsset")
+
+            # 1. Add interaction volume / clickspot
+            res_vol = ops_om.add_interaction_volume()
+            self.assertEqual(res_vol, {"FINISHED"})
+
+            interact_col = bpy.data.collections.get("SM_AddAsset_Interactions")
+            self.assertIsNotNone(interact_col)
+            assert interact_col is not None
+            self.assertGreater(len(interact_col.objects), 0)
+
+            # 2. Generate and remove collision hulls
+            res_col_gen = ops_lod.generate_collision_hulls()
+            self.assertEqual(res_col_gen, {"FINISHED"})
+
+            coll_col = bpy.data.collections.get("SM_AddAsset_Colliders")
+            self.assertIsNotNone(coll_col)
+            assert coll_col is not None
+            self.assertGreater(len(coll_col.objects), 0)
+
+            res_col_rem = ops_lod.remove_collision_hulls()
+            self.assertEqual(res_col_rem, {"FINISHED"})
+            self.assertEqual(len(coll_col.objects), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

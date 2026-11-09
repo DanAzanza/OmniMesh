@@ -2,9 +2,10 @@
 OmniMesh Modular Panel Architecture for Blender 4.2+ and 5.2 LTS.
 Structured into streamlined sequential workflow panels with gear-icon popovers:
 1. Import (Engine Project & PBR Texture Set Importer)
-2. Modify (Base Prep, Sanitization, Modifiers, Materials & Colliders)
-3. LODs (Tier Configuration, Compact Responsive Cards, Decimation & Testing)
-4. Engine Export (Single-Asset Multi-Engine Package Export & Live Link)
+2. Add (Vehicle & Asset Configuration Presets)
+3. Modify (Base Prep, Sanitization, Modifiers, Materials & Colliders)
+4. LODs (Tier Configuration, Compact Responsive Cards, Decimation & Testing)
+5. Engine Export (Single-Asset Multi-Engine Package Export & Live Link)
 """
 
 from __future__ import annotations
@@ -155,15 +156,15 @@ class OMNIMESH_PT_import(Panel):
 
 
 # =========================================================================
-# PANEL 2: MODIFY (Base Prep, Sanitization, Modifiers & Materials)
+# PANEL 2: ADD (Vehicle Config, Impostors, Colliders & Clickspots)
 # =========================================================================
 
 
-class OMNIMESH_PT_modify(Panel):
-    """Panel 2: Base Mesh Sanitization, Modifiers, Materials & Colliders."""
+class OMNIMESH_PT_add(Panel):
+    """Panel 2: Vehicle Configurator, Impostor Billboards, Collision Hulls & Interaction Volumes."""
 
-    bl_label = "2. Modify"
-    bl_idname = "OMNIMESH_PT_modify"
+    bl_label = "2. Add"
+    bl_idname = "OMNIMESH_PT_add"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
@@ -177,52 +178,7 @@ class OMNIMESH_PT_modify(Panel):
         if not props:
             props = context.scene.lod_tool
 
-        # 1. Asset Setup Row: Target Asset + Init + Scene Setup Popover
-        row_asset = layout.row(align=True)
-        row_asset.use_property_split = False
-        row_asset.prop(props, "active_asset", text="Target Asset", icon="OUTLINER_COLLECTION")
-        row_asset.operator("omnimesh.initialize_asset", text="", icon="COLLECTION_NEW")
-        row_asset.popover(panel="OMNIMESH_PT_popover_scene_setup", icon="PREFERENCES", text="")
-
-        # 2. Geometry Row: Mesh Sanitization + Gear Popover
-        row_san = layout.row(align=True)
-        row_san.use_property_split = False
-        row_san.scale_y = 1.25
-        row_san.operator("lod_tool.clean_and_repair_mesh", text="Sanitize Base Mesh", icon="BRUSH_DATA")
-        row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
-
-        # 3. Materials Row: Material Cleanup + Gear Popover
-        row_mat = layout.row(align=True)
-        row_mat.use_property_split = False
-        row_mat.scale_y = 1.25
-        row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
-        row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
-
-        # 4. Physics Row: Collision Hulls + Delete + Gear Popover
-        row_col = layout.row(align=True)
-        row_col.use_property_split = False
-        row_col.scale_y = 1.25
-        row_col.operator("lod_tool.generate_collision_hulls", text="Generate Colliders", icon="MOD_PHYSICS")
-
-        # Determine if colliders exist for the active asset base collection
-        base_name = resolve_effective_asset_name(context, props)
-        coll_name = f"{base_name}_Colliders" if base_name else ""
-        collider_count = 0
-        if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and coll_name:
-            target_coll = bpy.data.collections.get(coll_name)
-            if target_coll:
-                objs: Any = target_coll.objects
-                collider_count = len([o for o in objs if o.get("_is_collider", False) or "_Collider_" in o.name])
-        last_count = getattr(props, "last_generated_collider_count", 0)
-        if collider_count == 0 and isinstance(last_count, int) and last_count > 0:
-            collider_count = last_count
-
-        sub_del = row_col.row(align=True)
-        sub_del.enabled = collider_count > 0
-        sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
-        row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
-
-        # 5. Vehicle & Asset Configurator Box
+        # 1. Vehicle & Asset Configurator
         cfg_props = getattr(props, "config_presets", None)
         if cfg_props:
             box_cfg = layout.box()
@@ -248,21 +204,137 @@ class OMNIMESH_PT_modify(Panel):
             if cfg_props.last_spawn_summary:
                 box_cfg.label(text=cfg_props.last_spawn_summary, icon="CHECKMARK")
 
+        # 2. Billboard / Octahedral Impostor Object
+        row_imp = layout.row(align=True)
+        row_imp.use_property_split = False
+        row_imp.scale_y = 1.25
+        row_imp.operator("lod_tool.generate_impostor", text="Generate Impostor", icon="IMAGE_PLANE")
+        row_imp.operator("lod_tool.remove_impostor", text="", icon="X")
+        row_imp.popover(panel="OMNIMESH_PT_popover_impostor", icon="PREFERENCES", text="")
+
+        # 3. Physics Collision Hulls
+        row_col = layout.row(align=True)
+        row_col.use_property_split = False
+        row_col.scale_y = 1.25
+        row_col.operator("lod_tool.generate_collision_hulls", text="Generate Colliders", icon="MOD_PHYSICS")
+
+        base_name = resolve_effective_asset_name(context, props)
+        coll_name = f"{base_name}_Colliders" if base_name else ""
+        collider_count = 0
+        if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and coll_name:
+            target_coll = bpy.data.collections.get(coll_name)
+            if target_coll:
+                objs: Any = target_coll.objects
+                collider_count = len([o for o in objs if o.get("_is_collider", False) or "_Collider_" in o.name])
+        last_count = getattr(props, "last_generated_collider_count", 0)
+        if collider_count == 0 and isinstance(last_count, int) and last_count > 0:
+            collider_count = last_count
+
+        sub_del = row_col.row(align=True)
+        sub_del.enabled = collider_count > 0
+        sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
+        row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
+
+        # 4. Interaction Trigger / Clickspot Volumes
+        int_props = getattr(props, "interaction", None)
+        if int_props:
+            box_int = layout.box()
+            box_int.label(text="Interaction Trigger / Clickspots", icon="GIZMO")
+            row_int_cfg = box_int.row(align=True)
+            row_int_cfg.use_property_split = False
+            row_int_cfg.prop(int_props, "role", text="")
+            row_int_cfg.prop(int_props, "shape", text="")
+            row_int_act = box_int.row(align=True)
+            row_int_act.use_property_split = False
+            row_int_act.scale_y = 1.2
+            row_int_act.operator("omnimesh.add_interaction_volume", text="Add Clickspot / Trigger", icon="ADD")
+
 
 # =========================================================================
-# PANEL 3: LODs (Configuration, UIList, Decimation & Testing)
+# PANEL 3: MODIFY (Base Prep, Sanitization, Chunking & Voxel Remesh)
 # =========================================================================
 
 
-class OMNIMESH_PT_lods(Panel):
-    """Panel 3: LOD Generation Pipeline and Compact Collapsible Cards."""
+class OMNIMESH_PT_modify(Panel):
+    """Panel 3: Base Mesh Sanitization, Interior Culling, Materials, Spatial Chunking & Voxel Remesh."""
 
-    bl_label = "3. LODs"
-    bl_idname = "OMNIMESH_PT_lods"
+    bl_label = "3. Modify"
+    bl_idname = "OMNIMESH_PT_modify"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
     bl_order = 2
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context or not self.layout:
+            return
+        layout = self.layout
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = context.scene.lod_tool
+
+        # 1. Asset Setup Row: Target Asset + Init + Scene Setup Popover
+        row_asset = layout.row(align=True)
+        row_asset.use_property_split = False
+        row_asset.prop(props, "active_asset", text="Target Asset", icon="OUTLINER_COLLECTION")
+        row_asset.operator("omnimesh.initialize_asset", text="", icon="COLLECTION_NEW")
+        row_asset.popover(panel="OMNIMESH_PT_popover_scene_setup", icon="PREFERENCES", text="")
+
+        # 2. Geometry Row: Mesh Sanitization + Gear Popover & Remove Interior Polygons
+        row_san = layout.row(align=True)
+        row_san.use_property_split = False
+        row_san.scale_y = 1.25
+        row_san.operator("lod_tool.clean_and_repair_mesh", text="Sanitize Base Mesh", icon="BRUSH_DATA")
+        row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
+
+        row_occ = layout.row(align=True)
+        row_occ.use_property_split = False
+        row_occ.scale_y = 1.2
+        row_occ.operator("lod_tool.cull_interior_faces", text="Remove Interior Polygons", icon="XRAY")
+
+        # 3. Materials Row: Material Cleanup + Gear Popover
+        row_mat = layout.row(align=True)
+        row_mat.use_property_split = False
+        row_mat.scale_y = 1.25
+        row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
+        row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
+
+        # 4. Spatial Chunking (Slice Large LOD0 Objects)
+        box_chunk = layout.box()
+        box_chunk.label(text="Spatial Chunking (Large Assets)", icon="MESH_GRID")
+        row_chk_cfg = box_chunk.row(align=True)
+        row_chk_cfg.use_property_split = False
+        row_chk_cfg.prop(props, "chunk_cell_size", text="Cell (m)")
+        row_chk_cfg.prop(props, "chunk_partitioning_mode", text="")
+        row_chk_act = box_chunk.row(align=True)
+        row_chk_act.use_property_split = False
+        row_chk_act.scale_y = 1.2
+        row_chk_act.operator("lod_tool.spatial_chunk_and_generate", text="Partition & Chunk LOD0", icon="MESH_GRID")
+
+        # 5. Voxel Surface Reconstruction (Watertight Scan Cleanup)
+        box_vox = layout.box()
+        box_vox.label(text="Voxel Surface Reconstruction", icon="MOD_REMESH")
+        row_vox = box_vox.row(align=True)
+        row_vox.use_property_split = False
+        row_vox.scale_y = 1.2
+        row_vox.prop(props, "scan_remesh_voxel_size", text="Voxel (m)")
+        row_vox.operator("lod_tool.voxel_scan_cleanup", text="Voxel Reconstruct", icon="MOD_REMESH")
+
+
+# =========================================================================
+# PANEL 4: LODs (Configuration, UIList, Decimation & Testing)
+# =========================================================================
+
+
+class OMNIMESH_PT_lods(Panel):
+    """Panel 4: LOD Generation Pipeline and Compact Collapsible Cards."""
+
+    bl_label = "4. LODs"
+    bl_idname = "OMNIMESH_PT_lods"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "OmniMesh"
+    bl_order = 3
 
     @classmethod
     def _draw_selection_banners(cls, layout: Any, context: Any) -> None:
@@ -518,19 +590,19 @@ class OMNIMESH_PT_lods_testing(Panel):
 
 
 # =========================================================================
-# PANEL 4: ENGINE EXPORT (Single Asset Package Export & Live Link)
+# PANEL 5: ENGINE EXPORT (Single Asset Package Export & Live Link)
 # =========================================================================
 
 
 class OMNIMESH_PT_export(Panel):
-    """Panel 4: Single Asset Multi-Engine Export, PBR Texture Channel Packing & Live Bridge."""
+    """Panel 5: Single Asset Multi-Engine Export, PBR Texture Channel Packing & Live Bridge."""
 
-    bl_label = "4. Engine Export"
+    bl_label = "5. Engine Export"
     bl_idname = "OMNIMESH_PT_export"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
-    bl_order = 3
+    bl_order = 4
 
     def draw(self, context: Any) -> None:
         if not bpy or not context or not self.layout:
@@ -594,6 +666,7 @@ class OMNIMESH_PT_export(Panel):
 
 PRIMARY_PANELS = (
     OMNIMESH_PT_import,
+    OMNIMESH_PT_add,
     OMNIMESH_PT_modify,
     OMNIMESH_PT_lods,
     OMNIMESH_PT_export,

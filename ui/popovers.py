@@ -133,6 +133,14 @@ class OMNIMESH_PT_popover_sanitize(Panel):
 
         layout.prop(props, "cleanup_enable_triangulate_ngons", text="Triangulate N-Gons")
 
+        layout.separator()
+        layout.label(text="Interior Occlusion Culling", icon="XRAY")
+        layout.prop(props, "cleanup_cull_interior_faces", text="Remove Interior Polygons on Sanitize")
+        row_occ = layout.row(align=True)
+        row_occ.prop(props, "occlusion_ray_density", text="Rays")
+        row_occ.prop(props, "occlusion_evaluate_alpha", text="Alpha")
+        layout.operator("lod_tool.cull_interior_faces", text="Remove Interior Polygons Now", icon="XRAY")
+
 
 class OMNIMESH_PT_popover_materials(Panel):
     """Popover for material cleanup, AST-hash deduplication, and micro-material consolidation."""

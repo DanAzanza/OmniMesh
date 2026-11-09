@@ -74,7 +74,7 @@ class LOD_OT_generate_impostor(Operator):
 
     @classmethod
     def poll(cls, context: Any) -> bool:
-        return bool(context and get_selected_mesh_objects(context))
+        return bool(context and (get_selected_mesh_objects(context) or get_lod0_mesh_objects(context)))
 
     def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
@@ -83,7 +83,10 @@ class LOD_OT_generate_impostor(Operator):
         if not props:
             props = context.scene.lod_tool
 
-        mesh_objs = get_selected_mesh_objects(context)
+        mesh_objs = get_selected_mesh_objects(context) or get_lod0_mesh_objects(context)
+        if not mesh_objs:
+            safe_report(self, {"WARNING"}, "No valid mesh objects found for impostor generation.")
+            return {"CANCELLED"}
         base_name = resolve_effective_asset_name(context, props)
         if not base_name or base_name in {"AUTO", "NONE"}:
             base_name = resolve_asset_base_name(context, mesh_objs)

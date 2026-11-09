@@ -24,10 +24,10 @@ else:
 
 try:
     from ..core.interaction_volumes import create_interaction_volume
-    from .utils import resolve_effective_asset_name, safe_report
+    from .utils import resolve_asset_base_name, resolve_effective_asset_name, safe_report
 except (ImportError, ValueError):
     from core.interaction_volumes import create_interaction_volume
-    from ui.utils import resolve_effective_asset_name, safe_report
+    from ui.utils import resolve_asset_base_name, resolve_effective_asset_name, safe_report
 
 
 class OMNIMESH_OT_add_interaction_volume(Operator):
@@ -52,9 +52,11 @@ class OMNIMESH_OT_add_interaction_volume(Operator):
         props = getattr(context.scene, "lod_tool", None) if context else None
         interact_props = getattr(props, "interaction", None) if props else None
 
+        active_obj = getattr(context, "active_object", None)
         asset_name = resolve_effective_asset_name(context, props)
         if not asset_name or asset_name in ("AUTO", "NONE"):
-            asset_name = "Asset"
+            mesh_objs = [active_obj] if active_obj and getattr(active_obj, "type", "") == "MESH" else []
+            asset_name = resolve_asset_base_name(context, mesh_objs) if mesh_objs else "Asset"
 
         shape = getattr(interact_props, "shape", "BOX") if interact_props else "BOX"
         role = getattr(interact_props, "role", "BUTTON") if interact_props else "BUTTON"

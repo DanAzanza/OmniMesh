@@ -29,6 +29,7 @@ try:
     from ..core.hierarchy import LayerCollectionGuard
     from ..core.materials import MaterialOptimizer
     from ..core.modifiers import ModifierManager
+    from ..core.occlusion import HardenedOcclusionCuller
     from ..core.sanitizer import MeshSanitizer, SanitizeOptions
     from .hud import LODViewportHUD
     from .utils import (
@@ -44,6 +45,7 @@ except (ImportError, ValueError):
     from core.hierarchy import LayerCollectionGuard
     from core.materials import MaterialOptimizer
     from core.modifiers import ModifierManager
+    from core.occlusion import HardenedOcclusionCuller
     from core.sanitizer import MeshSanitizer, SanitizeOptions
     from ui.hud import LODViewportHUD
     from ui.utils import (
@@ -197,7 +199,11 @@ class LOD_OT_clean_and_repair_mesh(Operator):
             "split_nm": 0,
             "holes": 0,
             "ngons": 0,
+            "interior_faces": 0,
         }
+        cull_interior = bool(getattr(props, "cleanup_cull_interior_faces", False))
+        ray_density = int(getattr(props, "occlusion_ray_density", 16))
+        eval_alpha = bool(getattr(props, "occlusion_evaluate_alpha", True))
         for obj in mesh_objs:
             if not getattr(obj, "data", None) or not bmesh:
                 continue
@@ -225,6 +231,14 @@ class LOD_OT_clean_and_repair_mesh(Operator):
                 counts["split_nm"] += res.get("split_non_manifold_edges", 0)
                 counts["holes"] += res.get("filled_holes", 0)
                 counts["ngons"] += res.get("triangulated_ngons", 0)
+                if cull_interior:
+                    occ_res = HardenedOcclusionCuller.cull_interior_faces(
+                        obj,
+                        bm,
+                        ray_density=ray_density,
+                        evaluate_alpha=eval_alpha,
+                    )
+                    counts["interior_faces"] += occ_res.get("culled_faces", 0)
                 bm.to_mesh(obj.data)
             except OmniMeshError as err:
                 safe_report(self, {"ERROR"}, f"Topology repair failed on {getattr(obj, 'name', 'mesh')}: {err}")
@@ -248,6 +262,7 @@ class LOD_OT_clean_and_repair_mesh(Operator):
             ("split_nm", "{n} non-manifold edges split"),
             ("holes", "{n} holes filled"),
             ("ngons", "{n} n-gons triangulated"),
+            ("interior_faces", "{n} interior faces removed"),
         ]
         for key, template in labels:
             n = counts.get(key, 0)
@@ -291,6 +306,79 @@ class LOD_OT_clean_and_repair_mesh(Operator):
         run_preflight_inspection(context, mesh_objs)
 
         # Trigger transient viewport HUD toast notification
+        try:
+            LODViewportHUD.show_toast(summary)
+        except Exception as exc:
+            logger.debug("Could not show HUD toast: %s", exc)
+
+        safe_report(self, {"INFO"}, summary)
+        return {"FINISHED"}
+
+
+class LOD_OT_cull_interior_faces(Operator):
+    """Detect and remove occluded interior polygons across all LOD0 meshes."""
+
+    bl_idname = "lod_tool.cull_interior_faces"
+    bl_label = "Remove Interior Polygons"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context: Any) -> bool:
+        return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"FINISHED"}
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = context.scene.lod_tool
+
+        mesh_objs = get_lod0_mesh_objects(context)
+        if not mesh_objs:
+            mesh_objs = get_selected_mesh_objects(context)
+        if not mesh_objs:
+            safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found for interior polygon culling.")
+            return {"CANCELLED"}
+
+        ray_density = int(getattr(props, "occlusion_ray_density", 16))
+        eval_alpha = bool(getattr(props, "occlusion_evaluate_alpha", True))
+        total_culled_faces = 0
+        total_culled_islands = 0
+
+        for obj in mesh_objs:
+            if not getattr(obj, "data", None) or not bmesh:
+                continue
+            bm = bmesh.new()
+            try:
+                bm.from_mesh(obj.data)
+                occ_res = HardenedOcclusionCuller.cull_interior_faces(
+                    obj,
+                    bm,
+                    ray_density=ray_density,
+                    evaluate_alpha=eval_alpha,
+                )
+                culled_f = occ_res.get("culled_faces", 0)
+                culled_i = occ_res.get("culled_islands", 0)
+                total_culled_faces += culled_f
+                total_culled_islands += culled_i
+                if culled_f > 0:
+                    bm.to_mesh(obj.data)
+            except Exception as err:
+                logger.warning("Interior culling failed on %s: %s", getattr(obj, "name", "mesh"), err)
+                safe_report(
+                    self, {"ERROR"}, f"Interior polygon removal failed on {getattr(obj, 'name', 'mesh')}: {err}"
+                )
+                return {"CANCELLED"}
+            finally:
+                bm.free()
+            if hasattr(obj.data, "update"):
+                obj.data.update()
+
+        props.last_culled_faces_count = total_culled_faces
+        props.last_culled_islands_count = total_culled_islands
+        summary = f"Removed {total_culled_faces} interior polygons ({total_culled_islands} islands) across {len(mesh_objs)} LOD0 mesh(es)."
+        props.last_cleanup_summary = summary
+
         try:
             LODViewportHUD.show_toast(summary)
         except Exception as exc:
@@ -496,6 +584,7 @@ class LOD_OT_create_helpers_collection(Operator):
 CLEANUP_OPERATOR_CLASSES = (
     LOD_OT_inspect_lod0,
     LOD_OT_clean_and_repair_mesh,
+    LOD_OT_cull_interior_faces,
     LOD_OT_clean_and_repair_materials,
     LOD_OT_apply_all_modifiers,
     LOD_OT_apply_transforms,

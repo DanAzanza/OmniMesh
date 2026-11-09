@@ -37,6 +37,7 @@ from .cleanup_ops import (
     LOD_OT_clean_and_repair_materials,
     LOD_OT_clean_and_repair_mesh,
     LOD_OT_create_helpers_collection,
+    LOD_OT_cull_interior_faces,
     LOD_OT_inspect_lod0,
 )
 from .hull_impostor_ops import (
@@ -184,6 +185,7 @@ __all__ = [
     "LOD_OT_reset_virtual_distance",
     "LOD_OT_toggle_split_preview",
     "LOD_OT_clean_and_repair_mesh",
+    "LOD_OT_cull_interior_faces",
     "LOD_OT_clean_and_repair_materials",
     "LOD_OT_apply_all_modifiers",
     "LOD_OT_apply_transforms",

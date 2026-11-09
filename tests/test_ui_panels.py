@@ -25,6 +25,7 @@ from ui.operators import (
     is_object_valid,
 )
 from ui.panel import (
+    OMNIMESH_PT_add,
     OMNIMESH_PT_export,
     OMNIMESH_PT_import,
     OMNIMESH_PT_lods,
@@ -46,19 +47,23 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_import.bl_category == "OmniMesh"
     assert OMNIMESH_PT_import.bl_order == 0
 
+    assert OMNIMESH_PT_add.bl_idname == "OMNIMESH_PT_add"
+    assert OMNIMESH_PT_add.bl_category == "OmniMesh"
+    assert OMNIMESH_PT_add.bl_order == 1
+
     assert OMNIMESH_PT_modify.bl_idname == "OMNIMESH_PT_modify"
     assert OMNIMESH_PT_modify.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_modify.bl_order == 1
+    assert OMNIMESH_PT_modify.bl_order == 2
 
     assert OMNIMESH_PT_lods.bl_idname == "OMNIMESH_PT_lods"
     assert OMNIMESH_PT_lods.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_lods.bl_order == 2
+    assert OMNIMESH_PT_lods.bl_order == 3
 
     assert OMNIMESH_PT_export.bl_idname == "OMNIMESH_PT_export"
     assert OMNIMESH_PT_export.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_export.bl_order == 3
+    assert OMNIMESH_PT_export.bl_order == 4
 
-    # Subpanels (testing subpanel under Panel 3, Batch export subpanel under Panel 4)
+    # Subpanels (testing subpanel under Panel 4, Batch export subpanel under Panel 5)
     assert len(SUBPANEL_CLASSES) == 2
     assert SUBPANEL_CLASSES[0].bl_idname == "OMNIMESH_PT_lods_testing"
     assert SUBPANEL_CLASSES[0].bl_parent_id == "OMNIMESH_PT_lods"
@@ -76,17 +81,18 @@ def test_panel_class_hierarchy_and_order():
         assert not hasattr(popover_cls, "bl_parent_id")
 
     # Registration tuple (parent-first topological order)
-    assert len(PRIMARY_PANELS) == 4
+    assert len(PRIMARY_PANELS) == 5
     assert len(SUBPANEL_CLASSES) == 2
-    assert len(PANEL_CLASSES) == 19
+    assert len(PANEL_CLASSES) == 20
     assert PANEL_CLASSES[0] is OMNIMESH_PT_import
-    assert PANEL_CLASSES[1] is OMNIMESH_PT_modify
-    assert PANEL_CLASSES[2] is OMNIMESH_PT_lods
-    assert PANEL_CLASSES[3] is OMNIMESH_PT_export
-    assert PANEL_CLASSES[4] is SUBPANEL_CLASSES[0]
-    assert PANEL_CLASSES[5] is SUBPANEL_CLASSES[1]
+    assert PANEL_CLASSES[1] is OMNIMESH_PT_add
+    assert PANEL_CLASSES[2] is OMNIMESH_PT_modify
+    assert PANEL_CLASSES[3] is OMNIMESH_PT_lods
+    assert PANEL_CLASSES[4] is OMNIMESH_PT_export
+    assert PANEL_CLASSES[5] is SUBPANEL_CLASSES[0]
+    assert PANEL_CLASSES[6] is SUBPANEL_CLASSES[1]
     for idx, pop_cls in enumerate(POPOVER_CLASSES):
-        assert PANEL_CLASSES[6 + idx] is pop_cls
+        assert PANEL_CLASSES[7 + idx] is pop_cls
 
 
 def test_operator_helpers_mocked():
@@ -541,3 +547,128 @@ def test_viewport_hud_toast_lifecycle():
     assert LODViewportHUD._toast_message == "Another message"
     LODViewportHUD.clear_toast()
     assert LODViewportHUD._toast_message == ""
+
+
+def test_add_panel_draw(monkeypatch):
+    """Verify OMNIMESH_PT_add draws the Vehicle & Asset Configurator, presets, and action buttons."""
+    import ui.panel as panel_mod
+    from ui.panel import OMNIMESH_PT_add
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
+
+    panel_add = OMNIMESH_PT_add()
+
+    # 1. Null / early exit guards
+    cast(Any, panel_add).layout = None
+    panel_add.draw(None)
+
+    mock_layout = MagicMock()
+    cast(Any, panel_add).layout = mock_layout
+
+    # 2. Context with no config_presets and no interaction
+    mock_context = MagicMock()
+    mock_props = MagicMock()
+    mock_props.config_presets = None
+    mock_props.interaction = None
+    mock_props.last_generated_collider_count = 0
+    mock_context.scene.lod_tool = mock_props
+    panel_add.draw(mock_context)
+    assert not mock_layout.box.called
+    assert mock_layout.row.called
+
+    # 3. Built-in preset + Impostor + Colliders + Interaction Trigger
+    mock_layout.reset_mock()
+    mock_box_cfg = MagicMock()
+    mock_box_int = MagicMock()
+    mock_row_p = MagicMock()
+    mock_sub_del = MagicMock()
+    mock_row_act = MagicMock()
+    mock_layout.box.side_effect = [mock_box_cfg, mock_box_int]
+    mock_box_cfg.row.side_effect = [mock_row_p, mock_row_act]
+    mock_row_p.row.return_value = mock_sub_del
+
+    mock_cfg_props = MagicMock()
+    mock_cfg_props.config_preset = "plane_general_aviation"
+    mock_cfg_props.last_spawn_summary = "Added 4 marker(s)"
+    mock_props.config_presets = mock_cfg_props
+
+    mock_int_props = MagicMock()
+    mock_int_props.role = "BUTTON"
+    mock_int_props.shape = "BOX"
+    mock_props.interaction = mock_int_props
+
+    panel_add.draw(mock_context)
+
+    mock_box_cfg.label.assert_any_call(text="Vehicle & Asset Configurator", icon="PRESET")
+    mock_row_p.prop.assert_called_with(mock_cfg_props, "config_preset", text="Preset")
+    mock_row_p.operator.assert_called_with("omnimesh.duplicate_config_preset", text="", icon="DUPLICATE")
+    assert mock_sub_del.enabled is False
+    mock_sub_del.operator.assert_called_with("omnimesh.delete_config_preset", text="", icon="X")
+    mock_row_p.popover.assert_called_with(panel="OMNIMESH_PT_popover_config_preset", icon="PREFERENCES", text="")
+    mock_row_act.operator.assert_called_with("omnimesh.add_config_preset", text="Add Features", icon="ADD")
+    mock_box_cfg.label.assert_any_call(text="Added 4 marker(s)", icon="CHECKMARK")
+    mock_box_int.label.assert_any_call(text="Interaction Trigger / Clickspots", icon="GIZMO")
+
+    # 4. Custom preset (delete enabled)
+    from core.config_presets import ConfigPresetManager
+
+    ConfigPresetManager.load_presets()["my_custom_vehicle"] = {"_is_builtin": False, "name": "My Custom"}
+    mock_layout.box.side_effect = [mock_box_cfg, mock_box_int]
+    mock_box_cfg.reset_mock()
+    mock_box_cfg.row.side_effect = [mock_row_p, mock_row_act]
+    mock_cfg_props.config_preset = "my_custom_vehicle"
+    mock_cfg_props.last_spawn_summary = ""
+    panel_add.draw(mock_context)
+    assert mock_sub_del.enabled is True
+
+
+def test_cull_interior_faces_and_multi_mesh_modify_ops(monkeypatch):
+    """Verify LOD_OT_cull_interior_faces and LOD_OT_voxel_scan_cleanup operate on all LOD0 meshes (plus negative cases)."""
+    import ui.chunk_ops as chunk_ops
+    import ui.cleanup_ops as cleanup_ops
+
+    mock_bpy, mock_bmesh = MagicMock(), MagicMock()
+    monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
+    monkeypatch.setattr(cleanup_ops, "bmesh", mock_bmesh)
+    monkeypatch.setattr(chunk_ops, "bpy", mock_bpy)
+
+    # 1. Negative test: no LOD0 or selected meshes -> CANCELLED
+    monkeypatch.setattr(cleanup_ops, "get_lod0_mesh_objects", lambda ctx: [])
+    monkeypatch.setattr(cleanup_ops, "get_selected_mesh_objects", lambda ctx: [])
+    op_cull = cleanup_ops.LOD_OT_cull_interior_faces()
+    assert cleanup_ops.LOD_OT_cull_interior_faces.poll(None) is False
+    mock_ctx = MagicMock()
+    assert op_cull.execute(mock_ctx) == {"CANCELLED"}
+
+    # 2. Multi-mesh LOD0 interior polygon culling
+    m1, m2 = MagicMock(type="MESH", name="PartA_LOD0"), MagicMock(type="MESH", name="PartB_LOD0")
+    monkeypatch.setattr(cleanup_ops, "get_lod0_mesh_objects", lambda ctx: [m1, m2])
+    mock_occ = MagicMock()
+    mock_occ.cull_interior_faces.return_value = {"culled_faces": 5, "culled_islands": 1}
+    monkeypatch.setattr(cleanup_ops, "HardenedOcclusionCuller", mock_occ)
+
+    mock_props = MagicMock()
+    mock_props.occlusion_ray_density = 16
+    mock_props.occlusion_evaluate_alpha = True
+    mock_ctx.scene.lod_tool = mock_props
+
+    assert cleanup_ops.LOD_OT_cull_interior_faces.poll(mock_ctx) is True
+    assert op_cull.execute(mock_ctx) == {"FINISHED"}
+    assert mock_occ.cull_interior_faces.call_count == 2
+    assert mock_props.last_culled_faces_count == 10
+    assert mock_props.last_culled_islands_count == 2
+
+    # 3. Multi-mesh LOD0 Voxel Reconstruction (plus negative empty check)
+    monkeypatch.setattr(chunk_ops, "get_lod0_mesh_objects", lambda ctx: [])
+    monkeypatch.setattr(chunk_ops, "get_selected_mesh_objects", lambda ctx: [])
+    mock_ctx.active_object = None
+    op_vox = chunk_ops.LOD_OT_voxel_scan_cleanup()
+    assert chunk_ops.LOD_OT_voxel_scan_cleanup.poll(mock_ctx) is False
+    assert op_vox.execute(mock_ctx) == {"CANCELLED"}
+
+    monkeypatch.setattr(chunk_ops, "get_lod0_mesh_objects", lambda ctx: [m1, m2])
+    mock_props.scan_remesh_voxel_size = 0.05
+    assert chunk_ops.LOD_OT_voxel_scan_cleanup.poll(mock_ctx) is True
+    assert op_vox.execute(mock_ctx) == {"FINISHED"}
+    assert mock_bpy.ops.object.voxel_remesh.call_count == 2
