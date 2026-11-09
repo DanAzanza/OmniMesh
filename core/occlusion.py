@@ -60,8 +60,8 @@ class RobustTransparencyEvaluator:
             return True
 
         # If material doesn't use nodes, check diffuse color alpha
-        if not getattr(mat, "use_nodes", False) or not getattr(mat, "node_tree", None):
-            diff_col = cast("Sequence[float] | None", getattr(mat, "diffuse_color", None))
+        if not mat.use_nodes or not mat.node_tree:
+            diff_col = list(cast("Sequence[float]", mat.diffuse_color)) if mat.diffuse_color is not None else None
             if diff_col is not None and len(diff_col) >= 4:
                 return float(diff_col[3]) < 0.99
             return False
@@ -71,12 +71,12 @@ class RobustTransparencyEvaluator:
 
     @classmethod
     def _evaluate_node_tree(cls, node_tree: bpy.types.NodeTree | None, depth: int) -> bool:
-        if not node_tree or not hasattr(node_tree, "nodes") or depth > 4:
+        if not node_tree or node_tree.nodes is None or depth > 4:
             return False
 
         for node in node_tree.nodes:
             # Direct transparent shaders
-            node_type = getattr(node, "type", "")
+            node_type = node.type
             if node_type in {
                 "BSDF_TRANSPARENT",
                 "BSDF_GLASS",
@@ -110,8 +110,9 @@ class RobustTransparencyEvaluator:
                             return True
                     elif alpha_socket.is_linked:
                         from_node = alpha_socket.links[0].from_node
-                        if getattr(from_node, "type", "") == "TEX_IMAGE" and getattr(from_node, "image", None):
-                            if cls.fast_sample_image_alpha(from_node.image):
+                        if from_node and from_node.type == "TEX_IMAGE":
+                            from_img = cast("bpy.types.ShaderNodeTexImage", from_node).image
+                            if from_img and cls.fast_sample_image_alpha(from_img):
                                 return True
 
         return False
@@ -122,12 +123,12 @@ class RobustTransparencyEvaluator:
         Fast strided C-array alpha evaluation without Python tuple allocations.
         Distinguishes genuine alpha cutouts from opaque 32-bit textures.
         """
-        if not img or not hasattr(img, "channels") or img.channels != 4:
+        if not img or img.channels != 4:
             return False
-        if getattr(img, "alpha_mode", "STRAIGHT") == "NONE":
+        if img.alpha_mode == "NONE":
             return False
 
-        size = getattr(img, "size", (0, 0))
+        size = list(cast("Sequence[int]", img.size))
         w, h = size[0], size[1]
         if w == 0 or h == 0:
             return False
@@ -149,11 +150,10 @@ class RobustTransparencyEvaluator:
         finally:
             buf = None
             alpha_samples = None
-            if hasattr(img, "buffers_free"):
-                try:
-                    img.buffers_free()
-                except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Failed freeing image buffers: %s", exc)
+            try:
+                img.buffers_free()
+            except (RuntimeError, AttributeError) as exc:
+                logger.debug("Failed freeing image buffers: %s", exc)
 
 
 class HardenedOcclusionCuller:
@@ -186,7 +186,7 @@ class HardenedOcclusionCuller:
 
         # 1. Evaluate Material Transparency Table
         trans_slots: Dict[int, bool] = {}
-        if evaluate_alpha and obj and hasattr(obj, "material_slots"):
+        if evaluate_alpha and obj and obj.material_slots is not None:
             for idx, slot in enumerate(obj.material_slots):
                 if slot and slot.material:
                     trans_slots[idx] = RobustTransparencyEvaluator.is_material_transparent(slot.material)
@@ -268,7 +268,7 @@ class HardenedOcclusionCuller:
             if face.index in visible_face_indices:
                 continue
 
-            if not hasattr(face.normal, "length_squared") or face.normal.length_squared < 1e-8:
+            if face.normal.length_squared < 1e-8:
                 continue
 
             c = face.calc_center_median()

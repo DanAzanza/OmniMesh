@@ -38,13 +38,13 @@ def set_principled_socket(
     Safely assigns a socket value on Principled BSDF supporting both v1 (Blender < 4.0)
     and v2 (Blender 4.0+) socket names.
     """
-    if not node or not hasattr(node, "inputs"):
+    if not node or node.inputs is None:
         return False
 
     socket = node.inputs.get(name_v2) or node.inputs.get(name_v1)
     if socket is not None:
         try:
-            socket.default_value = value
+            cast("bpy.types.NodeSocketStandard", socket).default_value = value  # type: ignore[assignment]
             return True
         except (TypeError, ValueError, AttributeError) as exc:
             logger.debug("Failed setting socket '%s'/'%s': %s", name_v1, name_v2, exc)
@@ -64,22 +64,20 @@ def configure_material_transparency(
         return
 
     # Blender 5.0+ EEVEE Next API
-    if hasattr(mat, "surface_render_method"):
-        try:
-            mat.surface_render_method = "BLENDED" if mode in ("BLEND", "HASHED") else "DITHERED"
-        except (AttributeError, TypeError):
-            pass
+    try:
+        mat.surface_render_method = "BLENDED" if mode in ("BLEND", "HASHED") else "DITHERED"
+    except (AttributeError, TypeError):
+        pass
 
-    if hasattr(mat, "use_transparent_shadow"):
-        try:
-            mat.use_transparent_shadow = shadow != "NONE"
-        except (AttributeError, TypeError):
-            pass
+    try:
+        mat.use_transparent_shadow = shadow != "NONE"
+    except (AttributeError, TypeError):
+        pass
 
 
 def get_or_create_principled_node(mat: Material | None) -> Optional[Node]:
     """Retrieves or creates the primary Principled BSDF node in a material node tree."""
-    if not mat or not hasattr(mat, "node_tree") or not mat.node_tree:
+    if not mat or not mat.node_tree:
         return None
 
     tree = mat.node_tree
@@ -104,6 +102,15 @@ def get_or_create_principled_node(mat: Material | None) -> Optional[Node]:
         return None
 
 
+def _set_msfs_material_type(mat: Material, mat_type: int) -> None:
+    """Assigns MSFS material type both as custom property and RNA property when available."""
+    mat["msfs_material_type"] = mat_type
+    try:
+        cast("Any", mat).msfs_material_type = mat_type
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.debug("Could not assign RNA msfs_material_type: %s", exc)
+
+
 def create_or_update_material_preset(
     material_name: str,
     preset_type: str,
@@ -124,13 +131,10 @@ def create_or_update_material_preset(
         - INVISIBLE_COLLIDER: Zero-opacity trigger / mouse collision volume.
         - EMISSIVE_LIGHT: High-intensity emissive lamp material for instruments / bloom.
     """
-    if not bpy:
+    if not bpy or not blend_data or blend_data.materials is None:
         return None
 
-    bdata = blend_data
-    bdata_mats = getattr(bdata, "materials", None) if bdata else None
-    if bdata_mats is None:
-        return None
+    bdata_mats = blend_data.materials
 
     clean_name = str(material_name).strip() or f"Mat_{preset_type}"
     mat = bdata_mats.get(clean_name)
@@ -158,12 +162,7 @@ def create_or_update_material_preset(
         set_principled_socket(bsdf, "Alpha", "Alpha", 1.0)
         set_principled_socket(bsdf, "Transmission", "Transmission Weight", 0.0)
         configure_material_transparency(mat, mode="OPAQUE", shadow="OPAQUE")
-        mat["msfs_material_type"] = 1  # MSFS Standard PBR
-        if hasattr(mat, "msfs_material_type"):
-            try:
-                cast(Any, mat).msfs_material_type = 1
-            except (TypeError, ValueError, AttributeError) as exc:
-                logger.debug("Could not assign RNA msfs_material_type: %s", exc)
+        _set_msfs_material_type(mat, 1)
 
     elif preset_type == "GLASS_TRANSPARENT":
         set_principled_socket(bsdf, "Alpha", "Alpha", 1.0)
@@ -172,12 +171,7 @@ def create_or_update_material_preset(
         set_principled_socket(bsdf, "IOR", "IOR", 1.52)
         configure_material_transparency(mat, mode="BLEND", shadow="NONE")
         mat["_omnimesh_translucent"] = True
-        mat["msfs_material_type"] = 4  # MSFS Windshield
-        if hasattr(mat, "msfs_material_type"):
-            try:
-                cast(Any, mat).msfs_material_type = 4
-            except (TypeError, ValueError, AttributeError) as exc:
-                logger.debug("Could not assign RNA msfs_material_type: %s", exc)
+        _set_msfs_material_type(mat, 4)
 
     elif preset_type == "FLOATING_DECAL":
         alpha_val = min(col_rgba[3], 0.99)
@@ -185,24 +179,14 @@ def create_or_update_material_preset(
         set_principled_socket(bsdf, "Transmission", "Transmission Weight", 0.0)
         configure_material_transparency(mat, mode="BLEND", shadow="NONE")
         mat["_omnimesh_decal"] = True
-        mat["msfs_material_type"] = 2  # MSFS Decal
-        if hasattr(mat, "msfs_material_type"):
-            try:
-                cast(Any, mat).msfs_material_type = 2
-            except (TypeError, ValueError, AttributeError) as exc:
-                logger.debug("Could not assign RNA msfs_material_type: %s", exc)
+        _set_msfs_material_type(mat, 2)
 
     elif preset_type == "INVISIBLE_COLLIDER":
         set_principled_socket(bsdf, "Alpha", "Alpha", 0.0)
         set_principled_socket(bsdf, "Transmission", "Transmission Weight", 0.0)
         configure_material_transparency(mat, mode="BLEND", shadow="NONE")
         mat["_omnimesh_invisible"] = True
-        mat["msfs_material_type"] = 12  # MSFS Collision / Invisible
-        if hasattr(mat, "msfs_material_type"):
-            try:
-                cast(Any, mat).msfs_material_type = 12
-            except (TypeError, ValueError, AttributeError) as exc:
-                logger.debug("Could not assign RNA msfs_material_type: %s", exc)
+        _set_msfs_material_type(mat, 12)
 
     elif preset_type == "EMISSIVE_LIGHT":
         set_principled_socket(bsdf, "Alpha", "Alpha", 1.0)
@@ -221,10 +205,10 @@ def assign_material_to_objects(mat: Material | None, objects: Sequence[bpy.types
 
     count = 0
     for obj in objects:
-        if not obj or getattr(obj, "type", "") != "MESH":
+        if not obj or obj.type != "MESH" or obj.data is None:
             continue
-        mesh = getattr(obj, "data", None)
-        if not mesh or not hasattr(mesh, "materials"):
+        mesh = cast("bpy.types.Mesh", obj.data)
+        if mesh.materials is None:
             continue
 
         if len(mesh.materials) == 0:

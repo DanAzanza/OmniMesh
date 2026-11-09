@@ -228,6 +228,8 @@ class MockRuleContext(_MockBase):
         self.scene = scene
         self.view_layer = view_layer
         self.blend_data = blend_data
+        self.mode = "OBJECT"
+        self.selected_objects: list[Any] = []
 
 
 @pytest.fixture
@@ -354,6 +356,12 @@ def mock_hierarchy():
                     "export_base_name": "Simple_Aircraft",
                     "msfs_export_full_package": True,
                     "cull_screen_size_pct": 0.5,
+                    "msfs_target_version": "2024",
+                    "asset_category": "AIRCRAFT",
+                    "msfs_with_exterior_show_interior": True,
+                    "msfs_with_exterior_show_interior_hide_first_lod": False,
+                    "msfs_with_interior_force_first_lod": False,
+                    "msfs_with_interior_show_exterior": True,
                 },
             )(),
         },

@@ -39,8 +39,8 @@ else:
 from .pbr_classifier import PBRSemanticClassifier
 from .pbr_presets import (
     DEFAULT_PRESET_ID,
-    PBRImportPresetManager,
     PBRImporterPresetManager,
+    PBRImportPresetManager,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,13 +59,13 @@ class OCIOColorSpaceResolver:
     @classmethod
     def apply_colorspace(cls, image: bpy.types.Image | None, is_data: bool, is_float: bool = False) -> None:
         """Safely assigns the color space to a Blender image datablock."""
-        if not image or not hasattr(image, "colorspace_settings"):
+        if not image or not image.colorspace_settings:
             return
 
         available_spaces = set()
         try:
-            prop = getattr(getattr(image.colorspace_settings, "bl_rna", None), "properties", {}).get("name")
-            if prop and hasattr(prop, "enum_items"):
+            prop = cast("bpy.types.EnumProperty | None", image.colorspace_settings.bl_rna.properties.get("name"))
+            if prop and prop.enum_items is not None:
                 available_spaces = {item.identifier for item in prop.enum_items}
         except (AttributeError, TypeError) as exc:
             logger.debug("OCIO enum query: %s", exc)
@@ -82,7 +82,7 @@ class OCIOColorSpaceResolver:
                     continue
 
         logger.warning(
-            "Failed to resolve OCIO color space for image '%s'. Preserving default.", getattr(image, "name", "unknown")
+            "Failed to resolve OCIO color space for image '%s'. Preserving default.", image.name or "unknown"
         )
 
 
@@ -130,7 +130,7 @@ class ShaderGraphBuilder:
     @staticmethod
     def get_bsdf_socket(bsdf: bpy.types.Node | None, aliases: list[str]) -> bpy.types.NodeSocket | None:
         """Safely queries Principled BSDF inputs across Blender 3.x, 4.x, and 5.x."""
-        if not bsdf or not hasattr(bsdf, "inputs"):
+        if not bsdf or bsdf.inputs is None:
             return None
         for alias in aliases:
             sock = bsdf.inputs.get(alias)
@@ -148,10 +148,10 @@ class ShaderGraphBuilder:
         """
         sockets = mix_node.outputs if is_output else mix_node.inputs
         for s in sockets:
-            if getattr(s, "name", "") == identifier and getattr(s, "type", "") == "RGBA":
+            if s.name == identifier and s.type == "RGBA":
                 return s
 
-        candidates = [s for s in sockets if getattr(s, "type", "") == "RGBA"]
+        candidates = [s for s in sockets if s.type == "RGBA"]
         if identifier == "A" and len(candidates) >= 1:
             return candidates[0]
         if identifier == "B" and len(candidates) >= 2:
@@ -191,8 +191,11 @@ class ShaderGraphBuilder:
 
         # If RELATIVE requested:
         bdata = blend_data
-        bdata_filepath = getattr(bdata, "filepath", "") if bdata else ""
-        is_saved = getattr(bdata, "is_saved", bool(bdata_filepath)) if bdata else False
+        bdata_filepath = bdata.filepath if bdata else ""
+        try:
+            is_saved = bdata.is_saved if bdata else False
+        except AttributeError:
+            is_saved = bool(bdata_filepath)
         if not is_saved or not bdata_filepath:
             return abs_path, False
 
@@ -322,7 +325,7 @@ class ShaderGraphBuilder:
         x_post = -150
 
         bdata = blend_data
-        bdata_images = getattr(bdata, "images", None) if bdata else None
+        bdata_images = bdata.images if bdata else None
 
         loaded_tex_nodes: dict[str, bpy.types.Node] = {}
         loaded_sep_nodes: dict[bpy.types.Node, bpy.types.Node] = {}
@@ -343,8 +346,11 @@ class ShaderGraphBuilder:
             if not img:
                 return None
 
-            if is_rel and hasattr(img, "filepath"):
-                img.filepath = final_path
+            if is_rel:
+                try:
+                    img.filepath = final_path
+                except AttributeError:
+                    pass
 
             is_data = color_space != "sRGB"
             OCIOColorSpaceResolver.apply_colorspace(img, is_data=is_data)
@@ -387,11 +393,11 @@ class ShaderGraphBuilder:
                 source_sock = t_node.outputs.get("Color") if t_node.outputs else None
             elif ch == "a":
                 # Guard against 100% mirror chrome on missing alpha channel
-                num_channels = getattr(img, "channels", 4)
+                num_channels = img.channels if img.channels is not None else 4
                 if invert and num_channels < 4:
                     logger.warning(
                         "Image '%s' has %s channels (no Alpha). Skipping inverted Alpha routing.",
-                        getattr(img, "name", "unknown"),
+                        img.name or "unknown",
                         num_channels,
                     )
                     continue
@@ -462,8 +468,10 @@ class ShaderGraphBuilder:
                         set_socket_default_value(strength_sock, 1.0)
                 elif target in {"Alpha", "Opacity"}:
                     dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
-                    if hasattr(material, "surface_render_method"):
+                    try:
                         material.surface_render_method = "DITHERED"
+                    except AttributeError:
+                        pass
                 elif target in {"Displacement", "Height"}:
                     # Connect to Material Output Displacement via Displacement node
                     disp_node = nodes.new(type="ShaderNodeDisplacement")
@@ -484,16 +492,14 @@ class ShaderGraphBuilder:
         if bsdf_base:
             if base_color_source and ao_source and ao_blend_mode == "MULTIPLY":
                 mix_node = nodes.new(type="ShaderNodeMix")
-                if hasattr(mix_node, "data_type"):
-                    set_node_prop(mix_node, "data_type", "RGBA")
+                set_node_prop(mix_node, "data_type", "RGBA")
                 set_node_prop(mix_node, "blend_type", "MULTIPLY")
-                if hasattr(mix_node, "clamp_result"):
-                    set_node_prop(mix_node, "clamp_result", True)
+                set_node_prop(mix_node, "clamp_result", True)
                 mix_node.location = (x_post, 600)
 
                 # Set Factor to 1.0 on Value socket
                 for in_s in mix_node.inputs:
-                    if getattr(in_s, "name", "") == "Factor" and getattr(in_s, "type", "") == "VALUE":
+                    if in_s.name == "Factor" and in_s.type == "VALUE":
                         set_socket_default_value(in_s, 1.0)
                         break
 
@@ -516,7 +522,7 @@ class ShaderGraphBuilder:
         # 8. Clean up orphan images if not preserving
         if not preserve_existing and bdata_images:
             for img in list(bdata_images):
-                if getattr(img, "users", 0) == 0:
+                if img.users == 0:
                     try:
                         bdata_images.remove(img)
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
@@ -538,7 +544,7 @@ class BatchMaterialSlotMatcher:
         """
         Returns a mapping of material_name -> {map_id: filepath} using active preset.
         """
-        if not folder_path or not os.path.isdir(folder_path) or not obj or not getattr(obj, "material_slots", None):
+        if not folder_path or not os.path.isdir(folder_path) or not obj or not obj.material_slots:
             return {}
 
         if preset is None:
@@ -554,7 +560,7 @@ class BatchMaterialSlotMatcher:
         except OSError:
             return {}
 
-        slot_names = [slot.name for slot in obj.material_slots if getattr(slot, "name", None)]
+        slot_names = [slot.name for slot in obj.material_slots if slot.name]
         slot_names.sort(key=len, reverse=True)
 
         results: dict[str, dict[str, str]] = {name: {} for name in slot_names}

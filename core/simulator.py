@@ -151,8 +151,8 @@ def extract_viewport_camera_params(
     is_perspective = region_3d.is_perspective
 
     # Scene Camera View
-    if region_3d.view_perspective == "CAMERA" and getattr(space_3d, "use_local_camera", False) is False:
-        cam = getattr(space_3d, "camera", None) or (scene.camera if scene else None)
+    if region_3d.view_perspective == "CAMERA" and (not space_3d or not space_3d.use_local_camera):
+        cam = (space_3d.camera if space_3d else None) or (scene.camera if scene else None)
         if cam and cam.type == "CAMERA" and scene:
             cam_pos = cam.matrix_world.translation.copy()
             cam_data = cast("bpy.types.Camera", cam.data)
@@ -166,7 +166,7 @@ def extract_viewport_camera_params(
 
             if cam_data.type == "PERSP":
                 if sensor_fit == "VERTICAL":
-                    fov_v = cam_data.angle_y if hasattr(cam_data, "angle_y") else cam_data.angle
+                    fov_v = cam_data.angle_y
                 else:
                     fov_v = 2.0 * math.atan(math.tan(cam_data.angle / 2.0) / max(1e-4, aspect))
                 return cam_pos, max(1e-4, fov_v), True
@@ -178,7 +178,7 @@ def extract_viewport_camera_params(
 
     if is_perspective:
         sensor_height = 24.0
-        focal_mm = max(1.0, getattr(space_3d, "lens", 50.0))
+        focal_mm = max(1.0, float(space_3d.lens) if space_3d else 50.0)
         h = max(1.0, float(region.height)) if region else 1080.0
         w = max(1.0, float(region.width)) if region else 1920.0
         aspect = w / h
@@ -440,7 +440,7 @@ class LODSimulatorEngine:
             cls.reset_distance_scrub(context, blend_data=blend_data)
             return {}
 
-        scene = getattr(context, "scene", None)
+        scene = context.scene if context else None
         if not scene:
             return {}
 
@@ -450,7 +450,7 @@ class LODSimulatorEngine:
         if not cls._tracked_assets:
             return {}
 
-        view_layer = getattr(context, "view_layer", None)
+        view_layer = context.view_layer if context else None
 
         # 1. Take snapshot of original visibility state on initial transition from 0.0m
         if not cls._visibility_snapshot:
@@ -463,19 +463,19 @@ class LODSimulatorEngine:
         space_3d = None
         region_3d = None
         region = None
-        wm = context.window_manager if context and hasattr(context, "window_manager") else None
-        if wm and getattr(wm, "windows", None):
+        wm = context.window_manager if context else None
+        if wm and wm.windows:
             for window in wm.windows:
-                screen = getattr(window, "screen", None)
-                if not screen or not getattr(screen, "areas", None):
+                screen = window.screen
+                if not screen or not screen.areas:
                     continue
                 for area in screen.areas:
-                    if getattr(area, "type", "") == "VIEW_3D":
-                        spaces = getattr(area, "spaces", None)
-                        space_3d = getattr(spaces, "active", None) if spaces else None
-                        for reg in getattr(area, "regions", []):
-                            if getattr(reg, "type", "") == "WINDOW":
-                                region_3d = getattr(reg, "data", None)
+                    if area.type == "VIEW_3D":
+                        spaces = area.spaces
+                        space_3d = spaces.active if spaces else None
+                        for reg in area.regions or ():
+                            if reg.type == "WINDOW":
+                                region_3d = reg.data
                                 region = reg
                                 break
                         break
@@ -529,7 +529,7 @@ class LODSimulatorEngine:
 
         # Resolve primary focus asset (active or selected object match)
         primary = updates[0]
-        act_obj = getattr(context, "active_object", None)
+        act_obj = context.active_object if context else None
         if act_obj:
             for up in updates:
                 rec = cls._tracked_assets.get(up["root_name"])
@@ -560,7 +560,7 @@ class LODSimulatorEngine:
                         resolved_objs[o.name] = o
             bdata_objs = resolved_objs
 
-        view_layer = getattr(context, "view_layer", None)
+        view_layer = context.view_layer if context else None
         if cls._visibility_snapshot:
             for obj_name, was_hidden in cls._visibility_snapshot.items():
                 obj = bdata_objs.get(obj_name)

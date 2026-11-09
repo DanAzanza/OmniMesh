@@ -81,6 +81,7 @@ class MockLODToolProps(_MockBase):
 class MockContext(_MockBase):
     def __init__(self, props=None):
         self.scene = type("Scene", (), {"lod_tool": props or MockLODToolProps()})()
+        self.blend_data = None
 
 
 def test_validator_no_context():

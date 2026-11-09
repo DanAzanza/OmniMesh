@@ -18,9 +18,29 @@ import logging
 import os
 import re
 import uuid
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, Sequence, cast
 
 logger = logging.getLogger(__name__)
+
+
+class MSFSExportTierProtocol(Protocol):
+    """Structural protocol for an individual LOD tier during MSFS export."""
+
+    screen_size_pct: float
+
+
+class MSFSExportSettingsProtocol(Protocol):
+    """Structural protocol for OmniMesh scene settings during MSFS export."""
+
+    lods: Sequence[MSFSExportTierProtocol]
+    cull_screen_size_pct: float
+    msfs_target_version: str
+    asset_category: str
+    msfs_with_exterior_show_interior: bool
+    msfs_with_exterior_show_interior_hide_first_lod: bool
+    msfs_with_interior_force_first_lod: bool
+    msfs_with_interior_show_exterior: bool
+
 
 if TYPE_CHECKING:
     import bpy
@@ -125,7 +145,7 @@ class MSFSExporter(EngineExporterBase):
     ) -> tuple[bool, str]:
         if not bpy or not context:
             return False, "Blender bpy not available."
-        props = getattr(context.scene, "lod_tool", None)
+        props: MSFSExportSettingsProtocol | None = getattr(context.scene, "lod_tool", None)
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
 
         try:
@@ -144,22 +164,22 @@ class MSFSExporter(EngineExporterBase):
         if not payload or not payload.lod_tiers:
             return False, f"No valid LOD objects found to export for '{clean_name}'."
 
-        if hasattr(bpy.ops.object, "mode_set") and getattr(context, "mode", "") != "OBJECT":
+        if context.mode != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
             except (RuntimeError, AttributeError, TypeError) as exc:
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
-        vl = getattr(context, "view_layer", None)
-        orig_active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
-        orig_selected = list(getattr(context, "selected_objects", []))
+        vl = context.view_layer
+        orig_active = vl.objects.active if (vl and vl.objects is not None) else None
+        orig_selected = list(context.selected_objects or ())
         orig_hide_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
         for tier_objs in payload.lod_tiers.values():
             for o in tier_objs:
                 if not o:
                     continue
-                hv = getattr(o, "hide_viewport", False)
-                hg = o.hide_get(view_layer=vl) if (hasattr(o, "hide_get") and vl) else hv
+                hv = o.hide_viewport
+                hg = o.hide_get(view_layer=vl) if vl else hv
                 orig_hide_states[o] = (hv, hg)
 
         tier_data: list[dict[str, Any]] = []
@@ -174,7 +194,7 @@ class MSFSExporter(EngineExporterBase):
                 if props and i < len(props.lods):
                     s_pct = float(props.lods[i].screen_size_pct)
                 elif payload.has_impostor_tier and i == max(payload.lod_tiers.keys()):
-                    s_pct = float(getattr(props, "cull_screen_size_pct", 0.5)) if props else 0.5
+                    s_pct = float(props.cull_screen_size_pct) if props else 0.5
 
                 tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
 
@@ -185,9 +205,7 @@ class MSFSExporter(EngineExporterBase):
                         obj.hide_set(False, view_layer=context.view_layer)
                         obj.hide_viewport = False
                     except (RuntimeError, AttributeError) as exc:
-                        logger.debug(
-                            "Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc
-                        )
+                        logger.debug("Could not unhide object %s in view layer: %s", obj.name, exc)
                     obj.select_set(True)
 
                 # For LOD0: include attachment nodes (ATTACH_POINT_, ATTACH_FX_, socket_, eye_)
@@ -198,15 +216,13 @@ class MSFSExporter(EngineExporterBase):
                             att_node.hide_set(False, view_layer=context.view_layer)
                             att_node.hide_viewport = False
                         except (RuntimeError, AttributeError) as exc:
-                            logger.debug(
-                                "Could not unhide attachment node %s: %s", getattr(att_node, "name", "unknown"), exc
-                            )
+                            logger.debug("Could not unhide attachment node %s: %s", att_node.name, exc)
                         att_node.select_set(True)
 
                 context.view_layer.objects.active = tier_objs[0]
 
                 gltf_path = os.path.join(export_dir, f"{clean_name}_LOD{i}.gltf")
-                export_apply_val = not getattr(payload, "is_skeletal", False)
+                export_apply_val = not payload.is_skeletal
                 try:
                     bpy.ops.export_scene.gltf(
                         filepath=gltf_path,
@@ -233,7 +249,7 @@ class MSFSExporter(EngineExporterBase):
             if exported_tiers == 0:
                 return False, "No valid LOD objects found to export."
 
-            cull_pct = float(getattr(props, "cull_screen_size_pct", 0.5)) if props else 0.5
+            cull_pct = float(props.cull_screen_size_pct) if props else 0.5
             xml_path = os.path.join(export_dir, f"{clean_name}.xml")
 
             # Format tier payload for ModelXMLMerger
@@ -265,19 +281,18 @@ class MSFSExporter(EngineExporterBase):
             for obj, (hv, hg) in orig_hide_states.items():
                 try:
                     obj.hide_viewport = hv
-                    if hasattr(obj, "hide_set") and vl:
+                    if vl:
                         obj.hide_set(hg, view_layer=vl)
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
-            if bpy and hasattr(bpy.ops.object, "select_all"):
+            if bpy:
                 try:
                     bpy.ops.object.select_all(action="DESELECT")
                     for o in orig_selected:
-                        if hasattr(o, "select_set"):
-                            o.select_set(True)
-                    if vl and hasattr(vl, "objects") and orig_active:
+                        o.select_set(True)
+                    if vl and vl.objects is not None and orig_active:
                         vl.objects.active = orig_active
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore selection state: %s", exc)
@@ -327,11 +342,11 @@ class MSFSExporter(EngineExporterBase):
 
         # 3. Write / Update model/model.cfg
         model_cfg_path = os.path.join(model_dir, "model.cfg")
-        props = getattr(context.scene, "lod_tool", None) if context else None
-        target_version = getattr(props, "msfs_target_version", "2024") if props else "2024"
+        props: MSFSExportSettingsProtocol | None = getattr(context.scene, "lod_tool", None) if context else None
+        target_version = props.msfs_target_version if props else "2024"
 
         is_scenery = False
-        if props and getattr(props, "asset_category", "HERO_CHARACTER") in (
+        if props and props.asset_category in (
             "BUILDING",
             "PROP",
             "FOLIAGE",
@@ -345,12 +360,12 @@ class MSFSExporter(EngineExporterBase):
         # Serialize [model.options] strictly when targeting MSFS 2024 for aircraft (suppressed for scenery)
         if target_version == "2024" and not is_scenery:
             cfg_lines.append("[model.options]")
-            with_ext_show_int = "true" if getattr(props, "msfs_with_exterior_show_interior", True) else "false"
+            with_ext_show_int = "true" if (props.msfs_with_exterior_show_interior if props else True) else "false"
             with_ext_hide_first = (
-                "true" if getattr(props, "msfs_with_exterior_show_interior_hide_first_lod", False) else "false"
+                "true" if (props.msfs_with_exterior_show_interior_hide_first_lod if props else False) else "false"
             )
-            with_int_force_first = "true" if getattr(props, "msfs_with_interior_force_first_lod", False) else "false"
-            with_int_show_ext = "true" if getattr(props, "msfs_with_interior_show_exterior", True) else "false"
+            with_int_force_first = "true" if (props.msfs_with_interior_force_first_lod if props else False) else "false"
+            with_int_show_ext = "true" if (props.msfs_with_interior_show_exterior if props else True) else "false"
 
             cfg_lines.append(f"withExterior_showInterior={with_ext_show_int}")
             cfg_lines.append(f"withExterior_showInterior_hideFirstLod={with_ext_hide_first}")
@@ -371,7 +386,7 @@ class MSFSExporter(EngineExporterBase):
         # 4. Export Variants if present
         if bdata_cols:
             for coll in bdata_cols:
-                c_name = getattr(coll, "name", "")
+                c_name = coll.name
                 if c_name.startswith(f"{clean_base}_") and not any(
                     c_name.endswith(sfx)
                     for sfx in (

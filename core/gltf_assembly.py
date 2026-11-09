@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,34 @@ else:
         Object = object
     BlendData = object
 
+from .hierarchy import get_or_create_engine_import_collection
 from .msfs.project_scanner import MSFSProjectManifest
+
+
+class GLTFLODItemProtocol(Protocol):
+    name: str
+    lod_index: int
+    level_index: int
+    screen_size_pct: float
+    generated_obj: bpy.types.Object | None
+    actual_tris: int
+    actual_triangles: int
+    last_baked_screen_pct: float
+    state: str
+
+
+class GLTFLODCollectionProtocol(Protocol):
+    def clear(self) -> None: ...
+    def add(self) -> GLTFLODItemProtocol: ...
+
+
+class GLTFSettingsProtocol(Protocol):
+    export_base_name: str
+    is_configured: bool
+    lods: GLTFLODCollectionProtocol
+    base_triangles: int
+    cull_screen_size_pct: float
+    active_lod_index: int
 
 
 def find_layer_collection(
@@ -46,16 +73,13 @@ def find_layer_collection(
     return None
 
 
-from .hierarchy import get_or_create_engine_import_collection
-
-
 def classify_imported_mesh_node(obj: bpy.types.Object | None, is_interior: bool = False) -> str:
     """Classifies an imported mesh node into 'RENDER_MESH', 'PHYSICS_COLLIDER', or 'INTERACTION_VOLUME'.
 
     Disambiguates airframe crash hulls from cockpit clickspots using name patterns, material shaders,
     and bounding diagonal heuristics (H-01).
     """
-    if not obj or getattr(obj, "type", "") != "MESH":
+    if not obj or obj.type != "MESH":
         return "RENDER_MESH"
 
     name_lower = obj.name.lower()
@@ -77,20 +101,25 @@ def classify_imported_mesh_node(obj: bpy.types.Object | None, is_interior: bool 
 
     is_collision_named = name_lower.startswith("collision_")
     is_invisible_mat = False
-    obj_data = cast("bpy.types.Mesh | None", getattr(obj, "data", None))
-    if obj_data and hasattr(obj_data, "materials"):
-        mats = [m for m in obj_data.materials if m]
-        if mats and all(m.get("_omnimesh_invisible") or m.get("msfs_material_type") == 12 for m in mats):
-            is_invisible_mat = True
+    obj_data = cast("bpy.types.Mesh | None", obj.data)
+    if obj_data is not None:
+        try:
+            mats = [m for m in obj_data.materials if m]
+            if mats and all(m.get("_omnimesh_invisible") or m.get("msfs_material_type") == 12 for m in mats):
+                is_invisible_mat = True
+        except AttributeError:
+            pass
 
     if not is_collision_named and not is_invisible_mat:
         return "RENDER_MESH"
 
     # Compute bounding diagonal to disambiguate clickspots from large airframe collision hulls
     diag = 1.0
-    if hasattr(obj, "dimensions"):
+    try:
         dim = obj.dimensions
         diag = (dim.x**2 + dim.y**2 + dim.z**2) ** 0.5
+    except AttributeError:
+        pass
 
     clickspot_pattern = re.compile(
         r"^(collision_(button|knob|switch|lever|pedal|handle|door|hatch|cover|dial)|.*_clickspot|.*_trigger)",
@@ -160,7 +189,7 @@ class GLTFAssemblyEngine:
         new_objects = [obj for obj in bdata.objects if obj not in existing_objects] if bdata else []
 
         # Isolate new objects and route interaction / collision volumes
-        effective_asset = asset_name or getattr(target_collection, "name", "Asset").split("_")[0]
+        effective_asset = asset_name or (target_collection.name if target_collection else "Asset").split("_")[0]
         interact_col = None
         coll_col = None
 
@@ -169,8 +198,8 @@ class GLTFAssemblyEngine:
             mesh_role = classify_imported_mesh_node(obj, is_interior=is_interior)
 
             if mesh_role == "INTERACTION_VOLUME" and get_or_create_engine_import_collection:
-                mesh_data = getattr(obj, "data", None)
-                if mesh_data is not None and getattr(mesh_data, "users", 0) > 1:
+                mesh_data = obj.data
+                if mesh_data is not None and mesh_data.users > 1:
                     try:
                         obj.data = mesh_data.copy()
                     except (RuntimeError, AttributeError) as exc:
@@ -185,8 +214,8 @@ class GLTFAssemblyEngine:
                 obj["_omnimesh_role"] = "INTERACTION_VOLUME"
                 obj["_is_trigger"] = True
             elif mesh_role == "PHYSICS_COLLIDER" and get_or_create_engine_import_collection:
-                mesh_data = getattr(obj, "data", None)
-                if mesh_data is not None and getattr(mesh_data, "users", 0) > 1:
+                mesh_data = obj.data
+                if mesh_data is not None and mesh_data.users > 1:
                     try:
                         obj.data = mesh_data.copy()
                     except (RuntimeError, AttributeError) as exc:
@@ -225,7 +254,7 @@ class GLTFAssemblyEngine:
                         logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
 
         # Cleanup dummy collections created by glTF importer if they are now empty
-        bdata_cols = getattr(bdata, "collections", None) if bdata else None
+        bdata_cols = bdata.collections if bdata else None
         new_collections = [c for c in bdata_cols if c not in existing_collections] if bdata_cols else []
         for coll in new_collections:
             if coll != target_collection and len(coll.objects) == 0 and len(coll.children) == 0 and bdata_cols:
@@ -248,7 +277,7 @@ class GLTFAssemblyEngine:
         remaps them to canonical base materials (Fuselage), and cleans up unreferenced duplicates.
         Returns the number of material slots remapped.
         """
-        bdata_mats = getattr(blend_data, "materials", None) if blend_data else None
+        bdata_mats = blend_data.materials if blend_data else None
         if not bdata_mats:
             return 0
 
@@ -256,7 +285,7 @@ class GLTFAssemblyEngine:
         materials_to_check: set[Material] = set()
 
         for obj in objects:
-            if not hasattr(obj, "material_slots"):
+            if obj.material_slots is None:
                 continue
             for slot in obj.material_slots:
                 mat = slot.material
@@ -276,7 +305,7 @@ class GLTFAssemblyEngine:
 
         # Purge unreferenced duplicate materials
         for dup_mat in materials_to_check:
-            if getattr(dup_mat, "users", 1) == 0 and bdata_mats:
+            if dup_mat.users == 0 and bdata_mats:
                 try:
                     bdata_mats.remove(dup_mat, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
@@ -308,9 +337,9 @@ class GLTFAssemblyEngine:
                 continue
 
             if obj.type == "MESH":
-                if getattr(obj, "parent", None) in redundant_armatures:
+                if obj.parent in redundant_armatures:
                     obj.parent = master_armature
-                if hasattr(obj, "modifiers"):
+                if obj.modifiers is not None:
                     for mod in obj.modifiers:
                         if mod.type == "ARMATURE":
                             arm_mod = cast("bpy.types.ArmatureModifier", mod)
@@ -320,33 +349,34 @@ class GLTFAssemblyEngine:
                             retargeted_count += 1
 
         # Safely remove redundant armatures and clean orphan datablocks
-        bdata_objs = getattr(blend_data, "objects", None) if blend_data else None
-        bdata_armatures = getattr(blend_data, "armatures", None) if blend_data else None
+        bdata_objs = blend_data.objects if blend_data else None
+        bdata_armatures = blend_data.armatures if blend_data else None
         for arm_obj in redundant_armatures:
             if arm_obj != master_armature and bdata_objs:
-                arm_data = getattr(arm_obj, "data", None)
+                arm_data = cast("bpy.types.Armature | None", arm_obj.data)
                 try:
                     bdata_objs.remove(arm_obj, do_unlink=True)
-                    if arm_data and bdata_armatures and getattr(arm_data, "users", 0) == 0:
+                    if arm_data and bdata_armatures and arm_data.users == 0:
                         bdata_armatures.remove(arm_data)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed removing redundant armature %s: %s", getattr(arm_obj, "name", ""), exc)
+                    logger.debug("Failed removing redundant armature %s: %s", arm_obj.name, exc)
 
         return retargeted_count
 
 
 def count_mesh_triangles(mesh_obj: bpy.types.Object | None) -> int:
     """Calculates total triangle count for a mesh object."""
-    if not mesh_obj or mesh_obj.type != "MESH" or not hasattr(mesh_obj, "data"):
+    if not mesh_obj or mesh_obj.type != "MESH" or mesh_obj.data is None:
         return 0
     try:
         mesh = cast("bpy.types.Mesh | None", mesh_obj.data)
         if mesh is None:
             return 0
-        if hasattr(mesh, "calc_loop_triangles"):
+        try:
             mesh.calc_loop_triangles()
             return len(mesh.loop_triangles)
-        return len(mesh.polygons)
+        except AttributeError:
+            return len(mesh.polygons)
     except (AttributeError, RuntimeError, ReferenceError, TypeError):
         return 0
 
@@ -357,10 +387,12 @@ def bind_manifest_to_omnimesh(
     lod_mesh_map: dict[int, list[Any]],
 ) -> None:
     """Binds imported LOD meshes and screen sizes to OmniMesh's scene LOD properties."""
-    if not bpy or not context or not hasattr(context.scene, "lod_tool"):
+    if not bpy or not context or not context.scene:
         return
 
-    props = context.scene.lod_tool
+    props: GLTFSettingsProtocol | None = getattr(context.scene, "lod_tool", None)
+    if not props:
+        return
     props.export_base_name = manifest.asset_name
     props.is_configured = True
 
@@ -406,8 +438,11 @@ def bind_manifest_to_omnimesh(
         else:
             item.state = "PLANNED"
 
-    if lod_infos and hasattr(props, "cull_screen_size_pct"):
+    if lod_infos:
         lowest_min = lod_infos[-1].min_size
-        props.cull_screen_size_pct = max(0.0, min(10.0, lowest_min))
+        try:
+            props.cull_screen_size_pct = max(0.0, min(10.0, lowest_min))
+        except AttributeError:
+            pass
 
     props.active_lod_index = 0

@@ -24,8 +24,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BPY_DATA_RATCHET_BASELINE = 0
 
 # Monotonic ratchet baseline for defensive hasattr and getattr calls in core/ and exporters/
-HASATTR_RATCHET_BASELINE = 193
-GETATTR_RATCHET_BASELINE = 409
+HASATTR_RATCHET_BASELINE = 85
+GETATTR_RATCHET_BASELINE = 180
 
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
@@ -38,6 +38,7 @@ ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
         "ctx": (1, "Blender stub defect: Context.temp_override callable return type"),
     },
     "core/impostor_baker.py": {
+        "cycles_addon.preferences": (1, "Blender stub defect: AddonPreferences subclass lacks Cycles device methods"),
         "bake_scene.view_settings": (1, "Blender stub defect: Scene.view_settings attributes"),
         "ctx": (1, "Blender stub defect: Context.temp_override callable return type"),
         "scene.render": (1, "Blender stub defect: RenderSettings.engine read-only setter"),
@@ -46,6 +47,7 @@ ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
     "core/impostor_preview.py": {
         "norm_img.colorspace_settings": (1, "Blender stub defect: ColorManagedInputColorspaceSettings name setter"),
         "orm_img.colorspace_settings": (1, "Blender stub defect: ColorManagedInputColorspaceSettings name setter"),
+        "cam_obj.animation_data.action": (1, "Blender stub defect: Action.fcurves legacy/layered action attribute"),
     },
     "core/material_presets.py": {
         "mat": (4, "Dynamic RNA property: msfs_material_type injected by MSFS exporter"),

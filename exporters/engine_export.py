@@ -5,9 +5,12 @@ Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture, Animatio
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+import re
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional, Protocol, cast
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     import bpy
     from bpy.types import BlendData
 else:
@@ -21,9 +24,15 @@ else:
 logger = logging.getLogger(__name__)
 
 
-import re
-from dataclasses import dataclass, field
-from typing import Optional
+class EngineExportTierProtocol(Protocol):
+    generated_obj: bpy.types.Object | None
+
+
+class EngineExportSettingsProtocol(Protocol):
+    lods: Sequence[EngineExportTierProtocol]
+    active_asset: str
+    export_base_name: str
+    export_directory: str
 
 
 @dataclass(frozen=True)
@@ -63,9 +72,11 @@ class AssetMeshResolver:
         blend_data: BlendData | None = None,
     ) -> AssetExportPayload:
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
-        props = getattr(context.scene, "lod_tool", None) if (context and hasattr(context, "scene")) else None
+        props: EngineExportSettingsProtocol | None = (
+            getattr(context.scene, "lod_tool", None) if (context and context.scene) else None
+        )
 
-        effective_bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        effective_bdata = blend_data or (context.blend_data if context else None)
         has_collections = bool(effective_bdata)
 
         root_col = None
@@ -239,13 +250,11 @@ class AssetMeshResolver:
 
         # Headless mock / procedural fallback (vital for test_preflight_validator and procedural scenes)
         if not lod_tiers and props and len(props.lods) > 0:
-            bdata_objects = getattr(effective_bdata, "objects", None) if effective_bdata else None
+            bdata_objects = effective_bdata.objects if effective_bdata else None
             for i, tier in enumerate(props.lods):
-                obj = getattr(tier, "generated_obj", None)
+                obj = tier.generated_obj
                 if obj and (
-                    not bpy
-                    or bdata_objects is None
-                    or (isinstance(getattr(obj, "name", None), str) and obj.name in bdata_objects)
+                    not bpy or bdata_objects is None or (isinstance(obj.name, str) and obj.name in bdata_objects)
                 ):
                     lod_tiers[i] = [obj]
 
@@ -257,9 +266,11 @@ class AssetMeshResolver:
                 armature_obj = parent
                 break
             for mod in obj.modifiers:
-                if mod.type == "ARMATURE" and getattr(mod, "object", None):
-                    armature_obj = getattr(mod, "object", None)
-                    break
+                if mod.type == "ARMATURE":
+                    mod_obj = getattr(mod, "object", None)
+                    if mod_obj:
+                        armature_obj = mod_obj
+                        break
             if armature_obj:
                 break
 
@@ -334,8 +345,8 @@ class AssetMeshResolver:
 
 def resolve_export_asset_name(context: bpy.types.Context | None, props: object = None) -> str:
     """Resolves the unified asset name for preflight validation and engine export."""
-    props_obj = props
-    if not props_obj and context and hasattr(context, "scene"):
+    props_obj: EngineExportSettingsProtocol | None = cast("EngineExportSettingsProtocol | None", props)
+    if not props_obj and context and context.scene:
         props_obj = getattr(context.scene, "lod_tool", None)
     active_asset = getattr(props_obj, "active_asset", None) if props_obj else None
     if active_asset and active_asset not in ("AUTO", "NONE"):
@@ -347,13 +358,13 @@ def resolve_export_asset_name(context: bpy.types.Context | None, props: object =
         except ImportError:
             from core.asset_scanner import resolve_effective_asset_name
 
-        bdata = getattr(context, "blend_data", None)
+        bdata = context.blend_data if context else None
         if bdata is not None:
             raw_name = resolve_effective_asset_name(context, props_obj, blend_data=bdata)
     except (ImportError, AttributeError, TypeError, ValueError) as e:
         logger.debug("Failed resolving effective asset name: %s", e)
     if not raw_name or raw_name in ("AUTO", "NONE", "Asset"):
-        raw_name = str(getattr(props_obj, "export_base_name", "")).strip() if props_obj else ""
+        raw_name = str(props_obj.export_base_name).strip() if props_obj else ""
     return raw_name or "SM_Asset"
 
 
@@ -364,9 +375,9 @@ class PreFlightValidator:
         *,
         blend_data: BlendData | None = None,
     ) -> list[str]:
-        if not context or not getattr(context, "scene", None):
+        if not context or not context.scene:
             return ["Blender context not available."]
-        props = getattr(context.scene, "lod_tool", None)
+        props: EngineExportSettingsProtocol | None = getattr(context.scene, "lod_tool", None)
         if not props:
             return ["LOD tool properties not initialized on scene."]
         errors: list[str] = []
@@ -376,7 +387,7 @@ class PreFlightValidator:
             return errors
 
         raw_name = resolve_export_asset_name(context, props)
-        bdata = blend_data or (getattr(context, "blend_data", None) if context else None)
+        bdata = blend_data or context.blend_data
         payload = AssetMeshResolver.resolve_payload(context, raw_name, blend_data=bdata)
 
         # Verify all configured tiers are generated/present
@@ -416,20 +427,21 @@ class PreFlightValidator:
         # Scale application check
         for i in range(len(props.lods)):
             for obj in payload.lod_tiers.get(i, []):
-                if obj is not None and getattr(obj, "scale", None) is not None:
+                if obj is not None and obj.scale is not None:
                     try:
-                        scale = obj.scale
-                        if hasattr(scale, "x"):
-                            sx, sy, sz = float(scale.x), float(scale.y), float(scale.z)
-                        else:
-                            sx, sy, sz = float(scale[0]), float(scale[1]), float(scale[2])
-                        if abs(sx - 1.0) > 1e-4 or abs(sy - 1.0) > 1e-4 or abs(sz - 1.0) > 1e-4:
-                            errors.append(
-                                f"LOD{i} has unapplied scale ({round(sx, 2)}, {round(sy, 2)}, {round(sz, 2)}). Apply transforms."
-                            )
-                            break
-                    except (IndexError, TypeError, ValueError):
-                        pass
+                        sx, sy, sz = float(obj.scale.x), float(obj.scale.y), float(obj.scale.z)
+                    except AttributeError:
+                        try:
+                            sx, sy, sz = float(obj.scale[0]), float(obj.scale[1]), float(obj.scale[2])
+                        except (IndexError, TypeError, ValueError):
+                            continue
+                    except (TypeError, ValueError):
+                        continue
+                    if abs(sx - 1.0) > 1e-4 or abs(sy - 1.0) > 1e-4 or abs(sz - 1.0) > 1e-4:
+                        errors.append(
+                            f"LOD{i} has unapplied scale ({round(sx, 2)}, {round(sy, 2)}, {round(sz, 2)}). Apply transforms."
+                        )
+                        break
 
         # Material checks
         if len(lod0_objs) == 1:

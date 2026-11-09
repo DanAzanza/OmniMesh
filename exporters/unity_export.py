@@ -51,16 +51,14 @@ class UnityExporter(EngineExporterBase):
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
         bdata_in = kwargs.get("blend_data")
-        bdata: BlendData | None = (
-            bdata_in if isinstance(bdata_in, BlendData) else (getattr(context, "blend_data", None) if context else None)
-        )
+        bdata: BlendData | None = bdata_in if isinstance(bdata_in, BlendData) else context.blend_data
         payload = (
             AssetMeshResolver.resolve_payload(context, clean_name, blend_data=bdata) if AssetMeshResolver else None
         )
         if not payload or not payload.lod_tiers:
             return False, f"No generated LOD objects found for '{asset_name}'"
 
-        if getattr(context, "mode", "") != "OBJECT":
+        if context.mode != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
             except (RuntimeError, AttributeError, TypeError) as exc:
@@ -79,9 +77,9 @@ class UnityExporter(EngineExporterBase):
         armature_obj = payload.armature_obj
         all_export_items = export_objects + collider_objects + ([armature_obj] if armature_obj else [])
 
-        vl = getattr(context, "view_layer", None)
-        orig_active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
-        orig_selected = list(getattr(context, "selected_objects", []))
+        vl = context.view_layer
+        orig_active = vl.objects.active if (vl and vl.objects is not None) else None
+        orig_selected = list(context.selected_objects or ())
         orig_hide_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
         for o in all_export_items:
             if not o:
@@ -106,7 +104,7 @@ class UnityExporter(EngineExporterBase):
                     obj.hide_set(False, view_layer=context.view_layer)
                     obj.hide_viewport = False
                 except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Could not unhide object %s in view layer: %s", getattr(obj, "name", "unknown"), exc)
+                    logger.debug("Could not unhide object %s in view layer: %s", obj.name, exc)
 
             bpy.ops.object.select_all(action="DESELECT")
             for obj in export_objects:
@@ -116,9 +114,9 @@ class UnityExporter(EngineExporterBase):
             if armature_obj:
                 armature_obj.select_set(True)
 
-            if armature_obj and vl:
+            if armature_obj and vl and vl.objects is not None:
                 vl.objects.active = armature_obj
-            elif export_objects and vl:
+            elif export_objects and vl and vl.objects is not None:
                 vl.objects.active = export_objects[0]
 
             bpy.ops.export_scene.fbx(
@@ -152,7 +150,7 @@ class UnityExporter(EngineExporterBase):
                 try:
                     c_obj.name = orig_name
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
-                    logger.debug("Could not restore collider name for %s: %s", getattr(c_obj, "name", "obj"), exc)
+                    logger.debug("Could not restore collider name for %s: %s", c_obj.name, exc)
 
             # Restore original hide states
             for obj, (hv, hg) in orig_hide_states.items():
@@ -169,7 +167,7 @@ class UnityExporter(EngineExporterBase):
                     bpy.ops.object.select_all(action="DESELECT")
                     for o in orig_selected:
                         o.select_set(True)
-                    if vl and orig_active:
+                    if vl and vl.objects is not None and orig_active:
                         vl.objects.active = orig_active
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore selection state: %s", exc)

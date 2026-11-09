@@ -93,6 +93,7 @@ class DummyImage(_MockBase):
     def __init__(self, size: tuple[int, int] = (64, 64), name: str = "T_Texture", fill_val: float = 0.5):
         self.size = size
         self.name = name
+        self.colorspace_settings = None
         floats = np.full(size[0] * size[1] * 4, fill_val, dtype=np.float32)
         self._pixels = floats
 
@@ -228,6 +229,7 @@ def test_convert_normal_directx():
         def __init__(self):
             self.size = (64, 64)
             self.name = "T_Normal"
+            self.colorspace_settings = None
             floats = np.zeros(64 * 64 * 4, dtype=np.float32)
             floats[0::4] = 0.5
             floats[1::4] = 0.75
@@ -269,6 +271,7 @@ def test_convert_normal_directx_nan_inf_sanitization():
         def __init__(self):
             self.size = (32, 32)
             self.name = "T_Corrupt_Normal"
+            self.colorspace_settings = None
             floats = np.zeros(32 * 32 * 4, dtype=np.float32)
             floats[0::4] = float("nan")
             floats[1::4] = float("inf")

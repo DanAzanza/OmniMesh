@@ -67,10 +67,7 @@ class LayerCollectionGuard:
 
         if is_target or has_target_child:
             if name not in self.saved_states:
-                self.saved_states[name] = (
-                    getattr(layer_coll, "exclude", False),
-                    getattr(layer_coll, "hide_viewport", False),
-                )
+                self.saved_states[name] = (layer_coll.exclude, layer_coll.hide_viewport)
             layer_coll.exclude = False
             if is_target:
                 layer_coll.hide_viewport = False
@@ -111,21 +108,26 @@ def get_rest_world_matrix_for_static(
         return None
 
     def _copy_matrix(m: Matrix) -> Matrix:
-        return m.copy() if hasattr(m, "copy") else m
+        try:
+            return m.copy()
+        except AttributeError:
+            return m
 
-    arm_data = cast("bpy.types.Armature | None", getattr(armature_obj, "data", None))
-    if not armature_obj or not arm_data or not hasattr(arm_data, "bones"):
+    if not armature_obj or armature_obj.data is None:
         return _copy_matrix(static_obj.matrix_world)
-
-    bone = getattr(arm_data, "bones", {}).get(bone_name) if hasattr(arm_data.bones, "get") else None
+    arm_data = cast("bpy.types.Armature", armature_obj.data)
+    try:
+        bone = arm_data.bones.get(bone_name) if arm_data.bones is not None else None
+    except AttributeError:
+        bone = None
     if not bone:
         return _copy_matrix(static_obj.matrix_world)
 
     try:
         m_arm_world = armature_obj.matrix_world
-        m_bone_rest_local = getattr(bone, "matrix_local", None)
-        m_parent_inv = getattr(static_obj, "matrix_parent_inverse", None)
-        m_basis = getattr(static_obj, "matrix_basis", None)
+        m_bone_rest_local = bone.matrix_local
+        m_parent_inv = static_obj.matrix_parent_inverse
+        m_basis = static_obj.matrix_basis
 
         if m_bone_rest_local is not None and m_parent_inv is not None and m_basis is not None:
             return m_arm_world @ m_bone_rest_local @ m_parent_inv @ m_basis
@@ -498,10 +500,10 @@ class CollectionCloneDAG:
         pivot_obj["_is_pivot"] = True
         coll.objects.link(pivot_obj)
 
-        vl = getattr(context, "view_layer", None) if context else None
-        if not vl and sc and hasattr(sc, "view_layers") and len(sc.view_layers) > 0:
+        vl = context.view_layer if context else None
+        if not vl and sc and sc.view_layers and len(sc.view_layers) > 0:
             vl = sc.view_layers[0]
-        if vl and hasattr(vl, "update"):
+        if vl:
             try:
                 vl.update()
             except (RuntimeError, AttributeError) as exc:
@@ -528,17 +530,15 @@ def get_or_create_engine_import_collection(
     """Finds or creates a collection adhering to OmniMesh's neutral engine package hierarchy:
     {AssetName} -> {_Config (Spatial, Lights, Cameras), _LOD0..N, _Colliders}.
     """
-    if not context_or_scene:
+    if not context_or_scene or not blend_data:
         return None
-    effective_data = blend_data
-    if effective_data is None and bpy_module is not None:
-        effective_data = getattr(bpy_module, "data", None)
-    if not effective_data:
-        return None
-    bpy_data = cast("BlendData", effective_data)
+    bpy_data = blend_data
 
     clean_asset = asset_name.strip() or "Asset"
-    scene = getattr(context_or_scene, "scene", context_or_scene)
+    try:
+        scene = cast("bpy.types.Context", context_or_scene).scene
+    except AttributeError:
+        scene = cast("bpy.types.Scene", context_or_scene)
 
     # 1. Root Model Collection
     root_col = bpy_data.collections.get(clean_asset)
@@ -626,11 +626,7 @@ def get_or_create_engine_import_collection(
             try:
                 if sub_name in lod0_col.children:
                     has_old = True
-                    old_sub = (
-                        lod0_col.children.get(sub_name)
-                        if hasattr(lod0_col.children, "get")
-                        else bpy_data.collections.get(sub_name)
-                    )
+                    old_sub = lod0_col.children.get(sub_name) or bpy_data.collections.get(sub_name)
             except (AttributeError, TypeError, ReferenceError):
                 has_old = False
             if has_old and old_sub:
@@ -675,14 +671,10 @@ def safe_remove_collection_objects(
     Safely and cleanly removes objects belonging to a collection and their unshared datablocks.
     Guards against RNA pointer invalidation and collection mutation during iteration.
     """
-    if not col:
+    if not col or not blend_data:
         return 0
 
     effective_data = blend_data
-    if effective_data is None and bpy_module is not None:
-        effective_data = getattr(bpy_module, "data", None)
-    if not effective_data:
-        return 0
 
     removed = 0
     # Create shallow snapshot of objects to prevent mutation during iteration
@@ -707,7 +699,7 @@ def safe_remove_collection_objects(
             data_to_remove: bpy.types.ID | None = None
             data = obj.data
             if data:
-                users = getattr(data, "users", 1)
+                users = data.users
                 if isinstance(users, (int, float)) and users <= 1:
                     data_to_remove = data
 
@@ -718,11 +710,12 @@ def safe_remove_collection_objects(
             # Remove orphaned datablock
             if data_to_remove is not None:
                 try:
-                    for attr in ("meshes", "lights", "cameras"):
-                        container = getattr(effective_data, attr, None)
-                        if container and hasattr(container, "values") and data_to_remove in container.values():
-                            container.remove(data_to_remove)
-                            break
+                    if effective_data.meshes is not None and data_to_remove in effective_data.meshes.values():
+                        effective_data.meshes.remove(cast("bpy.types.Mesh", data_to_remove))
+                    elif effective_data.lights is not None and data_to_remove in effective_data.lights.values():
+                        effective_data.lights.remove(cast("bpy.types.Light", data_to_remove))
+                    elif effective_data.cameras is not None and data_to_remove in effective_data.cameras.values():
+                        effective_data.cameras.remove(cast("bpy.types.Camera", data_to_remove))
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
                     logger.debug("Orphaned datablock removal skipped: %s", exc)
         except (ReferenceError, AttributeError, RuntimeError) as exc:

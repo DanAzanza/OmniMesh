@@ -6,14 +6,15 @@ semantic missing texture fallback routing, and guarded micro-material consolidat
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 import hashlib
 import json
 import logging
-from collections.abc import Iterable
-from .compat import get_socket_default_value, set_socket_default_value
 import os
 from typing import TYPE_CHECKING, Any, cast
+
+from .compat import get_socket_default_value, set_socket_default_value
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +46,13 @@ class DeepMaterialHasher:
     @classmethod
     def hash_material(cls, mat: bpy.types.Material | None) -> str:
         if not mat or not mat.node_tree:
-            diffuse = getattr(mat, "diffuse_color", (0.8, 0.8, 0.8, 1.0))
+            diffuse = (
+                cast("Iterable[float]", mat.diffuse_color)
+                if (mat and mat.diffuse_color is not None)
+                else (0.8, 0.8, 0.8, 1.0)
+            )
             try:
-                diff_list = [round(float(c), 4) for c in diffuse[:4]]
+                diff_list = [round(float(c), 4) for c in list(diffuse)[:4]]
             except (TypeError, IndexError, ValueError):
                 diff_list = [0.8, 0.8, 0.8, 1.0]
             return hashlib.sha256(f"NON_NODES:{diff_list}".encode("utf-8")).hexdigest()
@@ -88,34 +93,30 @@ class DeepMaterialHasher:
             }
 
             # Capture node-specific internal properties
-            op = getattr(curr, "operation", None)
-            if op is not None:
-                node_data["operation"] = str(op)
-            bt = getattr(curr, "blend_type", None)
-            if bt is not None:
-                node_data["blend_type"] = str(bt)
-            cs = getattr(curr, "color_space", None)
-            if cs is not None:
-                node_data["color_space"] = str(cs)
-            curr_img = cast("bpy.types.Image | None", getattr(curr, "image", None))
-            if curr_img is not None:
-                img = curr_img
-                filepath = img.filepath
-                if bpy and filepath:
-                    try:
-                        filepath = bpy.path.abspath(filepath)
-                    except (RuntimeError, ValueError, AttributeError) as exc:
-                        logger.debug("Failed resolving abspath for image: %s", exc)
-                node_data["image_filepath"] = filepath or img.name
-                sz = getattr(img, "size", (0, 0))
-                node_data["image_size"] = [int(sz[0]), int(sz[1])]
-                if img.colorspace_settings:
-                    node_data["image_colorspace"] = img.colorspace_settings.name
+            for prop_key in ("operation", "blend_type", "color_space"):
+                prop_val = getattr(curr, prop_key, None)
+                if prop_val is not None:
+                    node_data[prop_key] = str(prop_val)
+            if curr.type == "TEX_IMAGE":
+                curr_img = cast("bpy.types.ShaderNodeTexImage", curr).image
+                if curr_img is not None:
+                    img = curr_img
+                    filepath = img.filepath
+                    if bpy and filepath:
+                        try:
+                            filepath = bpy.path.abspath(filepath)
+                        except (RuntimeError, ValueError, AttributeError) as exc:
+                            logger.debug("Failed resolving abspath for image: %s", exc)
+                    node_data["image_filepath"] = filepath or img.name
+                    sz = list(cast("Iterable[int]", img.size)) if img.size is not None else [0, 0]
+                    node_data["image_size"] = [int(sz[0]), int(sz[1])]
+                    if img.colorspace_settings:
+                        node_data["image_colorspace"] = img.colorspace_settings.name
 
             # Capture unlinked input default values
             input_defaults: dict[str, Any] = {}
             for sock in curr.inputs:
-                if not sock.is_linked and hasattr(sock, "default_value"):
+                if not sock.is_linked:
                     val = get_socket_default_value(sock)
                     if isinstance(val, Iterable) and not isinstance(val, (str, bytes)):
                         try:
@@ -155,7 +156,7 @@ class DeepMaterialHasher:
             "nodes": canonical_nodes,
             "links": canonical_links,
             "blend_method": str(getattr(mat, "blend_method", "OPAQUE")),
-            "use_backface_culling": bool(getattr(mat, "use_backface_culling", False)),
+            "use_backface_culling": bool(mat.use_backface_culling),
         }
         serialized = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
@@ -341,7 +342,7 @@ class SemanticTextureAuditor:
 
                     downstream = resolve_downstream_targets(node, {id(node)})
                     for link, target_sock, target_node in downstream:
-                        sock_name = str(getattr(target_sock, "name", "") if target_sock else "").lower()
+                        sock_name = str(target_sock.name if target_sock else "").lower()
                         node_type = target_node.type if target_node else ""
 
                         if "normal" in sock_name or node_type == "NORMAL_MAP":
@@ -381,9 +382,7 @@ class SemanticTextureAuditor:
         for node in list(nodes):
             if node.type == "TEX_IMAGE":
                 is_used = any(
-                    (len(cast(Any, out.links)) > 0)
-                    if getattr(out, "links", None) is not None
-                    else bool(getattr(out, "is_linked", False))
+                    (len(cast("Any", out.links)) > 0) if out.links is not None else bool(out.is_linked)
                     for out in node.outputs
                 )
                 if not is_used:
@@ -468,11 +467,9 @@ class MaterialOptimizer:
                     return True
                 if ntype == "BSDF_PRINCIPLED":
                     # Check emission strength
-                    for sock in getattr(node, "inputs", []):
-                        if (
-                            getattr(sock, "name", "") == "Emission Strength"
-                            and getattr(sock, "default_value", 0.0) > 0.001
-                        ):
+                    for sock in node.inputs or ():
+                        val = get_socket_default_value(sock)
+                        if sock.name == "Emission Strength" and isinstance(val, (int, float)) and val > 0.001:
                             return True
         return False
 

@@ -16,7 +16,7 @@ import logging
 import math
 import os
 import tempfile
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Iterable, Optional, cast
 
 import numpy as np
 
@@ -130,38 +130,39 @@ class ImpostorAtlasBaker:
         backend_priority = ["OPTIX", "METAL", "HIP", "ONEAPI", "CUDA"]
         try:
             ctx = context
-            prefs = getattr(ctx, "preferences", None)
-            addons = getattr(prefs, "addons", {}) if prefs else {}
-            cycles_addon = addons.get("cycles")
-            if cycles_addon and hasattr(cycles_addon, "preferences"):
-                cpref = cycles_addon.preferences
-                avail = (
-                    {item[0] for item in cpref.get_device_types(ctx)}
-                    if hasattr(cpref, "get_device_types") and ctx
-                    else set()
-                )
+            prefs = ctx.preferences if ctx else None
+            addons = prefs.addons if prefs else None
+            cycles_addon = addons.get("cycles") if addons else None
+            if cycles_addon and cycles_addon.preferences:
+                cpref = cast(Any, cycles_addon.preferences)
+                try:
+                    avail = {item[0] for item in cpref.get_device_types(ctx)} if ctx else set()
+                except AttributeError:
+                    avail = set()
                 for backend in backend_priority:
                     if backend in avail:
                         try:
                             cpref.compute_device_type = backend
-                            if hasattr(cpref, "get_devices"):
+                            try:
                                 cpref.get_devices()
-                            active_devs = [
-                                d for d in getattr(cpref, "devices", []) if getattr(d, "type", "") == backend
-                            ]
+                            except AttributeError:
+                                pass
+                            active_devs = [d for d in (cpref.devices or ()) if d.type == backend]
                             if active_devs:
                                 for d in active_devs:
                                     d.use = True
                                 cycles_settings = getattr(scene, "cycles", None) if scene else None
                                 if cycles_settings is not None:
                                     cycles_settings.device = "GPU"
-                                dev_names = [getattr(d, "name", backend) for d in active_devs]
+                                dev_names = [str(d.name) for d in active_devs]
                                 logger.info("Configured Cycles GPU baking: %s (%s)", backend, ", ".join(dev_names))
                                 return backend, dev_names
                         except (RuntimeError, AttributeError, TypeError, ValueError) as b_err:
                             logger.debug("Cycles backend %s failed: %s", backend, b_err)
-                if hasattr(cpref, "compute_device_type"):
+                try:
                     cpref.compute_device_type = "NONE"
+                except AttributeError:
+                    pass
         except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
             logger.debug("Failed configuring Cycles compute device: %s", exc)
 
@@ -297,7 +298,7 @@ class ImpostorAtlasBaker:
                             "PNG",
                             "RGBA",
                         )
-                        if hasattr(bake_scene, "view_settings") and bake_scene.view_settings:
+                        if bake_scene.view_settings:
                             try:
                                 cast(Any, bake_scene.view_settings).view_transform = (
                                     "Standard" if chan_name == "BaseColor" else "Raw"
@@ -306,9 +307,9 @@ class ImpostorAtlasBaker:
                                 logger.debug("Failed setting view_transform on bake scene: %s", exc)
 
                         ctx = context
-                        win = getattr(ctx, "window", None) if ctx else None
+                        win = ctx.window if ctx else None
                         try:
-                            if win and ctx and hasattr(ctx, "temp_override"):
+                            if win and ctx:
                                 try:
                                     with cast(Any, ctx).temp_override(scene=bake_scene, window=win):
                                         bpy.ops.render.render(animation=True, scene=bake_scene.name)
@@ -328,7 +329,7 @@ class ImpostorAtlasBaker:
                             frame_file = f"{chan_prefix}{frame_idx:04d}.png"
                             if os.path.exists(frame_file) and bdata_imgs:
                                 img = bdata_imgs.load(frame_file)
-                                sz = getattr(img, "size", (0, 0))
+                                sz = list(cast("Iterable[int]", img.size))
                                 w, h = int(sz[0]), int(sz[1])
                                 arr = np.empty(w * h * 4, dtype=np.float32)
                                 img.pixels.foreach_get(arr)
@@ -492,7 +493,7 @@ class ImpostorAtlasBaker:
 
         ctx = context
         bdata_scenes = bdata.scenes if bdata else None
-        scene = getattr(ctx, "scene", None) or (bdata_scenes[0] if bdata_scenes and len(bdata_scenes) > 0 else None)
+        scene = (ctx.scene if ctx else None) or (bdata_scenes[0] if bdata_scenes and len(bdata_scenes) > 0 else None)
         if not scene:
             return {}
         orig_engine = scene.render.engine
@@ -501,7 +502,7 @@ class ImpostorAtlasBaker:
         # Automatically probe and configure best compute device (NVIDIA OptiX/CUDA, Apple Metal, AMD HIP, Intel oneAPI, or CPU)
         cls.configure_cycles_compute_device(scene, context=ctx)
 
-        is_bg = getattr(bpy.app, "background", False) if bpy else False
+        is_bg = bool(bpy.app.background) if (bpy and bpy.app) else False
         cycles = getattr(scene, "cycles", None)
         if cycles:
             cycles.samples = 1 if is_bg else 16
@@ -519,8 +520,8 @@ class ImpostorAtlasBaker:
         for o in mesh_objs:
             o.select_set(True)
         target_impostor.select_set(True)
-        vl = getattr(ctx, "view_layer", None) if ctx else None
-        if not vl and scene and hasattr(scene, "view_layers") and len(scene.view_layers) > 0:
+        vl = ctx.view_layer if ctx else None
+        if not vl and scene and scene.view_layers and len(scene.view_layers) > 0:
             vl = scene.view_layers[0]
         if vl and vl.objects is not None:
             vl.objects.active = target_impostor
@@ -562,8 +563,8 @@ class ImpostorAtlasBaker:
 
         muted_unbound_nodes: list[tuple[bpy.types.Node, bool]] = []
         for n in nodes:
-            if n != bake_slot and n.type == "TEX_IMAGE" and getattr(n, "image", None) is None:
-                muted_unbound_nodes.append((n, bool(getattr(n, "mute", False))))
+            if n != bake_slot and n.type == "TEX_IMAGE" and cast("bpy.types.ShaderNodeTexImage", n).image is None:
+                muted_unbound_nodes.append((n, bool(n.mute)))
                 n.mute = True
 
         try:

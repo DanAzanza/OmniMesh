@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import logging
 import math
-from .compat import set_node_prop, set_socket_default_value
 import os
 from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
+
+from .compat import set_node_prop, set_socket_default_value
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +59,11 @@ def safe_load_image(
 
     abs_target = os.path.abspath(filepath)
     for img in blend_data.images:
-        img_fp = getattr(img, "filepath", None)
+        img_fp = img.filepath
         if img_fp:
-            if hasattr(bpy, "path") and hasattr(bpy.path, "abspath"):
-                try:
-                    existing_abs = os.path.abspath(bpy.path.abspath(img_fp))
-                except (RuntimeError, ValueError, AttributeError):
-                    existing_abs = os.path.abspath(img_fp)
-            else:
+            try:
+                existing_abs = os.path.abspath(bpy.path.abspath(img_fp))
+            except (RuntimeError, ValueError, AttributeError):
                 existing_abs = os.path.abspath(img_fp)
 
             if existing_abs == abs_target:
@@ -109,21 +107,18 @@ def create_octahedral_preview_material(
     mat.use_nodes = True
 
     # Defensive EEVEE Next & EEVEE Legacy transparency configuration
-    for prop, val in (
-        ("surface_render_method", "DITHERED"),
-        ("use_transparent_shadow", True),
-        ("use_backface_culling", True),
-    ):
-        if hasattr(mat, prop):
-            try:
-                setattr(mat, prop, val)
-            except (TypeError, ValueError, AttributeError) as exc:
-                logger.debug("Failed setting %s on material: %s", prop, exc)
-    if hasattr(mat, "blend_method"):
-        try:
-            mat.blend_method = "CLIP"
-        except (TypeError, ValueError, AttributeError) as exc:
-            logger.debug("Failed setting blend_method on material: %s", exc)
+    try:
+        mat.surface_render_method = "DITHERED"
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.debug("Failed setting surface_render_method on material: %s", exc)
+    try:
+        mat.use_transparent_shadow = True
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.debug("Failed setting use_transparent_shadow on material: %s", exc)
+    try:
+        mat.use_backface_culling = True
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.debug("Failed setting use_backface_culling on material: %s", exc)
 
     if not mat.node_tree:
         return mat
@@ -339,7 +334,7 @@ def create_octahedral_preview_material(
         norm_img = safe_load_image(normal_path, blend_data=blend_data)
         if norm_img:
             if norm_img.colorspace_settings:
-                cast(Any, norm_img.colorspace_settings).name = "Non-Color"
+                cast("Any", norm_img.colorspace_settings).name = "Non-Color"
 
             tex_norm = nodes.new(type="ShaderNodeTexImage")
             set_node_prop(tex_norm, "image", norm_img)
@@ -376,7 +371,7 @@ def create_octahedral_preview_material(
         orm_img = safe_load_image(orm_path, blend_data=blend_data)
         if orm_img:
             if orm_img.colorspace_settings:
-                cast(Any, orm_img.colorspace_settings).name = "Non-Color"
+                cast("Any", orm_img.colorspace_settings).name = "Non-Color"
 
             tex_orm = nodes.new(type="ShaderNodeTexImage")
             set_node_prop(tex_orm, "image", orm_img)
@@ -409,14 +404,14 @@ def setup_impostor_tracking(
 
     effective_bdata = blend_data
     sc = _resolve_scene(context, effective_bdata)
-    cam = camera_obj or (getattr(sc, "camera", None) if sc else None)
+    cam = camera_obj or (sc.camera if sc else None)
     if not cam:
         return None
 
     # Find or create TRACK_TO constraint
     track_c = cast(
         "bpy.types.TrackToConstraint",
-        next((c for c in proxy_obj.constraints if getattr(c, "type", "") == "TRACK_TO"), None)
+        next((c for c in proxy_obj.constraints if c.type == "TRACK_TO"), None)
         or proxy_obj.constraints.new(type="TRACK_TO"),
     )
 
@@ -469,16 +464,22 @@ def setup_preview_turntable(
         cam_obj.location = cam_loc
 
         dir_vec = cast("Vector", center_vec) - cast("Vector", cam_loc)
-        if hasattr(dir_vec, "to_track_quat"):
+        try:
             cam_obj.rotation_euler = dir_vec.to_track_quat("-Z", "Y").to_euler()
+        except AttributeError:
+            pass
 
         cam_obj.keyframe_insert(data_path="location", frame=f)
         cam_obj.keyframe_insert(data_path="rotation_euler", frame=f)
 
     # Set linear interpolation on camera fcurves
     if cam_obj.animation_data and cam_obj.animation_data.action:
-        for fcurve in getattr(cam_obj.animation_data.action, "fcurves", []):
-            for kp in getattr(fcurve, "keyframe_points", []):
+        try:
+            fcurves = cast("Any", cam_obj.animation_data.action).fcurves
+        except AttributeError:
+            fcurves = ()
+        for fcurve in fcurves or ():
+            for kp in fcurve.keyframe_points or ():
                 kp.interpolation = "LINEAR"
 
     scene.frame_set(1)
@@ -502,13 +503,10 @@ def setup_impostor_preview_rig(
     Places all temporary objects in a dedicated '{base_name}_Preview_Rig' collection.
     Never alters the production transforms of mesh_objs.
     """
-    if not bpy:
+    if not bpy or blend_data is None:
         return {}
 
     effective_bdata = blend_data
-    if effective_bdata is None:
-        return {}
-
     scene = _resolve_scene(context, effective_bdata)
     if not scene:
         return {}
@@ -527,12 +525,16 @@ def setup_impostor_preview_rig(
     # 2. Compute bounding parameters
     coords = []
     for obj in mesh_objs:
-        mat_w = getattr(obj, "matrix_world", None)
-        for c in getattr(obj, "bound_box", []) or []:
+        mat_w = obj.matrix_world
+        try:
+            bbox = obj.bound_box
+        except AttributeError:
+            bbox = ()
+        for c in bbox or ():
             v = Vector(c)
             try:
                 res = mat_w @ v if mat_w is not None else v
-                coords.append(res if isinstance(getattr(res, "x", None), (int, float)) else v)
+                coords.append(res if isinstance(res.x, (int, float)) else v)
             except (TypeError, ValueError, AttributeError, RuntimeError):
                 coords.append(v)
     if not coords:
@@ -547,7 +549,7 @@ def setup_impostor_preview_rig(
     base_color_file = os.path.join(texture_dir, f"T_{base_name}_Impostor_BaseColor.png")
     if not os.path.exists(base_color_file):
         for obj in mesh_objs:
-            obj_n = getattr(obj, "name", "")
+            obj_n = obj.name or ""
             for candidate in (obj_n, obj_n.split("_")[0]):
                 cand_clean = candidate.split("_LOD")[0].split("_Test")[0]
                 alt_base = os.path.join(texture_dir, f"T_{cand_clean}_Impostor_BaseColor.png")
@@ -625,8 +627,10 @@ def setup_impostor_preview_rig(
     cam_obj.location = Vector((cam_x, center.y - cam_dist, center.z + radius * 0.5))
     aim_target = Vector((cam_x, center.y, center.z))
     dir_cam = aim_target - cam_obj.location
-    if hasattr(dir_cam, "to_track_quat"):
+    try:
         cam_obj.rotation_euler = dir_cam.to_track_quat("-Z", "Y").to_euler()
+    except AttributeError:
+        pass
 
     # Create Tracker Target Empty to decouple billboard orientation from camera animation
     target_name = f"{base_name}_Preview_Tracker_Target"
@@ -686,13 +690,10 @@ def teardown_impostor_preview_rig(
     Cleanly destroys all preview rig elements and removes the '{base_name}_Preview_Rig' collection.
     Restores original camera and removes animation data from mesh objects.
     """
-    if not bpy:
+    if not bpy or blend_data is None:
         return False
 
     effective_bdata = blend_data
-    if effective_bdata is None:
-        return False
-
     rig_coll_name = f"{base_name}_Preview_Rig"
     rig_coll = effective_bdata.collections.get(rig_coll_name)
     if not rig_coll:
@@ -713,16 +714,17 @@ def teardown_impostor_preview_rig(
             effective_bdata.objects.remove(obj)
 
         # Deallocate orphaned datablocks
-        users = getattr(obj_data, "users", 1)
+        users = obj_data.users if obj_data else 1
         if obj_data and isinstance(users, (int, float)) and users <= 1:
-            for container_name in ("meshes", "cameras", "lights"):
-                container = getattr(effective_bdata, container_name, None)
-                if container and hasattr(container, "remove"):
-                    try:
-                        container.remove(obj_data)
-                        break
-                    except (TypeError, RuntimeError, ValueError):
-                        pass
+            try:
+                if effective_bdata.meshes is not None and obj_data in effective_bdata.meshes.values():
+                    effective_bdata.meshes.remove(cast("bpy.types.Mesh", obj_data))
+                elif effective_bdata.cameras is not None and obj_data in effective_bdata.cameras.values():
+                    effective_bdata.cameras.remove(cast("bpy.types.Camera", obj_data))
+                elif effective_bdata.lights is not None and obj_data in effective_bdata.lights.values():
+                    effective_bdata.lights.remove(cast("bpy.types.Light", obj_data))
+            except (TypeError, RuntimeError, ValueError, AttributeError):
+                pass
 
     # Remove collection
     effective_bdata.collections.remove(rig_coll)
@@ -736,8 +738,8 @@ def teardown_impostor_preview_rig(
 
     # Restore default active camera if possible
     scene = _resolve_scene(context, effective_bdata)
-    cam = getattr(scene, "camera", None) if scene else None
-    if cam and getattr(cam, "name", "") == f"{base_name}_Preview_Camera" and scene:
-        scene.camera = next((o for o in getattr(scene, "objects", []) if getattr(o, "type", "") == "CAMERA"), None)
+    cam = scene.camera if scene else None
+    if cam and cam.name == f"{base_name}_Preview_Camera" and scene:
+        scene.camera = next((o for o in scene.objects if o.type == "CAMERA"), None)
 
     return True

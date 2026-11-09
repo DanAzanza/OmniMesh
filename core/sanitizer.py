@@ -13,11 +13,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Protocol, cast
 
 from .topology_repair import TopologyRepairEngine, TopologyRepairOptions
 
 logger = logging.getLogger(__name__)
+
+
+class PreflightSettingsProtocol(Protocol):
+    preflight_inspected: bool
+    preflight_loose_verts: int
+    preflight_loose_edges: int
+    preflight_non_manifold_edges: int
+    preflight_degenerate_tris: int
+    preflight_unapplied_scale: bool
+    preflight_missing_materials: int
+    preflight_is_clean: bool
+    preflight_summary_text: str
 
 
 @dataclass(slots=True)
@@ -71,7 +83,7 @@ class MeshSanitizer:
         Purges only if face normals are collinear (dot > 0.999), preserving intentional
         double-sided geometry (foliage cards, hair ribbons, cloth).
         """
-        if not bmesh or not bm or not hasattr(bm, "faces") or len(bm.faces) == 0:
+        if not bmesh or not bm or not bm.faces or len(bm.faces) == 0:
             return 0
 
         try:
@@ -107,9 +119,9 @@ class MeshSanitizer:
                         n1_sq = n1[0] * n1[0] + n1[1] * n1[1] + n1[2] * n1[2]
                         n2_sq = n2[0] * n2[0] + n2[1] * n2[1] + n2[2] * n2[2]
                         if n1_sq > 1e-8 and n2_sq > 1e-8:
-                            if hasattr(n1, "dot"):
+                            try:
                                 n_dot = n1.dot(n2)
-                            else:
+                            except AttributeError:
                                 n_dot = (n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) / math.sqrt(n1_sq * n2_sq)
                             if n_dot > 0.999:  # Exact duplicate coplanar face
                                 is_duplicate = True
@@ -142,7 +154,7 @@ class MeshSanitizer:
         Tier 0: Pure Geometric Hygiene (Uncritical, safe, always executed).
         Executes multi-pass fixed-point iteration until complete convergence (max 3 passes).
         """
-        if not bmesh or not bm or not hasattr(bm, "verts"):
+        if not bmesh or not bm or bm.verts is None:
             return {"zero_faces": 0, "zero_edges": 0, "wire_edges": 0, "loose_verts": 0, "duplicate_faces": 0}
 
         try:
@@ -258,7 +270,7 @@ class MeshSanitizer:
         Merges coincident vertices within epsilon distance.
         Safely validates vertex table and returns the count of merged vertices.
         """
-        if not bmesh or not bm or dist < 1e-9 or not hasattr(bm, "verts"):
+        if not bmesh or not bm or dist < 1e-9 or bm.verts is None:
             return 0
         try:
             bm.verts.ensure_lookup_table()
@@ -286,9 +298,9 @@ class MeshSanitizer:
         context: bpy.types.Context | None, mesh_objs: list[bpy.types.Object]
     ) -> dict[str, Any]:
         """Inspect mesh objects for unapplied scale/rotation, loose topology, degenerates, and materials."""
-        if not bpy or not context:
+        if not bpy or not context or not context.scene:
             return {}
-        props = getattr(getattr(context, "scene", None), "lod_tool", None)
+        props: PreflightSettingsProtocol | None = getattr(context.scene, "lod_tool", None)
         if not props:
             return {}
 
@@ -300,23 +312,23 @@ class MeshSanitizer:
         missing_mats = 0
 
         for obj in mesh_objs:
-            s = getattr(obj, "scale", None)
-            if s and hasattr(s, "x") and hasattr(s, "y") and hasattr(s, "z"):
+            s = obj.scale
+            if s is not None:
                 try:
                     if abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4:
                         has_unapplied_scale = True
-                except (TypeError, ValueError) as e:
-                    logger.debug("Failed checking unapplied scale on %s: %s", getattr(obj, "name", ""), e)
+                except (AttributeError, TypeError, ValueError) as e:
+                    logger.debug("Failed checking unapplied scale on %s: %s", obj.name, e)
 
-            slots = getattr(obj, "material_slots", None)
-            if slots is not None and hasattr(slots, "__len__"):
+            slots = obj.material_slots
+            if slots is not None:
                 try:
-                    if len(slots) == 0 or any(getattr(slot, "material", None) is None for slot in slots):
+                    if len(slots) == 0 or any(slot.material is None for slot in slots):
                         missing_mats += 1
                 except (TypeError, ValueError, AttributeError) as e:
-                    logger.debug("Failed checking material slots on %s: %s", getattr(obj, "name", ""), e)
+                    logger.debug("Failed checking material slots on %s: %s", obj.name, e)
 
-            mesh_data = getattr(obj, "data", None)
+            mesh_data = cast("bpy.types.Mesh | None", obj.data)
             if not mesh_data or not bmesh:
                 continue
 
@@ -398,7 +410,7 @@ class MeshSanitizer:
         - FORCE_ALL: Flood-fills outward normal recalculation across entire mesh.
         - OFF: Keeps face winding 100% untouched.
         """
-        if not bmesh or not bm or not hasattr(bm, "faces") or len(bm.faces) == 0:
+        if not bmesh or not bm or not bm.faces or len(bm.faces) == 0:
             return {"recalculated_normals": False}
 
         try:

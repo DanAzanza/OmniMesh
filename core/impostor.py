@@ -447,17 +447,14 @@ class ImpostorManager:
         Constructs and links the Impostor billboard object in Blender.
         Assigns the Impostor PBR material and places it in the target LOD collection.
         """
-        if not bpy or not mesh_objs:
+        if not bpy or not mesh_objs or blend_data is None:
             return None
 
         effective_bdata = blend_data
-        if effective_bdata is None:
-            return None
-
         ctx = context
         sc = (
             scene
-            or getattr(ctx, "scene", None)
+            or (ctx.scene if ctx else None)
             or (effective_bdata.scenes[0] if len(effective_bdata.scenes) > 0 else None)
         )
 
@@ -472,26 +469,30 @@ class ImpostorManager:
             return None
 
         # Calculate bounding dimensions across all selected meshes (using bound_box corners for O(1) efficiency)
-        all_coords = []
+        all_coords: list[Vector] = []
         for obj in mesh_objs:
-            mat_w = getattr(obj, "matrix_world", None)
-            if hasattr(obj, "bound_box") and obj.bound_box:
-                for c in obj.bound_box:
+            mat_w = obj.matrix_world
+            try:
+                bbox = obj.bound_box
+            except AttributeError:
+                bbox = None
+            if bbox:
+                for c in bbox:
                     v = Vector(c)
                     try:
                         res = mat_w @ v if mat_w is not None else v
-                        all_coords.append(res if isinstance(getattr(res, "x", None), (int, float)) else v)
+                        all_coords.append(res if isinstance(res.x, (int, float)) else v)
                     except (TypeError, ValueError, AttributeError, RuntimeError):
                         all_coords.append(v)
-            elif hasattr(obj, "data") and hasattr(obj.data, "vertices"):
+            elif obj.data is not None:
                 obj_data = cast("bpy.types.Mesh", obj.data)
-                for v_elem in obj_data.vertices:
-                    co = getattr(v_elem, "co", None)
+                for v_elem in obj_data.vertices or ():
+                    co = v_elem.co
                     if co is not None:
-                        v = Vector(co)
+                        v = Vector((co.x, co.y, co.z))
                         try:
                             res = mat_w @ v if mat_w is not None else v
-                            all_coords.append(res if isinstance(getattr(res, "x", None), (int, float)) else v)
+                            all_coords.append(res if isinstance(res.x, (int, float)) else v)
                         except (TypeError, ValueError, AttributeError, RuntimeError):
                             all_coords.append(v)
         if not all_coords:
@@ -559,37 +560,32 @@ class ImpostorManager:
                 blend_data=effective_bdata,
             )
             if mat:
-                cast(Any, impostor_obj.data).materials.append(mat)
+                cast("Any", impostor_obj.data).materials.append(mat)
 
             target_coll.objects.link(impostor_obj)
 
             # Proportional UV Island Packing (only for intersecting star planes in GUI mode)
-            is_bg = getattr(bpy.app, "background", False) if bpy else False
-            vl = getattr(ctx, "view_layer", None)
-            if (
-                mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}
-                and not is_bg
-                and getattr(ctx, "window", None)
-                and vl
-            ):
+            is_bg = bool(bpy.app.background) if bpy else False
+            vl = ctx.view_layer if ctx else None
+            if mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"} and not is_bg and ctx and ctx.window and vl:
                 try:
-                    vl_objs = getattr(vl, "objects", None)
-                    prev_active = getattr(vl_objs, "active", None) if vl_objs else None
-                    scene_objs = getattr(sc, "objects", [])
+                    vl_objs = vl.objects
+                    prev_active = vl_objs.active if vl_objs else None
+                    scene_objs = sc.objects if sc else ()
                     for o in scene_objs:
                         o.select_set(False)
                     if vl_objs:
                         vl_objs.active = impostor_obj
                     impostor_obj.select_set(True)
-                    if ctx and hasattr(ctx, "temp_override"):
-                        with cast(Any, ctx).temp_override(
+                    try:
+                        with cast("Any", ctx).temp_override(
                             active_object=impostor_obj, object=impostor_obj, selected_objects=[impostor_obj]
                         ):
                             bpy.ops.object.mode_set(mode="EDIT")
                             bpy.ops.mesh.select_all(action="SELECT")
                             bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)
                             bpy.ops.object.mode_set(mode="OBJECT")
-                    else:
+                    except AttributeError:
                         bpy.ops.object.mode_set(mode="EDIT")
                         bpy.ops.mesh.select_all(action="SELECT")
                         bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)
@@ -633,7 +629,7 @@ def resolve_impostor_export_dir(
     if not path_str:
         path_str = f"//{default_subfolder}/"
 
-    effective_fp = blend_filepath or (getattr(blend_data, "filepath", "") if blend_data else "")
+    effective_fp = blend_filepath or (blend_data.filepath if blend_data else "")
 
     # Handle Blender-relative '//' paths
     if path_str.startswith("//"):

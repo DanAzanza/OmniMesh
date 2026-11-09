@@ -54,17 +54,15 @@ class UE5Exporter(EngineExporterBase):
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
         bdata_in = kwargs.get("blend_data")
-        bdata: BlendData | None = (
-            bdata_in if isinstance(bdata_in, BlendData) else (getattr(context, "blend_data", None) if context else None)
-        )
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata: BlendData | None = bdata_in if isinstance(bdata_in, BlendData) else context.blend_data
+        bdata_objs = bdata.objects if bdata else None
         payload = (
             AssetMeshResolver.resolve_payload(context, clean_name, blend_data=bdata) if AssetMeshResolver else None
         )
         if not payload or not payload.lod_tiers:
             return False, f"No generated LOD objects found for '{asset_name}'"
 
-        if getattr(context, "mode", "") != "OBJECT":
+        if context.mode != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
             except (RuntimeError, AttributeError, TypeError) as exc:
@@ -84,9 +82,9 @@ class UE5Exporter(EngineExporterBase):
         armature_obj = payload.armature_obj
 
         # Save transactional state for rollback
-        vl = getattr(context, "view_layer", None)
-        orig_active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
-        orig_selected = list(getattr(context, "selected_objects", []))
+        vl = context.view_layer
+        orig_active = vl.objects.active if (vl and vl.objects is not None) else None
+        orig_selected = list(context.selected_objects or ())
         all_export_items = export_objects + collider_objects + ([armature_obj] if armature_obj else [])
         orig_hide_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
         for o in all_export_items:
@@ -111,7 +109,7 @@ class UE5Exporter(EngineExporterBase):
                     obj.hide_set(False, view_layer=context.view_layer)
                     obj.hide_viewport = False
                 except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Could not unhide object %s: %s", getattr(obj, "name", "unknown"), exc)
+                    logger.debug("Could not unhide object %s: %s", obj.name, exc)
 
             # Handle impostor naming convention for UE5
             if payload.has_impostor_tier:
@@ -129,16 +127,14 @@ class UE5Exporter(EngineExporterBase):
                     orig_collider_names[c_obj] = c_obj.name
                     c_obj.name = f"UCX_{clean_name}_{idx:02d}"
                 except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Could not prepare collider %s: %s", getattr(c_obj, "name", "unknown"), exc)
+                    logger.debug("Could not prepare collider %s: %s", c_obj.name, exc)
 
             if armature_obj:
                 try:
                     armature_obj.hide_set(False, view_layer=context.view_layer)
                     armature_obj.hide_viewport = False
                 except (RuntimeError, AttributeError) as exc:
-                    logger.debug(
-                        "Could not unhide armature %s in view layer: %s", getattr(armature_obj, "name", "unknown"), exc
-                    )
+                    logger.debug("Could not unhide armature %s in view layer: %s", armature_obj.name, exc)
 
             bpy.ops.object.select_all(action="DESELECT")
 
@@ -290,7 +286,7 @@ class UE5Exporter(EngineExporterBase):
                     bpy.ops.object.select_all(action="DESELECT")
                     for o in orig_selected:
                         o.select_set(True)
-                    if vl and orig_active:
+                    if vl and vl.objects is not None and orig_active:
                         vl.objects.active = orig_active
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
                     logger.debug("Could not restore selection state: %s", exc)

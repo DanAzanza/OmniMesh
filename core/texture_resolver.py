@@ -113,7 +113,7 @@ class PBRTextureResolver:
     def deduce_texture_type(cls, node: bpy.types.Node, original_filepath: str) -> str:
         """Determines semantic texture type from filename, node label/name, or socket links."""
         # 1. From original filename or node label/name
-        fname = (os.path.basename(original_filepath) or getattr(node, "label", "") or getattr(node, "name", "")).lower()
+        fname = (os.path.basename(original_filepath) or node.label or node.name or "").lower()
         fname_tokens = set(re.split(r"[\s_\-.]+", fname))
         for sem_type, tokens in SEMANTIC_MAP_TOKENS.items():
             for tok in tokens:
@@ -266,20 +266,20 @@ class PBRTextureResolver:
         for mat in materials:
             if not mat:
                 continue
-            mat_name = getattr(mat, "name", "")
+            mat_name = mat.name
             if mat_name not in seen_mats:
                 seen_mats.add(mat_name)
                 unique_materials.append(mat)
 
         for mat in unique_materials:
-            if not getattr(mat, "use_nodes", False) or not getattr(mat, "node_tree", None):
+            if not mat.use_nodes or not mat.node_tree:
                 continue
 
-            mat_name = getattr(mat, "name", "Unnamed_Material")
+            mat_name = mat.name or "Unnamed_Material"
             tex_nodes = cls.extract_all_texture_nodes(mat.node_tree)
 
             for node in tex_nodes:
-                img = getattr(node, "image", None)
+                img = node.image
 
                 # 1. Path already valid?
                 if img is not None and ProjectTextureRelinker.is_image_valid(
@@ -289,8 +289,8 @@ class PBRTextureResolver:
                     already_valid += 1
                     continue
 
-                raw_path = getattr(img, "filepath", "") if img else ""
-                fname = os.path.basename(raw_path) if raw_path else getattr(img, "name", "")
+                raw_path = img.filepath if img else ""
+                fname = os.path.basename(raw_path) if raw_path else (img.name if img else "")
                 sem_type = cls.deduce_texture_type(node, raw_path)
 
                 matched_path: Path | None = None
@@ -321,28 +321,26 @@ class PBRTextureResolver:
                     try:
                         if img is None and bpy:
                             # Load newly discovered image via injected blend_data
-                            bdata_imgs = getattr(blend_data, "images", None) if blend_data else None
-                            if bdata_imgs is not None and hasattr(bdata_imgs, "load"):
+                            bdata_imgs = blend_data.images if blend_data else None
+                            if bdata_imgs is not None:
                                 img = bdata_imgs.load(str(matched_path))
                                 node.image = img
                         elif img is not None:
                             img.filepath = new_path_str
-                            reload_fn = getattr(img, "reload", None)
-                            if callable(reload_fn):
-                                try:
-                                    reload_fn()
-                                except RuntimeError as exc:
-                                    logger.warning("Could not reload image buffer '%s': %s", img.name, exc)
+                            try:
+                                img.reload()
+                            except (RuntimeError, AttributeError) as exc:
+                                logger.warning("Could not reload image buffer '%s': %s", img.name, exc)
 
                         relinked_count += 1
-                        node_name = getattr(node, "name", "TexImage")
+                        node_name = node.name or "TexImage"
                         relinked_pairs.append((f"{mat_name}::{node_name}", new_path_str))
                     except (RuntimeError, TypeError, ValueError, AttributeError, OSError) as exc:
                         logger.warning("Failed assigning image to material '%s' node: %s", mat_name, exc)
                         unresolved_list.append(
                             UnresolvedTexture(
                                 material_name=mat_name,
-                                node_name=getattr(node, "name", "TexImage"),
+                                node_name=node.name or "TexImage",
                                 expected_type=sem_type,
                                 original_filepath=raw_path,
                             )
@@ -356,7 +354,7 @@ class PBRTextureResolver:
                         unresolved_list.append(
                             UnresolvedTexture(
                                 material_name=mat_name,
-                                node_name=getattr(node, "name", "TexImage"),
+                                node_name=node.name or "TexImage",
                                 expected_type=sem_type,
                                 original_filepath=raw_path,
                             )

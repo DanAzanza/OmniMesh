@@ -6,7 +6,7 @@ Identifies root asset collections, inspects current scene state, and computes LO
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .compat import count_mesh_triangles
 
@@ -26,6 +26,10 @@ else:
         Mesh = object
         Object = object
     BlendData = object
+
+
+class AssetScannerPropsProtocol(Protocol):
+    active_asset: str
 
 
 def _strip_collection_suffixes(name: str) -> str:
@@ -61,7 +65,7 @@ def get_available_asset_names(
     if not bpy or not context:
         return []
 
-    scene = getattr(context, "scene", None)
+    scene = context.scene
     if not scene or not scene.collection:
         return []
 
@@ -84,6 +88,10 @@ def get_available_asset_names(
             continue
 
         name = coll.name
+        try:
+            role_val = coll.get("_omnimesh_role", "")
+        except AttributeError:
+            role_val = ""
         if (
             any(f"_LOD{n}" in name for n in range(1, 11))
             or any(
@@ -100,12 +108,16 @@ def get_available_asset_names(
                     "_Helpers",
                 )
             )
-            or (coll.get("_omnimesh_role", "") in ("CONFIG", "HELPERS") if hasattr(coll, "get") else False)
+            or role_val in ("CONFIG", "HELPERS")
         ):
             continue
 
         has_mesh = False
-        for obj in getattr(coll, "all_objects", getattr(coll, "objects", [])):
+        try:
+            coll_objs = coll.all_objects
+        except AttributeError:
+            coll_objs = coll.objects
+        for obj in coll_objs or ():
             if obj.type == "MESH":
                 has_mesh = True
                 break
@@ -136,16 +148,17 @@ def resolve_effective_asset_name(
 
     available = get_available_asset_names(context, blend_data=blend_data)
 
-    if context and hasattr(context, "view_layer") and hasattr(context.view_layer, "active_layer_collection"):
+    if context and context.view_layer and context.view_layer.active_layer_collection:
         active_lc = context.view_layer.active_layer_collection
-        if active_lc and hasattr(active_lc, "collection"):
+        if active_lc and active_lc.collection:
             coll_name = active_lc.collection.name
-            if coll_name and coll_name != getattr(getattr(context, "scene", None), "collection", None):
+            scene_coll = context.scene.collection if context.scene else None
+            if coll_name and coll_name != scene_coll:
                 stem = _strip_collection_suffixes(coll_name)
                 if stem and stem != "Collection" and (not available or stem in available):
                     return stem
 
-    active_obj = getattr(context, "active_object", None)
+    active_obj = getattr(context, "active_object", None) if context else None
     if active_obj:
         raw_name = active_obj.name
         stem = _strip_collection_suffixes(raw_name)
@@ -172,14 +185,14 @@ def get_asset_collection(
     """Finds the root collection for asset_name (either '{BaseName}' or '{BaseName}_LOD0')."""
     bdata_cols = blend_data.collections if blend_data else None
     if not bdata_cols:
-        scene = getattr(context, "scene", None) if context else None
-        if scene and hasattr(scene, "collection") and asset_name:
+        scene = context.scene if context else None
+        if scene and scene.collection and asset_name:
             stack = [scene.collection]
             while stack:
                 curr = stack.pop()
-                if getattr(curr, "name", "") in (asset_name, f"{asset_name}_LOD0"):
+                if curr.name in (asset_name, f"{asset_name}_LOD0"):
                     return curr
-                for child in getattr(curr, "children", []):
+                for child in curr.children or ():
                     stack.append(child)
         return None
 
@@ -199,7 +212,7 @@ def get_asset_base_meshes(
     """Retrieves all non-collider, non-impostor MESH objects from the root asset collection."""
     coll = get_asset_collection(context, asset_name, blend_data=blend_data)
     if not coll:
-        selected = getattr(context, "selected_objects", []) if context else []
+        selected = (context.selected_objects or []) if context else []
         meshes = [o for o in selected if o.type == "MESH"]
         act_obj = getattr(context, "active_object", None) if context else None
         if not meshes and act_obj:
@@ -208,13 +221,20 @@ def get_asset_base_meshes(
         return meshes
 
     meshes = []
-    all_objs = coll.all_objects if hasattr(coll, "all_objects") else getattr(coll, "objects", [])
-    for obj in all_objs:
+    try:
+        all_objs = coll.all_objects
+    except AttributeError:
+        all_objs = coll.objects
+    for obj in all_objs or ():
         if obj.type != "MESH":
             continue
         name = obj.name
-        is_col = bool(obj.get("_is_collider", False)) if hasattr(obj, "get") else False
-        is_imp = bool(obj.get("_is_impostor", False)) if hasattr(obj, "get") else False
+        try:
+            is_col = bool(obj.get("_is_collider", False))
+            is_imp = bool(obj.get("_is_impostor", False))
+        except AttributeError:
+            is_col = False
+            is_imp = False
         if is_col or is_imp or name.startswith("UCX_") or "_Collider_" in name:
             continue
         if any(f"_LOD{n}" in name for n in range(1, 11)):
@@ -242,7 +262,7 @@ def scan_asset_state(
     """
     bdata = blend_data
     base_meshes = get_asset_base_meshes(context, asset_name, blend_data=bdata)
-    base_tris = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in base_meshes)
+    base_tris = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", m.data)) for m in base_meshes)
     mat_slots = sum(len(m.material_slots) for m in base_meshes)
 
     existing_tiers: dict[int, dict[str, Any]] = {}
@@ -264,9 +284,7 @@ def scan_asset_state(
             c = bdata_cols.get(c_name)
             if c:
                 meshes = [o for o in list(c.objects) if o.type == "MESH"]
-                t_count = sum(
-                    count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in meshes
-                )
+                t_count = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", m.data)) for m in meshes)
                 existing_tiers[i] = {
                     "collection_name": c_name,
                     "meshes": meshes,
@@ -278,7 +296,7 @@ def scan_asset_state(
         c_imp = bdata_cols.get(imp_name)
         if c_imp:
             meshes = [o for o in list(c_imp.objects) if o.type == "MESH"]
-            t_count = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", getattr(m, "data", None))) for m in meshes)
+            t_count = sum(count_mesh_triangles(cast("bpy.types.Mesh | None", m.data)) for m in meshes)
             existing_tiers[-1] = {
                 "collection_name": imp_name,
                 "meshes": meshes,

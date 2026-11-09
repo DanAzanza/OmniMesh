@@ -8,9 +8,8 @@ material slot unification, and bone-mapped skeletal vertex weight consolidation.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
-
 import math
+from typing import TYPE_CHECKING, cast
 
 from .normals import NormalManager
 
@@ -53,23 +52,22 @@ class HLODClusterMerger:
         if not bpy or not bmesh or not chunk_objs:
             return None
 
-        valid_chunks = [
-            c for c in chunk_objs if c and getattr(c, "type", "") == "MESH" and hasattr(c, "data") and c.data
-        ]
+        valid_chunks = [c for c in chunk_objs if c and c.type == "MESH" and c.data is not None]
         if not valid_chunks:
             return None
 
         # Build master material palette from all chunks to prevent slot aliasing
         master_materials: list[bpy.types.Material] = []
         for c in valid_chunks:
-            for mat in getattr(c.data, "materials", []):
+            c_mesh = cast("bpy.types.Mesh", c.data)
+            for mat in c_mesh.materials or ():
                 if mat and mat not in master_materials:
                     master_materials.append(mat)
 
         # Build consolidated master vertex group list across all chunks
         master_vg_names: list[str] = []
         for c in valid_chunks:
-            for vg in getattr(c, "vertex_groups", []):
+            for vg in c.vertex_groups or ():
                 if vg.name not in master_vg_names:
                     master_vg_names.append(vg.name)
 
@@ -110,8 +108,8 @@ class HLODClusterMerger:
                     merged_bm.verts.ensure_lookup_table()
 
                     # Copy and remap skeletal deform weights by bone name
-                    chunk_vg_names = [vg.name for vg in getattr(chunk_obj, "vertex_groups", [])]
-                    temp_dvert = temp_bm.verts.layers.deform.active if hasattr(temp_bm.verts.layers, "deform") else None
+                    chunk_vg_names = [vg.name for vg in chunk_obj.vertex_groups or ()]
+                    temp_dvert = temp_bm.verts.layers.deform.active if temp_bm.verts.layers.deform is not None else None
                     if temp_dvert and merged_dvert and chunk_vg_names:
                         for v, new_v in vert_map.items():
                             if temp_dvert in v:
@@ -125,7 +123,7 @@ class HLODClusterMerger:
 
                     # Copy UVs
                     temp_uv_layers = (
-                        list(temp_bm.loops.layers.uv.values()) if hasattr(temp_bm.loops.layers, "uv") else []
+                        list(temp_bm.loops.layers.uv.values()) if temp_bm.loops.layers.uv is not None else []
                     )
                     for f in temp_bm.faces:
                         new_verts = [vert_map[v] for v in f.verts]
@@ -155,18 +153,14 @@ class HLODClusterMerger:
 
             # Create merged Blender mesh and object
             bdata = blend_data
-            bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
-            bdata_objs = getattr(bdata, "objects", None) if bdata else None
-            bdata_scenes = getattr(bdata, "scenes", None) if bdata else None
-
-            if not bdata_meshes or not bdata_objs:
+            if not bdata or bdata.meshes is None or bdata.objects is None:
                 return None
 
-            hlod_mesh = bdata_meshes.new(name=f"{hlod_name}_Mesh")
+            hlod_mesh = bdata.meshes.new(name=f"{hlod_name}_Mesh")
             merged_bm.to_mesh(hlod_mesh)
             hlod_mesh.update()
 
-            hlod_obj = bdata_objs.new(name=hlod_name, object_data=hlod_mesh)
+            hlod_obj = bdata.objects.new(name=hlod_name, object_data=hlod_mesh)
             hlod_obj.matrix_world = ref_mat_world
 
             # Allocate master vertex groups on hlod_obj
@@ -178,10 +172,10 @@ class HLODClusterMerger:
                 hlod_mesh.materials.append(mat)
 
             # Link to target collection
-            fallback_coll = target_collection or (bdata_scenes[0].collection if bdata_scenes else None)
-            if target_collection and hasattr(target_collection, "objects"):
+            fallback_coll = target_collection or (bdata.scenes[0].collection if bdata.scenes else None)
+            if target_collection and target_collection.objects is not None:
                 target_collection.objects.link(hlod_obj)
-            elif fallback_coll and hasattr(fallback_coll, "objects"):
+            elif fallback_coll and fallback_coll.objects is not None:
                 fallback_coll.objects.link(hlod_obj)
 
             # Ensure auto-smooth / sharp attribute exists
@@ -202,10 +196,10 @@ class HLODClusterMerger:
         Recalculates object origin to its local bounding box center
         while compensating vertex coordinates so world geometry remains stationary.
         """
-        if not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data") or not obj.data:
+        if not obj or obj.type != "MESH" or obj.data is None:
             return
         mesh = cast("bpy.types.Mesh", obj.data)
-        if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
+        if not mesh.vertices or len(mesh.vertices) == 0:
             return
 
         verts = mesh.vertices
@@ -227,9 +221,8 @@ class HLODClusterMerger:
                 v.co = type(v.co)([v.co[i] - center_coords[i] for i in range(3)])
 
         # Compensate object world transform by +center_local
-        if hasattr(obj, "matrix_world") and obj.matrix_world is not None and Matrix is not None:
+        if obj.matrix_world is not None and Matrix is not None:
             trans_mat = Matrix.Translation((center_coords[0], center_coords[1], center_coords[2]))
             obj.matrix_world = obj.matrix_world @ trans_mat
 
-        if hasattr(mesh, "update"):
-            mesh.update()
+        mesh.update()

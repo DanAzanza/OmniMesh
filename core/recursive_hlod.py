@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from .chunk_merger import HLODClusterMerger
 from .chunking import SpatialGridSpec
@@ -62,16 +62,18 @@ class RecursiveHLODManager:
             return (0, 0, 0)
 
         # 1. Custom RNA property check
-        if hasattr(obj, "get"):
+        try:
             c_ix = obj.get("_chunk_ix")
             c_iy = obj.get("_chunk_iy")
             if isinstance(c_ix, (int, float)) and isinstance(c_iy, (int, float)):
                 c_iz = obj.get("_chunk_iz", 0)
                 iz_val = int(c_iz) if isinstance(c_iz, (int, float)) else 0
                 return (int(c_ix), int(c_iy), iz_val)
+        except AttributeError:
+            pass
 
         # 2. Regex matching on object name
-        name = getattr(obj, "name", "")
+        name = obj.name
         # Match Chunk_X{x}_Y{y}
         m = re.search(r"X(\d+)[-_]Y(\d+)(?:[-_]Z(\d+))?", name)
         if m:
@@ -89,7 +91,7 @@ class RecursiveHLODManager:
             return (ix, iy, iz)
 
         # 3. Fallback: world-space bounding box center against grid_spec
-        if grid_spec and hasattr(obj, "matrix_world") and hasattr(obj, "bound_box") and obj.bound_box:
+        if grid_spec and obj.matrix_world is not None and obj.bound_box:
             try:
                 mat = obj.matrix_world
                 corners = [mat @ Vector(b) for b in obj.bound_box] if Vector and mat else obj.bound_box
@@ -113,12 +115,12 @@ class RecursiveHLODManager:
         Groups chunk meshes into 2x2 (or 2x2x2) parent clusters using normalized stride-2 reduction.
         Handles non-power-of-two (odd) grid dimensions gracefully.
         """
-        clusters: dict[tuple[int, int, int], list[Any]] = {}
+        clusters: dict[tuple[int, int, int], list[bpy.types.Object]] = {}
         for obj in chunk_objs:
-            if not obj or getattr(obj, "type", "") != "MESH":
+            if not obj or obj.type != "MESH":
                 continue
             ix, iy, iz = cls.extract_cell_coordinates(obj, grid_spec)
-            parent_coords = (ix // stride, iy // stride, (iz // stride) if getattr(grid_spec, "split_z", False) else 0)
+            parent_coords = (ix // stride, iy // stride, (iz // stride) if (grid_spec and grid_spec.split_z) else 0)
             clusters.setdefault(parent_coords, []).append(obj)
 
         return clusters
@@ -144,7 +146,7 @@ class RecursiveHLODManager:
         decimates, and optionally seals into a voxel shell on terminal tier.
         """
         bdata = blend_data
-        bdata_objs = getattr(bdata, "objects", None) if bdata else None
+        bdata_objs = bdata.objects if bdata else None
 
         generated_hlod_objs: list[bpy.types.Object] = []
 
@@ -161,7 +163,7 @@ class RecursiveHLODManager:
             # If cluster contains only 1 chunk, perform lightweight pass-through decimation
             if len(cluster_members) == 1:
                 source_chunk = cluster_members[0]
-                if not hasattr(source_chunk, "data") or not source_chunk.data:
+                if source_chunk.data is None:
                     continue
                 hlod_mesh = source_chunk.data.copy()
                 if hlod_mesh is None:
@@ -170,7 +172,7 @@ class RecursiveHLODManager:
                 hlod_obj = bdata_objs.new(name=hlod_name, object_data=hlod_mesh) if bdata_objs else None
                 if hlod_obj:
                     hlod_obj.matrix_world = source_chunk.matrix_world.copy()
-                    if target_collection and hasattr(target_collection, "objects"):
+                    if target_collection and target_collection.objects is not None:
                         target_collection.objects.link(hlod_obj)
                     hlod_obj["_chunk_ix"] = cx
                     hlod_obj["_chunk_iy"] = cy
@@ -239,11 +241,11 @@ class RecursiveHLODManager:
         Evaluates a watertight voxel remesh modifier via depsgraph (without UI bpy.ops context crash),
         clamps voxel size to prevent Out-Of-Memory freezes, and preserves auto-smooth normals.
         """
-        if not bpy or not obj or getattr(obj, "type", "") != "MESH" or not hasattr(obj, "data"):
+        if not bpy or not obj or obj.type != "MESH" or obj.data is None:
             return False
 
         mesh = cast("bpy.types.Mesh", obj.data)
-        if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
+        if not mesh.vertices or len(mesh.vertices) == 0:
             return False
 
         # Compute bounding dimensions to dynamically clamp minimum voxel size against OOM
@@ -262,12 +264,9 @@ class RecursiveHLODManager:
         mod.adaptivity = 0.0
 
         try:
-            eval_depsgraph = None
-            if context and hasattr(context, "evaluated_depsgraph_get"):
-                eval_depsgraph = context.evaluated_depsgraph_get()
-
+            eval_depsgraph = context.evaluated_depsgraph_get() if context else None
             bdata = blend_data
-            bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
+            bdata_meshes = bdata.meshes if bdata else None
 
             if eval_depsgraph and bdata_meshes:
                 eval_obj = obj.evaluated_get(eval_depsgraph)

@@ -320,9 +320,7 @@ class BatchProcessorEngine:
             if primary_mesh and primary_mesh.vertices:
                 for v in primary_mesh.vertices:
                     try:
-                        coords.append(
-                            primary_obj.matrix_world @ v.co if hasattr(primary_obj.matrix_world, "__matmul__") else v.co
-                        )
+                        coords.append(primary_obj.matrix_world @ v.co)
                     except (TypeError, ValueError, AttributeError, ReferenceError):
                         coords.append(v.co)
 
@@ -339,8 +337,8 @@ class BatchProcessorEngine:
                 if context.scene and context.scene.collection:
                     context.scene.collection.children.link(coll)
 
-            props = getattr(getattr(context, "scene", None), "lod_tool", None)
-            if props and hasattr(props, "lods"):
+            props = getattr(context.scene, "lod_tool", None) if context.scene else None
+            if props and props.lods is not None:
                 props.lods.clear()
 
             generated_lod_objs = []
@@ -399,7 +397,7 @@ class BatchProcessorEngine:
                 if i == len(screen_tiers) - 1:
                     final_lod_tris = current_tris
 
-                if props and hasattr(props, "lods"):
+                if props and props.lods is not None:
                     item = props.lods.add()
                     item.name = tier_name
                     item.lod_index = i
@@ -464,10 +462,10 @@ class BatchProcessorEngine:
                 except (RuntimeError, ValueError, OSError, AttributeError, TypeError) as exc:
                     logger.warning(
                         "Preset-based texture packing failed for '%s', using fallback: %s",
-                        getattr(mat, "name", "Mat"),
+                        mat.name,
                         exc,
                     )
-                    m_name = getattr(mat, "name", "Mat").replace(" ", "_")
+                    m_name = mat.name.replace(" ", "_")
                     if target_engine == "UE5":
                         f_fallback = TextureChannelPacker.pack_orm_ue5(
                             mat, os.path.join(tex_dir, f"T_{m_name}_ORM.png"), (2048, 2048)
@@ -537,7 +535,7 @@ class BatchProcessorEngine:
             # Purge orphan datablocks
             if bdata is not None:
                 try:
-                    is_bg = bool(getattr(getattr(bpy, "app", None), "background", False))
+                    is_bg = bool(bpy.app.background) if (bpy and bpy.app) else False
                     bdata.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=is_bg)
                 except (RuntimeError, ValueError, AttributeError) as exc:
                     logger.debug("Orphan purge bypassed: %s", exc)

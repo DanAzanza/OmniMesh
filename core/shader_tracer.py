@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Tuple, cast
 import numpy as np
 
 if TYPE_CHECKING:
@@ -97,7 +97,11 @@ class ShaderTracer:
         # Special Case: Displacement / Height
         if socket_name in ("Displacement", "Height"):
             out_node = next(
-                (n for n in nodes if n.type == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True)),
+                (
+                    n
+                    for n in nodes
+                    if n.type == "OUTPUT_MATERIAL" and cast("bpy.types.ShaderNodeOutputMaterial", n).is_active_output
+                ),
                 None,
             )
             if not out_node:
@@ -138,7 +142,7 @@ class ShaderTracer:
                 if (
                     mix_candidate
                     and mix_candidate.type == "MIX"
-                    and getattr(mix_candidate, "blend_type", "") == "MULTIPLY"
+                    and cast("bpy.types.ShaderNodeMix", mix_candidate).blend_type == "MULTIPLY"
                 ):
                     # Input B is AO in OmniMesh importer standard
                     b_sock = mix_candidate.inputs.get("B") or (
@@ -163,7 +167,7 @@ class ShaderTracer:
             # Fallback for unlinked AO / ORM image nodes in tree
             for node in nodes:
                 if node.type == "TEX_IMAGE":
-                    node_img = cast("bpy.types.Image | None", getattr(node, "image", None))
+                    node_img = cast("bpy.types.ShaderNodeTexImage", node).image
                     if node_img:
                         img_n = node_img.name.lower()
                         if any(k in img_n for k in ("_ao", "ambient_occlusion", "occlusion", "_orm", "_comp")):
@@ -190,8 +194,8 @@ class ShaderTracer:
                 break
 
         default_val: Optional[float] = None
-        if socket and hasattr(socket, "default_value"):
-            dv = socket.default_value
+        if socket is not None:
+            dv = getattr(socket, "default_value", None)
             if isinstance(dv, (float, int)) and math.isfinite(dv):
                 default_val = float(dv)
             elif isinstance(dv, (list, tuple)) and len(dv) > 0:
@@ -214,7 +218,7 @@ class ShaderTracer:
 
         # Decouple Base Color from AO Mix node if present
         if socket_name in ("Base Color", "BaseColor", "Albedo") and curr and curr.type == "MIX":
-            if getattr(curr, "blend_type", "") == "MULTIPLY":
+            if cast("bpy.types.ShaderNodeMix", curr).blend_type == "MULTIPLY":
                 # Socket A is clean Base Color
                 a_sock = curr.inputs.get("A") or (curr.inputs[6] if len(curr.inputs) > 6 else None)
                 if a_sock and a_sock.is_linked:
@@ -239,8 +243,9 @@ class ShaderTracer:
                 else:
                     channel_index = 0
                 curr = curr.inputs["Color"].links[0].from_node if curr.inputs["Color"].is_linked else None
-            elif ntype == "MATH" and getattr(curr, "operation", "") == "SUBTRACT":
-                if len(curr.inputs) > 0 and abs(getattr(curr.inputs[0], "default_value", 0.0) - 1.0) < 1e-4:
+            elif ntype == "MATH" and cast("bpy.types.ShaderNodeMath", curr).operation == "SUBTRACT":
+                in0_dv = getattr(curr.inputs[0], "default_value", 0.0) if len(curr.inputs) > 0 else 0.0
+                if len(curr.inputs) > 0 and isinstance(in0_dv, (int, float)) and abs(float(in0_dv) - 1.0) < 1e-4:
                     is_inverted = not is_inverted
                     curr = curr.inputs[1].links[0].from_node if curr.inputs[1].is_linked else None
                 else:
@@ -280,7 +285,7 @@ class ShaderTracer:
 
         fallback_arr = np.full((target_h, target_w), int(np.clip(effective_default, 0.0, 1.0) * max_val), dtype=dtype)
 
-        if not img or getattr(img, "size", (0, 0))[0] == 0:
+        if not img or list(cast("Iterable[int]", img.size))[0] == 0:
             return fallback_arr
 
         effective_ch = ch_idx if ch_idx != 0 else channel_index
@@ -311,7 +316,7 @@ class ShaderTracer:
         target_w, target_h = target_size
         if not img:
             return fallback
-        src_w, src_h = getattr(img, "size", (0, 0))[:2]
+        src_w, src_h = list(cast("Iterable[int]", img.size))[:2]
         if src_w == 0 or src_h == 0:
             return fallback
 
@@ -322,19 +327,18 @@ class ShaderTracer:
         try:
             img.pixels.foreach_get(raw_floats)
         except (RuntimeError, ValueError, AttributeError) as exc:
-            logger.warning("Failed reading pixels from '%s': %s", getattr(img, "name", "unknown"), exc)
+            logger.warning("Failed reading pixels from '%s': %s", img.name, exc)
             return fallback
         finally:
-            if hasattr(img, "buffers_free"):
-                try:
-                    img.buffers_free()
-                except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Failed freeing image buffers: %s", exc)
+            try:
+                img.buffers_free()
+            except (RuntimeError, AttributeError) as exc:
+                logger.debug("Failed freeing image buffers: %s", exc)
 
         np.nan_to_num(raw_floats, copy=False, nan=default_nan, posinf=1.0, neginf=0.0)
 
         ch_data = raw_floats[channel_index::4]
-        colorspace_name = getattr(getattr(img, "colorspace_settings", None), "name", "").lower()
+        colorspace_name = (img.colorspace_settings.name if img.colorspace_settings else "").lower()
 
         if apply_srgb_oetf:
             # Linear to sRGB transfer function (IEC 61966-2-1) for Base Color / Albedo targets
@@ -504,7 +508,7 @@ class ShaderTracer:
             return None
         old_engine = scene.render.engine
         cycles_mod = getattr(scene, "cycles", None)
-        old_samples = cycles_mod.samples if cycles_mod and hasattr(cycles_mod, "samples") else 1
+        old_samples = cycles_mod.samples if cycles_mod else 1
         temp_nodes: list[bpy.types.Node] = []
         temp_img = None
 
@@ -519,10 +523,10 @@ class ShaderTracer:
             temp_img = bdata_images.new(
                 "_OM_Bake_Temp", width=target_w, height=target_h, alpha=False, float_buffer=(bit_depth == 16)
             )
-            cs = getattr(temp_img, "colorspace_settings", None)
-            if cs is not None and hasattr(cs, "name"):
+            cs = temp_img.colorspace_settings
+            if cs is not None:
                 try:
-                    cs.name = "Non-Color"
+                    cs.name = "Non-Color"  # type: ignore[assignment]
                 except (TypeError, ValueError, AttributeError) as exc:
                     logger.debug("Setting colorspace Non-Color skipped: %s", exc)
             tex_node = cast("bpy.types.ShaderNodeTexImage", nodes.new(type="ShaderNodeTexImage"))
@@ -557,8 +561,7 @@ class ShaderTracer:
 
             res_rgb = np.stack(baked_channels, axis=-1)
             res = (np.clip(res_rgb, 0.0, 1.0) * max_val + 0.5).astype(dtype).reshape((target_h, target_w, 3))
-            if hasattr(temp_img, "buffers_free"):
-                temp_img.buffers_free()
+            temp_img.buffers_free()
             return res
         except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
             logger.debug("Bake execution fallback: %s", exc)
