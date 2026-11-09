@@ -216,6 +216,11 @@ def run_all_in_blender_tests() -> dict[str, Any]:
         from tests.in_blender.test_shader_and_pbr_ops_pipeline import TestShaderAndPBROpsPipeline
         from tests.in_blender.test_gltf_assembly_pipeline import TestGLTFAssemblyPipeline
         from tests.in_blender.test_presets_and_batch_pipeline import TestPresetsAndBatchPipeline
+        from tests.in_blender.test_gltf_roundtrip_and_hierarchy_pipeline import TestGLTFRoundtripAndHierarchyPipeline
+        from tests.in_blender.test_shader_deep_baking_pipeline import TestShaderDeepBakingPipeline
+        from tests.in_blender.test_engine_export_and_simulator_pipeline import TestEngineExportAndSimulatorPipeline
+        from tests.in_blender.test_batch_worker_blend_pipeline import TestBatchWorkerBlendPipeline
+        from tests.in_blender.test_geometry_prep_and_cleanup_ops_pipeline import TestGeometryPrepAndCleanupOpsPipeline
 
         suite = unittest.TestSuite()
         loader = unittest.TestLoader()
@@ -241,6 +246,11 @@ def run_all_in_blender_tests() -> dict[str, Any]:
         suite.addTests(loader.loadTestsFromTestCase(TestShaderAndPBROpsPipeline))
         suite.addTests(loader.loadTestsFromTestCase(TestGLTFAssemblyPipeline))
         suite.addTests(loader.loadTestsFromTestCase(TestPresetsAndBatchPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestGLTFRoundtripAndHierarchyPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestShaderDeepBakingPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestEngineExportAndSimulatorPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestBatchWorkerBlendPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestGeometryPrepAndCleanupOpsPipeline))
 
         stream = io.StringIO()
         runner = unittest.TextTestRunner(stream=stream, verbosity=2)
