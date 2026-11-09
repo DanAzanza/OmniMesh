@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from typing import TYPE_CHECKING, Any, cast
 import unittest
@@ -149,7 +150,7 @@ class TestBatchWorkerBlendPipeline(unittest.TestCase):
         """Verify WorkerProcessHandle correctly tracks state, PID, return code, and streams."""
         # Spawn a brief echo process to verify WorkerProcessHandle contract
         dummy_proc = subprocess.Popen(
-            ["cmd.exe", "/c", "echo OmniMeshWorkerStarted"],
+            [sys.executable, "-c", "print('OmniMeshWorkerStarted')"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
