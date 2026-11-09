@@ -223,6 +223,7 @@ class RecursiveHLODManager:
                 use_curvature_weight=False,
                 group_name="" if is_terminal_tier else "OMNIMESH_SEAM_LOCKED",
                 cleanup_group=is_terminal_tier,
+                context=context,
             )
             generated_hlod_objs.append(hlod_obj)
 

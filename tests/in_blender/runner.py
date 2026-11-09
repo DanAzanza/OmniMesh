@@ -211,6 +211,11 @@ def run_all_in_blender_tests() -> dict[str, Any]:
         from tests.in_blender.test_simulator_pipeline import TestSimulatorPipeline
         from tests.in_blender.test_spatial_chunking_pipeline import TestSpatialChunkingPipeline
         from tests.in_blender.test_ui_pipeline import TestUIPipeline
+        from tests.in_blender.test_msfs_cfg_roundtrip_pipeline import TestMSFSCFGRoundtripPipeline
+        from tests.in_blender.test_chunk_and_hlod_ops_pipeline import TestChunkAndHLODOpsPipeline
+        from tests.in_blender.test_shader_and_pbr_ops_pipeline import TestShaderAndPBROpsPipeline
+        from tests.in_blender.test_gltf_assembly_pipeline import TestGLTFAssemblyPipeline
+        from tests.in_blender.test_presets_and_batch_pipeline import TestPresetsAndBatchPipeline
 
         suite = unittest.TestSuite()
         loader = unittest.TestLoader()
@@ -231,6 +236,11 @@ def run_all_in_blender_tests() -> dict[str, Any]:
         suite.addTests(loader.loadTestsFromTestCase(TestSimulatorPipeline))
         suite.addTests(loader.loadTestsFromTestCase(TestSpatialChunkingPipeline))
         suite.addTests(loader.loadTestsFromTestCase(TestUIPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestMSFSCFGRoundtripPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestChunkAndHLODOpsPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestShaderAndPBROpsPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestGLTFAssemblyPipeline))
+        suite.addTests(loader.loadTestsFromTestCase(TestPresetsAndBatchPipeline))
 
         stream = io.StringIO()
         runner = unittest.TextTestRunner(stream=stream, verbosity=2)

@@ -112,7 +112,7 @@ class HLODClusterMerger:
                     temp_dvert = temp_bm.verts.layers.deform.active if temp_bm.verts.layers.deform is not None else None
                     if temp_dvert and merged_dvert and chunk_vg_names:
                         for v, new_v in vert_map.items():
-                            if temp_dvert in v:
+                            try:
                                 w_dict = v[temp_dvert]
                                 for local_vg_idx, weight in w_dict.items():
                                     if 0 <= local_vg_idx < len(chunk_vg_names):
@@ -120,6 +120,8 @@ class HLODClusterMerger:
                                         if bone_name in master_vg_names:
                                             target_vg_idx = master_vg_names.index(bone_name)
                                             new_v[merged_dvert][target_vg_idx] = weight
+                            except (KeyError, IndexError):
+                                pass
 
                     # Copy UVs
                     temp_uv_layers = (
