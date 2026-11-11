@@ -49,6 +49,18 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * **Windows CI 8.3 Short Directory Aliasing (`RUNNER~1` vs `runneradmin`)**: On Windows GitHub Actions runners, `tempfile.mkdtemp()` returns 8.3 short directory paths (e.g. `C:\Users\RUNNER~1\...`), whereas `pathlib.Path(p).resolve()` canonicalizes paths to their long forms (`runneradmin`). Test fixtures and assertions comparing file paths generated from temporary directories must canonicalize via `Path(...).resolve()` to prevent false-positive equality assertion failures.
 * **Ubuntu Headless Dependency Retries & Blender 5.3 Runner Baseline**: On Ubuntu GitHub Actions runners, `apt-get update && apt-get install` for headless Blender system dependencies (`libgl1`, `libxxf86vm1`, `libxfixes3`, `libxi6`, `libxkbcommon0`) occasionally suffers from package mirror connection drops or lock contention (exit code 100). Workflows in `.github/workflows/ci.yml` and `release.yml` enforce a 3-iteration retry loop with `DEBIAN_FRONTEND=noninteractive` and `-o Acquire::Retries=3`. Headless in-Blender test suites and CI portable environments baseline against Blender 5.3.0 (`linux-x64`).
 
+### 0.7 Dual-Runtime Test Architecture & In-Blender Coverage Ratchet
+* **Dual-Runtime Test Architecture**: OmniMesh enforces a complementary dual-runtime test strategy:
+  1. *Host Unit Tests (`tests/`)*: Fast, mock-driven pytest test suites running against `fake-bpy-module` stubs (635 tests).
+  2. *In-Blender Integration Tests (`tests/in_blender/`)*: Headless integration tests running inside a live Blender C-runtime instance via `tests/in_blender/runner.py` (94 tests). Total automated test count across both runtimes: **729 tests**.
+* **Unified Coverage Ratchet Gate**: `scripts/verify_ci.py` enforces a monotonic unified coverage ratchet threshold locked at **>= 70%** (currently achieving **73%**). Any architectural change reducing unified line coverage below this threshold fails the central quality gate deterministically.
+* **In-Blender Pipeline Test Suites (`tests/in_blender/`)**:
+  * `test_gltf_roundtrip_and_hierarchy_pipeline.py`: glTF/GLB export, round-trip re-import, mesh consolidation via `MeshMergeEngine`, manifest binding, and engine import preset CRUD.
+  * `test_shader_deep_baking_pipeline.py`: ShaderTracer socket tracing, channel extraction, PBR map presets CRUD, template evaluation, and map rule management.
+  * `test_engine_export_and_simulator_pipeline.py`: Target engine (UE5/Unity) FBX export with UCX colliders and `LODSimulatorEngine` distance scrubbing.
+  * `test_batch_worker_blend_pipeline.py`: `BatchMeshIterator` decimation loop, `.blend` asset discovery, UNC path normalization, and cross-platform `WorkerProcessHandle` lifecycle.
+  * `test_geometry_prep_and_cleanup_ops_pipeline.py`: Preflight asset inspection, degenerate face/edge cleanup (`lod_tool.clean_and_repair_mesh`), material deduplication, and `omnimesh.initialize_asset` operator pipeline.
+
 ---
 
 ## 1. Project Architecture & Module Boundaries
