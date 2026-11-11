@@ -312,17 +312,6 @@ class OMNIMESH_PT_popover_config_preset(Panel):
         box_comp.prop(cfg_props, "include_engines", text="Engines & Props")
         box_comp.prop(cfg_props, "include_interactions", text="Interaction & Clickspots")
 
-        int_props = getattr(props, "interaction", None) if props else None
-        if int_props:
-            layout.separator()
-            layout.label(text="Custom Interaction Trigger", icon="SNAP_VOLUME")
-            box_int = layout.box()
-            row_i = box_int.row(align=True)
-            row_i.use_property_split = False
-            row_i.prop(int_props, "role", text="")
-            row_i.prop(int_props, "shape", text="")
-            row_i.operator("omnimesh.add_interaction_volume", text="Add Trigger", icon="ADD")
-
 
 # =========================================================================
 # 4. LOD PRESET POPOVER

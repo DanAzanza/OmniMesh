@@ -110,9 +110,6 @@ class OMNIMESH_PT_popover_sanitize(Panel):
         layout.label(text="Transform & Modifiers", icon="OBJECT_ORIGIN")
         layout.prop(props, "cleanup_auto_apply_transforms", text="Auto-Apply Transforms")
         layout.prop(props, "cleanup_apply_modifiers", text="Bake / Apply Modifiers")
-        row_t = layout.row(align=True)
-        row_t.operator("lod_tool.apply_transforms", text="Apply Transforms", icon="CHECKMARK")
-        row_t.operator("lod_tool.apply_all_modifiers", text="Apply Modifiers", icon="MODIFIER")
 
         layout.separator()
 
@@ -139,7 +136,6 @@ class OMNIMESH_PT_popover_sanitize(Panel):
         row_occ = layout.row(align=True)
         row_occ.prop(props, "occlusion_ray_density", text="Rays")
         row_occ.prop(props, "occlusion_evaluate_alpha", text="Alpha")
-        layout.operator("lod_tool.cull_interior_faces", text="Remove Interior Polygons Now", icon="XRAY")
 
 
 class OMNIMESH_PT_popover_materials(Panel):
@@ -172,16 +168,6 @@ class OMNIMESH_PT_popover_materials(Panel):
             layout.prop(props, "mat_cleanup_micro_area_pct", text="Threshold %")
         layout.prop(props, "mat_cleanup_repair_missing_textures", text="Repair Missing Textures")
         layout.prop(props, "mat_cleanup_purge_orphans_blendfile", text="Purge Orphan Materials from .blend")
-
-        # Consolidated Multi-Engine Shader Presets
-        mat_props = getattr(props, "material_preset", None)
-        if mat_props:
-            layout.separator()
-            layout.label(text="Shader Presets", icon="MATERIAL")
-            row_m = layout.row(align=True)
-            row_m.use_property_split = False
-            row_m.prop(mat_props, "preset_type", text="")
-            row_m.operator("omnimesh.assign_material_preset", text="Assign Preset", icon="SHADING_TEXTURE")
 
 
 class OMNIMESH_PT_popover_collision(Panel):
@@ -303,17 +289,6 @@ class OMNIMESH_PT_popover_impostor(Panel):
         box.prop(props, "impostor_resolution", text="Resolution")
         box.prop(props, "impostor_replace_last_lod", text="Final LOD Tier")
 
-        layout.separator()
-        row_act = layout.row(align=True)
-        row_act.scale_y = 1.25
-        row_act.operator("lod_tool.generate_impostor", text="Generate", icon="IMAGE_PLANE")
-        row_act.operator("lod_tool.remove_impostor", text="Remove", icon="X")
-
-        row_prev = layout.row(align=True)
-        row_prev.operator("lod_tool.setup_impostor_preview_rig", text="Preview Rig", icon="CAMERA_DATA")
-        row_prev.operator("lod_tool.impostor_viewport_tracker", text="Track View", icon="VIEW_CAMERA")
-        row_prev.operator("lod_tool.remove_impostor_preview_rig", text="", icon="TRASH")
-
 
 # =========================================================================
 # 3. EXPORT POPOVERS: PACKAGE EXPORT
@@ -346,7 +321,6 @@ class OMNIMESH_PT_popover_export(Panel):
             box.prop(props, "texture_max_resolution", text="Resolution")
             box.prop(props, "pbr_export_bit_depth", text="Bit Depth")
             box.prop(props, "pbr_export_naming_pattern", text="Naming")
-            box.operator("lod_tool.pack_pbr_textures", text="Pack Textures Now", icon="IMAGE_DATA")
 
         layout.separator()
         layout.label(text="Rig Animations", icon="ACTION")

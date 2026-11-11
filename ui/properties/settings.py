@@ -224,7 +224,7 @@ class LODToolSettings(PropertyGroup):
     pbr_import_directory: StringProperty(
         name="Import Directory",
         subtype="DIR_PATH",
-        default="//Textures/",
+        default="",
         description="Source directory containing PBR textures to import",
         update=callbacks.on_import_directory_updated,
     )
@@ -581,7 +581,7 @@ class LODToolSettings(PropertyGroup):
     export_directory: StringProperty(
         name="Export Directory",
         subtype="DIR_PATH",
-        default="//Export/",
+        default="",
         description="Destination folder for exported engine packages",
         update=callbacks.on_export_directory_updated,
     )
@@ -642,6 +642,7 @@ class LODToolSettings(PropertyGroup):
         subtype="DIR_PATH",
         default="",
         description="Destination folder for exported engine packages",
+        update=callbacks.on_batch_export_directory_updated,
     )
     batch_recursive_scan: BoolProperty(
         name="Recursive Subfolders", default=True, description="Scan nested subdirectories for 3D asset files"

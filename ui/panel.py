@@ -49,7 +49,7 @@ except (ImportError, ValueError):
 
 def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
     box_engine = layout.box()
-    box_engine.label(text="Engine Project Importer", icon="PACKAGE")
+    box_engine.label(text="Model Importer", icon="PACKAGE")
 
     eng_preset_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
     is_builtin_eng = EngineImportPresetManager.is_builtin(eng_preset_id)
@@ -57,11 +57,11 @@ def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
     row_eng_preset = box_engine.row(align=True)
     row_eng_preset.use_property_split = False
     row_eng_preset.prop(props, "engine_import_preset", text="Preset")
+    row_eng_preset.popover(panel="OMNIMESH_PT_popover_engine_import_preset", icon="PREFERENCES", text="")
     row_eng_preset.operator("omnimesh.duplicate_engine_import_preset", text="", icon="DUPLICATE")
     sub_del_eng = row_eng_preset.row(align=True)
     sub_del_eng.enabled = not is_builtin_eng
     sub_del_eng.operator("omnimesh.delete_engine_import_preset", text="", icon="X")
-    row_eng_preset.popover(panel="OMNIMESH_PT_popover_engine_import_preset", icon="PREFERENCES", text="")
 
     row_eng_path = box_engine.row(align=True)
     row_eng_path.use_property_split = False
@@ -70,7 +70,7 @@ def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
     row_eng_act = box_engine.row(align=True)
     row_eng_act.use_property_split = False
     row_eng_act.scale_y = 1.2
-    row_eng_act.operator("omnimesh.import_engine_project", text="Import Engine Project", icon="IMPORT")
+    row_eng_act.operator("omnimesh.import_engine_project", text="Import Model", icon="IMPORT")
 
     if props.last_engine_import_summary:
         box_engine.label(text=props.last_engine_import_summary, icon="CHECKMARK")
@@ -84,13 +84,13 @@ def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
     row_preset = box_pbr.row(align=True)
     row_preset.use_property_split = False
     row_preset.prop(props, "pbr_import_preset", text="Preset")
+    row_preset.popover(panel="OMNIMESH_PT_popover_import_preset", icon="PREFERENCES", text="")
     op_dup_pbr = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
     if op_dup_pbr is not None:
         op_dup_pbr.preset_type = "IMPORT"
     sub_del_pbr = row_preset.row(align=True)
     sub_del_pbr.enabled = not is_builtin_pbr
     sub_del_pbr.operator("lod_tool.delete_import_preset", text="", icon="X")
-    row_preset.popover(panel="OMNIMESH_PT_popover_import_preset", icon="PREFERENCES", text="")
 
     row_path = box_pbr.row(align=True)
     row_path.use_property_split = False
@@ -108,35 +108,18 @@ def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
 def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
     """Draw vehicle config, impostors, colliders, and interaction features."""
     box_gen = layout.box()
-    box_gen.label(text="Generate", icon="AUTO")
+    box_gen.label(text="Generate", icon="MODIFIER")
 
     row_imp = box_gen.row(align=True)
     row_imp.use_property_split = False
     row_imp.scale_y = 1.2
     row_imp.operator("lod_tool.generate_impostor", text="Impostor", icon="IMAGE_PLANE")
-    row_imp.operator("lod_tool.remove_impostor", text="", icon="X")
     row_imp.popover(panel="OMNIMESH_PT_popover_impostor", icon="PREFERENCES", text="")
 
     row_col = box_gen.row(align=True)
     row_col.use_property_split = False
     row_col.scale_y = 1.2
     row_col.operator("lod_tool.generate_collision_hulls", text="Colliders", icon="MOD_PHYSICS")
-
-    base_name = resolve_effective_asset_name(context, props)
-    coll_name = f"{base_name}_Colliders" if base_name else ""
-    collider_count = 0
-    if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and coll_name:
-        target_coll = bpy.data.collections.get(coll_name)
-        if target_coll:
-            objs: Any = target_coll.objects
-            collider_count = len([o for o in objs if o.get("_is_collider", False) or "_Collider_" in o.name])
-    last_count = getattr(props, "last_generated_collider_count", 0)
-    if collider_count == 0 and isinstance(last_count, int) and last_count > 0:
-        collider_count = last_count
-
-    sub_del = row_col.row(align=True)
-    sub_del.enabled = collider_count > 0
-    sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
     row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
 
     cfg_props = getattr(props, "config_presets", None)
@@ -150,11 +133,11 @@ def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
         row_cfg_p = box_cfg.row(align=True)
         row_cfg_p.use_property_split = False
         row_cfg_p.prop(cfg_props, "config_preset", text="Preset")
+        row_cfg_p.popover(panel="OMNIMESH_PT_popover_config_preset", icon="PREFERENCES", text="")
         row_cfg_p.operator("omnimesh.duplicate_config_preset", text="", icon="DUPLICATE")
         sub_del_cfg = row_cfg_p.row(align=True)
         sub_del_cfg.enabled = not cfg_is_builtin
         sub_del_cfg.operator("omnimesh.delete_config_preset", text="", icon="X")
-        row_cfg_p.popover(panel="OMNIMESH_PT_popover_config_preset", icon="PREFERENCES", text="")
 
         row_cfg_act = box_cfg.row(align=True)
         row_cfg_act.use_property_split = False
@@ -168,10 +151,12 @@ def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
     if int_props:
         box_int = layout.box()
         box_int.label(text="Interaction Trigger / Clickspots", icon="GIZMO")
-        row_int_cfg = box_int.row(align=True)
-        row_int_cfg.use_property_split = False
-        row_int_cfg.prop(int_props, "role", text="")
-        row_int_cfg.prop(int_props, "shape", text="")
+        row_role = box_int.row(align=True)
+        row_role.use_property_split = False
+        row_role.prop(int_props, "role", text="Role")
+        row_shape = box_int.row(align=True)
+        row_shape.use_property_split = False
+        row_shape.prop(int_props, "shape", text="Shape")
         row_int_act = box_int.row(align=True)
         row_int_act.use_property_split = False
         row_int_act.scale_y = 1.2
@@ -207,10 +192,12 @@ def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
     # 3. Spatial Chunking Card
     box_chunk = layout.box()
     box_chunk.label(text="Spatial Chunking (Large Assets)", icon="MESH_GRID")
-    row_chk_cfg = box_chunk.row(align=True)
-    row_chk_cfg.use_property_split = False
-    row_chk_cfg.prop(props, "chunk_cell_size", text="Cell (m)")
-    row_chk_cfg.prop(props, "chunk_partitioning_mode", text="")
+    row_chk_cell = box_chunk.row(align=True)
+    row_chk_cell.use_property_split = False
+    row_chk_cell.prop(props, "chunk_cell_size", text="Cell (m)")
+    row_chk_mode = box_chunk.row(align=True)
+    row_chk_mode.use_property_split = False
+    row_chk_mode.prop(props, "chunk_partitioning_mode", text="Mode")
     row_chk_act = box_chunk.row(align=True)
     row_chk_act.use_property_split = False
     row_chk_act.scale_y = 1.2
@@ -360,13 +347,13 @@ def _draw_tab_lods(layout: Any, context: Any, props: Any) -> None:
     row_preset = box_lod.row(align=True)
     row_preset.use_property_split = False
     row_preset.prop(props, "lod_preset", text="Preset")
+    row_preset.popover(panel="OMNIMESH_PT_popover_lod_preset", icon="PREFERENCES", text="")
     op_dup_lod = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
     if op_dup_lod is not None:
         op_dup_lod.preset_type = "LOD"
     sub_del_lod = row_preset.row(align=True)
     sub_del_lod.enabled = not is_builtin_lod
     sub_del_lod.operator("lod_tool.delete_lod_preset", text="", icon="X")
-    row_preset.popover(panel="OMNIMESH_PT_popover_lod_preset", icon="PREFERENCES", text="")
 
     box_lod.prop(props, "tau_sse", text="Visual Stability (τ_sse)", slider=True)
 
@@ -454,13 +441,13 @@ def _draw_tab_export(layout: Any, context: Any, props: Any) -> None:
     row_preset = box_exp.row(align=True)
     row_preset.use_property_split = False
     row_preset.prop(props, "pbr_export_preset", text="Preset")
+    row_preset.popover(panel="OMNIMESH_PT_popover_export_preset", icon="PREFERENCES", text="")
     op_dup_exp = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
     if op_dup_exp is not None:
         op_dup_exp.preset_type = "EXPORT"
     sub_del_exp = row_preset.row(align=True)
     sub_del_exp.enabled = not is_builtin_exp
     sub_del_exp.operator("lod_tool.delete_export_preset", text="", icon="X")
-    row_preset.popover(panel="OMNIMESH_PT_popover_export_preset", icon="PREFERENCES", text="")
 
     row_path_exp = box_exp.row(align=True)
     row_path_exp.use_property_split = False

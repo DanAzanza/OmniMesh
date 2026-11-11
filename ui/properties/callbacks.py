@@ -59,6 +59,7 @@ _PERSISTENT_PIPELINE_KEYS: tuple[str, ...] = (
     "enable_live_sync",
     "batch_mode",
     "batch_source_directory",
+    "batch_export_directory",
 )
 
 
@@ -287,6 +288,10 @@ def on_batch_mode_updated(self: Any, _context: Any) -> None:
 
 def on_batch_source_updated(self: Any, _context: Any) -> None:
     _persist_pipeline_prop(self, "batch_source_directory", "")
+
+
+def on_batch_export_directory_updated(self: Any, _context: Any) -> None:
+    _persist_pipeline_prop(self, "batch_export_directory", "")
 
 
 def restore_preset_state_on_load(dummy: Any = None) -> None:
@@ -697,6 +702,7 @@ __all__ = [
     "on_enable_live_sync_updated",
     "on_batch_mode_updated",
     "on_batch_source_updated",
+    "on_batch_export_directory_updated",
     "restore_preset_state_on_load",
     "get_lod_preset_items",
     "project_preset_tiers",

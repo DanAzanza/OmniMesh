@@ -567,7 +567,7 @@ def test_add_panel_draw(monkeypatch):
 
     panel_add.draw(mock_context)
 
-    mock_box_gen.label.assert_any_call(text="Generate", icon="AUTO")
+    mock_box_gen.label.assert_any_call(text="Generate", icon="MODIFIER")
     mock_box_cfg.label.assert_any_call(text="Vehicle & Asset Configurator", icon="PRESET")
     mock_row_p.prop.assert_called_with(mock_cfg_props, "config_preset", text="Preset")
     mock_row_p.operator.assert_called_with("omnimesh.duplicate_config_preset", text="", icon="DUPLICATE")
