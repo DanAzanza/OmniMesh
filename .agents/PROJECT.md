@@ -12,8 +12,13 @@ The central verification script required by `AGENTS.md` Section 7:
 ```bash
 python scripts/verify_ci.py
 ```
-*(Deterministically runs dependency validation, Ruff linter & formatter check, Pyright static type checker across core and test modules, static architectural invariant audit via `scripts/audit_architecture.py`, and the full test suite).*
-* **Canonical Test Doubles (`tests/conftest.py`)**: Test doubles must provide standard Blender RNA interfaces (`MockVector`, `MockQuaternion`, `MockMeshObject`, `MockAction` with `frame_range`). Production code must never be contorted with defensive `getattr`/`hasattr` fallbacks solely to appease sparse mocks (conforming to `AGENTS.md` §2).
+*(Deterministically runs dependency validation, Ruff linter & formatter check, Pyright static type checker, static architectural invariant audit via `scripts/audit_architecture.py`, and the full dual-runtime test suite).*
+
+* **Dual-Runtime Test Architecture & Coverage Ratchets**:
+  1. *Host Unit Tests (`tests/`)*: Fast pytest suite against `fake-bpy-module` stubs (`tests/conftest.py` provides canonical `MockVector`, `MockQuaternion`, `MockMeshObject`, and `MockAction` test doubles). Host coverage threshold is enforced via `[tool.coverage.report] fail_under` in `pyproject.toml`.
+  2. *In-Blender Integration Tests (`tests/in_blender/`)*: Headless integration tests running inside a live Blender C-runtime via `scripts/run_blender_tests.py`.
+  3. *Unified Coverage Gate*: `scripts/verify_ci.py` merges both coverage databases and enforces the unified coverage floor (`--fail-under=70`).
+* **Large 3D Binary Asset Limit**: Model files (`.blend`, `.fbx`, `.gltf`, `.bin`, `.dds`) and raw textures must not exceed **50 MB** in Git tracking. Temporary bake scratch files and `.coverage*` artifacts must remain `.gitignore`d.
 
 ### 0.2 Git Commit Scope Mapping
 Repository-specific component scopes required by `AGENTS.md` Section 6:
@@ -24,96 +29,72 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * `[Tests]`: Test suite, test fixtures, headless Blender test runners (`tests/`, `scripts/test_engine_exports.py`).
 * `[CI]`: Quality gate scripts, GitHub Actions workflows (`scripts/`, `.github/`).
 
-### 0.3 Autonomous Subagent Roles & Binary Asset Limits
-* **Subagent Workflow Roles**:
-  * Architecture sparring & critique gate: `plan_critic`
-  * Pre-commit adversarial audit gate: `pre_commit_auditor`
-* **Large 3D Binary Asset Limit**:
-  * Model files (`.blend`, `.fbx`, `.gltf`, `.bin`, `.dds`) and raw textures must not exceed **50 MB** in Git tracking. Ensure temporary bake scratch files and `.coverage` artifacts remain strictly `.gitignore`d.
+### 0.3 Architecture Audit (`scripts/audit_architecture.py`) & Type Checking Contracts
+* **Single Source of Truth for Ratchet Baselines**: Monotonic ceilings for `bpy.data` (locked at `0`), `hasattr`/`getattr` calls, local `: Any` assignments (locked at `0`), and the scoped `ALLOWED_CAST_ANY` allowlist are maintained exclusively in `scripts/audit_architecture.py`.
+* **Audit Integrity**:
+  * Every audit rule must catch semantic evasions (`getattr(bpy, "context")`, `except` blocks that only log without re-raising or handling) rather than bare syntax alone.
+  * Never document "safe" workarounds for banned patterns; legitimate exceptions require a narrow, named allowlist entry in `scripts/audit_architecture.py`.
+  * Never loosen an audit rule in the same change that makes failing code pass it.
+* **`pyrightconfig.json` Ban**: Pyright silently prioritizes `pyrightconfig.json` over `[tool.pyright]` in `pyproject.toml`. Keep `pyproject.toml` as the sole configuration file.
+* **Strict Typing & `Any` Ban in Domain Modules**: Domain signatures and local variable annotations in `core/` and `exporters/` must use concrete stub types (`bpy.types.Object`, `bpy.types.Context`, `bmesh.types.BMesh`) or structural protocols (`LODTierProtocol`, `LODSettingsProtocol`, `QuaternionLike`) under `TYPE_CHECKING`. `cast(Any, ...)` is restricted to `ALLOWED_CAST_ANY` in `scripts/audit_architecture.py` for verified Blender stub defects; runtime operator dispatch is encapsulated in `core/compat.py`.
+* **Sanctioned File-Level Suppression**: `# pyright: reportInvalidTypeForm=none` is permitted only in UI modules declaring RNA properties (`ui/*_ops.py`, `ui/properties/`), never in `core/`, `exporters/`, or `bridges/`.
 
-### 0.4 Architecture Audit Integrity (`scripts/audit_architecture.py`)
-* **Bypass Vectors Must Be Covered**: `scripts/audit_architecture.py` checks semantics, not spelling. Every rule must also catch its known evasions: `getattr(bpy, "context")` / `getattr(getattr(bpy, ...))` for context leaks, and `except` blocks whose only statement is a logging call (`logger.debug/info/warning`) for swallowed errors — not just a bare `pass`.
-* **No Whitelisted Workarounds**: Audit rule docstrings and this file must never name a "safe" alternative spelling of a banned pattern. If a pattern is legitimately needed, add a narrow, named allowlist entry (file + line reason) in the audit script instead.
-* **Separation of Gate and Code Changes**: Never loosen or rewrite an audit rule in the same change that makes previously failing code pass it.
-* **Mandatory `blend_data` Signature Contract (`optional_blend_data_in_core`)**: `scripts/audit_architecture.py` inspects AST function signatures in `core/`. Any function defining a `blend_data` parameter must declare it as mandatory (`blend_data: BlendData` without default value `= None` and without optional type union `| None` / `Optional`). This forces callers to inject dependencies explicitly and empowers Pyright to catch missing injections statically before runtime.
-* **Monotonic Duck-Typing Ratchets (`hasattr` & `getattr`)**: `scripts/audit_architecture.py` enforces strict monotonic ceilings on runtime introspection in `core/` and `exporters/` (`HASATTR_RATCHET_BASELINE = 193`, `GETATTR_RATCHET_BASELINE = 409`). Introducing new unvetted `hasattr`/`getattr` calls fails the gate deterministically. Baselines are ratcheted down monotonically as structural protocols replace introspection.
-
-### 0.5 Static Analysis & Type Checking Configuration
-* **`pyrightconfig.json` Precedence Trap**: Pyright silently prioritizes `pyrightconfig.json` over `[tool.pyright]` in `pyproject.toml`. If `pyrightconfig.json` exists in the repository root, any strict configurations in `pyproject.toml` are completely ignored. Maintain `pyproject.toml` as the sole authoritative configuration file; `pyrightconfig.json` must never be reintroduced.
-* **`Any` Silently Disables Strict Mode**: Pyright performs no attribute, optional, or argument checks on values typed `Any`. A green Pyright run therefore says nothing about functions with `obj: Any` / `context: Any` parameters. Domain signatures in `core/` and `exporters/` must use concrete stub types (`bpy.types.Object`, `bpy.types.Context`, `bmesh.types.BMesh`) imported under `TYPE_CHECKING`. `cast(Any, ...)` is strictly restricted to a named, quota-enforced allowlist (`ALLOWED_CAST_ANY`, locked at **33** total ceiling) in `scripts/audit_architecture.py` for verified Blender stub defects (read-only setters, `RenderSettings.engine`) and must never be used as an ad-hoc escape hatch. Runtime operator dispatch is encapsulated in `core/compat.py` without requiring casts.
-* **AST Local Variable Assignment Audit (`ast.AnnAssign`)**: In addition to function signatures, `scripts/audit_architecture.py` inspects annotated local variable assignments for `: Any` in `core/` and `exporters/`. The ratchet baseline ceiling is strictly locked at **0** (zero tolerance for local `x: Any = ...`). Any change introducing local `: Any` fails the gate deterministically.
-* **Monotonic `bpy.data` Ratchet Baseline**: Global and obfuscated database access in domain modules breaks Explicit Dependency Injection. `scripts/audit_architecture.py` enforces a monotonic ratchet ceiling on direct and indirect `bpy.data` access in `core/` and `exporters/` (locked at **0** baseline — complete eradication). Any new access introduces an architectural blocker deterministically.
-* **Sanctioned File-Level Suppression**: `# pyright: reportInvalidTypeForm=none` is permitted only in modules declaring RNA properties via `prop: bpy.props.X(...)` annotations (`ui/*_ops.py`, `ui/properties/`). It must not appear in `core/`, `exporters/`, or `bridges/`.
-
-
-### 0.6 Cross-Platform Path & CI Test Invariants
-* **Blender 5.x LTS Exclusive Minimum Baseline**: Legacy Blender 4.x compatibility has been officially dropped (`blender_manifest.toml` locks `blender_version_min = "5.0.0"`). All runtime features, shader nodes, and export pipelines target Blender 5.0+ and 5.2 LTS exclusively.
-* **POSIX `os.path.splitdrive` Trap on Windows Paths**: On POSIX runners (Ubuntu GitHub Actions), `os.path.splitdrive("C:/...")` does not recognize Windows drive letters and returns `("", "C:/...")`. Cross-platform utilities comparing drive roots or computing blend-relative paths (`//`) must use portable drive splitting (`_split_drive_portable`) to avoid treating disparate Windows drives as identical roots.
-* **Windows CI 8.3 Short Directory Aliasing (`RUNNER~1` vs `runneradmin`)**: On Windows GitHub Actions runners, `tempfile.mkdtemp()` returns 8.3 short directory paths (e.g. `C:\Users\RUNNER~1\...`), whereas `pathlib.Path(p).resolve()` canonicalizes paths to their long forms (`runneradmin`). Test fixtures and assertions comparing file paths generated from temporary directories must canonicalize via `Path(...).resolve()` to prevent false-positive equality assertion failures.
-* **Ubuntu Headless Dependency Retries & Blender 5.3 Runner Baseline**: On Ubuntu GitHub Actions runners, `apt-get update && apt-get install` for headless Blender system dependencies (`libgl1`, `libxxf86vm1`, `libxfixes3`, `libxi6`, `libxkbcommon0`) occasionally suffers from package mirror connection drops or lock contention (exit code 100). Workflows in `.github/workflows/ci.yml` and `release.yml` enforce a 3-iteration retry loop with `DEBIAN_FRONTEND=noninteractive` and `-o Acquire::Retries=3`. Headless in-Blender test suites and CI portable environments baseline against Blender 5.3.0 (`linux-x64`).
-
-### 0.7 Dual-Runtime Test Architecture & In-Blender Coverage Ratchet
-* **Dual-Runtime Test Architecture**: OmniMesh enforces a complementary dual-runtime test strategy:
-  1. *Host Unit Tests (`tests/`)*: Fast, mock-driven pytest test suites running against `fake-bpy-module` stubs (613+ tests).
-  2. *In-Blender Integration Tests (`tests/in_blender/`)*: Headless integration tests running inside a live Blender C-runtime instance via `tests/in_blender/runner.py` (38 tests).
-* **Host Test Coverage Ratchet Contract (`fail_under = 48`)**: `pyproject.toml` locks pytest unit test line coverage at `fail_under = 48`. Any change reducing host test suite line coverage below 48.0% fails `scripts/verify_ci.py` deterministically. This threshold is monotonically ratcheted upward as test suites expand.
-* **Unified Coverage Ratchet Gate**: `scripts/verify_ci.py` enforces a monotonic unified coverage ratchet threshold locked at **>= 70%** (currently achieving **73%**). Any architectural change reducing unified line coverage below this threshold fails the central quality gate deterministically.
-* **In-Blender Pipeline Test Suites (`tests/in_blender/`)**:
-  * `test_gltf_roundtrip_and_hierarchy_pipeline.py`: glTF/GLB export, round-trip re-import, mesh consolidation via `MeshMergeEngine`, manifest binding, and engine import preset CRUD.
-  * `test_shader_deep_baking_pipeline.py`: ShaderTracer socket tracing, channel extraction, PBR map presets CRUD, template evaluation, and map rule management.
-  * `test_engine_export_and_simulator_pipeline.py`: Target engine (UE5/Unity) FBX export with UCX colliders and `LODSimulatorEngine` distance scrubbing.
-  * `test_batch_worker_blend_pipeline.py`: `BatchMeshIterator` decimation loop, `.blend` asset discovery, UNC path normalization, and cross-platform `WorkerProcessHandle` lifecycle.
-  * `test_geometry_prep_and_cleanup_ops_pipeline.py`: Preflight asset inspection, degenerate face/edge cleanup (`lod_tool.clean_and_repair_mesh`), material deduplication, and `omnimesh.initialize_asset` operator pipeline.
+### 0.4 Cross-Platform Path & CI Test Invariants
+* **Blender 5.x Minimum Baseline**: Legacy Blender 4.x compatibility is dropped (`blender_manifest.toml` locks `blender_version_min = "5.0.0"`). Keep `version` synchronized between `blender_manifest.toml` and `pyproject.toml`. CI headless runners baseline against Blender 5.3.0 (`linux-x64`) with a 3-attempt `apt-get` retry loop in `.github/workflows/`.
+* **POSIX `os.path.splitdrive` Trap on Windows Paths**: On Linux runners, `os.path.splitdrive("C:/...")` returns `("", "C:/...")`. Cross-platform utilities comparing drive roots or computing blend-relative paths (`//`) must use `_split_drive_portable`.
+* **Windows CI 8.3 Short Directory Aliasing (`RUNNER~1` vs `runneradmin`)**: On Windows GitHub Actions runners, `tempfile.mkdtemp()` returns 8.3 short paths, whereas `Path(p).resolve()` returns long paths. Test assertions comparing temporary paths must canonicalize via `Path(...).resolve()`.
+* **Cross-Platform Subprocess Invocations**: Never hardcode Windows shells (`["cmd.exe", "/c", ...]`) in workers or tests; invoke `[sys.executable, "-c", "..."]` directly so Linux CI runners succeed.
 
 ---
 
 ## 1. Project Architecture & Module Boundaries
 
-### 1.1 Layer Separation & Data Flow
+### 1.1 Layer Separation & Dependency Injection
 * **Unidirectional Layer Boundaries**:
   * `ui/`: Presentation layer, 3D viewport panels, modal operators. Gathers user parameters and dispatches commands.
-  * `core/`: Core decimation algorithms, impostor generation, hierarchy managers, and LOD chain calculators. Zero global `bpy.context` and zero `bpy.data` reads; all database (`bpy.types.BlendData`) and context dependencies are explicitly injected. When database access is mandatory, parameters must be typed strictly as `blend_data: BlendData` with fail-fast validation (`ValueError`), completely prohibiting synthetic empty fallbacks or silent `getattr(context, "blend_data", None)` evasions.
-  * `exporters/`: Engine packaging logic (MSFS 2024, UE5, Unity 6). Implements transactional rollback (`try...finally`).
+  * `core/`: Core decimation algorithms, impostor generation, mesh merging (`MeshMergeEngine`), hierarchy managers, and LOD chain calculators.
+  * `exporters/`: Engine packaging logic (MSFS 2024, UE5, Unity 6) with transactional scene-graph rollback.
   * `bridges/`: External IPC socket clients, health probes, and live engine sync. Strictly non-blocking.
-* **Preset Row Layout Convention**: Across all preset controls (Import, PBR, Configurator, LOD, Export), the popover preferences button must directly follow the preset selector before duplicate and delete actions: `[row.prop(..., "preset")] [row.popover(..., icon="PREFERENCES")] [DUPLICATE] [DELETE]`. This visually anchors configuration settings to the active preset.
-* **Strict Options-Only Popovers**: Pop-up dialogs (`OMNIMESH_PT_popover_*`) opened via gear icons strictly manage configuration options, properties, and toggles. They must never contain execution buttons or destructive action triggers (e.g., apply transforms, generate impostor, pack textures), ensuring clear separation between parameter tuning and pipeline execution.
-* **Clean Path Initialization & Auto-Persistence**: Path properties (`DIR_PATH`, `FILE_PATH`) must default to empty strings (`""`) to prevent hardcoded dummy directories (`//Textures/`, `//Export/`) or Windows NetBIOS delays. When a user configures a path, field updates automatically synchronize through `_PERSISTENT_PIPELINE_KEYS` in `ui/properties/callbacks.py` to `pipeline_settings.json`, ensuring persistent restoration upon file load or Blender startup.
-* **Core Domain Isolation & Structural Settings Protocols**: Pure math, mesh partitioning, and quadric decimation algorithms must remain isolated from host UI state and headless batch loops. To pass settings across presentation/domain boundaries without duck-typing, `core/lod_generator.py` defines structural `typing.Protocol` interfaces (`LODTierProtocol`, `LODSettingsProtocol`). Core algorithms access typed properties directly (`tier.decimate_ratio`, `props.preserve_seams`), eliminating defensive `getattr`/`hasattr` fallbacks across module boundaries.
+* **Zero Global Context / Database Reads in Domain (`core/`, `exporters/`)**:
+  * Domain modules must never read `bpy.context` or `bpy.data` directly or indirectly (`getattr(bpy, "context" | "data")`).
+  * `context`/`scene` and `blend_data: BlendData` must be injected explicitly from the presentation/CLI boundary.
+  * Any function in `core/` declaring `blend_data` must require it as a non-optional parameter (`blend_data: BlendData` without `= None` or `| None`, enforced by `optional_blend_data_in_core` in `scripts/audit_architecture.py`) and fail fast with `ValueError` if `None` is passed at runtime.
+* **UI Layout, Popover & Persistence Conventions**:
+  * **Preset Row Layout**: Across all preset controls (Import, PBR, Configurator, LOD, Export), order buttons strictly as `[row.prop(..., "preset")] [row.popover(..., icon="PREFERENCES")] [DUPLICATE] [DELETE]`.
+  * **Popover Space & Options-Only Rule**: Popovers (`OMNIMESH_PT_popover_*`) manage configuration properties and toggles only—never destructive action/execution buttons. Action rows paired with a popover in narrow N-Panels must hold at most **one** primary operator button so the gear icon is never clipped.
+  * **Clean Path Initialization & Auto-Persistence**: Path properties (`DIR_PATH`, `FILE_PATH`) default to `""` (avoiding dummy `//Textures/` paths and Windows NetBIOS delays) and auto-synchronize via `_PERSISTENT_PIPELINE_KEYS` in `ui/properties/callbacks.py` to `pipeline_settings.json`.
 
 ### 1.2 Vehicle & Interactive Asset Scene-Graph Invariants
 * **Unified Scene Data Model (`{AssetName}_Config`)**:
-  Configuration metadata is strictly decoupled from render geometry and stored in dedicated sibling Outliner collections alongside `{AssetName}_LOD0`. Decimation engines, mesh mergers, and render LOD generators must never mutate, decimate, or ingest objects in `{AssetName}_Config`:
-  * **`Spatial` Subcollection**: Empties representing Datum Origin, Center of Gravity (CG), aerodynamic reference points, ground contact points (gear/wheels), scrape points, and fuel tank centroids.
-  * **`Lights` Subcollection**: Photometric light empties with custom RNA parameters: color temperature (K), lumen intensity, beam angle, attenuation radius, and animated flash timing profiles (nav, beacon, strobe, taxi, landing, cabin).
-  * **`Cameras` Subcollection**: Camera empties defining pilot/driver first-person eyepoints, instrument inspection zooms, exterior orbit pivots, and chase camera anchor points.
+  Configuration metadata is decoupled from render geometry and stored in dedicated sibling Outliner collections alongside `{AssetName}_LOD0`. Decimation engines, mesh mergers, and render LOD generators must never mutate, decimate, or ingest objects in `{AssetName}_Config`:
+  * **`Spatial` Subcollection**: Empties for Datum Origin, Center of Gravity (CG), aerodynamic reference points, ground contact points, scrape points, and fuel tank centroids.
+  * **`Lights` Subcollection**: Photometric light empties with custom RNA parameters (color temperature K, lumen intensity, beam angle, attenuation radius, flash timing profiles).
+  * **`Cameras` Subcollection**: Camera empties for pilot/driver eyepoints, instrument inspection zooms, exterior orbit pivots, and chase camera anchors.
   * **`Interaction` Subcollection**: Bounding box and hull empties defining VR/mouse click trigger volumes, grab handles, and switch articulation limits.
 * **Serialization & Geometry Isolation Boundaries**:
   * **MSFS 2024 Serialization**: Serializes `{AssetName}_Config` into modular XML and CFG specifications (`systems.xml`, `cameras.xml`, `flight_model.cfg`, `attached_objects.cfg`).
-  * **Geometry Export Isolation**: Configuration metadata Empties must remain strictly separate from exported glTF meshes. Mounting sockets (`ATTACH_POINT_*`) in LOD0 are preserved for attachment rigging, but config Empties reside in `{AssetName}_Config` and are filtered during mesh export.
+  * **Geometry Export Isolation**: Mounting sockets (`ATTACH_POINT_*`) in LOD0 are preserved in exported glTF meshes for attachment rigging, whereas `{AssetName}_Config` empties and attachment instances are filtered out during mesh export.
 
 ---
 
 ## 2. Multi-Engine Export Pipelines & Target Engine Contracts
 
 ### 2.1 Live Engine Subprocess Gating & CLI Execution
-* **Live Engine Subprocess Gating (`RUN_LIVE_ENGINE_TESTS`)**: Spawning external game engine executables introduces ~4–5 seconds of startup latency per test run. Headless unit test suites must gate live editor subprocesses behind `RUN_LIVE_ENGINE_TESTS` to keep regular test runs sub-5s while preserving end-to-end integration capability.
-* **Multi-Engine Export Test Runner**: Run `python scripts/test_engine_exports.py` to validate all 3 engine export pipelines (distinct from the central pre-commit gate `scripts/verify_ci.py`).
+* **Live Engine Subprocess Gating (`RUN_LIVE_ENGINE_TESTS`)**: Headless unit tests must gate live game engine subprocesses behind `RUN_LIVE_ENGINE_TESTS` to avoid 4–5s editor startup latency during standard test runs. Run `python scripts/test_engine_exports.py` to validate all 3 engine export pipelines end-to-end.
 * **Engine Headless CLI Execution**:
   * **Unity 6**: `unity run <project_dir> --editor-version <installed_ver> -- -nographics`. Never pass `-quit` or `-batchmode` after `--`.
   * **Unreal Engine 5**: `UnrealEditor-Cmd.exe <Project.uproject> -run=pythonscript -script="<script>.py" -nullrhi -nosound -unattended`. Colliders: `UCX_{Asset}_{Index}`.
   * **MSFS 2024**: `fspackagetool.exe <Project.xml> -forcesteam -nopause` with `stdin=subprocess.DEVNULL`. Steam installs require `fspackagetool_overrideExePath.txt`. All interior references in `model.cfg` must use POSIX forward slashes (`interior=../model/{Interior}.xml`).
 
 ### 2.2 Exporter Hierarchy, Rollback & Sockets
-* **Transactional Scene-Graph Rollback (`try...finally`)**: Single-mesh engine exporters mutate names (`UCX_`) and parent meshes to temporary `LODGroup` empties. Exporters must record original state in dictionaries, run export in `try`, and restore original hierarchy and names in `finally`.
-* **Transactional Exporter Facade Contract**: Exporter implementations mutate active scene graphs (colliders, temporary LODGroup empties). Deep export failures must raise `ExportPipelineError` within the `try:` block so `finally:` rollback executes deterministically. The public facade (`ExporterManager.export_asset`) catches `ExportPipelineError`, logs structured context, and returns `(False, str(e))` to preserve the caller contract across UI operators and batch runners.
+* **Transactional Scene-Graph Rollback (`try...finally`)**: Exporters mutating object names (`UCX_`) or parenting meshes to temporary `LODGroup` empties must record original state in dictionaries, run export in `try:`, raise `ExportPipelineError` on deep failures, and restore original hierarchy and names in `finally:`. The public facade (`ExporterManager.export_asset`) catches `ExportPipelineError`, logs structured context, and returns `(False, str(e))`.
 * **Multi-LOD Pivot & Origin Parity on Impostors**: All engine LOD parsers require all tiers to share the exact same pivot translation (`(obj.matrix_world.translation - lod0_pivot).length <= 1e-4`). Center impostors in local BMesh space rather than offsetting object location.
-* **MSFS XML minSize Lower-Bound Invariance**: In MSFS XML, `<LOD minSize="X">` is the lower-bound exit threshold, whereas OmniMesh `tier.screen_size_pct` is the upper-bound entry threshold. LOD0 is always 100%, and LOD $i$ receives `lod_infos[i - 1].min_size`.
-* **MSFS 2024 Modular Attachments (`attached_objects.cfg`)**: `attach_offset` coordinates in `[sim_attachment.N]` are strictly relative to the mounting socket empty (`attach_to_node`), never aircraft datum. Socket markers (`ATTACH_POINT_*`) in LOD0 must be exported in glTF, but attachment instances reside in `{AssetName}_Config` and are excluded from glTF.
-* **MSFS 2024 `attached_objects.cfg` CST Parsing & Serialization Invariants**:
-  * **Omitted Default Keys**: Official MSFS 2024 SDK samples (e.g. `Cabri_G2`) frequently omit `attach_offset` and `attach_pbh` keys when default or zero.
-  * **Flush-on-Exit Contract**: When serializing user viewport transformations back to disk, the Concrete Syntax Tree (CST) serializer must dynamically flush missing spatial keys upon section transition (or EOF) if non-zero coordinates exist, preserving all comments, indentation, and custom SDK parameters lossless.
-  * **Gapless Index Sequence**: Newly synthesized attachments in `attached_objects.cfg` must enforce gapless, monotonically increasing integer section headers (`[sim_attachment.0]`, `[sim_attachment.1]`, ...).
+* **MSFS XML `minSize` Lower-Bound Invariance**: In MSFS XML, `<LOD minSize="X">` is the lower-bound exit threshold, whereas OmniMesh `tier.screen_size_pct` is the upper-bound entry threshold. LOD0 is always 100%, and LOD $i$ receives `lod_infos[i - 1].min_size`.
+* **MSFS 2024 `attached_objects.cfg` CST Serialization Invariants**:
+  * `attach_offset` coordinates in `[sim_attachment.N]` are strictly relative to the mounting socket empty (`attach_to_node`), never aircraft datum.
+  * Official SDK samples frequently omit `attach_offset` and `attach_pbh` when zero. The Concrete Syntax Tree (CST) serializer must dynamically flush missing spatial keys upon section transition (or EOF) when non-zero coordinates exist, preserving comments, indentation, and custom SDK parameters losslessly.
+  * Newly synthesized attachments must enforce gapless, monotonically increasing integer headers (`[sim_attachment.0]`, `[sim_attachment.1]`, ...).
 
 ### 2.3 Engine Bridge CQS & Domain Exception Contracts
-* **Bridge Probe vs Command Invariance (CQS)**: Routine background UI heartbeat timers (`ping_engine`) are query probes and must NEVER raise `BridgeConnectionError` when target engine editors are closed or offline; they must return `(False, msg)`. Strongly typed `BridgeConnectionError` exceptions are strictly reserved for active payload transmissions (`sync_asset`, `sync_asset_headless`) on broken sockets, truncated frames, or network drops.
-* **Bridge Probe Timeout Isolation**: Heartbeat queries and unit tests against offline engine ports (e.g. Unreal Engine on port 30010) must never block on default OS TCP connection timeouts (1+ second delay). Always supply `timeout_sec <= 0.08` or mock `ConnectionRefusedError` to maintain non-blocking UI cycles and sub-millisecond unit test execution.
+* **Bridge Probe vs Command Invariance (CQS)**: Background UI heartbeat timers (`ping_engine`) are query probes and must return `(False, msg)` when target engine editors are offline—never raise `BridgeConnectionError`. `BridgeConnectionError` is reserved for active payload commands (`sync_asset`, `sync_asset_headless`) on broken sockets or network drops.
+* **Bridge Probe Timeout Isolation**: Heartbeat queries and unit tests against offline engine ports (e.g. Unreal Live Link on `127.0.0.1:6776` or WebControl on `30010`) must supply `timeout_sec <= 0.08` or mock `ConnectionRefusedError` to prevent 1s+ OS TCP timeout stalls.
