@@ -13,10 +13,9 @@ LOD_GENERATION_SOURCE_ITEMS: list[tuple[str, str, str]] = [
 
 OMNIMESH_UI_TAB_ITEMS: list[tuple[str, str, str, str, int]] = [
     ("IMPORT", "Import", "Import", "IMPORT", 0),
-    ("ADD", "Add", "Add", "ADD", 1),
-    ("MODIFY", "Modify", "Modify", "TOOL_SETTINGS", 2),
-    ("LODS", "LODs", "LODs", "MOD_DECIM", 3),
-    ("EXPORT", "Export", "Export", "EXPORT", 4),
+    ("MODIFY", "Modify", "Modify", "TOOL_SETTINGS", 1),
+    ("LODS", "LODs", "LODs", "MOD_DECIM", 2),
+    ("EXPORT", "Export", "Export", "EXPORT", 3),
 ]
 
 TARGET_ENGINE_ITEMS: list[tuple[str, str, str]] = [

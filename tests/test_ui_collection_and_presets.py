@@ -107,7 +107,7 @@ def test_panel2_modify_collection_first_and_lod0_only(monkeypatch):
     mock_layout = MagicMock()
     cast(Any, panel_modify).layout = mock_layout
     panel_modify.draw(mock_context)
-    assert mock_layout.row.called
+    assert mock_layout.box.called
 
     assert LOD_OT_clean_and_repair_mesh.poll(mock_context) is True
     assert LOD_OT_clean_and_repair_materials.poll(mock_context) is True
@@ -157,33 +157,28 @@ def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
     main_panel = OMNIMESH_PT_main()
     main_panel.draw(None)
     mock_layout = MagicMock()
-    mock_main_row, mock_col_tabs, mock_col_content, mock_row = (
-        MagicMock(),
-        MagicMock(),
-        MagicMock(),
-        MagicMock(),
-    )
-    mock_layout.row.return_value = mock_main_row
-    mock_main_row.column.side_effect = lambda *args, **kwargs: (
-        mock_col_tabs if kwargs.get("align", False) else mock_col_content
-    )
-    mock_col_content.row.return_value = mock_row
+    mock_grid, mock_row_asset = MagicMock(), MagicMock()
+    mock_layout.grid_flow.return_value = mock_grid
+    mock_layout.row.return_value = mock_row_asset
 
     cast(Any, main_panel).layout = mock_layout
     monkeypatch.setattr(panel_mod, "resolve_lod_context", lambda _ctx: (None, None, False))
     main_panel.draw(mock_context)
 
-    # Verify vertical icon tab prop is rendered in left column
-    mock_col_tabs.prop.assert_any_call(mock_props, "ui_active_tab", expand=True, icon_only=True)
+    # Verify horizontal tab prop is rendered
+    mock_grid.prop.assert_any_call(mock_props, "ui_active_tab", expand=True, icon_only=True)
 
-    # Verify active_asset is rendered in the content area for MODIFY tab
-    mock_row.prop.assert_any_call(mock_props, "active_asset", text="Asset", icon="OUTLINER_COLLECTION")
+    # Verify active_asset is rendered for MODIFY tab
+    mock_row_asset.prop.assert_any_call(mock_props, "active_asset", text="", icon="OUTLINER_COLLECTION")
 
     # Verify active_asset is NOT rendered when ui_active_tab is IMPORT
     mock_props.ui_active_tab = "IMPORT"
-    mock_row.reset_mock()
+    mock_grid.reset_mock()
+    mock_row_asset.reset_mock()
     main_panel.draw(mock_context)
-    call_active_asset = [c for c in mock_row.prop.call_args_list if len(c.args) > 1 and c.args[1] == "active_asset"]
+    call_active_asset = [
+        c for c in mock_row_asset.prop.call_args_list if len(c.args) > 1 and c.args[1] == "active_asset"
+    ]
     assert len(call_active_asset) == 0
 
     # 2. Verify scoping to active_asset

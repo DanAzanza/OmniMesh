@@ -437,7 +437,7 @@ def test_modify_panel_collision_row_and_popover(monkeypatch):
     mock_layout = MagicMock()
     cast(Any, panel_modify).layout = mock_layout
     panel_modify.draw(mock_context)
-    assert mock_layout.row.called
+    assert mock_layout.box.called
 
     # Draw OMNIMESH_PT_popover_collision
     cast(Any, popover_col).layout = mock_layout
@@ -472,7 +472,7 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     mock_layout = MagicMock()
     cast(Any, panel_modify).layout = mock_layout
     panel_modify.draw(mock_context)
-    assert mock_layout.row.called
+    assert mock_layout.box.called
 
     mock_props.preflight_inspected = True
     mock_props.preflight_is_clean = False
@@ -541,17 +541,17 @@ def test_add_panel_draw(monkeypatch):
     mock_props.last_generated_collider_count = 0
     mock_context.scene.lod_tool = mock_props
     panel_add.draw(mock_context)
-    assert not mock_layout.box.called
-    assert mock_layout.row.called
+    assert mock_layout.box.called
 
     # 3. Built-in preset + Impostor + Colliders + Interaction Trigger
     mock_layout.reset_mock()
+    mock_box_gen = MagicMock()
     mock_box_cfg = MagicMock()
     mock_box_int = MagicMock()
     mock_row_p = MagicMock()
     mock_sub_del = MagicMock()
     mock_row_act = MagicMock()
-    mock_layout.box.side_effect = [mock_box_cfg, mock_box_int]
+    mock_layout.box.side_effect = [mock_box_gen, mock_box_cfg, mock_box_int]
     mock_box_cfg.row.side_effect = [mock_row_p, mock_row_act]
     mock_row_p.row.return_value = mock_sub_del
 
@@ -567,6 +567,7 @@ def test_add_panel_draw(monkeypatch):
 
     panel_add.draw(mock_context)
 
+    mock_box_gen.label.assert_any_call(text="Generate", icon="AUTO")
     mock_box_cfg.label.assert_any_call(text="Vehicle & Asset Configurator", icon="PRESET")
     mock_row_p.prop.assert_called_with(mock_cfg_props, "config_preset", text="Preset")
     mock_row_p.operator.assert_called_with("omnimesh.duplicate_config_preset", text="", icon="DUPLICATE")
@@ -581,7 +582,7 @@ def test_add_panel_draw(monkeypatch):
     from core.config_presets import ConfigPresetManager
 
     ConfigPresetManager.load_presets()["my_custom_vehicle"] = {"_is_builtin": False, "name": "My Custom"}
-    mock_layout.box.side_effect = [mock_box_cfg, mock_box_int]
+    mock_layout.box.side_effect = [mock_box_gen, mock_box_cfg, mock_box_int]
     mock_box_cfg.reset_mock()
     mock_box_cfg.row.side_effect = [mock_row_p, mock_row_act]
     mock_cfg_props.config_preset = "my_custom_vehicle"
@@ -642,7 +643,7 @@ def test_cull_interior_faces_and_multi_mesh_modify_ops(monkeypatch):
 
 
 def test_main_panel_tab_switching_and_target_asset_visibility(monkeypatch):
-    """Verify OMNIMESH_PT_main draws vertical tab bar and scopes Target Asset across tabs."""
+    """Verify OMNIMESH_PT_main draws horizontal tab bar and scopes Target Asset across tabs."""
     import ui.panel as panel_mod
 
     mock_bpy = MagicMock()
@@ -650,9 +651,10 @@ def test_main_panel_tab_switching_and_target_asset_visibility(monkeypatch):
 
     main_panel = OMNIMESH_PT_main()
     mock_layout = MagicMock()
-    mock_main_row, mock_col_tabs, mock_col_content = MagicMock(), MagicMock(), MagicMock()
-    mock_layout.row.return_value = mock_main_row
-    mock_main_row.column.side_effect = lambda *a, **kw: mock_col_tabs if kw.get("align", False) else mock_col_content
+    mock_grid = MagicMock()
+    mock_row_asset = MagicMock()
+    mock_layout.grid_flow.return_value = mock_grid
+    mock_layout.row.return_value = mock_row_asset
     cast(Any, main_panel).layout = mock_layout
 
     mock_ctx = MagicMock()
@@ -667,19 +669,19 @@ def test_main_panel_tab_switching_and_target_asset_visibility(monkeypatch):
     main_panel.draw(None)
     cast(Any, main_panel).layout = mock_layout
 
-    # 2. Iterate through all 5 workflow tabs
-    for tab_id in ("IMPORT", "ADD", "MODIFY", "LODS", "EXPORT"):
+    # 2. Iterate through all 4 workflow tabs
+    for tab_id in ("IMPORT", "MODIFY", "LODS", "EXPORT"):
         mock_props.ui_active_tab = tab_id
-        mock_col_content.reset_mock()
+        mock_grid.reset_mock()
+        mock_row_asset.reset_mock()
         main_panel.draw(mock_ctx)
 
-        # Tab navigation prop always requested with fixed width
-        assert mock_col_tabs.ui_units_x == 2.0
-        mock_col_tabs.prop.assert_called_with(mock_props, "ui_active_tab", expand=True, icon_only=True)
+        # Tab navigation prop always requested on grid_flow
+        mock_grid.prop.assert_called_with(mock_props, "ui_active_tab", expand=True, icon_only=True)
 
         # Target Asset selector presence depends on tab
         has_target_asset = any(
-            len(c.args) > 1 and c.args[1] == "active_asset" for c in mock_col_content.row().prop.call_args_list
+            len(c.args) > 1 and c.args[1] == "active_asset" for c in mock_row_asset.prop.call_args_list
         )
         if tab_id == "IMPORT":
             assert not has_target_asset

@@ -102,10 +102,43 @@ def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
     row_btn.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
 
 
-# Tab 2: Add
+# Tab 2: Modify & Add Features
 
 
 def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
+    """Draw vehicle config, impostors, colliders, and interaction features."""
+    box_gen = layout.box()
+    box_gen.label(text="Generate", icon="AUTO")
+
+    row_imp = box_gen.row(align=True)
+    row_imp.use_property_split = False
+    row_imp.scale_y = 1.2
+    row_imp.operator("lod_tool.generate_impostor", text="Impostor", icon="IMAGE_PLANE")
+    row_imp.operator("lod_tool.remove_impostor", text="", icon="X")
+    row_imp.popover(panel="OMNIMESH_PT_popover_impostor", icon="PREFERENCES", text="")
+
+    row_col = box_gen.row(align=True)
+    row_col.use_property_split = False
+    row_col.scale_y = 1.2
+    row_col.operator("lod_tool.generate_collision_hulls", text="Colliders", icon="MOD_PHYSICS")
+
+    base_name = resolve_effective_asset_name(context, props)
+    coll_name = f"{base_name}_Colliders" if base_name else ""
+    collider_count = 0
+    if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and coll_name:
+        target_coll = bpy.data.collections.get(coll_name)
+        if target_coll:
+            objs: Any = target_coll.objects
+            collider_count = len([o for o in objs if o.get("_is_collider", False) or "_Collider_" in o.name])
+    last_count = getattr(props, "last_generated_collider_count", 0)
+    if collider_count == 0 and isinstance(last_count, int) and last_count > 0:
+        collider_count = last_count
+
+    sub_del = row_col.row(align=True)
+    sub_del.enabled = collider_count > 0
+    sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
+    row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
+
     cfg_props = getattr(props, "config_presets", None)
     if cfg_props:
         box_cfg = layout.box()
@@ -125,40 +158,11 @@ def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
 
         row_cfg_act = box_cfg.row(align=True)
         row_cfg_act.use_property_split = False
-        row_cfg_act.scale_y = 1.25
+        row_cfg_act.scale_y = 1.2
         row_cfg_act.operator("omnimesh.add_config_preset", text="Add Features", icon="ADD")
 
         if cfg_props.last_spawn_summary:
             box_cfg.label(text=cfg_props.last_spawn_summary, icon="CHECKMARK")
-
-    row_imp = layout.row(align=True)
-    row_imp.use_property_split = False
-    row_imp.scale_y = 1.25
-    row_imp.operator("lod_tool.generate_impostor", text="Generate Impostor", icon="IMAGE_PLANE")
-    row_imp.operator("lod_tool.remove_impostor", text="", icon="X")
-    row_imp.popover(panel="OMNIMESH_PT_popover_impostor", icon="PREFERENCES", text="")
-
-    row_col = layout.row(align=True)
-    row_col.use_property_split = False
-    row_col.scale_y = 1.25
-    row_col.operator("lod_tool.generate_collision_hulls", text="Generate Colliders", icon="MOD_PHYSICS")
-
-    base_name = resolve_effective_asset_name(context, props)
-    coll_name = f"{base_name}_Colliders" if base_name else ""
-    collider_count = 0
-    if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and coll_name:
-        target_coll = bpy.data.collections.get(coll_name)
-        if target_coll:
-            objs: Any = target_coll.objects
-            collider_count = len([o for o in objs if o.get("_is_collider", False) or "_Collider_" in o.name])
-    last_count = getattr(props, "last_generated_collider_count", 0)
-    if collider_count == 0 and isinstance(last_count, int) and last_count > 0:
-        collider_count = last_count
-
-    sub_del = row_col.row(align=True)
-    sub_del.enabled = collider_count > 0
-    sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
-    row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
 
     int_props = getattr(props, "interaction", None)
     if int_props:
@@ -174,27 +178,33 @@ def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
         row_int_act.operator("omnimesh.add_interaction_volume", text="Add Clickspot / Trigger", icon="ADD")
 
 
-# Tab 3: Modify
-
-
 def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
-    row_san = layout.row(align=True)
+    """Draw complete Modify & Preparation workflow tab."""
+    # 1. Mesh & Material Cleanup Card
+    box_clean = layout.box()
+    box_clean.label(text="Mesh & Material Cleanup", icon="BRUSH_DATA")
+
+    row_san = box_clean.row(align=True)
     row_san.use_property_split = False
-    row_san.scale_y = 1.25
+    row_san.scale_y = 1.2
     row_san.operator("lod_tool.clean_and_repair_mesh", text="Sanitize Base Mesh", icon="BRUSH_DATA")
     row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
 
-    row_occ = layout.row(align=True)
+    row_occ = box_clean.row(align=True)
     row_occ.use_property_split = False
-    row_occ.scale_y = 1.2
+    row_occ.scale_y = 1.15
     row_occ.operator("lod_tool.cull_interior_faces", text="Remove Interior Polygons", icon="XRAY")
 
-    row_mat = layout.row(align=True)
+    row_mat = box_clean.row(align=True)
     row_mat.use_property_split = False
-    row_mat.scale_y = 1.25
+    row_mat.scale_y = 1.2
     row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
     row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
 
+    # 2. Impostors, Colliders, Vehicle Config & Interaction Features
+    _draw_tab_add(layout, context, props)
+
+    # 3. Spatial Chunking Card
     box_chunk = layout.box()
     box_chunk.label(text="Spatial Chunking (Large Assets)", icon="MESH_GRID")
     row_chk_cfg = box_chunk.row(align=True)
@@ -205,14 +215,6 @@ def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
     row_chk_act.use_property_split = False
     row_chk_act.scale_y = 1.2
     row_chk_act.operator("lod_tool.spatial_chunk_and_generate", text="Partition & Chunk LOD0", icon="MESH_GRID")
-
-    box_vox = layout.box()
-    box_vox.label(text="Voxel Surface Reconstruction", icon="MOD_REMESH")
-    row_vox = box_vox.row(align=True)
-    row_vox.use_property_split = False
-    row_vox.scale_y = 1.2
-    row_vox.prop(props, "scan_remesh_voxel_size", text="Voxel (m)")
-    row_vox.operator("lod_tool.voxel_scan_cleanup", text="Voxel Reconstruct", icon="MOD_REMESH")
 
 
 # Tab 4: LODs
@@ -538,37 +540,31 @@ class OMNIMESH_PT_main(Panel):
         if not props:
             return
 
-        main_row = layout.row()
+        # Top: Horizontal Segmented Workflow Navigation (Equal-Width Icon Tabs)
+        grid = layout.grid_flow(row_major=True, columns=4, even_columns=True, even_rows=True, align=True)
+        grid.scale_y = 1.3
+        grid.prop(props, "ui_active_tab", expand=True, icon_only=True)
 
-        # Left Column: Vertical Icon Navigation Tabs (Fixed width in UI units)
-        col_tabs = main_row.column(align=True)
-        col_tabs.ui_units_x = 2.0
-        col_tabs.scale_y = 1.35
-        col_tabs.prop(props, "ui_active_tab", expand=True, icon_only=True)
-
-        # Right Column: Main Content Area (Expands to fill remaining panel width)
-        col_content = main_row.column()
+        layout.separator(factor=0.3)
         active_tab = getattr(props, "ui_active_tab", "MODIFY")
 
-        # In Tabs 2..5 (Add, Modify, LODs, Export): Render Asset Selector at Top
+        # Top: Active Asset Selector (Full Width, shown for Modify, LODs, Export)
         if active_tab != "IMPORT":
-            row_asset = col_content.row(align=True)
+            row_asset = layout.row(align=True)
             row_asset.use_property_split = False
             row_asset.scale_y = 1.15
-            row_asset.prop(props, "active_asset", text="Asset", icon="OUTLINER_COLLECTION")
+            row_asset.prop(props, "active_asset", text="", icon="OUTLINER_COLLECTION")
             row_asset.operator("omnimesh.initialize_asset", text="", icon="ADD")
-            col_content.separator(factor=0.4)
+            layout.separator(factor=0.3)
 
         if active_tab == "IMPORT":
-            _draw_tab_import(col_content, context, props)
-        elif active_tab == "ADD":
-            _draw_tab_add(col_content, context, props)
-        elif active_tab == "MODIFY":
-            _draw_tab_modify(col_content, context, props)
+            _draw_tab_import(layout, context, props)
+        elif active_tab in {"MODIFY", "ADD"}:
+            _draw_tab_modify(layout, context, props)
         elif active_tab == "LODS":
-            _draw_tab_lods(col_content, context, props)
+            _draw_tab_lods(layout, context, props)
         elif active_tab == "EXPORT":
-            _draw_tab_export(col_content, context, props)
+            _draw_tab_export(layout, context, props)
 
 
 # Compatibility Wrappers
@@ -589,7 +585,7 @@ class OMNIMESH_PT_active_asset(Panel):
         if not props:
             return
         row = self.layout.row(align=True)
-        row.prop(props, "active_asset", text="Asset", icon="OUTLINER_COLLECTION")
+        row.prop(props, "active_asset", text="", icon="OUTLINER_COLLECTION")
         row.operator("omnimesh.initialize_asset", text="", icon="ADD")
 
 
