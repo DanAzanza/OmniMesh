@@ -1,11 +1,11 @@
 """
-OmniMesh Modular Panel Architecture for Blender 4.2+ and 5.2 LTS.
-Structured into streamlined sequential workflow panels with gear-icon popovers:
-1. Import (Engine Project & PBR Texture Set Importer)
-2. Add (Vehicle & Asset Configuration Presets)
-3. Modify (Base Prep, Sanitization, Modifiers, Materials & Colliders)
-4. LODs (Tier Configuration, Compact Responsive Cards, Decimation & Testing)
-5. Engine Export (Single-Asset Multi-Engine Package Export & Live Link)
+OmniMesh Unified Single-Panel Architecture for Blender 4.2+ and 5.2 LTS.
+Integrates all workflow stages into a single panel with a vertical icon navigation bar:
+- 1. Import (Engine Project & PBR Texture Set Importer)
+- 2. Add (Vehicle & Asset Configuration Presets, Impostors, Colliders & Clickspots)
+- 3. Modify (Base Prep, Sanitization, Modifiers, Materials, Chunking & Voxel Remesh)
+- 4. LODs (Tier Configuration, Compact Responsive Cards, Decimation & Testing)
+- 5. Engine Export (Single-Asset Multi-Engine Package Export, Live Link & Batch Export)
 """
 
 from __future__ import annotations
@@ -27,61 +27,502 @@ else:
         Panel = object
 
 try:
-    from ..core.config_presets import (
-        DEFAULT_CONFIG_PRESET_ID,
-        ConfigPresetManager,
-    )
-    from ..core.engine_import_presets import (
-        DEFAULT_ENGINE_IMPORT_PRESET_ID,
-        EngineImportPresetManager,
-    )
-    from ..core.lod_presets import (
-        DEFAULT_LOD_PRESET_ID,
-        LODPresetManager,
-    )
-    from ..core.pbr_presets import (
-        DEFAULT_PRESET_ID,
-        PBRExportPresetManager,
-        PBRImportPresetManager,
-    )
-    from .batch_panel import OMNIMESH_PT_export_batch
+    from ..core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
+    from ..core.engine_import_presets import DEFAULT_ENGINE_IMPORT_PRESET_ID, EngineImportPresetManager
+    from ..core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
+    from ..core.pbr_presets import DEFAULT_PRESET_ID, PBRExportPresetManager, PBRImportPresetManager
     from .operators import resolve_lod_context
     from .popovers import POPOVER_CLASSES
     from .utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
-    from core.config_presets import (
-        DEFAULT_CONFIG_PRESET_ID,
-        ConfigPresetManager,
-    )
-    from core.engine_import_presets import (
-        DEFAULT_ENGINE_IMPORT_PRESET_ID,
-        EngineImportPresetManager,
-    )
-    from core.lod_presets import (
-        DEFAULT_LOD_PRESET_ID,
-        LODPresetManager,
-    )
-    from core.pbr_presets import (
-        DEFAULT_PRESET_ID,
-        PBRExportPresetManager,
-        PBRImportPresetManager,
-    )
-    from ui.batch_panel import OMNIMESH_PT_export_batch
+    from core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
+    from core.engine_import_presets import DEFAULT_ENGINE_IMPORT_PRESET_ID, EngineImportPresetManager
+    from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
+    from core.pbr_presets import DEFAULT_PRESET_ID, PBRExportPresetManager, PBRImportPresetManager
     from ui.operators import resolve_lod_context
     from ui.popovers import POPOVER_CLASSES
     from ui.utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
 
 
-# =========================================================================
-# PANEL 1: IMPORT
-# =========================================================================
+# Tab Drawers
 
 
-class OMNIMESH_PT_import(Panel):
-    """Panel 1: Engine Project Importer and PBR Texture Set Importer."""
+def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
+    box_engine = layout.box()
+    box_engine.label(text="Engine Project Importer", icon="PACKAGE")
 
-    bl_label = "1. Import"
-    bl_idname = "OMNIMESH_PT_import"
+    eng_preset_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
+    is_builtin_eng = EngineImportPresetManager.is_builtin(eng_preset_id)
+
+    row_eng_preset = box_engine.row(align=True)
+    row_eng_preset.use_property_split = False
+    row_eng_preset.prop(props, "engine_import_preset", text="Preset")
+    row_eng_preset.operator("omnimesh.duplicate_engine_import_preset", text="", icon="DUPLICATE")
+    sub_del_eng = row_eng_preset.row(align=True)
+    sub_del_eng.enabled = not is_builtin_eng
+    sub_del_eng.operator("omnimesh.delete_engine_import_preset", text="", icon="X")
+    row_eng_preset.popover(panel="OMNIMESH_PT_popover_engine_import_preset", icon="PREFERENCES", text="")
+
+    row_eng_path = box_engine.row(align=True)
+    row_eng_path.use_property_split = False
+    row_eng_path.prop(props, "engine_import_directory", text="Path")
+
+    row_eng_act = box_engine.row(align=True)
+    row_eng_act.use_property_split = False
+    row_eng_act.scale_y = 1.2
+    row_eng_act.operator("omnimesh.import_engine_project", text="Import Engine Project", icon="IMPORT")
+
+    if props.last_engine_import_summary:
+        box_engine.label(text=props.last_engine_import_summary, icon="CHECKMARK")
+
+    box_pbr = layout.box()
+    box_pbr.label(text="PBR Texture Set Importer", icon="IMAGE_DATA")
+
+    pbr_preset_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
+    is_builtin_pbr = PBRImportPresetManager.is_builtin(pbr_preset_id)
+
+    row_preset = box_pbr.row(align=True)
+    row_preset.use_property_split = False
+    row_preset.prop(props, "pbr_import_preset", text="Preset")
+    op_dup_pbr = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
+    if op_dup_pbr is not None:
+        op_dup_pbr.preset_type = "IMPORT"
+    sub_del_pbr = row_preset.row(align=True)
+    sub_del_pbr.enabled = not is_builtin_pbr
+    sub_del_pbr.operator("lod_tool.delete_import_preset", text="", icon="X")
+    row_preset.popover(panel="OMNIMESH_PT_popover_import_preset", icon="PREFERENCES", text="")
+
+    row_path = box_pbr.row(align=True)
+    row_path.use_property_split = False
+    row_path.prop(props, "pbr_import_directory", text="Path")
+
+    row_btn = box_pbr.row(align=True)
+    row_btn.use_property_split = False
+    row_btn.scale_y = 1.2
+    row_btn.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
+
+
+# Tab 2: Add
+
+
+def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
+    cfg_props = getattr(props, "config_presets", None)
+    if cfg_props:
+        box_cfg = layout.box()
+        box_cfg.label(text="Vehicle & Asset Configurator", icon="PRESET")
+
+        cfg_id = getattr(cfg_props, "config_preset", "") or DEFAULT_CONFIG_PRESET_ID
+        cfg_is_builtin = ConfigPresetManager.is_builtin(cfg_id)
+
+        row_cfg_p = box_cfg.row(align=True)
+        row_cfg_p.use_property_split = False
+        row_cfg_p.prop(cfg_props, "config_preset", text="Preset")
+        row_cfg_p.operator("omnimesh.duplicate_config_preset", text="", icon="DUPLICATE")
+        sub_del_cfg = row_cfg_p.row(align=True)
+        sub_del_cfg.enabled = not cfg_is_builtin
+        sub_del_cfg.operator("omnimesh.delete_config_preset", text="", icon="X")
+        row_cfg_p.popover(panel="OMNIMESH_PT_popover_config_preset", icon="PREFERENCES", text="")
+
+        row_cfg_act = box_cfg.row(align=True)
+        row_cfg_act.use_property_split = False
+        row_cfg_act.scale_y = 1.25
+        row_cfg_act.operator("omnimesh.add_config_preset", text="Add Features", icon="ADD")
+
+        if cfg_props.last_spawn_summary:
+            box_cfg.label(text=cfg_props.last_spawn_summary, icon="CHECKMARK")
+
+    row_imp = layout.row(align=True)
+    row_imp.use_property_split = False
+    row_imp.scale_y = 1.25
+    row_imp.operator("lod_tool.generate_impostor", text="Generate Impostor", icon="IMAGE_PLANE")
+    row_imp.operator("lod_tool.remove_impostor", text="", icon="X")
+    row_imp.popover(panel="OMNIMESH_PT_popover_impostor", icon="PREFERENCES", text="")
+
+    row_col = layout.row(align=True)
+    row_col.use_property_split = False
+    row_col.scale_y = 1.25
+    row_col.operator("lod_tool.generate_collision_hulls", text="Generate Colliders", icon="MOD_PHYSICS")
+
+    base_name = resolve_effective_asset_name(context, props)
+    coll_name = f"{base_name}_Colliders" if base_name else ""
+    collider_count = 0
+    if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and coll_name:
+        target_coll = bpy.data.collections.get(coll_name)
+        if target_coll:
+            objs: Any = target_coll.objects
+            collider_count = len([o for o in objs if o.get("_is_collider", False) or "_Collider_" in o.name])
+    last_count = getattr(props, "last_generated_collider_count", 0)
+    if collider_count == 0 and isinstance(last_count, int) and last_count > 0:
+        collider_count = last_count
+
+    sub_del = row_col.row(align=True)
+    sub_del.enabled = collider_count > 0
+    sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
+    row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
+
+    int_props = getattr(props, "interaction", None)
+    if int_props:
+        box_int = layout.box()
+        box_int.label(text="Interaction Trigger / Clickspots", icon="GIZMO")
+        row_int_cfg = box_int.row(align=True)
+        row_int_cfg.use_property_split = False
+        row_int_cfg.prop(int_props, "role", text="")
+        row_int_cfg.prop(int_props, "shape", text="")
+        row_int_act = box_int.row(align=True)
+        row_int_act.use_property_split = False
+        row_int_act.scale_y = 1.2
+        row_int_act.operator("omnimesh.add_interaction_volume", text="Add Clickspot / Trigger", icon="ADD")
+
+
+# Tab 3: Modify
+
+
+def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
+    row_san = layout.row(align=True)
+    row_san.use_property_split = False
+    row_san.scale_y = 1.25
+    row_san.operator("lod_tool.clean_and_repair_mesh", text="Sanitize Base Mesh", icon="BRUSH_DATA")
+    row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
+
+    row_occ = layout.row(align=True)
+    row_occ.use_property_split = False
+    row_occ.scale_y = 1.2
+    row_occ.operator("lod_tool.cull_interior_faces", text="Remove Interior Polygons", icon="XRAY")
+
+    row_mat = layout.row(align=True)
+    row_mat.use_property_split = False
+    row_mat.scale_y = 1.25
+    row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
+    row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
+
+    box_chunk = layout.box()
+    box_chunk.label(text="Spatial Chunking (Large Assets)", icon="MESH_GRID")
+    row_chk_cfg = box_chunk.row(align=True)
+    row_chk_cfg.use_property_split = False
+    row_chk_cfg.prop(props, "chunk_cell_size", text="Cell (m)")
+    row_chk_cfg.prop(props, "chunk_partitioning_mode", text="")
+    row_chk_act = box_chunk.row(align=True)
+    row_chk_act.use_property_split = False
+    row_chk_act.scale_y = 1.2
+    row_chk_act.operator("lod_tool.spatial_chunk_and_generate", text="Partition & Chunk LOD0", icon="MESH_GRID")
+
+    box_vox = layout.box()
+    box_vox.label(text="Voxel Surface Reconstruction", icon="MOD_REMESH")
+    row_vox = box_vox.row(align=True)
+    row_vox.use_property_split = False
+    row_vox.scale_y = 1.2
+    row_vox.prop(props, "scan_remesh_voxel_size", text="Voxel (m)")
+    row_vox.operator("lod_tool.voxel_scan_cleanup", text="Voxel Reconstruct", icon="MOD_REMESH")
+
+
+# Tab 4: LODs
+
+
+def _draw_selection_banners(layout: Any, context: Any) -> None:
+    sel_objs = getattr(context, "selected_objects", []) or []
+    sel_meshes = [o for o in sel_objs if is_object_valid(o) and getattr(o, "type", "") == "MESH"]
+    if len(sel_meshes) > 1:
+        row_sync = layout.row(align=True)
+        row_sync.operator(
+            "lod_tool.sync_selection_settings",
+            text=f"Sync Settings to Selection ({len(sel_meshes)} meshes)",
+            icon="COMMUNITY",
+        )
+
+    active_obj = getattr(context, "active_object", None)
+    if active_obj and is_object_valid(active_obj):
+        lod_tool = getattr(active_obj, "lod_tool", None)
+        if lod_tool:
+            root_val = getattr(lod_tool, "lod_root_object", None)
+            if root_val and (getattr(lod_tool, "is_generated_lod", False) or "_LOD" in getattr(active_obj, "name", "")):
+                root_name = root_val.name if is_object_valid(root_val) else str(root_val)
+                row_nav = layout.row(align=True)
+                row_nav.label(text=f"Sub-LOD of '{root_name}'", icon="LINKED")
+                row_nav.operator("lod_tool.select_master_asset", text="Select Master", icon="RESTRICT_SELECT_OFF")
+
+
+def _calculate_base_tris(context: Any, props: Any, active_obj: Any) -> int:
+    base_tris = getattr(props, "base_triangles", 0) or getattr(props, "last_generated_base_tris", 0)
+    if isinstance(base_tris, (int, float)) and base_tris > 0:
+        return int(base_tris)
+
+    effective_asset = resolve_effective_asset_name(context, props)
+    l0_meshes = get_asset_base_meshes(context, effective_asset) if effective_asset else []
+    if l0_meshes:
+        return sum(
+            sum(len(p.vertices) - 2 for p in m.data.polygons)
+            for m in l0_meshes
+            if hasattr(m, "data") and hasattr(m.data, "polygons")
+        )
+    if (
+        active_obj
+        and getattr(active_obj, "type", "") == "MESH"
+        and hasattr(active_obj, "data")
+        and hasattr(active_obj.data, "polygons")
+    ):
+        return sum(len(p.vertices) - 2 for p in active_obj.data.polygons)
+    return 0
+
+
+def _draw_lod_card(box_lod: Any, tier: Any, idx: int, base_tris: int, total_tiers: int) -> bool:
+    card = box_lod.box()
+    card.use_property_split = False
+
+    row_hdr = card.row(align=True)
+    if idx > 0:
+        show_det = bool(getattr(tier, "show_details", False))
+        arrow_icon = "TRIA_DOWN" if show_det else "TRIA_RIGHT"
+        row_hdr.prop(tier, "show_details", text="", icon=arrow_icon, emboss=False)
+
+    is_solo = getattr(tier, "is_soloed", False)
+    solo_icon = "HIDE_OFF" if is_solo else "HIDE_ON"
+    op_s = row_hdr.operator("lod_tool.solo_tier", text="", icon=solo_icon, emboss=False)
+    op_s.tier_index = idx
+
+    tier_name = getattr(tier, "name", f"LOD{idx}")
+    actual_t = getattr(tier, "actual_tris", 0)
+
+    is_out_of_sync = False
+    last_target = getattr(tier, "last_baked_target_pct", -1.0)
+    if idx == 0:
+        state = "SOURCE"
+    elif last_target > 0.0 and abs(tier.target_tris_pct - last_target) > 0.01:
+        state = "OUT_OF_SYNC"
+        is_out_of_sync = True
+    elif actual_t > 0:
+        state = "BAKED"
+    else:
+        state = "PLANNED"
+
+    if getattr(tier, "is_impostor", False):
+        row_hdr.label(text=f"{tier_name} (Impostor)", icon="IMAGE_DATA")
+    elif actual_t > 0:
+        row_hdr.label(text=f"{tier_name}  •  {actual_t:,} tris", icon="MESH_DATA")
+    else:
+        target_calc = (
+            int(base_tris * (tier.target_tris_pct / 100.0)) if base_tris > 0 else getattr(tier, "target_tris", 0)
+        )
+        target_str = f"  •  ~{target_calc:,} tris" if target_calc > 0 else f"  •  {tier.target_tris_pct:.0f}%"
+        row_hdr.label(text=f"{tier_name}{target_str}", icon="MESH_DATA")
+
+    if state == "SOURCE":
+        row_hdr.label(text="Source")
+    elif state == "BAKED":
+        row_hdr.label(text="Baked")
+    elif state == "OUT_OF_SYNC":
+        row_hdr.label(text="Out of Sync")
+    else:
+        row_hdr.label(text="Planned")
+
+    if idx > 0 and total_tiers > 1:
+        op_del = row_hdr.operator("lod_tool.remove_lod_tier", text="", icon="X", emboss=False)
+        op_del.tier_index = idx
+
+    if idx > 0 and getattr(tier, "show_details", False):
+        target_calc = (
+            int(base_tris * (tier.target_tris_pct / 100.0)) if base_tris > 0 else getattr(tier, "target_tris", 0)
+        )
+        row_pct = card.row()
+        row_pct.prop(
+            tier,
+            "target_tris_pct",
+            text=f"Tris: {tier.target_tris_pct:.0f}%  (~{target_calc:,})",
+            slider=True,
+        )
+
+        row_dist = card.row()
+        dist_text = f"  ({tier.distance_m:.1f}m)" if tier.distance_m > 0 else ""
+        row_dist.prop(
+            tier,
+            "screen_size_pct",
+            text=f"Screen: {tier.screen_size_pct:.0f}%{dist_text}",
+            slider=True,
+        )
+
+    return is_out_of_sync
+
+
+def _draw_tab_lods(layout: Any, context: Any, props: Any) -> None:
+    if len(getattr(props, "lods", [])) == 0 and hasattr(context, "scene") and hasattr(context.scene, "lod_tool"):
+        if len(getattr(context.scene.lod_tool, "lods", [])) > 0:
+            props = context.scene.lod_tool
+
+    _draw_selection_banners(layout, context)
+
+    box_lod = layout.box()
+    box_lod.label(text="LOD Generation & Progression", icon="GEOMETRY_NODES")
+
+    lod_preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
+    is_builtin_lod = not LODPresetManager.is_user_preset(lod_preset_id)
+
+    row_preset = box_lod.row(align=True)
+    row_preset.use_property_split = False
+    row_preset.prop(props, "lod_preset", text="Preset")
+    op_dup_lod = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
+    if op_dup_lod is not None:
+        op_dup_lod.preset_type = "LOD"
+    sub_del_lod = row_preset.row(align=True)
+    sub_del_lod.enabled = not is_builtin_lod
+    sub_del_lod.operator("lod_tool.delete_lod_preset", text="", icon="X")
+    row_preset.popover(panel="OMNIMESH_PT_popover_lod_preset", icon="PREFERENCES", text="")
+
+    box_lod.prop(props, "tau_sse", text="Visual Stability (τ_sse)", slider=True)
+
+    active_obj = getattr(context, "active_object", None)
+    base_tris = _calculate_base_tris(context, props, active_obj)
+
+    has_out_of_sync = False
+    if props.lods:
+        for idx, tier in enumerate(props.lods):
+            if _draw_lod_card(box_lod, tier, idx, base_tris, len(props.lods)):
+                has_out_of_sync = True
+
+        row_cull = box_lod.row(align=True)
+        row_cull.prop(props, "cull_screen_size_pct", text="Cull at Screen Size", slider=True)
+
+        row_add = box_lod.row(align=True)
+        row_add.operator("lod_tool.add_lod_tier", text="Add LOD Tier", icon="ADD")
+    else:
+        box_info = box_lod.box()
+        box_info.label(text="No LOD tiers projected.", icon="INFO")
+        box_info.operator("lod_tool.reset_to_preset", text="Project From Preset", icon="FILE_REFRESH")
+
+    col_act = box_lod.column(align=True)
+    col_act.use_property_split = False
+    col_act.scale_y = 1.35
+    action_text = "Update Out-of-Sync LODs" if has_out_of_sync else "Generate All LODs"
+    op_gen = col_act.operator("lod_tool.generate_all", text=action_text, icon="GEOMETRY_NODES")
+    if op_gen is not None:
+        op_gen.only_out_of_sync = has_out_of_sync
+
+    # Interactive Simulation & Testing Section
+    _draw_lods_testing_content(layout, context, props)
+
+
+def _draw_lods_testing_content(layout: Any, context: Any, props: Any) -> None:
+    box_test = layout.box()
+    box_test.label(text="Interactive Simulation & Testing", icon="VIEW_CAMERA")
+
+    row_test = box_test.row(align=True)
+    row_test.use_property_split = False
+    row_test.scale_y = 1.15
+    if props.is_simulator_running:
+        row_test.operator("lod_tool.toggle_simulator", text="Stop Simulator", icon="CANCEL")
+    else:
+        row_test.operator("lod_tool.toggle_simulator", text="Live Simulator", icon="PLAY")
+
+    if props.is_split_active:
+        row_test.operator("lod_tool.toggle_split_preview", text="Exit Split", icon="CANCEL")
+    else:
+        row_test.operator("lod_tool.toggle_split_preview", text="A/B Split", icon="UV_SYNC_SELECT")
+
+    if props.is_split_active:
+        box_split = box_test.box()
+        box_split.use_property_split = True
+        box_split.use_property_decorate = False
+        box_split.prop(props, "split_compare_tier", text="Compare Tier")
+        box_split.prop(props, "split_ratio", text="Split Ratio", slider=True)
+
+    row_sweep = box_test.row(align=True)
+    row_sweep.use_property_split = False
+    row_sweep.prop(props, "virtual_distance_override", text="Distance (m)", slider=True)
+    v_dist = getattr(props, "virtual_distance_override", 0.0)
+    if isinstance(v_dist, (int, float)) and v_dist > 0.0:
+        row_sweep.operator("lod_tool.reset_virtual_distance", text="", icon="LOOP_BACK")
+    row_sweep.prop(props, "show_viewport_hud", text="", icon="WINDOW")
+
+    if isinstance(v_dist, (int, float)) and v_dist > 0.0 and getattr(props, "last_scrub_status", ""):
+        box_status = box_test.box()
+        box_status.scale_y = 0.85
+        row_status = box_status.row(align=True)
+        row_status.alignment = "CENTER"
+        row_status.label(text=props.last_scrub_status, icon="VIEW_CAMERA")
+
+
+# Tab 5: Export
+
+
+def _draw_tab_export(layout: Any, context: Any, props: Any) -> None:
+    box_exp = layout.box()
+    box_exp.label(text="Package Export", icon="EXPORT")
+
+    exp_preset_id = getattr(props, "pbr_export_preset", "") or DEFAULT_PRESET_ID
+    is_builtin_exp = PBRExportPresetManager.is_builtin(exp_preset_id)
+
+    row_preset = box_exp.row(align=True)
+    row_preset.use_property_split = False
+    row_preset.prop(props, "pbr_export_preset", text="Preset")
+    op_dup_exp = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
+    if op_dup_exp is not None:
+        op_dup_exp.preset_type = "EXPORT"
+    sub_del_exp = row_preset.row(align=True)
+    sub_del_exp.enabled = not is_builtin_exp
+    sub_del_exp.operator("lod_tool.delete_export_preset", text="", icon="X")
+    row_preset.popover(panel="OMNIMESH_PT_popover_export_preset", icon="PREFERENCES", text="")
+
+    row_path_exp = box_exp.row(align=True)
+    row_path_exp.use_property_split = False
+    row_path_exp.prop(props, "export_directory", text="Path")
+
+    row2_exp = box_exp.row(align=True)
+    row2_exp.use_property_split = False
+    row2_exp.scale_y = 1.2
+    row2_exp.operator("lod_tool.export_engine_package", text="Export", icon="PACKAGE")
+
+    row3_link = box_exp.row(align=True)
+    row3_link.use_property_split = False
+    row3_link.scale_y = 1.1
+    if not props.enable_live_sync:
+        row3_link.alert = False
+        row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Off", icon="RADIOBUT_OFF")
+    elif props.bridge_connected:
+        row3_link.alert = False
+        row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Active", icon="COLOR_GREEN")
+        row3_link.operator("lod_tool.sync_live_bridge", text="Sync Now", icon="FILE_REFRESH")
+    else:
+        row3_link.alert = True
+        row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Offline", icon="COLOR_RED")
+        row3_link.operator("lod_tool.sync_live_bridge", text="Retry Sync", icon="FILE_REFRESH")
+
+    if props.target_engine == "UNITY_6" and getattr(props, "engine_project_path", ""):
+        row_inst = box_exp.row(align=True)
+        row_inst.operator("lod_tool.install_companion_scripts", text="Install Engine Scripts", icon="SCRIPT")
+
+    _draw_batch_export_content(layout, context, props)
+
+
+def _draw_batch_export_content(layout: Any, context: Any, props: Any) -> None:
+    box_batch = layout.box()
+    box_batch.label(text="Batch Folder Export", icon="FILE_FOLDER")
+    row_src = box_batch.row(align=True)
+    row_src.use_property_split = False
+    row_src.prop(props, "batch_source_directory", text="Source")
+
+    row_dst = box_batch.row(align=True)
+    row_dst.use_property_split = False
+    row_dst.prop(props, "export_directory", text="Path")
+
+    row_act = box_batch.row(align=True)
+    row_act.use_property_split = False
+    row_act.scale_y = 1.2
+    if getattr(props, "is_batch_running", False):
+        row_act.operator("lod_tool.batch_cancel", text="Cancel Batch", icon="CANCEL")
+    else:
+        row_act.operator("lod_tool.batch_process", text="Batch Export", icon="PACKAGE")
+
+    if getattr(props, "is_batch_running", False):
+        box_status = box_batch.box()
+        box_status.label(text=props.batch_status_text, icon="TIME")
+
+
+# Central Panel
+
+
+class OMNIMESH_PT_main(Panel):
+    """OmniMesh Central Single-Panel with vertical icon tab navigation."""
+
+    bl_label = "OmniMesh"
+    bl_idname = "OMNIMESH_PT_main"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "OmniMesh"
@@ -91,593 +532,163 @@ class OMNIMESH_PT_import(Panel):
         if not bpy or not context or not self.layout:
             return
         layout = self.layout
-        props = context.scene.lod_tool
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = getattr(context.scene, "lod_tool", None)
+        if not props:
+            return
 
-        # 1. Engine / Project Importer (MSFS 2024 / 2020 Aircraft Packages)
-        box_engine = layout.box()
-        box_engine.label(text="Engine Project Importer", icon="PACKAGE")
+        main_row = layout.row()
 
-        # Row 1: [ Preset Dropdown ▾ ] [ Duplicate ] [ Delete ] [ ⚙️ Gear ]
-        eng_preset_id = getattr(props, "engine_import_preset", "") or DEFAULT_ENGINE_IMPORT_PRESET_ID
-        is_builtin_eng = EngineImportPresetManager.is_builtin(eng_preset_id)
+        # Left Column: Vertical Icon Navigation Tabs (Fixed width in UI units)
+        col_tabs = main_row.column(align=True)
+        col_tabs.ui_units_x = 2.0
+        col_tabs.scale_y = 1.35
+        col_tabs.prop(props, "ui_active_tab", expand=True, icon_only=True)
 
-        row_eng_preset = box_engine.row(align=True)
-        row_eng_preset.use_property_split = False
-        row_eng_preset.prop(props, "engine_import_preset", text="Preset")
-        row_eng_preset.operator("omnimesh.duplicate_engine_import_preset", text="", icon="DUPLICATE")
-        sub_del_eng = row_eng_preset.row(align=True)
-        sub_del_eng.enabled = not is_builtin_eng
-        sub_del_eng.operator("omnimesh.delete_engine_import_preset", text="", icon="X")
-        row_eng_preset.popover(panel="OMNIMESH_PT_popover_engine_import_preset", icon="PREFERENCES", text="")
+        # Right Column: Main Content Area (Expands to fill remaining panel width)
+        col_content = main_row.column()
+        active_tab = getattr(props, "ui_active_tab", "MODIFY")
 
-        # Row 2: Path Field [ //Project/ ] [ 📁 ]
-        row_eng_path = box_engine.row(align=True)
-        row_eng_path.use_property_split = False
-        row_eng_path.prop(props, "engine_import_directory", text="Path")
+        # In Tabs 2..5 (Add, Modify, LODs, Export): Render Asset Selector at Top
+        if active_tab != "IMPORT":
+            row_asset = col_content.row(align=True)
+            row_asset.use_property_split = False
+            row_asset.scale_y = 1.15
+            row_asset.prop(props, "active_asset", text="Asset", icon="OUTLINER_COLLECTION")
+            row_asset.operator("omnimesh.initialize_asset", text="", icon="ADD")
+            col_content.separator(factor=0.4)
 
-        # Row 3: Single prominent button [ Import Engine Project ]
-        row_eng_act = box_engine.row(align=True)
-        row_eng_act.use_property_split = False
-        row_eng_act.scale_y = 1.2
-        row_eng_act.operator("omnimesh.import_engine_project", text="Import Engine Project", icon="IMPORT")
-
-        if props.last_engine_import_summary:
-            box_engine.label(text=props.last_engine_import_summary, icon="CHECKMARK")
-
-        # 2. PBR Texture Set Importer
-        box_pbr = layout.box()
-        box_pbr.label(text="PBR Texture Set Importer", icon="IMAGE_DATA")
-
-        # Row 1: [ Preset Dropdown ▾ ] [ Duplicate ] [ Delete ] [ ⚙️ Gear ]
-        pbr_preset_id = getattr(props, "pbr_import_preset", "") or DEFAULT_PRESET_ID
-        is_builtin_pbr = PBRImportPresetManager.is_builtin(pbr_preset_id)
-
-        row_preset = box_pbr.row(align=True)
-        row_preset.use_property_split = False
-        row_preset.prop(props, "pbr_import_preset", text="Preset")
-        op_dup_pbr = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
-        if op_dup_pbr is not None:
-            op_dup_pbr.preset_type = "IMPORT"
-        sub_del_pbr = row_preset.row(align=True)
-        sub_del_pbr.enabled = not is_builtin_pbr
-        sub_del_pbr.operator("lod_tool.delete_import_preset", text="", icon="X")
-        row_preset.popover(panel="OMNIMESH_PT_popover_import_preset", icon="PREFERENCES", text="")
-
-        # Row 2: Path Field [ //Textures/ ] [ 📁 ]
-        row_path = box_pbr.row(align=True)
-        row_path.use_property_split = False
-        row_path.prop(props, "pbr_import_directory", text="Path")
-
-        # Row 3: [ Import PBR Textures ]
-        row_btn = box_pbr.row(align=True)
-        row_btn.use_property_split = False
-        row_btn.scale_y = 1.2
-        row_btn.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
+        if active_tab == "IMPORT":
+            _draw_tab_import(col_content, context, props)
+        elif active_tab == "ADD":
+            _draw_tab_add(col_content, context, props)
+        elif active_tab == "MODIFY":
+            _draw_tab_modify(col_content, context, props)
+        elif active_tab == "LODS":
+            _draw_tab_lods(col_content, context, props)
+        elif active_tab == "EXPORT":
+            _draw_tab_export(col_content, context, props)
 
 
-# =========================================================================
-# PANEL 2: ADD (Vehicle Config, Impostors, Colliders & Clickspots)
-# =========================================================================
+# Compatibility Wrappers
+
+
+class OMNIMESH_PT_active_asset(Panel):
+    """Compatibility wrapper for tests verifying active asset top header."""
+
+    bl_label = "Asset"
+    bl_idname = "OMNIMESH_PT_active_asset"
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context or not self.layout:
+            return
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = getattr(context.scene, "lod_tool", None)
+        if not props:
+            return
+        row = self.layout.row(align=True)
+        row.prop(props, "active_asset", text="Asset", icon="OUTLINER_COLLECTION")
+        row.operator("omnimesh.initialize_asset", text="", icon="ADD")
+
+
+class OMNIMESH_PT_import(Panel):
+    """Compatibility drawer for Import tab."""
+
+    bl_label = "1. Import"
+    bl_idname = "OMNIMESH_PT_import"
+
+    def draw(self, context: Any) -> None:
+        if not bpy or not context or not self.layout:
+            return
+        props = getattr(context.scene, "lod_tool", None)
+        if props:
+            _draw_tab_import(self.layout, context, props)
 
 
 class OMNIMESH_PT_add(Panel):
-    """Panel 2: Vehicle Configurator, Impostor Billboards, Collision Hulls & Interaction Volumes."""
+    """Compatibility drawer for Add tab."""
 
     bl_label = "2. Add"
     bl_idname = "OMNIMESH_PT_add"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "OmniMesh"
-    bl_order = 1
 
     def draw(self, context: Any) -> None:
         if not bpy or not context or not self.layout:
             return
-        layout = self.layout
         props, _, _ = resolve_lod_context(context)
         if not props:
-            props = context.scene.lod_tool
-
-        # 1. Vehicle & Asset Configurator
-        cfg_props = getattr(props, "config_presets", None)
-        if cfg_props:
-            box_cfg = layout.box()
-            box_cfg.label(text="Vehicle & Asset Configurator", icon="PRESET")
-
-            cfg_id = getattr(cfg_props, "config_preset", "") or DEFAULT_CONFIG_PRESET_ID
-            cfg_is_builtin = ConfigPresetManager.is_builtin(cfg_id)
-
-            row_cfg_p = box_cfg.row(align=True)
-            row_cfg_p.use_property_split = False
-            row_cfg_p.prop(cfg_props, "config_preset", text="Preset")
-            row_cfg_p.operator("omnimesh.duplicate_config_preset", text="", icon="DUPLICATE")
-            sub_del_cfg = row_cfg_p.row(align=True)
-            sub_del_cfg.enabled = not cfg_is_builtin
-            sub_del_cfg.operator("omnimesh.delete_config_preset", text="", icon="X")
-            row_cfg_p.popover(panel="OMNIMESH_PT_popover_config_preset", icon="PREFERENCES", text="")
-
-            row_cfg_act = box_cfg.row(align=True)
-            row_cfg_act.use_property_split = False
-            row_cfg_act.scale_y = 1.25
-            row_cfg_act.operator("omnimesh.add_config_preset", text="Add Features", icon="ADD")
-
-            if cfg_props.last_spawn_summary:
-                box_cfg.label(text=cfg_props.last_spawn_summary, icon="CHECKMARK")
-
-        # 2. Billboard / Octahedral Impostor Object
-        row_imp = layout.row(align=True)
-        row_imp.use_property_split = False
-        row_imp.scale_y = 1.25
-        row_imp.operator("lod_tool.generate_impostor", text="Generate Impostor", icon="IMAGE_PLANE")
-        row_imp.operator("lod_tool.remove_impostor", text="", icon="X")
-        row_imp.popover(panel="OMNIMESH_PT_popover_impostor", icon="PREFERENCES", text="")
-
-        # 3. Physics Collision Hulls
-        row_col = layout.row(align=True)
-        row_col.use_property_split = False
-        row_col.scale_y = 1.25
-        row_col.operator("lod_tool.generate_collision_hulls", text="Generate Colliders", icon="MOD_PHYSICS")
-
-        base_name = resolve_effective_asset_name(context, props)
-        coll_name = f"{base_name}_Colliders" if base_name else ""
-        collider_count = 0
-        if bpy and hasattr(bpy, "data") and hasattr(bpy.data, "collections") and coll_name:
-            target_coll = bpy.data.collections.get(coll_name)
-            if target_coll:
-                objs: Any = target_coll.objects
-                collider_count = len([o for o in objs if o.get("_is_collider", False) or "_Collider_" in o.name])
-        last_count = getattr(props, "last_generated_collider_count", 0)
-        if collider_count == 0 and isinstance(last_count, int) and last_count > 0:
-            collider_count = last_count
-
-        sub_del = row_col.row(align=True)
-        sub_del.enabled = collider_count > 0
-        sub_del.operator("lod_tool.remove_collision_hulls", text="", icon="X")
-        row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
-
-        # 4. Interaction Trigger / Clickspot Volumes
-        int_props = getattr(props, "interaction", None)
-        if int_props:
-            box_int = layout.box()
-            box_int.label(text="Interaction Trigger / Clickspots", icon="GIZMO")
-            row_int_cfg = box_int.row(align=True)
-            row_int_cfg.use_property_split = False
-            row_int_cfg.prop(int_props, "role", text="")
-            row_int_cfg.prop(int_props, "shape", text="")
-            row_int_act = box_int.row(align=True)
-            row_int_act.use_property_split = False
-            row_int_act.scale_y = 1.2
-            row_int_act.operator("omnimesh.add_interaction_volume", text="Add Clickspot / Trigger", icon="ADD")
-
-
-# =========================================================================
-# PANEL 3: MODIFY (Base Prep, Sanitization, Chunking & Voxel Remesh)
-# =========================================================================
+            props = getattr(context.scene, "lod_tool", None)
+        if props:
+            _draw_tab_add(self.layout, context, props)
 
 
 class OMNIMESH_PT_modify(Panel):
-    """Panel 3: Base Mesh Sanitization, Interior Culling, Materials, Spatial Chunking & Voxel Remesh."""
+    """Compatibility drawer for Modify tab."""
 
     bl_label = "3. Modify"
     bl_idname = "OMNIMESH_PT_modify"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "OmniMesh"
-    bl_order = 2
 
     def draw(self, context: Any) -> None:
         if not bpy or not context or not self.layout:
             return
-        layout = self.layout
         props, _, _ = resolve_lod_context(context)
         if not props:
-            props = context.scene.lod_tool
-
-        # 1. Asset Setup Row: Target Asset + Init + Scene Setup Popover
-        row_asset = layout.row(align=True)
-        row_asset.use_property_split = False
-        row_asset.prop(props, "active_asset", text="Target Asset", icon="OUTLINER_COLLECTION")
-        row_asset.operator("omnimesh.initialize_asset", text="", icon="COLLECTION_NEW")
-        row_asset.popover(panel="OMNIMESH_PT_popover_scene_setup", icon="PREFERENCES", text="")
-
-        # 2. Geometry Row: Mesh Sanitization + Gear Popover & Remove Interior Polygons
-        row_san = layout.row(align=True)
-        row_san.use_property_split = False
-        row_san.scale_y = 1.25
-        row_san.operator("lod_tool.clean_and_repair_mesh", text="Sanitize Base Mesh", icon="BRUSH_DATA")
-        row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
-
-        row_occ = layout.row(align=True)
-        row_occ.use_property_split = False
-        row_occ.scale_y = 1.2
-        row_occ.operator("lod_tool.cull_interior_faces", text="Remove Interior Polygons", icon="XRAY")
-
-        # 3. Materials Row: Material Cleanup + Gear Popover
-        row_mat = layout.row(align=True)
-        row_mat.use_property_split = False
-        row_mat.scale_y = 1.25
-        row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
-        row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
-
-        # 4. Spatial Chunking (Slice Large LOD0 Objects)
-        box_chunk = layout.box()
-        box_chunk.label(text="Spatial Chunking (Large Assets)", icon="MESH_GRID")
-        row_chk_cfg = box_chunk.row(align=True)
-        row_chk_cfg.use_property_split = False
-        row_chk_cfg.prop(props, "chunk_cell_size", text="Cell (m)")
-        row_chk_cfg.prop(props, "chunk_partitioning_mode", text="")
-        row_chk_act = box_chunk.row(align=True)
-        row_chk_act.use_property_split = False
-        row_chk_act.scale_y = 1.2
-        row_chk_act.operator("lod_tool.spatial_chunk_and_generate", text="Partition & Chunk LOD0", icon="MESH_GRID")
-
-        # 5. Voxel Surface Reconstruction (Watertight Scan Cleanup)
-        box_vox = layout.box()
-        box_vox.label(text="Voxel Surface Reconstruction", icon="MOD_REMESH")
-        row_vox = box_vox.row(align=True)
-        row_vox.use_property_split = False
-        row_vox.scale_y = 1.2
-        row_vox.prop(props, "scan_remesh_voxel_size", text="Voxel (m)")
-        row_vox.operator("lod_tool.voxel_scan_cleanup", text="Voxel Reconstruct", icon="MOD_REMESH")
-
-
-# =========================================================================
-# PANEL 4: LODs (Configuration, UIList, Decimation & Testing)
-# =========================================================================
+            props = getattr(context.scene, "lod_tool", None)
+        if props:
+            _draw_tab_modify(self.layout, context, props)
 
 
 class OMNIMESH_PT_lods(Panel):
-    """Panel 4: LOD Generation Pipeline and Compact Collapsible Cards."""
+    """Compatibility drawer for LODs tab."""
 
     bl_label = "4. LODs"
     bl_idname = "OMNIMESH_PT_lods"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "OmniMesh"
-    bl_order = 3
-
-    @classmethod
-    def _draw_selection_banners(cls, layout: Any, context: Any) -> None:
-        """Renders multi-selection sync button and sub-LOD hierarchy navigation banners."""
-        sel_objs = getattr(context, "selected_objects", []) or []
-        sel_meshes = [o for o in sel_objs if is_object_valid(o) and getattr(o, "type", "") == "MESH"]
-        if len(sel_meshes) > 1:
-            row_sync = layout.row(align=True)
-            row_sync.operator(
-                "lod_tool.sync_selection_settings",
-                text=f"Sync Settings to Selection ({len(sel_meshes)} meshes)",
-                icon="COMMUNITY",
-            )
-
-        active_obj = getattr(context, "active_object", None)
-        if active_obj and is_object_valid(active_obj):
-            lod_tool = getattr(active_obj, "lod_tool", None)
-            if lod_tool:
-                root_val = getattr(lod_tool, "lod_root_object", None)
-                if root_val and (
-                    getattr(lod_tool, "is_generated_lod", False) or "_LOD" in getattr(active_obj, "name", "")
-                ):
-                    root_name = root_val.name if is_object_valid(root_val) else str(root_val)
-                    row_nav = layout.row(align=True)
-                    row_nav.label(text=f"Sub-LOD of '{root_name}'", icon="LINKED")
-                    row_nav.operator("lod_tool.select_master_asset", text="Select Master", icon="RESTRICT_SELECT_OFF")
-
-    @classmethod
-    def _calculate_base_tris(cls, context: Any, props: Any, active_obj: Any) -> int:
-        """Pure read-only query calculating base triangle budget for LOD targets."""
-        base_tris = getattr(props, "base_triangles", 0) or getattr(props, "last_generated_base_tris", 0)
-        if base_tris > 0:
-            return int(base_tris)
-
-        effective_asset = resolve_effective_asset_name(context, props)
-        l0_meshes = get_asset_base_meshes(context, effective_asset) if effective_asset else []
-        if l0_meshes:
-            return sum(
-                sum(len(p.vertices) - 2 for p in m.data.polygons)
-                for m in l0_meshes
-                if hasattr(m, "data") and hasattr(m.data, "polygons")
-            )
-        if (
-            active_obj
-            and getattr(active_obj, "type", "") == "MESH"
-            and hasattr(active_obj, "data")
-            and hasattr(active_obj.data, "polygons")
-        ):
-            return sum(len(p.vertices) - 2 for p in active_obj.data.polygons)
-        return 0
-
-    @classmethod
-    def _draw_lod_card(cls, box_lod: Any, tier: Any, idx: int, base_tris: int, total_tiers: int) -> bool:
-        """Renders an individual collapsible LOD card and returns whether tier is out-of-sync."""
-        card = box_lod.box()
-        card.use_property_split = False
-
-        row_hdr = card.row(align=True)
-        if idx > 0:
-            show_det = bool(getattr(tier, "show_details", False))
-            arrow_icon = "TRIA_DOWN" if show_det else "TRIA_RIGHT"
-            row_hdr.prop(tier, "show_details", text="", icon=arrow_icon, emboss=False)
-
-        is_solo = getattr(tier, "is_soloed", False)
-        solo_icon = "HIDE_OFF" if is_solo else "HIDE_ON"
-        op_s = row_hdr.operator("lod_tool.solo_tier", text="", icon=solo_icon, emboss=False)
-        op_s.tier_index = idx
-
-        tier_name = getattr(tier, "name", f"LOD{idx}")
-        actual_t = getattr(tier, "actual_tris", 0)
-
-        # Determine card state badge
-        is_out_of_sync = False
-        last_target = getattr(tier, "last_baked_target_pct", -1.0)
-        if idx == 0:
-            state = "SOURCE"
-        elif last_target > 0.0 and abs(tier.target_tris_pct - last_target) > 0.01:
-            state = "OUT_OF_SYNC"
-            is_out_of_sync = True
-        elif actual_t > 0:
-            state = "BAKED"
-        else:
-            state = "PLANNED"
-
-        if getattr(tier, "is_impostor", False):
-            row_hdr.label(text=f"{tier_name} (Impostor)", icon="IMAGE_DATA")
-        elif actual_t > 0:
-            row_hdr.label(text=f"{tier_name}  •  {actual_t:,} tris", icon="MESH_DATA")
-        else:
-            target_calc = (
-                int(base_tris * (tier.target_tris_pct / 100.0)) if base_tris > 0 else getattr(tier, "target_tris", 0)
-            )
-            target_str = f"  •  ~{target_calc:,} tris" if target_calc > 0 else f"  •  {tier.target_tris_pct:.0f}%"
-            row_hdr.label(text=f"{tier_name}{target_str}", icon="MESH_DATA")
-
-        # State Badge
-        if state == "SOURCE":
-            row_hdr.label(text="Source")
-        elif state == "BAKED":
-            row_hdr.label(text="Baked")
-        elif state == "OUT_OF_SYNC":
-            row_hdr.label(text="Out of Sync")
-        else:
-            row_hdr.label(text="Planned")
-
-        if idx > 0 and total_tiers > 1:
-            op_del = row_hdr.operator("lod_tool.remove_lod_tier", text="", icon="X", emboss=False)
-            op_del.tier_index = idx
-
-        # Tuning sliders: only drawn when idx > 0 and tier.show_details is True
-        if idx > 0 and getattr(tier, "show_details", False):
-            target_calc = (
-                int(base_tris * (tier.target_tris_pct / 100.0)) if base_tris > 0 else getattr(tier, "target_tris", 0)
-            )
-            row_pct = card.row()
-            row_pct.prop(
-                tier,
-                "target_tris_pct",
-                text=f"Tris: {tier.target_tris_pct:.0f}%  (~{target_calc:,})",
-                slider=True,
-            )
-
-            row_dist = card.row()
-            dist_text = f"  ({tier.distance_m:.1f}m)" if tier.distance_m > 0 else ""
-            row_dist.prop(
-                tier,
-                "screen_size_pct",
-                text=f"Screen: {tier.screen_size_pct:.0f}%{dist_text}",
-                slider=True,
-            )
-
-        return is_out_of_sync
 
     def draw(self, context: Any) -> None:
         if not bpy or not context or not self.layout:
             return
-        layout = self.layout
         props, _, _ = resolve_lod_context(context)
-        if not props or (len(getattr(props, "lods", [])) == 0 and len(getattr(context.scene.lod_tool, "lods", [])) > 0):
-            props = context.scene.lod_tool
-
-        self._draw_selection_banners(layout, context)
-
-        box_lod = layout.box()
-        box_lod.label(text="LOD Generation & Progression", icon="GEOMETRY_NODES")
-
-        # Row 0: Asset Selection & Discovery
-        row_asset = box_lod.row(align=True)
-        row_asset.use_property_split = False
-        row_asset.prop(props, "active_asset", text="Asset")
-
-        # Row 1: [ Preset Dropdown ▾ ] [ Duplicate ] [ Delete ] [ ⚙️ Gear ]
-        lod_preset_id = getattr(props, "lod_preset", "") or DEFAULT_LOD_PRESET_ID
-        is_builtin_lod = not LODPresetManager.is_user_preset(lod_preset_id)
-
-        row_preset = box_lod.row(align=True)
-        row_preset.use_property_split = False
-        row_preset.prop(props, "lod_preset", text="Preset")
-        op_dup_lod = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
-        if op_dup_lod is not None:
-            op_dup_lod.preset_type = "LOD"
-        sub_del_lod = row_preset.row(align=True)
-        sub_del_lod.enabled = not is_builtin_lod
-        sub_del_lod.operator("lod_tool.delete_lod_preset", text="", icon="X")
-        row_preset.popover(panel="OMNIMESH_PT_popover_lod_preset", icon="PREFERENCES", text="")
-
-        # Row 2: Visual Stability (tau_sse) slider directly below preset
-        box_lod.prop(props, "tau_sse", text="Visual Stability (τ_sse)", slider=True)
-
-        active_obj = getattr(context, "active_object", None)
-        base_tris = self._calculate_base_tris(context, props, active_obj)
-
-        has_out_of_sync = False
-        if props.lods:
-            for idx, tier in enumerate(props.lods):
-                if self._draw_lod_card(box_lod, tier, idx, base_tris, len(props.lods)):
-                    has_out_of_sync = True
-
-            # Cull Screen Size directly below the final LOD card
-            row_cull = box_lod.row(align=True)
-            row_cull.prop(props, "cull_screen_size_pct", text="Cull at Screen Size", slider=True)
-
-            row_add = box_lod.row(align=True)
-            row_add.operator("lod_tool.add_lod_tier", text="Add LOD Tier", icon="ADD")
-        else:
-            box_info = box_lod.box()
-            box_info.label(text="No LOD tiers projected.", icon="INFO")
-            box_info.operator("lod_tool.reset_to_preset", text="Project From Preset", icon="FILE_REFRESH")
-
-        # Single Prominent Action Button at Bottom of Panel 3
-        col_act = box_lod.column(align=True)
-        col_act.use_property_split = False
-        col_act.scale_y = 1.35
-        action_text = "Update Out-of-Sync LODs" if has_out_of_sync else "Generate All LODs"
-        op_gen = col_act.operator("lod_tool.generate_all", text=action_text, icon="GEOMETRY_NODES")
-        if op_gen is not None:
-            op_gen.only_out_of_sync = has_out_of_sync
+        if not props:
+            props = getattr(context.scene, "lod_tool", None)
+        if props:
+            _draw_tab_lods(self.layout, context, props)
 
 
 class OMNIMESH_PT_lods_testing(Panel):
-    """Subpanel: Testing & Viewport Inspection Tools."""
+    """Compatibility drawer for LODs testing section."""
 
     bl_label = "Testing & Inspection"
     bl_idname = "OMNIMESH_PT_lods_testing"
-    bl_parent_id = "OMNIMESH_PT_lods"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "OmniMesh"
-    bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context: Any) -> None:
         if not bpy or not context or not self.layout:
             return
-        layout = self.layout
-        props = context.scene.lod_tool
-
-        row_test = layout.row(align=True)
-        row_test.use_property_split = False
-        row_test.scale_y = 1.15
-        if props.is_simulator_running:
-            row_test.operator("lod_tool.toggle_simulator", text="Stop Simulator", icon="CANCEL")
-        else:
-            row_test.operator("lod_tool.toggle_simulator", text="Live Simulator", icon="PLAY")
-
-        if props.is_split_active:
-            row_test.operator("lod_tool.toggle_split_preview", text="Exit Split", icon="CANCEL")
-        else:
-            row_test.operator("lod_tool.toggle_split_preview", text="A/B Split", icon="UV_SYNC_SELECT")
-
-        # Dynamic A/B Split Controls
-        if props.is_split_active:
-            box_split = layout.box()
-            box_split.use_property_split = True
-            box_split.use_property_decorate = False
-            box_split.prop(props, "split_compare_tier", text="Compare Tier")
-            box_split.prop(props, "split_ratio", text="Split Ratio", slider=True)
-
-        # Virtual Distance Scrubber & HUD Controls
-        row_sweep = layout.row(align=True)
-        row_sweep.use_property_split = False
-        row_sweep.prop(props, "virtual_distance_override", text="Distance (m)", slider=True)
-        if props.virtual_distance_override > 0.0:
-            row_sweep.operator("lod_tool.reset_virtual_distance", text="", icon="LOOP_BACK")
-        row_sweep.prop(props, "show_viewport_hud", text="", icon="WINDOW")
-
-        # Live Scrubber Status Badge
-        if props.virtual_distance_override > 0.0 and getattr(props, "last_scrub_status", ""):
-            box_status = layout.box()
-            box_status.scale_y = 0.85
-            row_status = box_status.row(align=True)
-            row_status.alignment = "CENTER"
-            row_status.label(text=props.last_scrub_status, icon="VIEW_CAMERA")
-
-
-# =========================================================================
-# PANEL 5: ENGINE EXPORT (Single Asset Package Export & Live Link)
-# =========================================================================
+        props = getattr(context.scene, "lod_tool", None)
+        if props:
+            _draw_lods_testing_content(self.layout, context, props)
 
 
 class OMNIMESH_PT_export(Panel):
-    """Panel 5: Single Asset Multi-Engine Export, PBR Texture Channel Packing & Live Bridge."""
+    """Compatibility drawer for Export tab."""
 
     bl_label = "5. Engine Export"
     bl_idname = "OMNIMESH_PT_export"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "OmniMesh"
-    bl_order = 4
 
     def draw(self, context: Any) -> None:
         if not bpy or not context or not self.layout:
             return
-        layout = self.layout
         props, _, _ = resolve_lod_context(context)
         if not props:
-            props = context.scene.lod_tool
-
-        box_exp = layout.box()
-        box_exp.label(text="Package Export", icon="EXPORT")
-
-        # Row 1: [ Preset Dropdown ▾ ] [ Duplicate ] [ Delete ] [ ⚙️ Gear ]
-        exp_preset_id = getattr(props, "pbr_export_preset", "") or DEFAULT_PRESET_ID
-        is_builtin_exp = PBRExportPresetManager.is_builtin(exp_preset_id)
-
-        row_preset = box_exp.row(align=True)
-        row_preset.use_property_split = False
-        row_preset.prop(props, "pbr_export_preset", text="Preset")
-        op_dup_exp = row_preset.operator("lod_tool.duplicate_preset", text="", icon="DUPLICATE")
-        if op_dup_exp is not None:
-            op_dup_exp.preset_type = "EXPORT"
-        sub_del_exp = row_preset.row(align=True)
-        sub_del_exp.enabled = not is_builtin_exp
-        sub_del_exp.operator("lod_tool.delete_export_preset", text="", icon="X")
-        row_preset.popover(panel="OMNIMESH_PT_popover_export_preset", icon="PREFERENCES", text="")
-
-        # Row 2: Path Field [ //Export/ ] [ 📁 ]
-        row_path_exp = box_exp.row(align=True)
-        row_path_exp.use_property_split = False
-        row_path_exp.prop(props, "export_directory", text="Path")
-
-        # Row 3: [ Export ]
-        row2_exp = box_exp.row(align=True)
-        row2_exp.use_property_split = False
-        row2_exp.scale_y = 1.2
-        row2_exp.operator("lod_tool.export_engine_package", text="Export", icon="PACKAGE")
-
-        # Row 3: Live Link Status / Toggle
-        row3_link = box_exp.row(align=True)
-        row3_link.use_property_split = False
-        row3_link.scale_y = 1.1
-        if not props.enable_live_sync:
-            row3_link.alert = False
-            row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Off", icon="RADIOBUT_OFF")
-        elif props.bridge_connected:
-            row3_link.alert = False
-            row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Active", icon="COLOR_GREEN")
-            row3_link.operator("lod_tool.sync_live_bridge", text="Sync Now", icon="FILE_REFRESH")
-        else:
-            row3_link.alert = True
-            row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Offline", icon="COLOR_RED")
-            row3_link.operator("lod_tool.sync_live_bridge", text="Retry Sync", icon="FILE_REFRESH")
-
-        if props.target_engine == "UNITY_6" and getattr(props, "engine_project_path", ""):
-            row_inst = box_exp.row(align=True)
-            row_inst.operator("lod_tool.install_companion_scripts", text="Install Engine Scripts", icon="SCRIPT")
+            props = getattr(context.scene, "lod_tool", None)
+        if props:
+            _draw_tab_export(self.layout, context, props)
 
 
-# Strict Parent-First Topological Registration Order
-
-PRIMARY_PANELS = (
-    OMNIMESH_PT_import,
-    OMNIMESH_PT_add,
-    OMNIMESH_PT_modify,
-    OMNIMESH_PT_lods,
-    OMNIMESH_PT_export,
-)
-
-SUBPANEL_CLASSES = (
-    OMNIMESH_PT_lods_testing,
-    OMNIMESH_PT_export_batch,
-)
-
-PANEL_CLASSES = PRIMARY_PANELS + SUBPANEL_CLASSES + POPOVER_CLASSES
+# Registration lists: In the active N-Panel, ONLY the unified OMNIMESH_PT_main is registered!
+PRIMARY_PANELS = (OMNIMESH_PT_main,)
+SUBPANEL_CLASSES: tuple[Any, ...] = ()
+PANEL_CLASSES = PRIMARY_PANELS + POPOVER_CLASSES
 
 
 def register_panel() -> None:

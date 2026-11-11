@@ -31,7 +31,7 @@ try:
     from ..core.textures import TextureChannelPacker, TexturePoolManager
     from ..exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
     from ..exporters.manager import ExporterManager
-    from .utils import resolve_effective_asset_name, resolve_lod_context
+    from .utils import get_lod0_mesh_objects, resolve_effective_asset_name, resolve_lod_context
 except (ImportError, ValueError):
     from bridges.manager import BridgeManager
     from core.animations import AnimationRigSanitizer
@@ -40,7 +40,7 @@ except (ImportError, ValueError):
     from core.textures import TextureChannelPacker, TexturePoolManager
     from exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
     from exporters.manager import ExporterManager
-    from ui.utils import resolve_effective_asset_name, resolve_lod_context
+    from ui.utils import get_lod0_mesh_objects, resolve_effective_asset_name, resolve_lod_context
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,9 @@ class LOD_OT_pack_pbr_textures(Operator):
         target_engine = props.target_engine
 
         materials: set[Any] = set()
-        objs_to_check = list(context.selected_objects) if getattr(context, "selected_objects", None) else []
+        objs_to_check = get_lod0_mesh_objects(context) or (
+            list(context.selected_objects) if getattr(context, "selected_objects", None) else []
+        )
         if not objs_to_check and getattr(context, "active_object", None):
             objs_to_check.append(context.active_object)
         if not objs_to_check and len(props.lods) > 0:
@@ -323,7 +325,10 @@ class LOD_OT_sync_live_bridge(Operator):
         if not props:
             return {"CANCELLED"}
         export_dir = bpy.path.abspath(props.export_directory)
-        asset_name = props.export_base_name or "SM_Asset"
+        eff_name = resolve_effective_asset_name(context, props)
+        asset_name = (
+            (eff_name if eff_name and eff_name not in {"AUTO", "NONE"} else "") or props.export_base_name or "SM_Asset"
+        )
         target = props.target_engine
         proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
 

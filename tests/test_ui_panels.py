@@ -25,10 +25,7 @@ from ui.operators import (
     is_object_valid,
 )
 from ui.panel import (
-    OMNIMESH_PT_add,
-    OMNIMESH_PT_export,
-    OMNIMESH_PT_import,
-    OMNIMESH_PT_lods,
+    OMNIMESH_PT_main,
     OMNIMESH_PT_modify,
     PANEL_CLASSES,
     PRIMARY_PANELS,
@@ -41,34 +38,11 @@ from ui.properties import register_properties, unregister_properties
 
 
 def test_panel_class_hierarchy_and_order():
-    """Verify panel architecture has correct root panels, subpanels, popovers, bl_order, and registration order."""
-    # Root Panels
-    assert OMNIMESH_PT_import.bl_idname == "OMNIMESH_PT_import"
-    assert OMNIMESH_PT_import.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_import.bl_order == 0
-
-    assert OMNIMESH_PT_add.bl_idname == "OMNIMESH_PT_add"
-    assert OMNIMESH_PT_add.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_add.bl_order == 1
-
-    assert OMNIMESH_PT_modify.bl_idname == "OMNIMESH_PT_modify"
-    assert OMNIMESH_PT_modify.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_modify.bl_order == 2
-
-    assert OMNIMESH_PT_lods.bl_idname == "OMNIMESH_PT_lods"
-    assert OMNIMESH_PT_lods.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_lods.bl_order == 3
-
-    assert OMNIMESH_PT_export.bl_idname == "OMNIMESH_PT_export"
-    assert OMNIMESH_PT_export.bl_category == "OmniMesh"
-    assert OMNIMESH_PT_export.bl_order == 4
-
-    # Subpanels (testing subpanel under Panel 4, Batch export subpanel under Panel 5)
-    assert len(SUBPANEL_CLASSES) == 2
-    assert SUBPANEL_CLASSES[0].bl_idname == "OMNIMESH_PT_lods_testing"
-    assert SUBPANEL_CLASSES[0].bl_parent_id == "OMNIMESH_PT_lods"
-    assert SUBPANEL_CLASSES[1].bl_idname == "OMNIMESH_PT_export_batch"
-    assert SUBPANEL_CLASSES[1].bl_parent_id == "OMNIMESH_PT_export"
+    """Verify panel architecture has unified root panel, popovers, bl_order, and registration order."""
+    # Root Unified Panel
+    assert OMNIMESH_PT_main.bl_idname == "OMNIMESH_PT_main"
+    assert OMNIMESH_PT_main.bl_category == "OmniMesh"
+    assert OMNIMESH_PT_main.bl_order == 0
 
     # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
     assert len(POPOVER_CLASSES) == 13
@@ -76,23 +50,16 @@ def test_panel_class_hierarchy_and_order():
         assert getattr(popover_cls, "bl_space_type", None) == "VIEW_3D"
         assert getattr(popover_cls, "bl_region_type", None) == "HEADER"
         assert getattr(popover_cls, "bl_ui_units_x", None) in {16, 18, 20, 22}
-        # Popovers must NOT have bl_category or bl_parent_id
         assert not hasattr(popover_cls, "bl_category")
         assert not hasattr(popover_cls, "bl_parent_id")
 
-    # Registration tuple (parent-first topological order)
-    assert len(PRIMARY_PANELS) == 5
-    assert len(SUBPANEL_CLASSES) == 2
-    assert len(PANEL_CLASSES) == 20
-    assert PANEL_CLASSES[0] is OMNIMESH_PT_import
-    assert PANEL_CLASSES[1] is OMNIMESH_PT_add
-    assert PANEL_CLASSES[2] is OMNIMESH_PT_modify
-    assert PANEL_CLASSES[3] is OMNIMESH_PT_lods
-    assert PANEL_CLASSES[4] is OMNIMESH_PT_export
-    assert PANEL_CLASSES[5] is SUBPANEL_CLASSES[0]
-    assert PANEL_CLASSES[6] is SUBPANEL_CLASSES[1]
+    # Registration tuple
+    assert len(PRIMARY_PANELS) == 1
+    assert len(SUBPANEL_CLASSES) == 0
+    assert len(PANEL_CLASSES) == 14
+    assert PANEL_CLASSES[0] is OMNIMESH_PT_main
     for idx, pop_cls in enumerate(POPOVER_CLASSES):
-        assert PANEL_CLASSES[7 + idx] is pop_cls
+        assert PANEL_CLASSES[1 + idx] is pop_cls
 
 
 def test_operator_helpers_mocked():
@@ -672,3 +639,49 @@ def test_cull_interior_faces_and_multi_mesh_modify_ops(monkeypatch):
     assert chunk_ops.LOD_OT_voxel_scan_cleanup.poll(mock_ctx) is True
     assert op_vox.execute(mock_ctx) == {"FINISHED"}
     assert mock_bpy.ops.object.voxel_remesh.call_count == 2
+
+
+def test_main_panel_tab_switching_and_target_asset_visibility(monkeypatch):
+    """Verify OMNIMESH_PT_main draws vertical tab bar and scopes Target Asset across tabs."""
+    import ui.panel as panel_mod
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
+
+    main_panel = OMNIMESH_PT_main()
+    mock_layout = MagicMock()
+    mock_main_row, mock_col_tabs, mock_col_content = MagicMock(), MagicMock(), MagicMock()
+    mock_layout.row.return_value = mock_main_row
+    mock_main_row.column.side_effect = lambda *a, **kw: mock_col_tabs if kw.get("align", False) else mock_col_content
+    cast(Any, main_panel).layout = mock_layout
+
+    mock_ctx = MagicMock()
+    mock_props = MagicMock()
+    mock_props.active_asset = "Fuselage"
+    mock_props.export_base_name = "Fuselage"
+    mock_ctx.scene.lod_tool = mock_props
+    monkeypatch.setattr(panel_mod, "resolve_lod_context", lambda ctx: (mock_props, None, False))
+
+    # 1. Null guards
+    cast(Any, main_panel).layout = None
+    main_panel.draw(None)
+    cast(Any, main_panel).layout = mock_layout
+
+    # 2. Iterate through all 5 workflow tabs
+    for tab_id in ("IMPORT", "ADD", "MODIFY", "LODS", "EXPORT"):
+        mock_props.ui_active_tab = tab_id
+        mock_col_content.reset_mock()
+        main_panel.draw(mock_ctx)
+
+        # Tab navigation prop always requested with fixed width
+        assert mock_col_tabs.ui_units_x == 2.0
+        mock_col_tabs.prop.assert_called_with(mock_props, "ui_active_tab", expand=True, icon_only=True)
+
+        # Target Asset selector presence depends on tab
+        has_target_asset = any(
+            len(c.args) > 1 and c.args[1] == "active_asset" for c in mock_col_content.row().prop.call_args_list
+        )
+        if tab_id == "IMPORT":
+            assert not has_target_asset
+        else:
+            assert has_target_asset

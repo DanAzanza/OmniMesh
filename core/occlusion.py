@@ -182,6 +182,7 @@ class HardenedOcclusionCuller:
         bm.faces.ensure_lookup_table()
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
+        bm.normal_update()
         total_initial_faces = len(bm.faces)
 
         # 1. Evaluate Material Transparency Table
@@ -203,7 +204,7 @@ class HardenedOcclusionCuller:
 
         # Build BVH tree strictly over opaque geometry with explicit face index mapping
         if len(opaque_faces) == len(bm.faces):
-            bvh_opaque = BVHTree.FromBMesh(bm, epsilon=1e-5)
+            bvh_opaque = BVHTree.FromBMesh(bm, epsilon=0.0)
             opaque_face_map: list[int] = [f.index for f in bm.faces]
         else:
             # Construct isolated BMesh of opaque faces only for accurate raycasts
@@ -223,7 +224,7 @@ class HardenedOcclusionCuller:
                     except ValueError:
                         pass
                 temp_bm.faces.ensure_lookup_table()
-                bvh_opaque = BVHTree.FromBMesh(temp_bm, epsilon=1e-5)
+                bvh_opaque = BVHTree.FromBMesh(temp_bm, epsilon=0.0)
             finally:
                 temp_bm.free()
 

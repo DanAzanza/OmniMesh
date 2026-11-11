@@ -57,11 +57,17 @@ def in_blender_sandbox() -> Generator[bpy.types.Scene | None, None, None]:
     if scene_props:
         scene_props.lods.clear()
         scene_props.is_configured = False
+        with contextlib.suppress(Exception):
+            scene_props.active_asset = "AUTO"
+            scene_props.export_base_name = ""
     if win is None and orig_scene is not None:
         orig_props = getattr(orig_scene, "lod_tool", None)
         if orig_props:
             orig_props.lods.clear()
             orig_props.is_configured = False
+            with contextlib.suppress(Exception):
+                orig_props.active_asset = "AUTO"
+                orig_props.export_base_name = ""
 
     try:
         yield test_scene
@@ -89,9 +95,18 @@ def in_blender_sandbox() -> Generator[bpy.types.Scene | None, None, None]:
                     bpy.data.meshes.remove(mesh_data, do_unlink=True)
 
             for coll in list(scn.collection.children):
-                for sub_obj in list(coll.objects):
-                    bpy.data.objects.remove(sub_obj, do_unlink=True)
+                for sub_obj in list(getattr(coll, "all_objects", coll.objects)):
+                    with contextlib.suppress(Exception):
+                        bpy.data.objects.remove(sub_obj, do_unlink=True)
                 bpy.data.collections.remove(coll)
+
+        for coll in list(bpy.data.collections):
+            if getattr(coll, "name", "") not in {"Collection", "Scene Collection"}:
+                for sub_obj in list(getattr(coll, "all_objects", coll.objects)):
+                    with contextlib.suppress(Exception):
+                        bpy.data.objects.remove(sub_obj, do_unlink=True)
+                with contextlib.suppress(Exception):
+                    bpy.data.collections.remove(coll)
 
         bpy.data.scenes.remove(test_scene, do_unlink=True)
 

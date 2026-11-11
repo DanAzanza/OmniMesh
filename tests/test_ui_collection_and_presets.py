@@ -116,10 +116,10 @@ def test_panel2_modify_collection_first_and_lod0_only(monkeypatch):
 
 
 def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
-    """Verify that Panel 2 renders the active_asset dropdown and strictly scopes LOD0 resolution."""
+    """Verify that OMNIMESH_PT_main renders the active_asset dropdown in non-IMPORT tabs and scopes LOD0."""
     import ui.panel as panel_mod
     import ui.utils as ui_utils
-    from ui.panel import OMNIMESH_PT_modify
+    from ui.panel import OMNIMESH_PT_main
     from ui.utils import get_lod0_mesh_objects
 
     mock_bpy = MagicMock()
@@ -148,22 +148,46 @@ def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
     mock_context.selected_objects = []
 
     mock_props = MagicMock()
+    mock_props.ui_active_tab = "MODIFY"
     mock_props.active_asset = "Airframe"
     mock_props.export_base_name = "Airframe"
     mock_context.scene.lod_tool = mock_props
 
-    # 1. Panel 2 draw renders active_asset prop
-    panel = OMNIMESH_PT_modify()
+    # 1. OMNIMESH_PT_main draw renders active_asset prop in MODIFY tab
+    main_panel = OMNIMESH_PT_main()
+    main_panel.draw(None)
     mock_layout = MagicMock()
-    mock_row = MagicMock()
-    mock_layout.row.return_value = mock_row
-    cast(Any, panel).layout = mock_layout
-    panel.draw(mock_context)
+    mock_main_row, mock_col_tabs, mock_col_content, mock_row = (
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+    )
+    mock_layout.row.return_value = mock_main_row
+    mock_main_row.column.side_effect = lambda *args, **kwargs: (
+        mock_col_tabs if kwargs.get("align", False) else mock_col_content
+    )
+    mock_col_content.row.return_value = mock_row
 
-    # Verify active_asset is rendered in the first row
-    mock_row.prop.assert_any_call(mock_props, "active_asset", text="Target Asset", icon="OUTLINER_COLLECTION")
+    cast(Any, main_panel).layout = mock_layout
+    monkeypatch.setattr(panel_mod, "resolve_lod_context", lambda _ctx: (None, None, False))
+    main_panel.draw(mock_context)
+
+    # Verify vertical icon tab prop is rendered in left column
+    mock_col_tabs.prop.assert_any_call(mock_props, "ui_active_tab", expand=True, icon_only=True)
+
+    # Verify active_asset is rendered in the content area for MODIFY tab
+    mock_row.prop.assert_any_call(mock_props, "active_asset", text="Asset", icon="OUTLINER_COLLECTION")
+
+    # Verify active_asset is NOT rendered when ui_active_tab is IMPORT
+    mock_props.ui_active_tab = "IMPORT"
+    mock_row.reset_mock()
+    main_panel.draw(mock_context)
+    call_active_asset = [c for c in mock_row.prop.call_args_list if len(c.args) > 1 and c.args[1] == "active_asset"]
+    assert len(call_active_asset) == 0
 
     # 2. Verify scoping to active_asset
+    mock_props.ui_active_tab = "MODIFY"
     meshes = get_lod0_mesh_objects(mock_context)
     assert len(meshes) == 1
     assert meshes[0].name == "Airframe"
@@ -344,7 +368,7 @@ def test_msfs_panel_removed():
 
     subpanel_names = [cls.bl_idname for cls in SUBPANEL_CLASSES]
     assert "OMNIMESH_PT_export_msfs_spatial" not in subpanel_names
-    assert len(subpanel_names) == 2
+    assert len(subpanel_names) == 0
 
 
 def test_lods_compact_card_show_details(monkeypatch):

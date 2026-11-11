@@ -56,8 +56,9 @@ else:
         def _mock_prop(**kwargs: Any) -> Any:
             return None
 
-        BoolProperty = CollectionProperty = EnumProperty = _mock_prop
-        FloatProperty = FloatVectorProperty = IntProperty = PointerProperty = StringProperty = _mock_prop
+        BoolProperty = CollectionProperty = EnumProperty = FloatProperty = FloatVectorProperty = IntProperty = (
+            PointerProperty
+        ) = StringProperty = _mock_prop
 
 
 class LODToolSettings(PropertyGroup):
@@ -83,6 +84,12 @@ class LODToolSettings(PropertyGroup):
         items=get_asset_enum_items,
         description="Target root asset collection for LOD configuration and generation",
         update=lambda self, context: callbacks.on_active_asset_updated(self, context),
+    )
+    ui_active_tab: EnumProperty(
+        name="Workflow Tab",
+        items=enums.OMNIMESH_UI_TAB_ITEMS,
+        default="MODIFY",
+        description="Active OmniMesh workflow tab",
     )
     preserve_pivot_empty: BoolProperty(
         name="Preserve Pivot Empty",

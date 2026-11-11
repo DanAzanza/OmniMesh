@@ -11,6 +11,14 @@ LOD_GENERATION_SOURCE_ITEMS: list[tuple[str, str, str]] = [
     ),
 ]
 
+OMNIMESH_UI_TAB_ITEMS: list[tuple[str, str, str, str, int]] = [
+    ("IMPORT", "Import", "Import", "IMPORT", 0),
+    ("ADD", "Add", "Add", "ADD", 1),
+    ("MODIFY", "Modify", "Modify", "TOOL_SETTINGS", 2),
+    ("LODS", "LODs", "LODs", "MOD_DECIM", 3),
+    ("EXPORT", "Export", "Export", "EXPORT", 4),
+]
+
 TARGET_ENGINE_ITEMS: list[tuple[str, str, str]] = [
     ("MSFS_2024", "MSFS 2024 (glTF + XML)", "Microsoft Flight Simulator 2024 glTF and ModelInfo XML standard"),
     ("UE5", "Unreal Engine 5 (FBX)", "Epic Games Unreal Engine 5 LODGroup FBX hierarchy"),

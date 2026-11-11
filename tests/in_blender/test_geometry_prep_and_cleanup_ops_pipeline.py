@@ -177,7 +177,7 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
             # Create outer cube and interior occluded cube in the same mesh
             mesh = bpy.data.meshes.new("NestedMesh")
             obj = bpy.data.objects.new("SM_Nested", mesh)
-            scene.collection.objects.link(obj)
+            bpy.context.scene.collection.objects.link(obj)
 
             bm = bmesh.new()
             bmesh.ops.create_cube(bm, size=4.0)  # Outer shell
@@ -193,7 +193,7 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
             res_cull = ops_lod.cull_interior_faces()
             self.assertEqual(res_cull, {"FINISHED"})
 
-            props = getattr(scene, "lod_tool", None)
+            props = getattr(bpy.context.scene, "lod_tool", None)
             if props:
                 self.assertGreaterEqual(props.last_culled_faces_count, 6)
 
@@ -207,7 +207,7 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
 
             mesh = bpy.data.meshes.new("SanitizeNestedMesh")
             obj = bpy.data.objects.new("SM_SanitizeNested", mesh)
-            scene.collection.objects.link(obj)
+            bpy.context.scene.collection.objects.link(obj)
 
             bm = bmesh.new()
             bmesh.ops.create_cube(bm, size=4.0)
@@ -219,7 +219,7 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
                 o.select_set(o == obj)
             bpy.context.view_layer.objects.active = obj
 
-            props = getattr(scene, "lod_tool", None)
+            props = getattr(bpy.context.scene, "lod_tool", None)
             if props:
                 props.cleanup_cull_interior_faces = True
 
@@ -239,7 +239,7 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
 
             mesh = bpy.data.meshes.new("VoxelTargetMesh")
             obj = bpy.data.objects.new("SM_VoxelScan", mesh)
-            scene.collection.objects.link(obj)
+            bpy.context.scene.collection.objects.link(obj)
 
             bm = bmesh.new()
             bmesh.ops.create_cube(bm, size=2.0)
@@ -250,7 +250,7 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
                 o.select_set(o == obj)
             bpy.context.view_layer.objects.active = obj
 
-            props = getattr(scene, "lod_tool", None)
+            props = getattr(bpy.context.scene, "lod_tool", None)
             if props:
                 props.scan_remesh_voxel_size = 0.2
 

@@ -83,7 +83,7 @@ class LOD_OT_generate_impostor(Operator):
         if not props:
             props = context.scene.lod_tool
 
-        mesh_objs = get_selected_mesh_objects(context) or get_lod0_mesh_objects(context)
+        mesh_objs = get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)
         if not mesh_objs:
             safe_report(self, {"WARNING"}, "No valid mesh objects found for impostor generation.")
             return {"CANCELLED"}
