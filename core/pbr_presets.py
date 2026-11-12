@@ -154,7 +154,7 @@ class BasePresetManager:
         custom_root = os.environ.get("OMNIMESH_PRESETS_DIR")
         if custom_root:
             base = Path(custom_root)
-        elif bpy and hasattr(bpy.utils, "user_resource"):
+        elif bpy:
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets"
             except (RuntimeError, ValueError, AttributeError, TypeError):
@@ -226,7 +226,7 @@ class BasePresetManager:
         custom_root = os.environ.get("OMNIMESH_PRESETS_DIR")
         if custom_root:
             base = Path(custom_root) / cls.CATEGORY
-        elif bpy and hasattr(bpy.utils, "user_resource"):
+        elif bpy:
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / cls.CATEGORY
             except (RuntimeError, ValueError, AttributeError, TypeError):

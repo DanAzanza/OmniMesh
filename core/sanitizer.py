@@ -1,6 +1,6 @@
 """
 Hardened Mesh Sanitization & Topology Repair Engine for OmniMesh.
-Blender 4.2+ and 5.2 LTS Compatible.
+Blender 5.0+ and 5.2 LTS Compatible.
 
 Provides 3-tiered architecture:
 - Tier 0: Pure Geometric Hygiene (Uncritical, safe, always executed via fixed-point iteration)

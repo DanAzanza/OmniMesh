@@ -98,7 +98,6 @@ class UnrealLiveBridge(EngineBridgeBase):
         if not dest_posix.startswith("/"):
             dest_posix = "/" + dest_posix
         master_mat_posix = _to_posix(master_material_path)
-        import re
 
         clean_asset = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
 
@@ -168,15 +167,15 @@ class UnrealLiveBridge(EngineBridgeBase):
             '                        tex_obj.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)',
             '                        tex_obj.set_editor_property("s_rgb", False)',
             "                        unreal.EditorAssetLibrary.save_loaded_asset(tex_obj)",
-            "                    except Exception:",
-            "                        pass",
+            "                    except Exception as exc:",
+            '                        print(f"[OmniMesh] Warning: normal map config skipped for {tex_asset_name}: {exc}")',
             '                elif "orm" in param_name.lower() or "mask" in param_name.lower():',
             "                    try:",
             '                        tex_obj.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)',
             '                        tex_obj.set_editor_property("s_rgb", False)',
             "                        unreal.EditorAssetLibrary.save_loaded_asset(tex_obj)",
-            "                    except Exception:",
-            "                        pass",
+            "                    except Exception as exc:",
+            '                        print(f"[OmniMesh] Warning: mask config skipped for {tex_asset_name}: {exc}")',
             "                unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(",
             "                    mat_inst, param_name, tex_obj",
             "                )",

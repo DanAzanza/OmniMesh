@@ -34,7 +34,7 @@ class NormalManager:
         Ensures the 'sharp_edge' boolean edge attribute exists on the mesh data-block,
         which is required in Blender 4.1+ and 5.x for custom normal and auto-smooth shading.
         """
-        if not bpy or not mesh or getattr(mesh, "attributes", None) is None:
+        if not bpy or not mesh or mesh.attributes is None:
             return None
         try:
             sharp_attr = mesh.attributes.get("sharp_edge")
@@ -84,13 +84,13 @@ class NormalManager:
 
         # Detect armature if not explicitly passed
         arm = armature_obj
-        if not arm and hasattr(source_lod0, "find_armature"):
+        if not arm:
             arm = source_lod0.find_armature()
-        if not arm and hasattr(lod_obj, "find_armature"):
+        if not arm:
             arm = lod_obj.find_armature()
 
         orig_pose_pos = None
-        arm_data = cast("bpy.types.Armature | None", getattr(arm, "data", None) if arm else None)
+        arm_data = cast("bpy.types.Armature | None", arm.data if arm else None)
         if arm_data:
             orig_pose_pos = arm_data.pose_position
             arm_data.pose_position = "REST"
@@ -122,22 +122,21 @@ class NormalManager:
 
         try:
             ctx = context
-            vl = getattr(ctx, "view_layer", None)
-            vl_objects = getattr(vl, "objects", None)
+            vl = ctx.view_layer if ctx else None
+            vl_objects = vl.objects if vl else None
 
             # Move modifier to top of stack so reprojection evaluates against undeformed geometry
-            if hasattr(bpy.ops.object, "modifier_move_to_index"):
-                try:
-                    if ctx and hasattr(ctx, "temp_override"):
-                        with cast(Any, ctx).temp_override(active_object=lod_obj, object=lod_obj):
-                            bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
-                    elif vl_objects is not None:
-                        vl_objects.active = lod_obj
+            try:
+                if ctx:
+                    with cast(Any, ctx).temp_override(active_object=lod_obj, object=lod_obj):
                         bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
-                except (RuntimeError, ValueError, AttributeError) as exc:
-                    logger.debug("Failed moving DATA_TRANSFER modifier to index 0: %s", exc)
+                elif vl_objects is not None:
+                    vl_objects.active = lod_obj
+                    bpy.ops.object.modifier_move_to_index(modifier=dt_mod.name, index=0)
+            except (RuntimeError, ValueError, AttributeError) as exc:
+                logger.debug("Failed moving DATA_TRANSFER modifier to index 0: %s", exc)
 
-            if ctx and hasattr(ctx, "temp_override"):
+            if ctx:
                 with cast(Any, ctx).temp_override(active_object=lod_obj, object=lod_obj, selected_objects=[lod_obj]):
                     bpy.ops.object.modifier_apply(modifier=dt_mod.name)
             elif vl_objects is not None:
@@ -222,10 +221,8 @@ class NormalManager:
                     else:
                         tgt_norm = world_norm
 
-                    try:
+                    if Vector is not None and not isinstance(tgt_norm, tuple):
                         tgt_norm = tgt_norm.normalized()
-                    except (AttributeError, TypeError):
-                        pass
                 else:
                     tgt_norm = Vector((0.0, 0.0, 1.0)) if Vector else (0.0, 0.0, 1.0)
                 custom_normals.append(tgt_norm)

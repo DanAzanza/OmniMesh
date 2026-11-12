@@ -1,6 +1,6 @@
 """
 Discrete Generator-Based Batch Mesh Iterator for OmniMesh.
-Blender 4.2+ and 5.2 LTS Compatible.
+Blender 5.0+ and 5.2 LTS Compatible.
 
 Provides:
 - BatchProgress: Dataclass tracking step-by-step progress and triangle counts.
@@ -15,7 +15,7 @@ from .exceptions import OmniMeshError
 from dataclasses import dataclass
 import gc
 import logging
-from typing import TYPE_CHECKING, Iterator, Optional
+from typing import TYPE_CHECKING, Iterator, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class BatchMeshIterator:
         preserve_boundaries: bool = True,
         planar_dissolve: bool = True,
     ) -> None:
-        self.objects = [o for o in objects if getattr(o, "type", "") == "MESH"]
+        self.objects = [o for o in objects if o.type == "MESH"]
         self.total = len(self.objects)
         self.target_ratio = max(0.01, min(1.0, float(target_ratio)))
         self.preserve_boundaries = preserve_boundaries
@@ -79,12 +79,12 @@ class BatchMeshIterator:
             return
 
         for idx, obj in enumerate(self.objects):
-            name = getattr(obj, "name", f"Mesh_{idx}")
+            name = obj.name or f"Mesh_{idx}"
             initial_tris = 0
             final_tris = 0
 
             try:
-                mesh_data = getattr(obj, "data", None)
+                mesh_data = cast("bpy.types.Mesh | None", obj.data)
                 if not mesh_data:
                     yield BatchProgress(
                         index=idx + 1,

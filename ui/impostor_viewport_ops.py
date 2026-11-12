@@ -1,7 +1,7 @@
 # pyright: reportInvalidTypeForm=none
 """
 OmniMesh Live Impostor Viewport Tracker Operator and Timer Service.
-Blender 4.2+ and 5.0+ LTS Compatible.
+Blender 5.0+ & 5.2 LTS Compatible.
 
 Provides non-blocking background synchronization between active 3D Viewport perspective
 navigation and the impostor preview billboard rig with zero dependency graph churn.

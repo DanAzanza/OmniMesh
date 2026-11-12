@@ -1,6 +1,6 @@
 """
 OmniMesh Packaging Script.
-Builds the official Blender extension ZIP archive for Blender 4.2+ and 5.2 LTS.
+Builds the official Blender extension ZIP archive for Blender 5.0+ and 5.2 LTS.
 """
 
 from __future__ import annotations

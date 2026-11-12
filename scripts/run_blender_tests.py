@@ -5,6 +5,7 @@ Executes headless Blender with factory startup and streams results.
 
 from __future__ import annotations
 
+import argparse
 import glob
 import logging
 import os
@@ -105,6 +106,14 @@ def ensure_extension_zip(repo_root: str) -> str | None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Run OmniMesh in-Blender integration tests headlessly.")
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="Enable in-Blender coverage tracing (.coverage.in_blender).",
+    )
+    args = parser.parse_args()
+
     blender_bin = find_blender_binary()
     if not blender_bin:
         print(
@@ -135,7 +144,7 @@ def main() -> int:
     except Exception as exc:
         logger.debug("Failed resolving host site-packages: %s", exc)
 
-    if "--coverage" in sys.argv or os.environ.get("OMNIMESH_COVERAGE") == "1":
+    if args.coverage or os.environ.get("OMNIMESH_COVERAGE") == "1":
         env["OMNIMESH_COVERAGE"] = "1"
 
     cmd = [

@@ -1,6 +1,6 @@
 """
 Hierarchy & Multi-Mesh Join Engine for OmniMesh.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - LayerCollectionGuard: RAII context manager for safe View Layer traversal & depsgraph protection.
 - LocalPivotSpaceMerge: Vertex and normal transformation into pivot relative space.

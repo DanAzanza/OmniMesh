@@ -102,24 +102,17 @@ def classify_imported_mesh_node(obj: bpy.types.Object | None, is_interior: bool 
     is_collision_named = name_lower.startswith("collision_")
     is_invisible_mat = False
     obj_data = cast("bpy.types.Mesh | None", obj.data)
-    if obj_data is not None:
-        try:
-            mats = [m for m in obj_data.materials if m]
-            if mats and all(m.get("_omnimesh_invisible") or m.get("msfs_material_type") == 12 for m in mats):
-                is_invisible_mat = True
-        except AttributeError:
-            pass
+    if obj_data is not None and obj_data.materials:
+        mats = [m for m in obj_data.materials if m]
+        if mats and all(m.get("_omnimesh_invisible") or m.get("msfs_material_type") == 12 for m in mats):
+            is_invisible_mat = True
 
     if not is_collision_named and not is_invisible_mat:
         return "RENDER_MESH"
 
     # Compute bounding diagonal to disambiguate clickspots from large airframe collision hulls
-    diag = 1.0
-    try:
-        dim = obj.dimensions
-        diag = (dim.x**2 + dim.y**2 + dim.z**2) ** 0.5
-    except AttributeError:
-        pass
+    dim = obj.dimensions
+    diag = (dim.x**2 + dim.y**2 + dim.z**2) ** 0.5 if dim is not None else 1.0
 
     clickspot_pattern = re.compile(
         r"^(collision_(button|knob|switch|lever|pedal|handle|door|hatch|cover|dial)|.*_clickspot|.*_trigger)",
@@ -453,9 +446,6 @@ def bind_manifest_to_omnimesh(
 
     if lod_infos:
         lowest_min = lod_infos[-1].min_size
-        try:
-            props.cull_screen_size_pct = max(0.0, min(10.0, lowest_min))
-        except AttributeError:
-            pass
+        props.cull_screen_size_pct = max(0.0, min(10.0, lowest_min))
 
     props.active_lod_index = 0

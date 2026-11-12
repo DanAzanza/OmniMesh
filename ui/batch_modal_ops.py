@@ -1,7 +1,7 @@
 # pyright: reportInvalidTypeForm=none
 """
 Non-Blocking Modal Batch Decimation Operator for OmniMesh.
-Blender 4.2+ and 5.2 LTS Compatible.
+Blender 5.0+ and 5.2 LTS Compatible.
 
 Provides:
 - LOD_OT_batch_generate_modal: Modal timer-driven operator that iteratively simplifies

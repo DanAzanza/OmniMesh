@@ -1,6 +1,6 @@
 """
 OmniMesh Modifier Manager & Non-Destructive Evaluated Mesh Extraction.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - ModifierManager.get_evaluated_mesh: Extracts baked surface geometry via depsgraph,
   preserving custom normals, UVs, and vertex attributes without mutating source objects.
@@ -128,10 +128,10 @@ class ModifierManager:
         ModifierManager.sync_viewport_to_render_settings(obj)
 
         ctx = context
-        if depsgraph is None and ctx and hasattr(ctx, "evaluated_depsgraph_get"):
+        if depsgraph is None and ctx:
             depsgraph = ctx.evaluated_depsgraph_get()
 
-        if not depsgraph or not hasattr(obj, "evaluated_get"):
+        if not depsgraph:
             return cast(Any, obj.data), None
 
         # Temporarily disable armature modifiers if requested to prevent skin deformation
@@ -147,7 +147,8 @@ class ModifierManager:
             if not eval_obj:
                 return cast(Any, obj.data), None
 
-            raw_polys = len(getattr(eval_obj.data, "polygons", []))
+            eval_data = cast("bpy.types.Mesh | None", eval_obj.data)
+            raw_polys = len(eval_data.polygons) if eval_data and eval_data.polygons is not None else 0
             if raw_polys > max_poly_limit:
                 logger.warning(
                     "Evaluated polygon count (%d) exceeds safety threshold (%d)",
@@ -155,8 +156,8 @@ class ModifierManager:
                     max_poly_limit,
                 )
 
-            if hasattr(eval_obj, "to_mesh"):
-                eval_mesh = eval_obj.to_mesh()
+            eval_mesh = eval_obj.to_mesh()
+            if eval_mesh is not None:
                 return eval_mesh, eval_obj
             return cast(Any, eval_obj.data), None
 
@@ -229,12 +230,9 @@ class ModifierManager:
 
             mod_name = mod.name
             try:
-                if ctx and hasattr(ctx, "temp_override"):
+                if ctx:
                     with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                         bpy.ops.object.modifier_apply(modifier=mod_name)
-                elif ctx and ctx.view_layer and ctx.view_layer.objects:
-                    ctx.view_layer.objects.active = obj
-                    bpy.ops.object.modifier_apply(modifier=mod_name)
                 else:
                     bpy.ops.object.modifier_apply(modifier=mod_name)
                 applied_count += 1

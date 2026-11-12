@@ -1,5 +1,5 @@
 """
-OmniMesh Preset Configuration Popover Panels for Blender 4.2+ and 5.2 LTS.
+OmniMesh Preset Configuration Popover Panels for Blender 5.0+ and 5.2 LTS.
 Dedicated popovers for managing and customizing presets:
 - Config Presets (Aircraft/Vehicle Feature Spawn Rules)
 - Engine Import Presets (MSFS Project Ingestion Rules)

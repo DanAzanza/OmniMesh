@@ -1,6 +1,6 @@
 """
 Microsoft Flight Simulator (MSFS 2020 / 2024) Exporter.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - Descending minSize ModelInfo.xml generation: minSize(LOD_i) = Screen_pct(LOD_{i+1}), last tier = 0.
 - Collection-based and Object-based glTF export.
@@ -154,9 +154,7 @@ class MSFSExporter(EngineExporterBase):
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
         bdata_in = kwargs.get("blend_data")
-        bdata: BlendData | None = (
-            bdata_in if isinstance(bdata_in, BlendData) else (getattr(context, "blend_data", None) if context else None)
-        )
+        bdata: BlendData | None = bdata_in if isinstance(bdata_in, BlendData) else context.blend_data
         payload = (
             AssetMeshResolver.resolve_payload(context, clean_name, blend_data=bdata) if AssetMeshResolver else None
         )
@@ -342,7 +340,7 @@ class MSFSExporter(EngineExporterBase):
 
         # 2. Export Interior if present
         bdata_in = kwargs.get("blend_data")
-        bdata = bdata_in if bdata_in is not None else (getattr(context, "blend_data", None) if context else None)
+        bdata = bdata_in if bdata_in is not None else (context.blend_data if context else None)
         bdata_cols = cast("BlendData", bdata).collections if bdata else None
 
         interior_name = f"{clean_base}_Interior"

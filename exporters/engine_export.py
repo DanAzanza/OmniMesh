@@ -267,7 +267,7 @@ class AssetMeshResolver:
                 break
             for mod in obj.modifiers:
                 if mod.type == "ARMATURE":
-                    mod_obj = getattr(mod, "object", None)
+                    mod_obj = cast("bpy.types.ArmatureModifier", mod).object
                     if mod_obj:
                         armature_obj = mod_obj
                         break

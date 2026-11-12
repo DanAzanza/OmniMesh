@@ -50,9 +50,10 @@ def calculate_effective_distance_pure(
         cx, cy, cz = float(c_seq[0]), float(c_seq[1]), float(c_seq[2])
     except (IndexError, TypeError, KeyError):
         try:
-            cx = float(getattr(center, "x", 0.0))
-            cy = float(getattr(center, "y", 0.0))
-            cz = float(getattr(center, "z", 0.0))
+            c_vec = cast("Vector", center)
+            cx = float(c_vec.x)
+            cy = float(c_vec.y)
+            cz = float(c_vec.z)
         except (AttributeError, TypeError):
             cx, cy, cz = 0.0, 0.0, 0.0
 
@@ -61,9 +62,10 @@ def calculate_effective_distance_pure(
         px, py, pz = float(p_seq[0]), float(p_seq[1]), float(p_seq[2])
     except (IndexError, TypeError, KeyError):
         try:
-            px = float(getattr(cam_pos, "x", 0.0))
-            py = float(getattr(cam_pos, "y", 0.0))
-            pz = float(getattr(cam_pos, "z", 0.0))
+            p_vec = cast("Vector", cam_pos)
+            px = float(p_vec.x)
+            py = float(p_vec.y)
+            pz = float(p_vec.z)
         except (AttributeError, TypeError):
             px, py, pz = 0.0, 0.0, 0.0
 

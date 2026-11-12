@@ -1,6 +1,6 @@
 """
 OmniMesh In-Blender Preview Material Construction for Octahedral Impostors.
-Blender 4.2+ and 5.0+ LTS Compatible.
+Blender 5.0+ & 5.2 LTS Compatible.
 
 Constructs native dynamic shader node networks for in-viewport octahedral tile decoding
 and material assignment with zero production transform pollution.
@@ -88,19 +88,10 @@ def create_octahedral_preview_material(
         mat = blend_data.materials.new(mat_name)
     mat.use_nodes = True
 
-    # Defensive EEVEE Next & EEVEE Legacy transparency configuration
-    try:
-        mat.surface_render_method = "DITHERED"
-    except (TypeError, ValueError, AttributeError) as exc:
-        logger.debug("Failed setting surface_render_method on material: %s", exc)
-    try:
-        mat.use_transparent_shadow = True
-    except (TypeError, ValueError, AttributeError) as exc:
-        logger.debug("Failed setting use_transparent_shadow on material: %s", exc)
-    try:
-        mat.use_backface_culling = True
-    except (TypeError, ValueError, AttributeError) as exc:
-        logger.debug("Failed setting use_backface_culling on material: %s", exc)
+    # Blender 5.0+ EEVEE Next transparency configuration
+    mat.surface_render_method = "DITHERED"
+    mat.use_transparent_shadow = True
+    mat.use_backface_culling = True
 
     if not mat.node_tree:
         return mat

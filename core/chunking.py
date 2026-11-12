@@ -1,6 +1,6 @@
 """
 OmniMesh Spatial Chunking & HLOD Engine.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - SpatialGridSpec: 2.5D AABB bounding envelope computation and cell indexing.
 - MeshChunkSlicer: In-place BMesh planar bisecting, 4-way intersection cleaning,
@@ -98,7 +98,7 @@ class SpatialGridSpec:
         for obj in objs:
             if not obj or not obj.bound_box:
                 continue
-            mat = getattr(obj, "matrix_world", None)
+            mat = obj.matrix_world
             if mat is None or Matrix is None:
                 all_corners.extend(Vector(b) if Vector else b for b in obj.bound_box)
             else:
@@ -272,7 +272,8 @@ class MeshChunkSlicer:
             return []
 
         eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(source_obj, preserve_armature=True)
-        if not eval_mesh or len(getattr(eval_mesh, "polygons", [])) == 0:
+        eval_mesh_data = cast("bpy.types.Mesh | None", eval_mesh)
+        if not eval_mesh_data or len(eval_mesh_data.polygons) == 0:
             if eval_obj:
                 eval_obj.to_mesh_clear()
             return []
@@ -280,7 +281,7 @@ class MeshChunkSlicer:
         # 1. Initialize working BMesh from evaluated source
         bm = bmesh.new()
         try:
-            bm.from_mesh(eval_mesh)
+            bm.from_mesh(eval_mesh_data)
             bm.verts.ensure_lookup_table()
             bm.edges.ensure_lookup_table()
             bm.faces.ensure_lookup_table()
@@ -439,7 +440,7 @@ class MeshChunkSlicer:
             chunk_bm.verts.ensure_lookup_table()
 
             # Copy UV layers
-            src_uv_layers = list(bm_sliced.loops.layers.uv.values()) if hasattr(bm_sliced.loops.layers, "uv") else []
+            src_uv_layers = list(bm_sliced.loops.layers.uv.values()) if bm_sliced.loops.layers.uv else []
             chunk_uv_layers = []
             for src_uv in src_uv_layers:
                 chunk_uv = chunk_bm.loops.layers.uv.new(src_uv.name)
@@ -510,7 +511,7 @@ class MeshChunkSlicer:
 
             # Assign matching materials (preserving global slots)
             src_data = cast("bpy.types.Mesh | None", source_obj.data)
-            for mat in getattr(src_data, "materials", []):
+            for mat in src_data.materials if src_data and src_data.materials else ():
                 chunk_mesh.materials.append(mat)
 
             # Link to collection

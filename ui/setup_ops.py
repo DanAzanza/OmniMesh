@@ -1,7 +1,7 @@
 # pyright: reportInvalidTypeForm=none
 """
 OmniMesh Scene Setup & Asset Initialization Operators.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - OMNIMESH_OT_initialize_asset: 1-Click interactive setup creating standard collections and routing meshes/armatures.
 - Resilient C-RNA enum cache handling and headless CI compatibility.
@@ -83,7 +83,7 @@ class OMNIMESH_OT_initialize_asset(Operator):
 
     apply_color_tags: BoolProperty(
         name="Apply Outliner Color Tags",
-        description="Assign Blender 4.x/5.x native Outliner color tags to collections (LOD0: Green, Colliders: Orange, Helpers: Yellow)",
+        description="Assign Blender 5.x native Outliner color tags to collections (LOD0: Green, Colliders: Orange, Helpers: Yellow)",
         default=True,
     )
 

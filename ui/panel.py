@@ -1,5 +1,5 @@
 """
-OmniMesh Unified Single-Panel Architecture for Blender 4.2+ and 5.2 LTS.
+OmniMesh Unified Single-Panel Architecture for Blender 5.0+ and 5.2 LTS.
 Integrates all workflow stages into a single panel with a vertical icon navigation bar:
 - 1. Import (Engine Project & PBR Texture Set Importer)
 - 2. Add (Vehicle & Asset Configuration Presets, Impostors, Colliders & Clickspots)

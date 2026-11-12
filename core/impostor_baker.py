@@ -1,6 +1,6 @@
 """
 OmniMesh PBR Billboard Impostor Baking Engine.
-Blender 4.2+ and 5.0+ LTS Compatible.
+Blender 5.0+ & 5.2 LTS Compatible.
 
 Provides:
 - EphemeralBakeSceneGuard: 100% isolated temporary bake scene protecting user camera/render settings.
@@ -143,10 +143,7 @@ class ImpostorAtlasBaker:
                     if backend in avail:
                         try:
                             cpref.compute_device_type = backend
-                            try:
-                                cpref.get_devices()
-                            except AttributeError:
-                                pass
+                            cpref.get_devices()
                             active_devs = [d for d in (cpref.devices or ()) if d.type == backend]
                             if active_devs:
                                 for d in active_devs:
@@ -159,10 +156,7 @@ class ImpostorAtlasBaker:
                                 return backend, dev_names
                         except (RuntimeError, AttributeError, TypeError, ValueError) as b_err:
                             logger.debug("Cycles backend %s failed: %s", backend, b_err)
-                try:
-                    cpref.compute_device_type = "NONE"
-                except AttributeError:
-                    pass
+                cpref.compute_device_type = "NONE"
         except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
             logger.debug("Failed configuring Cycles compute device: %s", exc)
 

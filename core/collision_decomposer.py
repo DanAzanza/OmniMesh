@@ -67,7 +67,7 @@ class CollisionDecomposer:
         Measures maximum surface deviation between source mesh geometry and its candidate convex hull.
         Uses stratified sampling on large meshes to bound computation time while guaranteeing coverage.
         """
-        if not bm_source or not bm_hull or not hasattr(bm_source, "faces") or not hasattr(bm_hull, "faces"):
+        if not bm_source or not bm_hull:
             return 0.0
         n_faces = len(bm_source.faces)
         if n_faces == 0 or len(bm_hull.faces) == 0:
@@ -93,9 +93,7 @@ class CollisionDecomposer:
                 indices = set(range(0, n_faces, step))
                 indices.add(0)
                 indices.add(n_faces - 1)
-                test_faces = [
-                    bm_source.faces[i] for i in indices if i < n_faces and getattr(bm_source.faces[i], "is_valid", True)
-                ]
+                test_faces = [bm_source.faces[i] for i in indices if i < n_faces and bm_source.faces[i].is_valid]
 
             for f in test_faces:
                 center = f.calc_center_median()
@@ -283,14 +281,14 @@ class CollisionDecomposer:
             return []
 
         scale_factor = 1.0
-        if source_obj and hasattr(source_obj, "scale"):
-            s = source_obj.scale
+        if source_obj:
+            s = getattr(source_obj, "scale", (1.0, 1.0, 1.0))
             scale_factor = max(1e-4, (abs(s[0]) + abs(s[1]) + abs(s[2])) / 3.0)
 
         eval_obj = None
         if bm_source is not None:
             bm_master = bm_source.copy()
-        elif source_obj and hasattr(source_obj, "data") and source_obj.data:
+        elif source_obj and source_obj.data:
             eval_mesh = None
             try:
                 from .modifiers import ModifierManager
@@ -310,7 +308,7 @@ class CollisionDecomposer:
                 bm_master.free()
                 raise
             finally:
-                if eval_obj and hasattr(eval_obj, "to_mesh_clear"):
+                if eval_obj:
                     eval_obj.to_mesh_clear()
         else:
             return []

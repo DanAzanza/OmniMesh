@@ -1,6 +1,6 @@
 """
 OmniMesh Empirical Performance & Decimation Benchmark Suite.
-Blender 4.2+ and 5.2 LTS Compatible.
+Blender 5.0+ and 5.2 LTS Compatible.
 
 Executes reproducible, headless performance profiling on procedural multi-feature test meshes
 (10k, 100k, and 500k polygons). Measures:

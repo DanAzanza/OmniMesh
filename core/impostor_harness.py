@@ -1,6 +1,6 @@
 """
 OmniMesh Unlit Impostor Shader Harness.
-Blender 4.2+ and 5.0+ LTS Compatible.
+Blender 5.0+ & 5.2 LTS Compatible.
 
 Constructs unlit emission shader overrides for the required PBR and depth passes:
 - BASE_COLOR (with cutout alpha transparency)
@@ -12,7 +12,7 @@ Constructs unlit emission shader overrides for the required PBR and depth passes
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,10 @@ class ImpostorShaderHarness:
             return None
 
         bdata = blend_data
-        bdata_mats = getattr(bdata, "materials", None) if bdata else None
-        if bdata_mats is None:
+        if bdata is None or bdata.materials is None:
             return None
 
-        mat = bdata_mats.new(f"OM_Bake_{channel_layer}")
+        mat = bdata.materials.new(f"OM_Bake_{channel_layer}")
         mat.use_nodes = True
         if not mat.node_tree:
             raise ImpostorBakeError("Material has no node tree.")
@@ -76,18 +75,12 @@ class ImpostorShaderHarness:
         emit_node.location = (150, 0)
 
         src_bsdf: bpy.types.Node | None = None
-        if source_mat and getattr(source_mat, "use_nodes", False) and source_mat.node_tree:
-            src_bsdf = next(
-                (n for n in source_mat.node_tree.nodes if getattr(n, "type", "") == "BSDF_PRINCIPLED"), None
-            )
+        if source_mat and source_mat.use_nodes and source_mat.node_tree:
+            src_bsdf = next((n for n in source_mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
 
         # 1. BaseColor Pass
         if channel_layer == "BASE_COLOR":
-            base_links = (
-                getattr(src_bsdf.inputs["Base Color"], "links", None)
-                if src_bsdf and "Base Color" in src_bsdf.inputs
-                else None
-            )
+            base_links = src_bsdf.inputs["Base Color"].links if src_bsdf and "Base Color" in src_bsdf.inputs else None
             if src_bsdf and "Base Color" in src_bsdf.inputs and src_bsdf.inputs["Base Color"].is_linked and base_links:
                 src_link = base_links[0]
                 cls._duplicate_link_to_target(src_link, nodes, links, emit_node.inputs["Color"])
@@ -182,7 +175,7 @@ class ImpostorShaderHarness:
         has_alpha_link = src_bsdf is not None and "Alpha" in src_bsdf.inputs and src_bsdf.inputs["Alpha"].is_linked
 
         if has_alpha_link and src_bsdf is not None:
-            alpha_links = getattr(src_bsdf.inputs["Alpha"], "links", None)
+            alpha_links = src_bsdf.inputs["Alpha"].links
             if alpha_links:
                 transp_node = nodes.new(type="ShaderNodeBsdfTransparent")
                 transp_node.location = (200, -150)
@@ -198,10 +191,7 @@ class ImpostorShaderHarness:
                 src_alpha_link = alpha_links[0]
                 cls._duplicate_link_to_target(src_alpha_link, nodes, links, mix_node.inputs["Fac"])
 
-            if hasattr(mat, "blend_method"):
-                mat.blend_method = "CLIP"
-            if hasattr(mat, "surface_render_method"):
-                mat.surface_render_method = "DITHERED"
+            mat.surface_render_method = "DITHERED"
         else:
             links.new(emit_node.outputs["Emission"], out_node.inputs["Surface"])
 
@@ -216,17 +206,19 @@ class ImpostorShaderHarness:
     ) -> None:
         """Duplicates an upstream texture node to feed unlit emission or cutout alpha sockets."""
         from_node = link.from_node
-        if getattr(from_node, "type", "") == "TEX_IMAGE" and getattr(from_node, "image", None):
-            tex = target_nodes.new(type="ShaderNodeTexImage")
-            setattr(tex, "image", getattr(from_node, "image", None))  # noqa: B010
-            tex.location = (-250, 0)
-            from_socket_name = link.from_socket.name if link.from_socket else "Color"
-            if from_socket_name in tex.outputs:
-                target_links.new(tex.outputs[from_socket_name], target_socket)
-            elif "Alpha" in getattr(target_socket, "name", "") and "Alpha" in tex.outputs:
-                target_links.new(tex.outputs["Alpha"], target_socket)
-            else:
-                target_links.new(tex.outputs["Color"], target_socket)
+        if from_node and from_node.type == "TEX_IMAGE":
+            src_tex = cast("bpy.types.ShaderNodeTexImage", from_node)
+            if src_tex.image:
+                tex = target_nodes.new(type="ShaderNodeTexImage")
+                cast("bpy.types.ShaderNodeTexImage", tex).image = src_tex.image
+                tex.location = (-250, 0)
+                from_socket_name = link.from_socket.name if link.from_socket else "Color"
+                if from_socket_name in tex.outputs:
+                    target_links.new(tex.outputs[from_socket_name], target_socket)
+                elif "Alpha" in (target_socket.name or "") and "Alpha" in tex.outputs:
+                    target_links.new(tex.outputs["Alpha"], target_socket)
+                else:
+                    target_links.new(tex.outputs["Color"], target_socket)
 
 
 __all__ = ["ImpostorShaderHarness"]

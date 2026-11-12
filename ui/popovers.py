@@ -1,5 +1,5 @@
 """
-OmniMesh Popover Panels for Blender 4.2+ and 5.2 LTS.
+OmniMesh Popover Panels for Blender 5.0+ and 5.2 LTS.
 Declares secondary configuration popovers invoked via gear icons (`layout.popover`).
 
 Design Invariants:

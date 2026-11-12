@@ -10,7 +10,7 @@ import concurrent.futures
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Tuple, cast
 
 import numpy as np
 
@@ -75,7 +75,7 @@ class TextureChannelPacker:
         os.makedirs(export_dir, exist_ok=True)
         futures: list[concurrent.futures.Future[bool]] = []
 
-        mat_name = re.sub(r"[^\w\-_\.]", "_", getattr(material, "name", "Material"))
+        mat_name = re.sub(r"[^\w\-_\.]", "_", material.name or "Material")
         clean_asset = re.sub(r"[^\w\-_\.]", "_", asset_name) if asset_name else mat_name
         max_val = 65535 if bit_depth == 16 else 255
         dtype = np.uint16 if bit_depth == 16 else np.uint8
@@ -92,11 +92,11 @@ class TextureChannelPacker:
             # Dominant Resolution Rule: Calculate maximum resolution among linked textures for this map
             found_sizes: list[tuple[int, int]] = []
 
-            def _get_dim(im: bpy.types.Image | object | None) -> tuple[int, int]:
+            def _get_dim(im: bpy.types.Image | None) -> tuple[int, int]:
                 if not im:
                     return (0, 0)
                 try:
-                    sz = getattr(im, "size", (0, 0))
+                    sz = tuple(cast("Iterable[int]", im.size))
                     return (int(sz[0]), int(sz[1]))
                 except (AttributeError, IndexError, TypeError):
                     return (0, 0)
@@ -143,10 +143,11 @@ class TextureChannelPacker:
             if strategy == "PASSTHROUGH" and "rgb" in channels and len(channels) == 1:
                 target_sock_name = channels["rgb"].get("target", "")
                 img, _, _, _ = cls.trace_upstream_channel(material, target_sock_name)
-                if bpy and hasattr(bpy, "path") and img and getattr(img, "filepath", ""):
-                    src_path = bpy.path.abspath(getattr(img, "filepath", ""))
+                if bpy and img and img.filepath:
+                    src_path = bpy.path.abspath(img.filepath)
                     if os.path.exists(src_path):
-                        src_w, src_h = getattr(img, "size", (0, 0))[:2]
+                        src_sz = tuple(cast("Iterable[int]", img.size))
+                        src_w, src_h = src_sz[:2]
                         # If format and resolution match, direct copy
                         if (src_w, src_h) == (map_w, map_h) and src_path.lower().endswith(".png") and bit_depth == 8:
                             import shutil
@@ -157,8 +158,8 @@ class TextureChannelPacker:
                                 f.set_result(True)
                                 futures.append(f)
                                 continue
-                            except OSError:
-                                pass
+                            except OSError as exc:
+                                logger.debug("Direct texture passthrough copy skipped for '%s': %s", src_path, exc)
 
             # Channel Assembly
             if "rgb" in channels:
@@ -372,9 +373,11 @@ class TextureChannelPacker:
         target_size: Optional[Tuple[int, int]] = None,
     ) -> bool:
         """Converts OpenGL (+Y) Normal map to DirectX (-Y) Normal map."""
-        if not source_img or getattr(source_img, "size", (0, 0))[0] == 0:
+        if not source_img:
             return False
-        sz = getattr(source_img, "size", (0, 0))
+        sz = tuple(cast("Iterable[int]", source_img.size))
+        if not sz or sz[0] == 0:
+            return False
         src_w, src_h = int(sz[0]), int(sz[1])
         out_w, out_h = target_size if target_size else (src_w, src_h)
 

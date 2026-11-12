@@ -220,7 +220,7 @@ class MeshDecimator:
             logger.error("Lookup table initialization error in inject_curvature_weights: %s", exc)
             raise DecimationError(f"Failed to initialize BMesh tables for curvature weights: {exc}") from exc
 
-        if not hasattr(bm.verts, "layers") or not hasattr(bm.verts.layers, "deform"):
+        if bm.verts.layers is None or bm.verts.layers.deform is None:
             return
 
         dvert_lay = bm.verts.layers.deform.verify()
@@ -410,16 +410,15 @@ class MeshDecimator:
                     orig_armature_states[m] = m.show_viewport
                     m.show_viewport = False
 
-            if hasattr(bpy.ops.object, "modifier_move_to_index"):
-                try:
-                    if ctx and hasattr(ctx, "temp_override"):
-                        with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
-                            bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
-                except (RuntimeError, ValueError, AttributeError) as exc:
-                    dec_mod.show_viewport = True
-                    logger.debug("Modifier move to index 0 skipped: %s", exc)
+            try:
+                if ctx:
+                    with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
+                        bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
+            except (RuntimeError, ValueError, AttributeError) as exc:
+                dec_mod.show_viewport = True
+                logger.debug("Modifier move to index 0 skipped: %s", exc)
 
-            if ctx and hasattr(ctx, "temp_override"):
+            if ctx:
                 with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                     bpy.ops.object.modifier_apply(modifier=dec_mod.name)
             elif ctx and ctx.view_layer and ctx.view_layer.objects:
@@ -463,11 +462,12 @@ class MeshDecimator:
         Resets all shape key evaluation values to 0.0 (neutral Basis pose).
         Prevents deformed geometry during LOD decimation or normal reprojection.
         """
-        shape_keys = getattr(getattr(obj, "data", None), "shape_keys", None)
+        mesh_data = cast("bpy.types.Mesh | None", obj.data) if obj else None
+        shape_keys = mesh_data.shape_keys if mesh_data else None
         if not obj or not shape_keys:
             return
 
-        key_blocks = getattr(shape_keys, "key_blocks", [])
+        key_blocks = shape_keys.key_blocks or []
         reset_errors = 0
         for kb in key_blocks:
             try:
@@ -484,7 +484,8 @@ class MeshDecimator:
         Purges all shape keys from the target mesh datablock.
         Strictly guarantees key blocks are reset to 0.0 before removal (BLENDER_KNOWLEDGE.md §4).
         """
-        if not obj or not getattr(getattr(obj, "data", None), "shape_keys", None):
+        mesh_data = cast("bpy.types.Mesh | None", obj.data) if obj else None
+        if not obj or not mesh_data or not mesh_data.shape_keys:
             return
         if not bpy:
             return
@@ -495,19 +496,13 @@ class MeshDecimator:
         # 2. Remove all shape keys cleanly
         ctx = context
         try:
-            if ctx and hasattr(ctx, "temp_override"):
+            if ctx:
                 with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
-                    try:
-                        obj.shape_key_clear()
-                    except (AttributeError, TypeError):
-                        pass
+                    obj.shape_key_clear()
                     bpy.ops.object.shape_key_remove(all=True)
             elif ctx and ctx.view_layer and ctx.view_layer.objects:
                 ctx.view_layer.objects.active = obj
-                try:
-                    obj.shape_key_clear()
-                except (AttributeError, TypeError):
-                    pass
+                obj.shape_key_clear()
                 bpy.ops.object.shape_key_remove(all=True)
         except (RuntimeError, AttributeError, TypeError) as exc:
             logger.debug("Shape key purge bypassed: %s", exc)

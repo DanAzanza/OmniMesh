@@ -1,6 +1,6 @@
 """
 OmniMesh In-Blender Preview & Test Rig System for Octahedral Impostors.
-Blender 4.2+ and 5.0+ LTS Compatible.
+Blender 5.0+ & 5.2 LTS Compatible.
 
 Constructs native dynamic shader node networks for in-viewport octahedral tile decoding,
 camera tracking constraints, and occlusion-free comparison turntables with zero production
@@ -123,10 +123,8 @@ def setup_preview_turntable(
         cam_obj.location = cam_loc
 
         dir_vec = cast("Vector", center_vec) - cast("Vector", cam_loc)
-        try:
+        if mathutils is not None:
             cam_obj.rotation_euler = dir_vec.to_track_quat("-Z", "Y").to_euler()
-        except AttributeError:
-            pass
 
         cam_obj.keyframe_insert(data_path="location", frame=f)
         cam_obj.keyframe_insert(data_path="rotation_euler", frame=f)
@@ -286,10 +284,8 @@ def setup_impostor_preview_rig(
     cam_obj.location = Vector((cam_x, center.y - cam_dist, center.z + radius * 0.5))
     aim_target = Vector((cam_x, center.y, center.z))
     dir_cam = aim_target - cam_obj.location
-    try:
+    if mathutils is not None:
         cam_obj.rotation_euler = dir_cam.to_track_quat("-Z", "Y").to_euler()
-    except AttributeError:
-        pass
 
     # Create Tracker Target Empty to decouple billboard orientation from camera animation
     target_name = f"{base_name}_Preview_Tracker_Target"
@@ -361,10 +357,7 @@ def teardown_impostor_preview_rig(
     # Capture objects and unshared datablocks
     for obj in list(rig_coll.objects):
         if obj.animation_data:
-            try:
-                obj.animation_data_clear()
-            except (AttributeError, RuntimeError):
-                pass
+            obj.animation_data_clear()
 
         obj_data = obj.data
         try:

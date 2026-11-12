@@ -8,7 +8,7 @@ export tags for MSFS MouseRects, Unreal Engine Overlap Triggers, and Unity MeshT
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence, cast
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +73,12 @@ def create_interaction_volume(
         - SPHERE: Radial volume for knobs, dials, and omnidirectional sensors.
         - CYLINDER: Axial volume for throttles, levers, and handles.
     """
-    if not bpy:
+    if not bpy or blend_data is None:
         return None
 
-    bdata = blend_data
-    bdata_meshes = getattr(bdata, "meshes", None) if bdata else None
-    bdata_objs = getattr(bdata, "objects", None) if bdata else None
+    bdata = cast("bpy.types.BlendData", blend_data)
+    bdata_meshes = bdata.meshes
+    bdata_objs = bdata.objects
     if bdata_meshes is None or bdata_objs is None:
         return None
 
@@ -128,7 +128,7 @@ def create_interaction_volume(
     invis_mat = create_or_update_material_preset(
         material_name="Mat_OmniMesh_Invisible_Trigger",
         preset_type="INVISIBLE_COLLIDER",
-        blend_data=bdata,
+        blend_data=blend_data,
     )
     if invis_mat:
         mesh_data.materials.append(invis_mat)
@@ -143,18 +143,18 @@ def create_interaction_volume(
     obj["unity_is_trigger"] = True
 
     # Link to isolated Interactions collection under {AssetName}_Config
-    interact_col = get_or_create_engine_import_collection(context, clean_asset, "INTERACTIONS", blend_data=bdata)
-    if interact_col and hasattr(interact_col, "objects"):
+    interact_col = get_or_create_engine_import_collection(context, clean_asset, "INTERACTIONS", blend_data=blend_data)
+    if interact_col:
         interact_col.objects.link(obj)
-    elif context and hasattr(context, "scene") and hasattr(context.scene, "collection"):
+    elif context and context.scene and context.scene.collection:
         context.scene.collection.objects.link(obj)
 
     # Parenting to active control / prop
-    if parent_obj and hasattr(parent_obj, "matrix_world"):
+    if parent_obj:
         obj.location = parent_obj.location
         obj.rotation_euler = parent_obj.rotation_euler
         obj.parent = parent_obj
-        if hasattr(parent_obj, "matrix_world") and Matrix:
+        if Matrix:
             try:
                 obj.matrix_parent_inverse = parent_obj.matrix_world.inverted()
             except (ValueError, AttributeError, RuntimeError) as exc:

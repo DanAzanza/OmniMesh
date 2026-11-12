@@ -45,7 +45,7 @@ class LODPresetManager(BasePresetManager):
         custom_root = os.environ.get("OMNIMESH_PRESETS_DIR")
         if custom_root:
             base = Path(custom_root) / "lod_presets"
-        elif bpy and hasattr(bpy.utils, "user_resource"):
+        elif bpy:
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / "lod_presets"
             except (RuntimeError, ValueError, AttributeError, TypeError):

@@ -118,18 +118,18 @@ def armature_rest_pose_context(armature_obj: bpy.types.Object | None, context: b
     Context manager to safely lock an armature to REST pose during operations
     (decimation, normal transfer, mesh consolidation) and restore the original pose state.
     """
-    data = getattr(armature_obj, "data", None) if armature_obj else None
-    if not data or not hasattr(data, "pose_position"):
+    data = cast("bpy.types.Armature | None", armature_obj.data) if armature_obj else None
+    orig_pose_pos = getattr(data, "pose_position", None) if data else None
+    if not data or orig_pose_pos is None:
         yield
         return
 
     ctx = context
-    vl = getattr(ctx, "view_layer", None)
+    vl = ctx.view_layer if ctx else None
 
-    orig_pose_pos = getattr(data, "pose_position", "POSE")
     try:
         data.pose_position = "REST"
-        if vl and hasattr(vl, "update"):
+        if vl:
             vl.update()
     except (RuntimeError, AttributeError, TypeError) as exc:
         logger.warning("Failed to set armature to REST pose: %s", exc)
@@ -138,12 +138,10 @@ def armature_rest_pose_context(armature_obj: bpy.types.Object | None, context: b
         yield
     finally:
         try:
-            arm_data_restore = cast(
-                "bpy.types.Armature | None", getattr(armature_obj, "data", None) if armature_obj else None
-            )
+            arm_data_restore = cast("bpy.types.Armature | None", armature_obj.data) if armature_obj else None
             if arm_data_restore is not None and orig_pose_pos is not None:
                 arm_data_restore.pose_position = orig_pose_pos  # type: ignore[assignment]
-                if vl and hasattr(vl, "update"):
+                if vl:
                     vl.update()
         except (RuntimeError, AttributeError, TypeError) as exc:
             logger.debug("Failed to restore armature pose position: %s", exc)

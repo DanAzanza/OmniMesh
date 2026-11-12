@@ -1,10 +1,10 @@
 """
 OmniMesh Scene Setup & Asset Hierarchy Module.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - Game engine standard scene settings (Metric 1.0, 60 FPS, optimized clipping, stats, cavity shading).
 - Standardized nested collection hierarchies ({AssetName} -> _LOD0, _Colliders, _Helpers, _Config).
-- Blender 4.x/5.x native Outliner collection color tags.
+- Blender 5.x native Outliner collection color tags.
 - Safe object routing: MESH to LOD0, ARMATURE to Root (SharedRigAnchor), Empties to Helpers/LOD0.
 - Defensive linking hygiene and headless CI execution safety.
 """
@@ -158,19 +158,19 @@ def configure_game_scene_settings(
 
     # 3. Viewport Shading, Clipping & Overlay Inspections (Safely traversed)
     ctx = context
-    wm = getattr(ctx, "window_manager", None)
+    wm = ctx.window_manager if ctx else None
     viewports_count = 0
 
-    if wm and getattr(wm, "windows", None):
+    if wm and wm.windows:
         try:
             for window in wm.windows:
-                screen = getattr(window, "screen", None)
-                if not screen or not getattr(screen, "areas", None):
+                screen = window.screen
+                if not screen or not screen.areas:
                     continue
                 for area in screen.areas:
-                    if getattr(area, "type", "") == "VIEW_3D":
-                        for space in getattr(area, "spaces", []):
-                            if getattr(space, "type", "") == "VIEW_3D":
+                    if area.type == "VIEW_3D":
+                        for space in area.spaces:
+                            if space.type == "VIEW_3D":
                                 _apply_viewport_space_settings(
                                     space,
                                     clip_start=opts.clip_start,
@@ -199,30 +199,18 @@ def _apply_viewport_space_settings(
 ) -> None:
     """Applies clipping and overlay/shading options to a single SpaceView3D instance."""
     space = cast("bpy.types.SpaceView3D", space_in)
-    try:
-        space.clip_start = float(clip_start)
-    except (AttributeError, TypeError):
-        pass
-    try:
-        space.clip_end = float(clip_end)
-    except (AttributeError, TypeError):
-        pass
+    space.clip_start = float(clip_start)
+    space.clip_end = float(clip_end)
 
-    try:
-        overlay = space.overlay
-        if overlay is not None:
-            overlay.show_stats = bool(enable_stats)
-    except (AttributeError, TypeError):
-        pass
+    overlay = space.overlay
+    if overlay is not None:
+        overlay.show_stats = bool(enable_stats)
 
-    try:
-        shading = space.shading
-        if shading is not None:
-            shading.show_cavity = bool(enable_cavity)
-            shading.cavity_type = "BOTH"
-            shading.show_backface_culling = bool(enable_backface_culling)
-    except (AttributeError, TypeError):
-        pass
+    shading = space.shading
+    if shading is not None:
+        shading.show_cavity = bool(enable_cavity)
+        shading.cavity_type = "BOTH"
+        shading.show_backface_culling = bool(enable_backface_culling)
 
 
 def setup_asset_collections(

@@ -2,7 +2,7 @@
 Hardened Occlusion & Interior Geometry Removal Engine for OmniMesh.
 Detects and strips interior/occluded polygons from lower LOD tiers while evaluating
 material transparency (Transmission, Glass/Transparent BSDFs, and Alpha texture cutouts).
-Blender 4.2+ & 5.2 LTS Compatible.
+Blender 5.0+ & 5.2 LTS Compatible.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from .sanitizer import MeshSanitizer
 
 class RobustTransparencyEvaluator:
     """
-    Evaluates material and texture transparency across Blender 4.2+ and 5.2 LTS,
+    Evaluates material and texture transparency across Blender 5.0+ and 5.2 LTS,
     including EEVEE Next dithered transparency, node graph inspection, and fast
     strided C-buffer alpha evaluation without memory allocation bloat.
     """
@@ -53,10 +53,10 @@ class RobustTransparencyEvaluator:
         if not mat:
             return False
 
-        # 1. Inspect Blender 4.2+ / 5.x EEVEE Next & legacy blend modes
-        if hasattr(mat, "surface_render_method") and getattr(mat, "surface_render_method", "") == "DITHERED":
+        # 1. Inspect Blender 5.0+ EEVEE Next & legacy blend modes
+        if getattr(mat, "surface_render_method", "") == "DITHERED":
             return True
-        if hasattr(mat, "blend_method") and getattr(mat, "blend_method", "") in {"BLEND", "CLIP", "HASHED"}:
+        if getattr(mat, "blend_method", "") in {"BLEND", "CLIP", "HASHED"}:
             return True
 
         # If material doesn't use nodes, check diffuse color alpha
@@ -87,9 +87,9 @@ class RobustTransparencyEvaluator:
                 return True
 
             # Recursively inspect node groups
-            sub_tree = getattr(node, "node_tree", None)
-            if node_type == "GROUP" and sub_tree:
-                if cls._evaluate_node_tree(sub_tree, depth + 1):
+            if node_type == "GROUP":
+                sub_tree = cast("bpy.types.ShaderNodeGroup", node).node_tree
+                if sub_tree and cls._evaluate_node_tree(sub_tree, depth + 1):
                     return True
 
             # Inspect Principled BSDF
@@ -362,11 +362,7 @@ class HardenedOcclusionCuller:
     @staticmethod
     def _stratified_hemisphere_dirs(normal: Vector, count: int) -> List[Vector]:
         """Generates cosine-weighted stratified hemisphere directions oriented along normal."""
-        l_sq = getattr(normal, "length_squared", None)
-        if l_sq is None:
-            length_val = getattr(normal, "length", None)
-            l_sq = (length_val * length_val) if length_val is not None else 0.0
-        if l_sq < 1e-8:
+        if normal.length_squared < 1e-8:
             return []
         dirs = []
         n = normal.normalized()

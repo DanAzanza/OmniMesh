@@ -158,7 +158,7 @@ def resolve_effective_asset_name(
                 if stem and stem != "Collection" and (not available or stem in available):
                     return stem
 
-    active_obj = getattr(context, "active_object", None) if context else None
+    active_obj = context.active_object if context else None
     if active_obj:
         raw_name = active_obj.name
         stem = _strip_collection_suffixes(raw_name)
@@ -214,7 +214,7 @@ def get_asset_base_meshes(
     if not coll:
         selected = (context.selected_objects or []) if context else []
         meshes = [o for o in selected if o.type == "MESH"]
-        act_obj = getattr(context, "active_object", None) if context else None
+        act_obj = context.active_object if context else None
         if not meshes and act_obj:
             if act_obj.type == "MESH":
                 meshes = [act_obj]

@@ -1,6 +1,6 @@
 """
 OmniMesh Unified Sub-Pixel & Slender Feature Culler.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - Pure Screen-Space Error (SSE) Bound Coupling: 100% physically and geometrically grounded.
 - Unified Sub-Pixel Geometry Culling:
@@ -116,7 +116,7 @@ class SlenderFeatureCuller:
         # First pass: collect unique vertices, bounding box, and centroid to eliminate translation offsets
         unique_verts: set[bmesh.types.BMVert] = set()
         for f in face_group:
-            for v in getattr(f, "verts", []):
+            for v in f.verts:
                 unique_verts.add(v)
                 co = v.co
                 for axis in range(3):
@@ -134,11 +134,11 @@ class SlenderFeatureCuller:
 
         signed_volume = 0.0
         for f in face_group:
-            area = getattr(f, "calc_area", lambda: 0.0)()
+            area = f.calc_area()
             total_area += area
 
             # Signed volume contribution relative to island centroid (eliminates spurious origin offset)
-            verts = getattr(f, "verts", [])
+            verts = f.verts
             if len(verts) >= 3:
                 v0 = [verts[0].co[0] - c_x, verts[0].co[1] - c_y, verts[0].co[2] - c_z]
                 for i in range(1, len(verts) - 1):
@@ -165,9 +165,9 @@ class SlenderFeatureCuller:
         face_group_set = set(face_group)
         boundary_edges = []
         for f in face_group:
-            for e in getattr(f, "edges", []):
+            for e in f.edges:
                 # Count neighbors within this island
-                nbrs = [lf for lf in getattr(e, "link_faces", []) if lf in face_group_set]
+                nbrs = [lf for lf in e.link_faces if lf in face_group_set]
                 if len(nbrs) == 1:
                     boundary_edges.append(e)
 
@@ -188,7 +188,7 @@ class SlenderFeatureCuller:
 
         # 2. Open cylindrical tube / cable (boundary edges form end rings): derive diameter from ring perimeter
         if boundary_edges and total_area > 1e-8:
-            total_b_len = sum(getattr(e, "calc_length", lambda: 0.0)() for e in boundary_edges)
+            total_b_len = sum(e.calc_length() for e in boundary_edges)
             # Typically 2 end rings for an open tube
             num_rings = 2 if len(boundary_edges) >= 6 else 1
             avg_ring_circ = total_b_len / num_rings
@@ -231,7 +231,7 @@ class SlenderFeatureCuller:
         - Case B (Slender Thin Features): thickness <= delta_world AND aspect_ratio >= MIN_ASPECT_RATIO
         Returns: {"culled_islands": int, "culled_faces": int}
         """
-        if not bm or not hasattr(bm, "faces") or len(bm.faces) == 0:
+        if not bm or bm.faces is None or len(bm.faces) == 0:
             return {"culled_islands": 0, "culled_faces": 0}
 
         delta_world = cls.compute_world_tolerance(
@@ -283,9 +283,7 @@ class SlenderFeatureCuller:
             is_slender_wire = thickness <= delta_world and aspect_ratio >= cls.MIN_ASPECT_RATIO and thickness > 0
 
             if is_slender_wire and protect_silhouettes:
-                has_silhouette_boundary = any(
-                    getattr(e, "is_boundary", False) for f in island for e in getattr(f, "edges", [])
-                )
+                has_silhouette_boundary = any(e.is_boundary for f in island for e in f.edges)
                 if has_silhouette_boundary:
                     is_slender_wire = False
 
@@ -299,7 +297,7 @@ class SlenderFeatureCuller:
                 # Protect against wiping out the entire mesh (which causes 0 polygons and fails export checks)
                 largest_island = max(
                     islands,
-                    key=lambda isl: sum(getattr(f, "calc_area", lambda: 0.0)() for f in isl),
+                    key=lambda isl: sum(f.calc_area() for f in isl),
                 )
                 safe_to_cull = [f for f in culled_faces if f not in set(largest_island)]
                 culled_islands_count = max(0, culled_islands_count - 1)

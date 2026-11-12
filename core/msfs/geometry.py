@@ -86,10 +86,10 @@ def extract_world_vertices_numpy(
     Evaluates modifiers (if depsgraph is provided) and guarantees that temporary
     mesh instances are freed. Can also accept a list/tuple of objects.
     """
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, Sequence):
         return collect_airframe_vertices(list(obj), depsgraph=depsgraph, filter_non_structural=False)
 
-    if obj is None or not hasattr(obj, "type") or getattr(obj, "type", "") != "MESH" or not getattr(obj, "data", None):
+    if obj is None or obj.type != "MESH" or not obj.data:
         return np.empty((0, 3), dtype=np.float32)
 
     b_obj = cast("bpy.types.Object", obj)
@@ -352,7 +352,7 @@ def detect_wheel_submeshes(
             center_x = (min_x + max_x) * 0.5
             center_y = (min_y + max_y) * 0.5
             candidates.append((obj_name, (center_x, center_y, min_z)))
-        elif hasattr(obj, "bound_box") and hasattr(obj, "matrix_world"):
+        elif obj.bound_box and obj.matrix_world:
             try:
                 mw = obj.matrix_world
                 world_pts = [mw @ Vector(pt) for pt in obj.bound_box] if Vector else list(obj.bound_box)

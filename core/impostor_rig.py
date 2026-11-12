@@ -1,6 +1,6 @@
 """
 OmniMesh Ephemeral Bake Scene Guard & Orthographic Camera Rig for Impostor Baking.
-Blender 4.2+ and 5.0+ LTS Compatible.
+Blender 5.0+ & 5.2 LTS Compatible.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ class EphemeralBakeSceneGuard:
 
         if not self.orig_scene:
             bdata_scenes = bdata.scenes if bdata else None
-            self.orig_scene = (ctx.scene if ctx and hasattr(ctx, "scene") else None) or (
+            self.orig_scene = (ctx.scene if ctx else None) or (
                 bdata_scenes[0] if bdata_scenes and len(bdata_scenes) > 0 else None
             )
 
@@ -79,7 +79,7 @@ class EphemeralBakeSceneGuard:
         if render:
             render.film_transparent = True
             render.dither_intensity = 0.0
-            is_bg = getattr(bpy.app, "background", False) if (bpy and hasattr(bpy, "app")) else False
+            is_bg = bool(bpy.app.background) if bpy else False
             preferred = (
                 ("CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")
                 if is_bg
@@ -100,24 +100,24 @@ class EphemeralBakeSceneGuard:
                                 ("device", "CPU"),
                             ):
                                 setattr(cycles, attr, val)
-                        elif eevee is not None and hasattr(eevee, "taa_render_samples"):
+                        elif eevee is not None:
                             eevee.taa_render_samples = 1
                         break
                 except (TypeError, ValueError, AttributeError) as eng_err:
                     logger.debug("Render engine %s not available: %s", eng, eng_err)
 
         # Black unlit world background
-        bdata_worlds = getattr(bdata, "worlds", None) if bdata else None
+        bdata_worlds = bdata.worlds if bdata else None
         if bdata_worlds:
             world = bdata_worlds.new(f"{self.temp_scene_name}_World")
             world.use_nodes = True
-            if getattr(world, "node_tree", None) and getattr(world.node_tree, "nodes", None):
+            if world.node_tree and world.node_tree.nodes:
                 bg = world.node_tree.nodes.get("Background")
                 if bg and "Color" in bg.inputs:
                     bg.inputs["Color"].default_value = (0.0, 0.0, 0.0, 1.0)
             self.bake_scene.world = world
 
-        win = getattr(ctx, "window", None)
+        win = ctx.window if ctx else None
         if win:
             win.scene = self.bake_scene
         return self.bake_scene
@@ -134,7 +134,7 @@ class EphemeralBakeSceneGuard:
         bdata_scenes = bdata.scenes if bdata else None
 
         try:
-            win = ctx.window if ctx and hasattr(ctx, "window") else None
+            win = ctx.window if ctx else None
             if self.orig_scene and win:
                 win.scene = self.orig_scene
             if self.bake_scene:
@@ -222,7 +222,7 @@ class ImpostorCameraRig:
         offset = Vector((dist * cp * math.sin(angle_rad), -dist * cp * math.cos(angle_rad), dist * math.sin(pitch_rad)))
         cam_obj.location = center_v + offset
         dir_vec = center_v - cam_obj.location
-        if dir_vec.length > 1e-6 and hasattr(dir_vec, "to_track_quat"):
+        if dir_vec.length > 1e-6:
             rot_quat = dir_vec.to_track_quat("-Z", "Y")
             cam_obj.rotation_euler = rot_quat.to_euler()
 

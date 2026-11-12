@@ -1,6 +1,6 @@
 """
 8-Way & Octahedral Billboard Impostor Generator & Atlas Baking Pipeline for OmniMesh.
-Blender 4.2+ and 5.2 LTS Compatible.
+Blender 5.0+ and 5.2 LTS Compatible.
 
 Provides:
 - Impostor Math: Hemi-octahedral & Full-sphere octahedral coordinate mappings
@@ -305,20 +305,11 @@ class ImpostorManager:
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
 
-        # Configure material transparency & two-sided
-        try:
-            mat.surface_render_method = "DITHERED"
-        except (TypeError, ValueError, AttributeError) as exc:
-            logger.debug("Could not set surface_render_method: %s", exc)
-        try:
-            mat.use_transparent_shadow = True
-        except (TypeError, ValueError, AttributeError) as exc:
-            logger.debug("Could not set use_transparent_shadow: %s", exc)
+        # Configure material transparency & two-sided (Blender 5.0+ EEVEE Next)
+        mat.surface_render_method = "DITHERED"
+        mat.use_transparent_shadow = True
         mat.use_backface_culling = True
-        try:
-            mat.use_backface_culling_shadow = True
-        except (TypeError, ValueError, AttributeError) as exc:
-            logger.debug("Could not set use_backface_culling_shadow: %s", exc)
+        mat.use_backface_culling_shadow = True
 
         nodes.clear()
 

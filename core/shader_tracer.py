@@ -492,7 +492,11 @@ class ShaderTracer:
             return None
 
         out_node = next(
-            (n for n in nodes if n.type == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True)),
+            (
+                n
+                for n in nodes
+                if n.type == "OUTPUT_MATERIAL" and cast("bpy.types.ShaderNodeOutputMaterial", n).is_active_output
+            ),
             None,
         )
         if not out_node:

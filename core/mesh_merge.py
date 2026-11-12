@@ -1,6 +1,6 @@
 """
 Multi-Mesh Join & Consolidation Engine for OmniMesh.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - LocalPivotSpaceMerge: Vertex and normal transformation into pivot relative space.
 - Pure BMesh data pipelines (Zero bpy.ops calls, zero context dependencies).

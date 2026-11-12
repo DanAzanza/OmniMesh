@@ -58,21 +58,14 @@ def configure_material_transparency(
 ) -> None:
     """
     Configures material transparency and shadow method across render engines,
-    safely handling EEVEE Next (Blender 4.2+) API deprecations.
+    using Blender 5.0+ EEVEE Next surface render properties.
     """
     if not mat:
         return
 
     # Blender 5.0+ EEVEE Next API
-    try:
-        mat.surface_render_method = "BLENDED" if mode in ("BLEND", "HASHED") else "DITHERED"
-    except (AttributeError, TypeError):
-        pass
-
-    try:
-        mat.use_transparent_shadow = shadow != "NONE"
-    except (AttributeError, TypeError):
-        pass
+    mat.surface_render_method = "BLENDED" if mode in ("BLEND", "HASHED") else "DITHERED"
+    mat.use_transparent_shadow = shadow != "NONE"
 
 
 def get_or_create_principled_node(mat: Material | None) -> Optional[Node]:

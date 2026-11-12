@@ -295,7 +295,7 @@ class AnimationRigSanitizer:
 
         if not blend_data:
             return None
-        bdata_actions = getattr(blend_data, "actions", None)
+        bdata_actions = cast("bpy.types.BlendData", blend_data).actions
 
         if not bdata_actions:
             return None
@@ -320,7 +320,7 @@ class AnimationRigSanitizer:
                 curves[(b_name, "rot", i)] = cls.create_action_fcurve(baked_action, data_path=data_path_rot, index=i)
 
         orig_frame = scene.frame_current
-        orig_subframe = getattr(scene, "frame_subframe", 0.0)
+        orig_subframe = scene.frame_subframe
 
         # Track previous frame rotations for quaternion sign continuity (prevents 360-degree spin flips)
         prev_rotations: dict[str, Quaternion | Sequence[float] | None] = {}

@@ -62,15 +62,12 @@ class RecursiveHLODManager:
             return (0, 0, 0)
 
         # 1. Custom RNA property check
-        try:
-            c_ix = obj.get("_chunk_ix")
-            c_iy = obj.get("_chunk_iy")
-            if isinstance(c_ix, (int, float)) and isinstance(c_iy, (int, float)):
-                c_iz = obj.get("_chunk_iz", 0)
-                iz_val = int(c_iz) if isinstance(c_iz, (int, float)) else 0
-                return (int(c_ix), int(c_iy), iz_val)
-        except AttributeError:
-            pass
+        c_ix = obj.get("_chunk_ix")
+        c_iy = obj.get("_chunk_iy")
+        if isinstance(c_ix, (int, float)) and isinstance(c_iy, (int, float)):
+            c_iz = obj.get("_chunk_iz", 0)
+            iz_val = int(c_iz) if isinstance(c_iz, (int, float)) else 0
+            return (int(c_ix), int(c_iy), iz_val)
 
         # 2. Regex matching on object name
         name = obj.name

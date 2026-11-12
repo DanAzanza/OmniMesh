@@ -102,17 +102,16 @@ class ProjectTextureRelinker:
             return False
 
         # Generated procedural canvases or render results
-        if getattr(img, "source", "") in ("GENERATED", "VIEWER"):
+        if img.source in ("GENERATED", "VIEWER"):
             return True
 
         # Packed internal textures
-        if getattr(img, "packed_file", None) is not None:
+        if img.packed_file is not None:
             return True
-        packed_files = getattr(img, "packed_files", None)
-        if packed_files is not None and len(packed_files) > 0:
+        if img.packed_files is not None and len(img.packed_files) > 0:
             return True
 
-        raw_filepath = getattr(img, "filepath", "")
+        raw_filepath = img.filepath or ""
         if not raw_filepath:
             return False
 
@@ -140,18 +139,18 @@ class ProjectTextureRelinker:
             base_dir = ""
             if blend_filepath:
                 base_dir = os.path.dirname(blend_filepath)
-            elif blend_data and getattr(blend_data, "filepath", None):
+            elif blend_data and blend_data.filepath:
                 base_dir = os.path.dirname(blend_data.filepath)
 
             if base_dir:
                 rel_part = raw_filepath[2:].lstrip("/\\")
                 return os.path.normpath(os.path.join(base_dir, rel_part))
 
-        if bpy and hasattr(bpy, "path") and hasattr(bpy.path, "abspath"):
+        if bpy:
             try:
                 return os.path.normpath(bpy.path.abspath(raw_filepath))
-            except (RuntimeError, ValueError, TypeError, OSError):
-                pass
+            except (RuntimeError, ValueError, TypeError, OSError) as exc:
+                logger.debug("bpy.path.abspath fallback for '%s': %s", raw_filepath, exc)
 
         return os.path.normpath(raw_filepath)
 
@@ -325,7 +324,7 @@ class ProjectTextureRelinker:
         if not images or not search_roots:
             return RelinkSummary()
 
-        resolved_blend_path = blend_filepath or (getattr(blend_data, "filepath", None) if blend_data else None)
+        resolved_blend_path = blend_filepath or (blend_data.filepath if blend_data else None)
 
         # Filter candidates needing relinking
         missing_images: list[tuple[bpy.types.Image, str]] = []
@@ -336,8 +335,8 @@ class ProjectTextureRelinker:
                 already_valid += 1
                 continue
 
-            raw_path = getattr(img, "filepath", "")
-            fname = os.path.basename(raw_path) or getattr(img, "name", "")
+            raw_path = img.filepath or ""
+            fname = os.path.basename(raw_path) or img.name or ""
             if fname:
                 missing_images.append((img, fname))
 
@@ -357,7 +356,7 @@ class ProjectTextureRelinker:
         unresolved_count = 0
 
         for img, fname in missing_images:
-            raw_path = getattr(img, "filepath", "")
+            raw_path = img.filepath or ""
             match = cls.find_matching_file(fname, raw_path, texture_index)
 
             if match is None:
@@ -373,12 +372,10 @@ class ProjectTextureRelinker:
             try:
                 img.filepath = new_path_str
                 # Reload buffers into Blender memory
-                reload_fn = getattr(img, "reload", None)
-                if callable(reload_fn):
-                    try:
-                        reload_fn()
-                    except RuntimeError as exc:
-                        logger.warning("Could not reload image buffer '%s': %s", img.name, exc)
+                try:
+                    img.reload()
+                except RuntimeError as exc:
+                    logger.warning("Could not reload image buffer '%s': %s", img.name, exc)
                 relinked_pairs.append((img.name, new_path_str))
             except (RuntimeError, TypeError, ValueError, AttributeError, OSError) as exc:
                 logger.warning("Failed assigning relinked path to image '%s': %s", img.name, exc)

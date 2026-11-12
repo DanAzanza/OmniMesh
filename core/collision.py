@@ -85,10 +85,10 @@ class CollisionManager:
             except (AttributeError, TypeError, ReferenceError) as e:
                 logger.debug("Failed checking target collection membership: %s", e)
             if not already_in:
-                if hasattr(c_children, "link"):
-                    c_children.link(target_coll)
-                elif hasattr(c_children, "append"):
+                if isinstance(c_children, list):
                     c_children.append(target_coll)
+                else:
+                    c_children.link(target_coll)
             # Unlink from scene root if nested under root_coll
             if sc and sc.collection:
                 try:
@@ -173,19 +173,15 @@ class CollisionManager:
         else:
             # PER_OBJECT Area-Weighted Decomposition
             total_area = (
-                sum(
-                    sum(getattr(p, "area", 0.0) for p in getattr(obj.data, "polygons", []))
-                    for obj in mesh_objs
-                    if obj.data
-                )
+                sum(sum(p.area for p in cast("bpy.types.Mesh", obj.data).polygons) for obj in mesh_objs if obj.data)
                 or 1.0
             )
 
             for obj in mesh_objs:
-                obj_data = obj.data
+                obj_data = cast("bpy.types.Mesh | None", obj.data)
                 if not obj_data:
                     continue
-                obj_area = sum(getattr(p, "area", 0.0) for p in getattr(obj_data, "polygons", []))
+                obj_area = sum(p.area for p in obj_data.polygons)
                 # Area-weighted hull budget
                 obj_hull_budget = max(1, int(round(hull_count * (obj_area / total_area))))
                 sub_base = obj.name.split("_LOD")[0]
@@ -208,7 +204,7 @@ class CollisionManager:
                         if obj.parent:
                             c_obj.parent = obj.parent
                             c_obj.parent_type = obj.parent_type
-                            if hasattr(obj, "parent_bone") and obj.parent_bone:
+                            if obj.parent_bone:
                                 c_obj.parent_bone = obj.parent_bone
                             c_obj.matrix_parent_inverse = obj.matrix_parent_inverse.copy()
                         c_obj.matrix_world = obj.matrix_world.copy()

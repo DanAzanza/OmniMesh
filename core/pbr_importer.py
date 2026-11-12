@@ -1,12 +1,12 @@
 """
 OmniMesh PBR Texture Importer & Multi-Channel Shader Graph Builder.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS (EEVEE Next, Principled BSDF V2, AgX / OpenColorIO).
+Architected for Blender 5.0+ & Blender 5.2 LTS (EEVEE Next, Principled BSDF V2, AgX / OpenColorIO).
 Features:
 - Dynamic JSON preset-driven semantic classification with UDIM and tag stripping.
 - Priority-based socket conflict arbitration.
 - Hardened channel demuxing (RGB, R, G, B via SeparateColor, Alpha tapped directly).
 - Anti-chrome mirror guard on missing alpha.
-- Type-safe ShaderNodeMix RGBA socket resolution across Blender 4.2+ & 5.2 LTS.
+- Type-safe ShaderNodeMix RGBA socket resolution across Blender 5.0+ & 5.2 LTS.
 - Non-destructive DirectX normal map green-channel inversion.
 - Longest-prefix tokenized material slot matcher.
 """
@@ -143,7 +143,7 @@ class ShaderGraphBuilder:
         mix_node: bpy.types.Node, identifier: str, is_output: bool = False
     ) -> bpy.types.NodeSocket | None:
         """
-        Type-safe RGBA socket resolver for ShaderNodeMix across Blender 4.2+ and 5.2 LTS.
+        Type-safe RGBA socket resolver for ShaderNodeMix across Blender 5.0+ and 5.2 LTS.
         Guards against duplicate socket names where inputs.get('A') returns the Float socket!
         """
         sockets = mix_node.outputs if is_output else mix_node.inputs
@@ -347,10 +347,7 @@ class ShaderGraphBuilder:
                 return None
 
             if is_rel:
-                try:
-                    img.filepath = final_path
-                except AttributeError:
-                    pass
+                img.filepath = final_path
 
             is_data = color_space != "sRGB"
             OCIOColorSpaceResolver.apply_colorspace(img, is_data=is_data)
@@ -468,10 +465,7 @@ class ShaderGraphBuilder:
                         set_socket_default_value(strength_sock, 1.0)
                 elif target in {"Alpha", "Opacity"}:
                     dest_sock = cls.resolve_bsdf_socket(bsdf_node, target)
-                    try:
-                        material.surface_render_method = "DITHERED"
-                    except AttributeError:
-                        pass
+                    material.surface_render_method = "DITHERED"
                 elif target in {"Displacement", "Height"}:
                     # Connect to Material Output Displacement via Displacement node
                     disp_node = nodes.new(type="ShaderNodeDisplacement")

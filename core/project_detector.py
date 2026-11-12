@@ -56,7 +56,7 @@ def detect_engine_project(
             filepath = getattr(bdata, "filepath", "")
             if not is_saved or not filepath:
                 return None
-            if bpy is not None and hasattr(bpy, "path") and hasattr(bpy.path, "abspath"):
+            if bpy is not None:
                 try:
                     abs_dir = bpy.path.abspath(export_dir, start=os.path.dirname(filepath))
                 except (RuntimeError, ValueError, AttributeError) as exc:

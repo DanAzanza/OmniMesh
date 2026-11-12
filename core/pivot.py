@@ -1,6 +1,6 @@
 """
 OmniMesh Pivot & Socket Preservation Engine.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - Pivot empty detection (Pivot, Root, Origin, is_pivot tag).
 - Sockets and accessory mount points identifier (SOCKET_*, SOCK_*, MOUNT_*, ATTACH_*).
@@ -111,14 +111,14 @@ class PivotPreservationEngine:
             return fallback_identity
 
         if not pivot_obj or pivot_obj.matrix_world is None:
-            return obj_world.copy() if hasattr(obj_world, "copy") else obj_world
+            return obj_world.copy()
 
         pivot_world = pivot_obj.matrix_world
         try:
             return pivot_world.inverted() @ obj_world
         except (ValueError, AttributeError, RuntimeError) as exc:
             logger.debug("Matrix inversion failed, using object world matrix: %s", exc)
-            return obj_world.copy() if hasattr(obj_world, "copy") else obj_world
+            return obj_world.copy()
 
     @classmethod
     def transform_vertex_to_pivot_space(
@@ -131,9 +131,7 @@ class PivotPreservationEngine:
         rel_matrix = cls.get_relative_matrix(obj, pivot_obj)
         if rel_matrix is None:
             return co
-        if hasattr(rel_matrix, "__matmul__"):
-            return cast("Vector", cast("Matrix", rel_matrix) @ cast("Vector", co))
-        return co
+        return cast("Vector", cast("Matrix", rel_matrix) @ cast("Vector", co))
 
     @classmethod
     def transform_normal_to_pivot_space(
@@ -215,8 +213,8 @@ class PivotPreservationEngine:
         while strictly preserving their exact world-space locations.
         """
         ctx = context
-        vl = getattr(ctx, "view_layer", None)
-        if vl and hasattr(vl, "update"):
+        vl = ctx.view_layer if ctx else None
+        if vl:
             try:
                 vl.update()
             except (RuntimeError, AttributeError) as exc:

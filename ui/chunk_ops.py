@@ -1,7 +1,7 @@
 # pyright: reportInvalidTypeForm=none
 """
 OmniMesh Spatial Chunking & HLOD Generation Operators.
-Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
+Architected for Blender 5.0+ & Blender 5.2 LTS.
 Features:
 - LOD_OT_spatial_chunk_and_generate: Executes 2.5D AABB slicing, seam-locked LOD1 generation,
   and seam-welded unified HLOD merging for LOD2+.

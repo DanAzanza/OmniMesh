@@ -160,7 +160,9 @@ def main() -> int:
         blender_bin = None
 
     blender_tested = False
-    if blender_bin and not skip_blender:
+    if skip_blender:
+        print("\n[SKIP] In-Blender integration tests skipped (--skip-blender).")
+    elif blender_bin:
         blender_test_script = os.path.join(os.path.dirname(__file__), "run_blender_tests.py")
         if not run_command([sys.executable, blender_test_script, "--coverage"], "In-Blender Integration Test Suite"):
             return 1

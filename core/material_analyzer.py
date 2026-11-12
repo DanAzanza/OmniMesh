@@ -115,13 +115,13 @@ class MSFSMaterialAnalyzer:
     @classmethod
     def analyze_mesh_object(cls, obj: bpy.types.Object | None) -> list[MaterialProfile]:
         """Inspects all material slots on a mesh object and returns their profiles."""
-        if not obj or getattr(obj, "type", "") != "MESH":
+        if not obj or obj.type != "MESH":
             return []
 
-        slots = getattr(obj, "material_slots", [])
+        slots = obj.material_slots or ()
         profiles: list[MaterialProfile] = []
         for slot in slots:
-            mat = getattr(slot, "material", None)
+            mat = slot.material
             if mat:
                 profiles.append(cls.classify_material(mat))
 

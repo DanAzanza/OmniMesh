@@ -602,9 +602,8 @@ def generate_all_lods(
             msg = f"Successfully generated {len(lods_list)} Sibling LOD Collections for '{base_name}'"
 
         if bool(props.enable_impostor_lod):
-            ops = getattr(bpy, "ops", None)
-            lod_ops = getattr(ops, "lod_tool", None) if ops else None
-            if lod_ops and hasattr(lod_ops, "generate_impostor"):
+            lod_ops = getattr(bpy.ops, "lod_tool", None) if bpy else None
+            if lod_ops:
                 try:
                     res = lod_ops.generate_impostor()
                     if res != {"FINISHED"}:
@@ -642,8 +641,8 @@ def generate_all_lods(
                 shared_ref_cleanup_err = f"{shared_ref_merged_obj.name}: {exc}"
                 logger.error("Cleanup shared_ref_merged_obj exception: %s", exc)
 
-        if arm_data and orig_pose_pos and hasattr(arm_data, "pose_position"):
-            arm_data.pose_position = orig_pose_pos
+        if arm_data and orig_pose_pos:
+            cast("bpy.types.Armature", arm_data).pose_position = orig_pose_pos
 
         if shared_ref_cleanup_err:
             logger.warning(
