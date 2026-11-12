@@ -43,14 +43,14 @@ Unlike traditional Blender add-ons that force artists to manually select objects
 
 ### Outliner Structure & Hierarchy Rules
 1. **Multi-Model Sibling Containers directly under `Scene Collection`**:
-   - `{AssetName}`: Primary exterior airframe or base model container (no suffix required).
-   - `{AssetName}_Interior`: Dedicated cockpit / flight deck model container.
-   - `{AssetName}_{Variant}`: Modular geometry variants (e.g. `{AssetName}_Floats`, `{AssetName}_Skis`, `{AssetName}_Cargo`).
+   - `{AssetName}`: Primary exterior vehicle, airframe, or base model container (no suffix required).
+   - `{AssetName}_Interior`: Dedicated interior / cockpit model container.
+   - `{AssetName}_{Variant}`: Modular geometry variants (e.g. `{AssetName}_Cargo`, `{AssetName}_Floats`, `{AssetName}_Skis`).
 2. **Dedicated Technical Configuration Sibling (`_Config`)**:
    - Technical configuration collections (`Spatial`, `Lights`, `Cameras`) reside strictly under each model's dedicated `{AssetName}_Config` sibling container, keeping `_LOD0` as 100% pure render geometry:
-     - **Exterior `_Config`**: `{AssetName}_Spatial` (Datum, CG, Wheels, Scrapes, Fuel), `{AssetName}_Lights` (Nav, Strobe, Beacon, Landing, Taxi), `{AssetName}_Cameras` (Airframe cameras: Tail, Wing, Belly).
-     - **Interior `_Config`**: `{AssetName}_Interior_Cameras` (Eyepoint & Cockpit views: Pilot, CoPilot, PFD, MFD), `{AssetName}_Interior_Lights` (Panel, Flood).
-     - **Variant `_Config`**: `{AssetName}_{Variant}_Spatial` (Water contact points, Ski scrapes).
+     - **Exterior `_Config`**: `{AssetName}_Spatial` (Datum, CG, Wheels, Scrapes, Fuel), `{AssetName}_Lights` (Headlights, Taillights, Nav, Strobe, Landing), `{AssetName}_Cameras` (Exterior views: Chase, Bumper, Tail, Wing).
+     - **Interior `_Config`**: `{AssetName}_Interior_Cameras` (Driver, Pilot, CoPilot, Dashboard views), `{AssetName}_Interior_Lights` (Dash, Panel, Flood).
+     - **Variant `_Config`**: `{AssetName}_{Variant}_Spatial` (Variant contact points & scrapes).
 3. **Automated Non-Destructive Siblings**: OmniMesh generates all derivative tiers into dedicated sibling collections without ever modifying or overwriting your original LOD0 geometry:
    - `{AssetName}_LOD1`, `{AssetName}_LOD2`, ... `{AssetName}_LODk`
    - `{AssetName}_Colliders` (convex physics hulls)
@@ -66,8 +66,8 @@ Unlike traditional Blender add-ons that force artists to manually select objects
    ├── 📁 {AssetName} (role: MODEL_ROOT)
    │    ├── 📁 {AssetName}_Config (role: CONFIG)
    │    │    ├── 📁 {AssetName}_Spatial (Datum, CG, Wheels, Fuel)
-   │    │    ├── 📁 {AssetName}_Lights (Nav, Strobe, Landing, Taxi)
-   │    │    └── 📁 {AssetName}_Cameras (Airframe views: Wing, Tail, Gear)
+   │    │    ├── 📁 {AssetName}_Lights (Headlights, Nav, Strobe, Landing)
+   │    │    └── 📁 {AssetName}_Cameras (Exterior views: Chase, Wing, Tail)
    │    ├── 📁 {AssetName}_Helpers (role: HELPERS - Strictly Excluded from Engine Exports)
    │    ├── 📁 {AssetName}_LOD0 (role: LOD0 - Pure Render Meshes)
    │    ├── 📁 {AssetName}_LOD1
@@ -76,7 +76,7 @@ Unlike traditional Blender add-ons that force artists to manually select objects
    ├── 📁 {AssetName}_Interior (role: INTERIOR)
    │    ├── 📁 {AssetName}_Interior_Config (role: CONFIG)
    │    │    ├── 📁 {AssetName}_Interior_Lights (Panel, Flood)
-   │    │    └── 📁 {AssetName}_Interior_Cameras (Eyepoint, Pilot, Instrument views)
+   │    │    └── 📁 {AssetName}_Interior_Cameras (Driver, Pilot, Dashboard views)
    │    ├── 📁 {AssetName}_Interior_Helpers (role: HELPERS)
    │    ├── 📁 {AssetName}_Interior_LOD0 (role: LOD0 - Pure Render Meshes)
    │    └── 📁 {AssetName}_Interior_LOD1
