@@ -62,10 +62,7 @@ else:
 
 
 class LODToolSettings(PropertyGroup):
-    """
-    Central PropertyGroup holding OmniMesh configuration and state.
-    Attached to both Scene (for project-wide pipeline globals) and Object (for per-asset geometry persistence).
-    """
+    """Central PropertyGroup holding OmniMesh configuration and state."""
 
     # Source Scope Architecture (Selection vs Collection Mode)
     lod_generation_source: EnumProperty(
@@ -82,6 +79,7 @@ class LODToolSettings(PropertyGroup):
     active_asset: EnumProperty(
         name="Asset Collection",
         items=get_asset_enum_items,
+        default=0,
         description="Target root asset collection for LOD configuration and generation",
         update=lambda self, context: callbacks.on_active_asset_updated(self, context),
     )

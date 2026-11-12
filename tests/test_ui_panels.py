@@ -653,8 +653,11 @@ def test_main_panel_tab_switching_and_target_asset_visibility(monkeypatch):
     mock_layout = MagicMock()
     mock_grid = MagicMock()
     mock_row_asset = MagicMock()
+    mock_box_scope = MagicMock()
     mock_layout.grid_flow.return_value = mock_grid
     mock_layout.row.return_value = mock_row_asset
+    mock_layout.box.return_value = mock_box_scope
+    mock_box_scope.row.return_value = mock_row_asset
     cast(Any, main_panel).layout = mock_layout
 
     mock_ctx = MagicMock()

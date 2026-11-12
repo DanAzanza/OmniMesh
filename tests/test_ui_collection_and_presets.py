@@ -157,8 +157,10 @@ def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
     main_panel = OMNIMESH_PT_main()
     main_panel.draw(None)
     mock_layout = MagicMock()
-    mock_grid, mock_row_asset = MagicMock(), MagicMock()
+    mock_grid, mock_box, mock_row_asset = MagicMock(), MagicMock(), MagicMock()
     mock_layout.grid_flow.return_value = mock_grid
+    mock_layout.box.return_value = mock_box
+    mock_box.row.return_value = mock_row_asset
     mock_layout.row.return_value = mock_row_asset
 
     cast(Any, main_panel).layout = mock_layout

@@ -143,7 +143,7 @@ def resolve_effective_asset_name(
     """
     if props:
         selected_asset = getattr(props, "active_asset", "AUTO")
-        if selected_asset and selected_asset not in ("AUTO", "NONE"):
+        if selected_asset and selected_asset not in ("AUTO", "NONE", "ALL"):
             return str(selected_asset)
 
     available = get_available_asset_names(context, blend_data=blend_data)

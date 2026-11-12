@@ -33,7 +33,7 @@ try:
     from ..core.pbr_presets import DEFAULT_PRESET_ID, PBRExportPresetManager, PBRImportPresetManager
     from .operators import resolve_lod_context
     from .popovers import POPOVER_CLASSES
-    from .utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
+    from .utils import get_asset_base_meshes, get_available_asset_names, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
     from core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
     from core.engine_import_presets import DEFAULT_ENGINE_IMPORT_PRESET_ID, EngineImportPresetManager
@@ -41,7 +41,7 @@ except (ImportError, ValueError):
     from core.pbr_presets import DEFAULT_PRESET_ID, PBRExportPresetManager, PBRImportPresetManager
     from ui.operators import resolve_lod_context
     from ui.popovers import POPOVER_CLASSES
-    from ui.utils import get_asset_base_meshes, is_object_valid, resolve_effective_asset_name
+    from ui.utils import get_asset_base_meshes, get_available_asset_names, is_object_valid, resolve_effective_asset_name
 
 
 # Tab Drawers
@@ -525,14 +525,40 @@ class OMNIMESH_PT_main(Panel):
         layout.separator(factor=0.3)
         active_tab = getattr(props, "ui_active_tab", "MODIFY")
 
-        # Top: Active Asset Selector (Full Width, shown for Modify, LODs, Export)
+        # Top: Target Scope Banner (Full Width, shown for Modify, LODs, Export)
         if active_tab != "IMPORT":
-            row_asset = layout.row(align=True)
+            box_scope = layout.box()
+            row_scope_hdr = box_scope.row(align=True)
+            row_scope_hdr.label(text="Target Scope", icon="FILTER")
+
+            row_asset = box_scope.row(align=True)
             row_asset.use_property_split = False
             row_asset.scale_y = 1.15
             row_asset.prop(props, "active_asset", text="", icon="OUTLINER_COLLECTION")
             row_asset.operator("omnimesh.initialize_asset", text="", icon="ADD")
-            layout.separator(factor=0.3)
+
+            # Dynamic Scope Feedback badge
+            active_val = getattr(props, "active_asset", "ALL")
+            if active_val == "ALL":
+                avail = get_available_asset_names(context)
+                if avail:
+                    all_meshes = get_asset_base_meshes(context, "ALL")
+                    box_scope.label(
+                        text=f"↳ All Assets ({len(avail)} Collections, {len(all_meshes)} LOD0 Meshes)", icon="INFO"
+                    )
+                else:
+                    box_scope.label(text="↳ No Root Assets in Scene", icon="INFO")
+            elif active_val == "AUTO":
+                eff_name = resolve_effective_asset_name(context, props)
+                base_meshes = get_asset_base_meshes(context, eff_name) if eff_name else []
+                box_scope.label(
+                    text=f"↳ Active in Outliner: '{eff_name}' ({len(base_meshes)} Meshes)", icon="OUTLINER_COLLECTION"
+                )
+            else:
+                base_meshes = get_asset_base_meshes(context, active_val) if active_val else []
+                box_scope.label(text=f"↳ Target: '{active_val}' ({len(base_meshes)} LOD0 Meshes)", icon="CHECKMARK")
+
+            layout.separator(factor=0.2)
 
         if active_tab == "IMPORT":
             _draw_tab_import(layout, context, props)

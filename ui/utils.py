@@ -83,6 +83,10 @@ def get_lod0_mesh_objects(context: Any, base_name: str = "") -> list[Any]:
     selected_objs = getattr(context, "selected_objects", []) or ([active_obj] if active_obj else [])
 
     props = getattr(getattr(context, "scene", None), "lod_tool", None)
+    if not base_name and getattr(props, "active_asset", "") == "ALL":
+        all_all = get_asset_base_meshes(context, "ALL")
+        if all_all:
+            return all_all
 
     if not base_name:
         try:
@@ -434,7 +438,7 @@ def resolve_effective_asset_name(context: Any, props: Any = None) -> str:
         props = getattr(getattr(context, "scene", None), "lod_tool", None)
 
     active_asset = getattr(props, "active_asset", "")
-    if isinstance(active_asset, str) and active_asset and active_asset not in {"AUTO", "NONE"}:
+    if isinstance(active_asset, str) and active_asset and active_asset not in {"AUTO", "NONE", "ALL"}:
         return active_asset
 
     export_base_name = getattr(props, "export_base_name", "")
@@ -488,6 +492,25 @@ def get_asset_collection(context: Any, asset_name: str) -> Any | None:
 
 def get_asset_base_meshes(context: Any, asset_name: str) -> list[Any]:
     """Retrieves all non-collider, non-impostor mesh objects belonging to the asset's LOD0."""
+    if asset_name == "ALL":
+        all_meshes: list[Any] = []
+        for a_name in get_available_asset_names(context):
+            coll_sub = get_asset_collection(context, a_name)
+            if coll_sub:
+                for obj in getattr(coll_sub, "objects", []):
+                    if not is_object_valid(obj) or getattr(obj, "type", "") != "MESH":
+                        continue
+                    name = getattr(obj, "name", "")
+                    is_col = bool(getattr(obj, "get", lambda *_: False)("_is_collider", False) is True)
+                    is_imp = bool(getattr(obj, "get", lambda *_: False)("_is_impostor", False) is True)
+                    if is_col or is_imp or name.startswith("UCX_") or "_Collider_" in name:
+                        continue
+                    if any(f"_LOD{n}" in name for n in range(1, 11)):
+                        continue
+                    if obj not in all_meshes:
+                        all_meshes.append(obj)
+        return all_meshes
+
     coll = get_asset_collection(context, asset_name)
     if coll:
         meshes = []
@@ -587,7 +610,10 @@ def get_asset_enum_items(self: Any, context: Any) -> list[tuple[str, str, str]]:
     """Dynamic EnumProperty callback listing available scene asset collections."""
     global _CACHED_ASSET_ITEMS
     names = get_available_asset_names(context)
-    items = [("AUTO", "AUTO (Follow Outliner)", "Dynamically follows active collection in the Outliner")]
+    items = [
+        ("ALL", "ALL (All Scene Assets)", "Target all detected asset collections in the active scene"),
+        ("AUTO", "AUTO (Follow Outliner)", "Dynamically follows active collection in the Outliner"),
+    ]
 
     sorted_base_names = sorted([n for n in names if not n.endswith("_Interior")], key=lambda x: (-len(x), x))
 
