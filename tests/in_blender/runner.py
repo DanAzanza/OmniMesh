@@ -93,7 +93,6 @@ def bootstrap_addon() -> None:
         "simulator_ops",
         "batch_panel",
         "setup_ops",
-        "split_preview",
         "hud",
         "msfs_export",
         "ue5_export",

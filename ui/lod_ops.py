@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
@@ -210,113 +210,6 @@ class LOD_OT_generate_all(Operator):
             return {"CANCELLED"}
 
 
-class LOD_OT_solo_tier(Operator):
-    """Isolate selected LOD tier in 3D Viewport or restore default visibility."""
-
-    bl_idname = "lod_tool.solo_tier"
-    bl_label = "Solo LOD Tier"
-    bl_description = "Isolates the selected LOD tier in 3D Viewport. Click again to restore standard visibility"
-    bl_options = {"REGISTER", "UNDO"}
-
-    tier_index: bpy.props.IntProperty(name="Tier Index", default=0) if bpy else 0
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"FINISHED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            props = context.scene.lod_tool
-
-        target_idx = int(self.tier_index)
-        base_name = props.export_base_name or (context.active_object.name if context.active_object else "Asset")
-        base_name = base_name.split("_LOD")[0]
-        view_layer = context.view_layer
-
-        if target_idx == -1:
-            # RESET: make all tiers visible
-            for i, itm in enumerate(props.lods):
-                itm.is_soloed = False
-                c_name = f"{base_name}_LOD{i}"
-                coll = bpy.data.collections.get(c_name)
-                if not coll and i == 0:
-                    coll = bpy.data.collections.get(base_name)
-                if coll:
-                    coll.hide_viewport = False
-                    target_objs = (
-                        list(coll.objects)
-                        if coll.objects
-                        else [o for o in cast(Any, coll.all_objects) if coll in o.users_collection]
-                    )
-                    for obj in target_objs:
-                        obj.hide_set(False, view_layer=view_layer)
-            safe_report(self, {"INFO"}, "Preview reset: All tiers visible.")
-            LODViewportHUD.update_cache(context)
-            LODViewportHUD.tag_redraw()
-            return {"FINISHED"}
-
-        if not props.lods or target_idx < 0 or target_idx >= len(props.lods):
-            return {"CANCELLED"}
-
-        target_tier = props.lods[target_idx]
-        already_soloed = getattr(target_tier, "is_soloed", False)
-
-        if already_soloed:
-            # UN-SOLO: Restore standard visibility (LOD0 shown, LOD1..k hidden)
-            for i, itm in enumerate(props.lods):
-                itm.is_soloed = False
-                c_name = f"{base_name}_LOD{i}"
-                coll = bpy.data.collections.get(c_name)
-                if not coll and i == 0:
-                    coll = bpy.data.collections.get(base_name)
-                if coll:
-                    coll.hide_viewport = i != 0
-                    target_objs = (
-                        list(coll.objects)
-                        if coll.objects
-                        else [o for o in cast(Any, coll.all_objects) if coll in o.users_collection]
-                    )
-                    for obj in target_objs:
-                        obj.hide_set(i != 0, view_layer=view_layer)
-            safe_report(self, {"INFO"}, "Un-soloed: Default scene visibility restored (LOD0 visible).")
-        else:
-            # SOLO: Isolate target_idx
-            for i, itm in enumerate(props.lods):
-                is_target = i == target_idx
-                itm.is_soloed = is_target
-                c_name = f"{base_name}_LOD{i}"
-                coll = bpy.data.collections.get(c_name)
-                if not coll and i == 0:
-                    coll = bpy.data.collections.get(base_name)
-                if coll:
-                    coll.hide_viewport = not is_target
-                    target_objs = (
-                        list(coll.objects)
-                        if coll.objects
-                        else [o for o in cast(Any, coll.all_objects) if coll in o.users_collection]
-                    )
-                    for obj in target_objs:
-                        obj.hide_set(not is_target, view_layer=view_layer)
-
-            props.active_lod_index = target_idx
-            if target_tier.generated_obj and target_tier.generated_obj.name in bpy.data.objects:
-                try:
-                    view_layer.objects.active = target_tier.generated_obj
-                except Exception as exc:
-                    logger.debug("Failed setting active object during solo: %s", exc)
-
-            safe_report(self, {"INFO"}, f"Soloing {target_tier.name}")
-
-        LODViewportHUD.update_cache(context)
-        LODViewportHUD.tag_redraw()
-
-        if hasattr(context, "screen") and context.screen:
-            for area in context.screen.areas:
-                if area.type == "VIEW_3D":
-                    area.tag_redraw()
-
-        return {"FINISHED"}
-
-
 class LOD_OT_add_lod_tier(Operator):
     """Append a new LOD tier to the active configuration."""
 
@@ -418,21 +311,6 @@ class LOD_OT_remove_lod_tier(Operator):
         LODViewportHUD.tag_redraw()
         safe_report(self, {"INFO"}, f"Removed {removed_name}.")
         return {"FINISHED"}
-
-
-class LOD_OT_preview_tier(Operator):
-    """Isolate and display selected LOD tier geometry in 3D Viewport."""
-
-    bl_idname = "lod_tool.preview_tier"
-    bl_label = "Preview Selected Tier"
-    bl_options = {"REGISTER", "UNDO"}
-
-    tier_index: bpy.props.IntProperty(default=0) if bpy else 0
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy:
-            return {"FINISHED"}
-        return cast(Any, bpy.ops).lod_tool.solo_tier(tier_index=int(self.tier_index))
 
 
 class LOD_OT_sync_selection_settings(Operator):
@@ -664,10 +542,8 @@ LOD_OPERATOR_CLASSES = (
     LOD_OT_reset_to_preset,
     LOD_OT_analyze_and_configure,
     LOD_OT_generate_all,
-    LOD_OT_solo_tier,
     LOD_OT_add_lod_tier,
     LOD_OT_remove_lod_tier,
-    LOD_OT_preview_tier,
     LOD_OT_sync_selection_settings,
     LOD_OT_select_master_asset,
     LOD_OT_toggle_side_by_side,
@@ -678,10 +554,8 @@ __all__ = [
     "LOD_OT_reset_to_preset",
     "LOD_OT_analyze_and_configure",
     "LOD_OT_generate_all",
-    "LOD_OT_solo_tier",
     "LOD_OT_add_lod_tier",
     "LOD_OT_remove_lod_tier",
-    "LOD_OT_preview_tier",
     "LOD_OT_sync_selection_settings",
     "LOD_OT_select_master_asset",
     "LOD_OT_toggle_side_by_side",

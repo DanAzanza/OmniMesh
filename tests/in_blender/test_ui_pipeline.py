@@ -87,10 +87,6 @@ class TestUIPipeline(unittest.TestCase):
             # Reset to preset
             self.assertEqual(ops_lod.reset_to_preset(), {"FINISHED"})
 
-            # Solo and un-solo tier
-            self.assertEqual(ops_lod.solo_tier(tier_index=0), {"FINISHED"})
-            self.assertEqual(ops_lod.solo_tier(tier_index=-1), {"FINISHED"})
-
             # Sync selection settings
             self.assertEqual(ops_lod.sync_selection_settings(), {"FINISHED"})
 
@@ -120,7 +116,7 @@ class TestUIPipeline(unittest.TestCase):
             assert interact_col is not None
             self.assertGreater(len(interact_col.objects), 0)
 
-            # 2. Generate and remove collision hulls
+            # 2. Generate collision hulls
             res_col_gen = ops_lod.generate_collision_hulls()
             self.assertEqual(res_col_gen, {"FINISHED"})
 
@@ -128,10 +124,6 @@ class TestUIPipeline(unittest.TestCase):
             self.assertIsNotNone(coll_col)
             assert coll_col is not None
             self.assertGreater(len(coll_col.objects), 0)
-
-            res_col_rem = ops_lod.remove_collision_hulls()
-            self.assertEqual(res_col_rem, {"FINISHED"})
-            self.assertEqual(len(coll_col.objects), 0)
 
     def test_toggle_side_by_side_in_blender(self) -> None:
         """Verify side-by-side inspection placement and reset alignment in Blender."""

@@ -106,32 +106,3 @@ class TestCollisionPipeline(unittest.TestCase):
                 self.assertTrue(c_obj.get("_is_collider", False))
                 c_data: Any = c_obj.data
                 self.assertGreater(len(c_data.vertices), 3)
-
-    def test_remove_collision_hulls(self) -> None:
-        """Verify remove_collision_hulls cleanly purges all collider objects and meshes."""
-        with in_blender_sandbox() as scene:
-            if scene is None or bpy is None:
-                return
-            mesh_objs = create_hierarchy_fixture("SM_PurgeAsset")
-            for obj in mesh_objs:
-                obj.select_set(True)
-            scene.view_layers[0].objects.active = mesh_objs[0]
-
-            props: Any = getattr(scene, "lod_tool", None)
-            if props is None:
-                return
-            props.export_base_name = "SM_PurgeAsset"
-
-            ops: Any = cast(Any, bpy.ops).lod_tool
-            ops.generate_collision_hulls()
-            target_coll = bpy.data.collections.get("SM_PurgeAsset_Colliders")
-            self.assertIsNotNone(target_coll)
-            if target_coll is None:
-                return
-            self.assertGreater(len(target_coll.objects), 0)
-
-            # Purge
-            res = ops.remove_collision_hulls()
-            self.assertEqual(res, {"FINISHED"})
-            self.assertEqual(len(target_coll.objects), 0, "All collider objects must be unlinked.")
-            self.assertEqual(props.last_generated_collider_count, 0)

@@ -57,10 +57,6 @@ class TestSpatialChunkingPipeline(unittest.TestCase):
             if col:
                 self.assertGreater(len(col.objects), 0)
 
-            # Check remove
-            res_rem = ops.remove_collision_hulls()
-            self.assertEqual(res_rem, {"FINISHED"})
-
     def test_impostor_preview_rig_setup_and_teardown(self) -> None:
         """Verify setup and teardown of turntable and tracking camera rigs for impostors."""
         with in_blender_sandbox() as scene:

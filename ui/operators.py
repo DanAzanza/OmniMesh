@@ -44,19 +44,15 @@ from .hull_impostor_ops import (
     HULL_IMPOSTOR_OPERATOR_CLASSES,
     LOD_OT_generate_collision_hulls,
     LOD_OT_generate_impostor,
-    LOD_OT_remove_collision_hulls,
-    LOD_OT_remove_impostor,
 )
 from .lod_ops import (
     LOD_OPERATOR_CLASSES,
     LOD_OT_add_lod_tier,
     LOD_OT_analyze_and_configure,
     LOD_OT_generate_all,
-    LOD_OT_preview_tier,
     LOD_OT_remove_lod_tier,
     LOD_OT_reset_to_preset,
     LOD_OT_select_master_asset,
-    LOD_OT_solo_tier,
     LOD_OT_sync_selection_settings,
     LOD_OT_toggle_side_by_side,
 )
@@ -77,7 +73,6 @@ from .pbr_ops import (
 from .batch_modal_ops import LOD_OT_batch_generate_modal
 from .impostor_viewport_ops import LOD_OT_impostor_viewport_tracker
 from .simulator_ops import LOD_OT_reset_virtual_distance, LOD_OT_toggle_simulator
-from .split_preview import OMNIMESH_OT_toggle_split_preview as LOD_OT_toggle_split_preview
 from .utils import (
     get_associated_armature,
     get_lod0_mesh_objects,
@@ -102,7 +97,6 @@ OPERATOR_CLASSES = [
     LOD_OT_batch_generate_modal,
     LOD_OT_toggle_simulator,
     LOD_OT_reset_virtual_distance,
-    LOD_OT_toggle_split_preview,
     LOD_OT_impostor_viewport_tracker,
 ]
 
@@ -174,17 +168,12 @@ __all__ = [
     "LOD_OT_analyze_and_configure",
     "LOD_OT_generate_all",
     "LOD_OT_generate_impostor",
-    "LOD_OT_remove_impostor",
     "LOD_OT_generate_collision_hulls",
-    "LOD_OT_remove_collision_hulls",
-    "LOD_OT_preview_tier",
     "LOD_OT_reset_to_preset",
-    "LOD_OT_solo_tier",
     "LOD_OT_add_lod_tier",
     "LOD_OT_remove_lod_tier",
     "LOD_OT_toggle_simulator",
     "LOD_OT_reset_virtual_distance",
-    "LOD_OT_toggle_split_preview",
     "LOD_OT_toggle_side_by_side",
     "LOD_OT_clean_and_repair_mesh",
     "LOD_OT_cull_interior_faces",

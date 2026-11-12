@@ -311,19 +311,6 @@ def test_lod_ops_deep() -> None:
         coll0.objects = [mesh_obj]
         mock_bpy.data.collections.get.return_value = coll0
 
-        op_solo = MagicMock()
-        op_solo.tier_index = 1
-        assert lod_ops.LOD_OT_solo_tier.execute(op_solo, ctx) == {"FINISHED"}
-        assert t1.is_soloed is True
-
-        # Un-solo
-        assert lod_ops.LOD_OT_solo_tier.execute(op_solo, ctx) == {"FINISHED"}
-        assert t1.is_soloed is False
-
-        # Reset -1
-        op_solo.tier_index = -1
-        assert lod_ops.LOD_OT_solo_tier.execute(op_solo, ctx) == {"FINISHED"}
-
         # 5. Sync selection settings & Select master asset
         other_mesh = MagicMock()
         other_mesh.type = "MESH"

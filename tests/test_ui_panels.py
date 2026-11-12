@@ -9,7 +9,7 @@ from typing import Any, cast
 from unittest.mock import MagicMock
 
 from ui.hud import LODViewportHUD, on_depsgraph_clear_toast
-from ui.lists import LOD_UL_tier_list, register_lists, unregister_lists
+from ui.lists import register_lists, unregister_lists
 from ui.operators import (
     LOD_OT_analyze_and_configure,
     LOD_OT_auto_match_pbr_folder,
@@ -19,7 +19,6 @@ from ui.operators import (
     LOD_OT_generate_collision_hulls,
     LOD_OT_import_pbr_set,
     LOD_OT_inspect_lod0,
-    LOD_OT_remove_collision_hulls,
     get_associated_armature,
     get_selected_mesh_objects,
     is_object_valid,
@@ -45,7 +44,7 @@ def test_panel_class_hierarchy_and_order():
     assert OMNIMESH_PT_main.bl_order == 0
 
     # Popovers (must use HEADER to prevent rogue N-panel/Misc sidebar tabs)
-    assert len(POPOVER_CLASSES) == 13
+    assert len(POPOVER_CLASSES) == 10
     for popover_cls in POPOVER_CLASSES:
         assert getattr(popover_cls, "bl_space_type", None) == "VIEW_3D"
         assert getattr(popover_cls, "bl_region_type", None) == "HEADER"
@@ -56,7 +55,7 @@ def test_panel_class_hierarchy_and_order():
     # Registration tuple
     assert len(PRIMARY_PANELS) == 1
     assert len(SUBPANEL_CLASSES) == 0
-    assert len(PANEL_CLASSES) == 14
+    assert len(PANEL_CLASSES) == 11
     assert PANEL_CLASSES[0] is OMNIMESH_PT_main
     for idx, pop_cls in enumerate(POPOVER_CLASSES):
         assert PANEL_CLASSES[1 + idx] is pop_cls
@@ -143,40 +142,6 @@ def test_fix_lod0_operators_poll_and_exec_mocked():
 
     op_col_gen = LOD_OT_generate_collision_hulls()
     assert op_col_gen.execute(None) == {"FINISHED"}
-
-    op_col_rem = LOD_OT_remove_collision_hulls()
-    assert op_col_rem.execute(None) == {"FINISHED"}
-
-
-def test_ui_list_draw_item_mock():
-    """Verify LOD_UL_tier_list draw_item does not raise exceptions."""
-    ui_list = LOD_UL_tier_list()
-    mock_layout = MagicMock()
-    mock_row = MagicMock()
-    mock_layout.row.return_value = mock_row
-    mock_split1 = MagicMock()
-    mock_row.split.return_value = mock_split1
-    mock_split2 = MagicMock()
-    mock_split1.split.return_value = mock_split2
-
-    mock_item = MagicMock()
-    mock_item.lod_index = 0
-    mock_item.screen_size_pct = 100.0
-    mock_item.actual_tris = 5000
-    mock_item.target_tris = 5000
-    mock_item.distance_m = 15.0
-
-    ui_list.layout_type = "DEFAULT"
-    ui_list.draw_item(
-        context=None,
-        layout=mock_layout,
-        data=None,
-        item=mock_item,
-        icon=0,
-        active_data=None,
-        active_property="",
-    )
-    assert mock_layout.row.called
 
 
 def test_hud_cache_and_safety():
@@ -718,7 +683,6 @@ def test_lods_ui_reordering_materials_and_side_by_side(monkeypatch):
         lods=[tier0],
         cull_screen_size_pct=5.0,
         is_simulator_running=False,
-        is_split_active=False,
         is_side_by_side_active=False,
     )
     mock_ctx = MagicMock(active_object=None, scene=MagicMock(lod_tool=mock_props))

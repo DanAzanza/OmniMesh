@@ -86,7 +86,6 @@ if __package__:
         manager as exporter_manager,
     )
     from .ui import (
-        animation_ops,
         batch_panel,
         chunk_ops,
         cleanup_ops,
@@ -99,12 +98,10 @@ if __package__:
         lists,
         lod_ops,
         lod_preset_ops,
-        material_preset_ops,
         msfs_attachment_ops,
         msfs_camera_ops,
         msfs_ground_ops,
         msfs_lighting_ops,
-        msfs_migration_ops,
         msfs_spatial_ops,
         operators,
         panel,
@@ -117,7 +114,6 @@ if __package__:
         properties,
         setup_ops,
         simulator_ops,
-        split_preview,
         utils,
     )
 else:
@@ -180,7 +176,6 @@ else:
         manager as exporter_manager,
     )
     from ui import (
-        animation_ops,
         batch_panel,
         chunk_ops,
         cleanup_ops,
@@ -193,12 +188,10 @@ else:
         lists,
         lod_ops,
         lod_preset_ops,
-        material_preset_ops,
         msfs_attachment_ops,
         msfs_camera_ops,
         msfs_ground_ops,
         msfs_lighting_ops,
-        msfs_migration_ops,
         msfs_spatial_ops,
         operators,
         panel,
@@ -211,7 +204,6 @@ else:
         properties,
         setup_ops,
         simulator_ops,
-        split_preview,
         utils,
     )
 
@@ -296,9 +288,7 @@ if _OMNIMESH_RELOAD:
         cleanup_ops,
         chunk_ops,
         config_preset_ops,
-        material_preset_ops,
         interaction_ops,
-        animation_ops,
         hull_impostor_ops,
         lod_preset_ops,
         lod_ops,
@@ -311,14 +301,12 @@ if _OMNIMESH_RELOAD:
         panel,
         simulator_ops,
         batch_panel,
-        split_preview,
         hud,
         engine_import_ops,
         msfs_spatial_ops,
         msfs_ground_ops,
         msfs_lighting_ops,
         msfs_camera_ops,
-        msfs_migration_ops,
         msfs_attachment_ops,
         setup_ops,
     ):
@@ -330,21 +318,17 @@ def register():
     lists.register_lists()
     operators.register_operators()
     config_preset_ops.register()
-    material_preset_ops.register()
     interaction_ops.register()
-    animation_ops.register()
     engine_import_ops.register()
     msfs_spatial_ops.register()
     msfs_ground_ops.register()
     msfs_lighting_ops.register()
     msfs_camera_ops.register()
-    msfs_migration_ops.register()
     msfs_attachment_ops.register()
     setup_ops.register()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
     batch_panel.register_batch_ops()
-    split_preview.register_split_ops()
     engine_export.register_exporters()
     hud.LODViewportHUD.register()
 
@@ -353,21 +337,17 @@ def unregister():
     for fn in (
         hud.LODViewportHUD.unregister,
         engine_export.unregister_exporters,
-        split_preview.unregister_split_ops,
         batch_panel.unregister_batch_ops,
         simulator_ops.unregister_simulator_ops,
         panel.unregister_panel,
         setup_ops.unregister,
         msfs_attachment_ops.unregister,
-        msfs_migration_ops.unregister,
         msfs_camera_ops.unregister,
         msfs_lighting_ops.unregister,
         msfs_ground_ops.unregister,
         msfs_spatial_ops.unregister,
         engine_import_ops.unregister,
-        animation_ops.unregister,
         interaction_ops.unregister,
-        material_preset_ops.unregister,
         config_preset_ops.unregister,
         operators.unregister_operators,
         lists.unregister_lists,

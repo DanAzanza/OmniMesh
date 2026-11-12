@@ -108,57 +108,6 @@ class TestShaderAndPBROpsPipeline(unittest.TestCase):
             self.assertEqual(resampled.shape, (16, 16))
             self.assertEqual(int(resampled[0, 0]), 128)
 
-    def test_assign_material_preset_operator(self) -> None:
-        """Verify omnimesh.assign_material_preset generates and assigns PBR, Glass, and Emissive shaders."""
-        with in_blender_sandbox() as scene:
-            if scene is None or bpy is None:
-                return
-
-            mesh_objs = create_hierarchy_fixture("PresetMesh")
-            target_obj = mesh_objs[0]
-            bpy.context.view_layer.objects.active = target_obj
-            target_obj.select_set(True)
-
-            props = getattr(scene, "lod_tool", None)
-            self.assertIsNotNone(props)
-            if not props:
-                return
-
-            mat_props = getattr(props, "material_preset", None)
-            self.assertIsNotNone(mat_props)
-            if not mat_props:
-                return
-
-            ops: Any = cast(Any, bpy.ops).omnimesh
-
-            # 1. PBR Standard
-            mat_props.material_name = "M_Custom_PBR"
-            mat_props.preset_type = "PBR_STANDARD"
-            mat_props.roughness = 0.35
-            mat_props.metallic = 0.8
-            res_pbr = ops.assign_material_preset()
-            self.assertEqual(res_pbr, {"FINISHED"})
-            self.assertIn("M_Custom_PBR", bpy.data.materials)
-
-            # 2. Glass Preset
-            mat_props.material_name = "M_Cockpit_Glass"
-            mat_props.preset_type = "GLASS_TRANSPARENT"
-            res_glass = ops.assign_material_preset()
-            self.assertEqual(res_glass, {"FINISHED"})
-            glass_mat = bpy.data.materials.get("M_Cockpit_Glass")
-            self.assertIsNotNone(glass_mat)
-            if glass_mat and glass_mat.node_tree:
-                glass_nodes = list(cast(Any, glass_mat.node_tree).nodes)
-                bsdf = next((n for n in glass_nodes if n.type == "BSDF_PRINCIPLED"), None)
-                self.assertIsNotNone(bsdf)
-
-            # 3. Emissive Preset
-            mat_props.material_name = "M_Warning_Light"
-            mat_props.preset_type = "EMISSIVE_LIGHT"
-            mat_props.emission_strength = 12.0
-            res_emiss = ops.assign_material_preset()
-            self.assertEqual(res_emiss, {"FINISHED"})
-
     def test_pbr_preset_map_management_operators(self) -> None:
         """Verify lod_tool preset map initialization, add, move, and delete operators."""
         with in_blender_sandbox() as scene:

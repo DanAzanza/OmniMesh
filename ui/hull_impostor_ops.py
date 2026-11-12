@@ -184,39 +184,6 @@ class LOD_OT_generate_impostor(Operator):
         return {"FINISHED"}
 
 
-class LOD_OT_remove_impostor(Operator):
-    """Remove generated Impostor collection."""
-
-    bl_idname = "lod_tool.remove_impostor"
-    bl_label = "Remove Impostor"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bool(context)
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"FINISHED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            props = context.scene.lod_tool
-
-        mesh_objs = get_selected_mesh_objects(context)
-        base_name = resolve_effective_asset_name(context, props)
-        if not base_name or base_name in {"AUTO", "NONE"}:
-            base_name = resolve_asset_base_name(context, mesh_objs) if mesh_objs else "Asset"
-
-        target_coll = bpy.data.collections.get(f"{base_name}_LOD_Impostor")
-        if target_coll:
-            for obj in list(target_coll.objects):
-                bpy.data.objects.remove(obj, do_unlink=True)
-            bpy.data.collections.remove(target_coll)
-            props.last_impostor_status = "Removed impostor collection"
-            safe_report(self, {"INFO"}, "Removed impostor collection.")
-        return {"FINISHED"}
-
-
 class LOD_OT_setup_impostor_preview_rig(Operator):
     """Setup non-destructive In-Blender comparison turntable preview rig for Octahedral Impostor."""
 
@@ -430,46 +397,9 @@ class LOD_OT_generate_collision_hulls(Operator):
         return {"FINISHED"}
 
 
-class LOD_OT_remove_collision_hulls(Operator):
-    """Remove generated collision hulls from scene."""
-
-    bl_idname = "lod_tool.remove_collision_hulls"
-    bl_label = "Remove Colliders"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"FINISHED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            props = context.scene.lod_tool
-
-        mesh_objs = get_lod0_mesh_objects(context)
-        if not mesh_objs:
-            mesh_objs = get_selected_mesh_objects(context)
-
-        base_name = resolve_effective_asset_name(context, props)
-        if not base_name or base_name in {"AUTO", "NONE"}:
-            base_name = resolve_asset_base_name(context, mesh_objs)
-
-        bdata = getattr(context, "blend_data", None)
-        if bdata is None:
-            return {"CANCELLED"}
-        removed = CollisionManager.remove_colliders_for_objects(
-            mesh_objs,
-            base_name,
-            blend_data=bdata,
-        )
-        props.last_generated_collider_count = 0
-        safe_report(self, {"INFO"}, f"Removed {removed} collision hulls.")
-        return {"FINISHED"}
-
-
 HULL_IMPOSTOR_OPERATOR_CLASSES = (
     LOD_OT_generate_impostor,
-    LOD_OT_remove_impostor,
     LOD_OT_setup_impostor_preview_rig,
     LOD_OT_remove_impostor_preview_rig,
     LOD_OT_generate_collision_hulls,
-    LOD_OT_remove_collision_hulls,
 )

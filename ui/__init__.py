@@ -20,7 +20,6 @@ from .panel import register_panel, unregister_panel
 from .properties import register_properties, unregister_properties
 from .setup_ops import register as register_setup_ops, unregister as unregister_setup_ops
 from .simulator_ops import register_simulator_ops, unregister_simulator_ops
-from .split_preview import register_split_ops, unregister_split_ops
 
 
 def register_ui() -> None:
@@ -40,13 +39,11 @@ def register_ui() -> None:
 
     register_simulator_ops()
     register_batch_ops()
-    register_split_ops()
     LODViewportHUD.register()
 
 
 def unregister_ui() -> None:
     LODViewportHUD.unregister()
-    unregister_split_ops()
     unregister_batch_ops()
     unregister_simulator_ops()
     unregister_panel()

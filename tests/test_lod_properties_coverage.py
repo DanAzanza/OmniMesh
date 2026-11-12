@@ -14,7 +14,6 @@ from ui.properties.guards import PresetSyncGuard, StateRestorationGuard
 from ui.properties.lod_properties import (
     on_lod_preset_property_modified,
     on_preset_tier_item_updated,
-    on_split_preview_updated,
     on_tier_target_pct_updated,
     on_tier_target_tris_updated,
     sync_preset_tiers_from_preset,
@@ -93,28 +92,6 @@ def test_preset_modification_callbacks():
         mock_props.lod_preset_is_dirty = False
         on_lod_preset_property_modified(None, mock_context)
         assert mock_props.lod_preset_is_dirty is True
-
-
-def test_on_split_preview_updated(monkeypatch):
-    import ui.properties.lod_properties as lp_mod
-
-    mock_bpy = MagicMock()
-    monkeypatch.setattr(lp_mod, "bpy", mock_bpy)
-
-    # Empty context
-    on_split_preview_updated(None, None)
-
-    # With 3D Viewport window
-    mock_context = MagicMock()
-    mock_area_3d = MagicMock(type="VIEW_3D")
-    mock_area_outliner = MagicMock(type="OUTLINER")
-    mock_screen = MagicMock(areas=[mock_area_3d, mock_area_outliner])
-    mock_window = MagicMock(screen=mock_screen)
-    mock_context.window_manager.windows = [mock_window]
-
-    on_split_preview_updated(None, mock_context)
-    assert mock_area_3d.tag_redraw.called
-    assert not mock_area_outliner.tag_redraw.called
 
 
 def test_sync_preset_tiers_from_preset_complete():

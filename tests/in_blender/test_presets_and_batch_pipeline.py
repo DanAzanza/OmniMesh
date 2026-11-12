@@ -155,42 +155,6 @@ class TestPresetsAndBatchPipeline(unittest.TestCase):
             res_cyl = ops.add_interaction_volume()
             self.assertEqual(res_cyl, {"FINISHED"})
 
-    def test_animation_tagging_and_scanning_operators(self) -> None:
-        """Verify omnimesh.tag_animation assigns categories and GUIDs, and scan_animations discovers tracks."""
-        with in_blender_sandbox() as scene:
-            if scene is None or bpy is None:
-                return
-
-            mesh_obj, arm_obj = create_skinned_mesh("GearAssembly")
-            self.assertIsNotNone(mesh_obj)
-            bpy.context.view_layer.objects.active = arm_obj
-            arm_obj.select_set(True)
-
-            # Create an Action on the Armature
-            act = bpy.data.actions.new("Gear_Retract")
-            if arm_obj.animation_data is None:
-                arm_obj.animation_data_create()
-            assert arm_obj.animation_data is not None
-            arm_obj.animation_data.action = act
-
-            props = getattr(scene, "lod_tool", None)
-            if props:
-                anim_props = getattr(props, "animation_tagging", None)
-                if anim_props:
-                    anim_props.semantic_category = "LANDING_GEAR"
-
-            ops: Any = cast(Any, bpy.ops).omnimesh
-
-            # 1. Tag Active Action
-            res_tag = ops.tag_animation()
-            self.assertEqual(res_tag, {"FINISHED"})
-            self.assertEqual(act.get("_omnimesh_category"), "LANDING_GEAR")
-            self.assertTrue(bool(act.get("_omnimesh_guid")))
-
-            # 2. Scan Animations
-            res_scan = ops.scan_animations()
-            self.assertEqual(res_scan, {"FINISHED"})
-
     def test_batch_processor_engine_and_import_project(self) -> None:
         """Verify BatchProcessorEngine asset discovery and engine project folder ingestion."""
         with in_blender_sandbox() as scene:

@@ -200,46 +200,6 @@ class TestImpostorPipeline(unittest.TestCase):
                 self.assertIn("EMISSION", node_types)
                 self.assertIn("OUTPUT_MATERIAL", node_types)
 
-    def test_remove_impostor(self) -> None:
-        """Verify remove_impostor operator completely cleans up objects and sibling collection."""
-        with in_blender_sandbox() as scene:
-            if scene is None or bpy is None:
-                return
-            mesh_objs = create_hierarchy_fixture("SM_PurgeTree")
-            for obj in mesh_objs:
-                obj.select_set(True)
-            scene.view_layers[0].objects.active = mesh_objs[0]
-
-            props: Any = getattr(scene, "lod_tool", None)
-            if props is None:
-                return
-            props.export_base_name = "SM_PurgeTree"
-            props.impostor_mode = "ORTHO_3_AXES"
-            props.export_directory = self._get_isolated_export_dir()
-            props.auto_impostor_resolution = False
-            props.impostor_resolution = "512"
-
-            ops: Any = cast(Any, bpy.ops).lod_tool
-            ops.generate_impostor()
-            target_coll = bpy.data.collections.get("SM_PurgeTree_LOD_Impostor")
-            self.assertIsNotNone(target_coll)
-            if target_coll is None:
-                return
-            self.assertGreater(len(target_coll.objects), 0)
-
-            # Purge
-            res = ops.remove_impostor()
-            self.assertEqual(res, {"FINISHED"})
-
-            self.assertIsNone(
-                bpy.data.collections.get("SM_PurgeTree_LOD_Impostor"),
-                "Impostor collection must be deleted from scene.",
-            )
-            self.assertIsNone(
-                bpy.data.objects.get("SM_PurgeTree_LOD_Impostor"),
-                "Impostor object must be removed from scene data.",
-            )
-
     def test_impostor_morphological_dilation_bleed(self) -> None:
         """Verify vectorized morphological dilation bleeds RGB border colors without alpha disruption."""
         # Create a 4x4 RGBA image with an opaque center pixel and transparent borders

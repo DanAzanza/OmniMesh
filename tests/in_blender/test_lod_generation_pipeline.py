@@ -96,17 +96,6 @@ class TestLODGenerationPipeline(unittest.TestCase):
             lod3_tris = sum(len(cast(Any, o.data).polygons) for o in lod3_objs if o.type == "MESH")
             self.assertLess(lod3_tris, lod0_tris, "LOD3 triangle count must be significantly lower than LOD0.")
 
-            # 4. Test Viewport Isolation via preview_tier
-            ops.preview_tier(tier_index=1)
-            self.assertTrue(root_coll.hide_viewport, "LOD0 must be hidden when previewing LOD1.")
-            self.assertFalse(lod1_coll.hide_viewport, "LOD1 must be visible when previewing LOD1.")
-            self.assertTrue(lod2_coll.hide_viewport, "LOD2 must be hidden when previewing LOD1.")
-
-            # Reset preview
-            ops.preview_tier(tier_index=-1)
-            self.assertFalse(root_coll.hide_viewport, "All collections must be visible after reset.")
-            self.assertFalse(lod1_coll.hide_viewport)
-
     def test_skinned_mesh_weight_clamping_and_shape_keys(self) -> None:
         """Verify rigged meshes have bone influences clamped to 4 and shape keys purged in distant tiers."""
         with in_blender_sandbox() as scene:

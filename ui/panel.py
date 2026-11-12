@@ -389,22 +389,10 @@ def _draw_lods_testing_content(layout: Any, context: Any, props: Any) -> None:
     else:
         row_test.operator("lod_tool.toggle_simulator", text="Live Simulator", icon="PLAY")
 
-    if props.is_split_active:
-        row_test.operator("lod_tool.toggle_split_preview", text="Exit Split", icon="CANCEL")
-    else:
-        row_test.operator("lod_tool.toggle_split_preview", text="A/B Split", icon="UV_SYNC_SELECT")
-
     if getattr(props, "is_side_by_side_active", False):
         row_test.operator("lod_tool.toggle_side_by_side", text="Reset Alignment", icon="CANCEL")
     else:
         row_test.operator("lod_tool.toggle_side_by_side", text="Side-by-Side", icon="ALIGN_JUSTIFY")
-
-    if props.is_split_active:
-        box_split = box_test.box()
-        box_split.use_property_split = True
-        box_split.use_property_decorate = False
-        box_split.prop(props, "split_compare_tier", text="Compare Tier")
-        box_split.prop(props, "split_ratio", text="Split Ratio", slider=True)
 
     row_sweep = box_test.row(align=True)
     row_sweep.use_property_split = False

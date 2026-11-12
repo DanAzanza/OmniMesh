@@ -204,21 +204,6 @@ def on_lod_preset_property_modified(self: Any, context: Any) -> None:
         _auto_save_custom_lod_preset(props)
 
 
-def on_split_preview_updated(self: Any, context: Any) -> None:
-    """Forces 3D viewport redraw when split preview ratio or comparison tier changes."""
-    if not bpy or not context:
-        return
-    wm = getattr(context, "window_manager", None)
-    if not wm:
-        return
-    for window in getattr(wm, "windows", []):
-        screen = getattr(window, "screen", None)
-        if screen:
-            for area in getattr(screen, "areas", []):
-                if getattr(area, "type", "") == "VIEW_3D":
-                    area.tag_redraw()
-
-
 class LODPresetTierItem(PropertyGroup):
     """Data model representing a template tier within a configurable LOD preset."""
 
@@ -425,7 +410,6 @@ __all__ = [
     "on_tier_target_tris_updated",
     "on_preset_tier_item_updated",
     "on_lod_preset_property_modified",
-    "on_split_preview_updated",
     "sync_preset_tiers_from_preset",
     "sync_preset_tiers_to_preset",
 ]

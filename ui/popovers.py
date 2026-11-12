@@ -40,51 +40,6 @@ from .popover_presets import (
 
 
 # =========================================================================
-# 0. SCENE & VIEWPORT SETUP POPOVER
-# =========================================================================
-
-
-class OMNIMESH_PT_popover_scene_setup(Panel):
-    """Popover for scene initialization, viewport overlays, and helper collection creation."""
-
-    bl_idname = "OMNIMESH_PT_popover_scene_setup"
-    bl_label = "Scene & Viewport Setup"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 16
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context or not self.layout:
-            return
-        layout = self.layout
-
-        layout.label(text="Game Scene Setup", icon="SCENE_DATA")
-        row_sc = layout.row(align=True)
-        row_sc.scale_y = 1.15
-        row_sc.operator("omnimesh.quick_scene_setup", text="Game Scene", icon="SCENE_DATA")
-
-        layout.separator()
-        layout.label(text="Viewport Overlays", icon="OVERLAY")
-        row_ov = layout.row(align=True)
-        row_ov.scale_y = 1.1
-        op_st = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Stats", icon="VIEW_CAMERA")
-        if op_st is not None:
-            op_st.mode = "STATS"
-        op_cav = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Cavity", icon="SHADING_SOLID")
-        if op_cav is not None:
-            op_cav.mode = "CAVITY"
-        op_fo = row_ov.operator("omnimesh.toggle_viewport_overlay", text="Face Orientation", icon="NORMALS_FACE")
-        if op_fo is not None:
-            op_fo.mode = "FACE_ORIENTATION"
-
-        layout.separator()
-        layout.label(text="Helper Collections", icon="HELP")
-        row_help = layout.row(align=True)
-        row_help.scale_y = 1.15
-        row_help.operator("lod_tool.create_helpers_collection", text="Add Helpers Collection", icon="COLLECTION_NEW")
-
-
-# =========================================================================
 # 1. MODIFY POPOVERS: SANITIZE, MATERIALS & COLLISION
 # =========================================================================
 
@@ -200,38 +155,8 @@ class OMNIMESH_PT_popover_collision(Panel):
 
 
 # =========================================================================
-# 2. LODs POPOVERS: CONFIGURE, GENERATE & IMPOSTOR
+# 2. LODs POPOVERS: GENERATE & IMPOSTOR
 # =========================================================================
-
-
-class OMNIMESH_PT_popover_configure(Panel):
-    """Popover for LOD auto-configuration and target engine rules."""
-
-    bl_idname = "OMNIMESH_PT_popover_configure"
-    bl_label = "LOD Tier Configuration"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 16
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context or not self.layout:
-            return
-        layout = self.layout
-        props = _get_popover_props(context)
-        if not props:
-            return
-
-        layout.label(text="Target Engine & Asset Role", icon="SCENE_DATA")
-        layout.prop(props, "target_engine", text="Engine")
-        layout.prop(props, "asset_category", text="Role")
-        layout.prop(props, "export_base_name", text="Asset Name")
-
-        layout.separator()
-        layout.label(text="Quality & Screen Tolerances", icon="RESTRICT_VIEW_OFF")
-        layout.prop(props, "tau_sse", slider=True, text="Visual Stability (SSE)")
-        layout.prop(props, "cull_screen_size_pct", slider=True, text="Cull Screen Size (%)")
-        if props.target_engine != "MSFS_2024":
-            layout.prop(props, "num_lods", text="LOD Tier Count")
 
 
 class OMNIMESH_PT_popover_generate(Panel):
@@ -290,52 +215,12 @@ class OMNIMESH_PT_popover_impostor(Panel):
         box.prop(props, "impostor_replace_last_lod", text="Final LOD Tier")
 
 
-# =========================================================================
-# 3. EXPORT POPOVERS: PACKAGE EXPORT
-# =========================================================================
-
-
-class OMNIMESH_PT_popover_export(Panel):
-    """Popover for single asset export packaging, texture packing, and animation baking."""
-
-    bl_idname = "OMNIMESH_PT_popover_export"
-    bl_label = "Package Export Settings"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "HEADER"
-    bl_ui_units_x = 16
-
-    def draw(self, context: Any) -> None:
-        if not bpy or not context or not self.layout:
-            return
-        layout = self.layout
-        props = _get_popover_props(context)
-        if not props:
-            return
-
-        layout.label(text="PBR Texture Export & Packing", icon="NODE_MATERIAL")
-        layout.prop(props, "export_packed_textures", text="Pack PBR Textures")
-        if props.export_packed_textures:
-            box = layout.box()
-            box.prop(props, "pbr_export_preset", text="Preset")
-            box.prop(props, "pbr_export_texture_strategy", text="Strategy")
-            box.prop(props, "texture_max_resolution", text="Resolution")
-            box.prop(props, "pbr_export_bit_depth", text="Bit Depth")
-            box.prop(props, "pbr_export_naming_pattern", text="Naming")
-
-        layout.separator()
-        layout.label(text="Rig Animations", icon="ACTION")
-        layout.prop(props, "bake_animations", text="Bake Skeletal Animations")
-
-
 WORKFLOW_POPOVER_CLASSES = (
-    OMNIMESH_PT_popover_scene_setup,
     OMNIMESH_PT_popover_sanitize,
     OMNIMESH_PT_popover_materials,
     OMNIMESH_PT_popover_collision,
-    OMNIMESH_PT_popover_configure,
     OMNIMESH_PT_popover_generate,
     OMNIMESH_PT_popover_impostor,
-    OMNIMESH_PT_popover_export,
 )
 
 POPOVER_CLASSES = (
@@ -345,13 +230,10 @@ POPOVER_CLASSES = (
     OMNIMESH_PT_popover_sanitize,
     OMNIMESH_PT_popover_materials,
     OMNIMESH_PT_popover_collision,
-    OMNIMESH_PT_popover_configure,
     OMNIMESH_PT_popover_generate,
     OMNIMESH_PT_popover_lod_preset,
     OMNIMESH_PT_popover_impostor,
-    OMNIMESH_PT_popover_export,
     OMNIMESH_PT_popover_export_preset,
-    OMNIMESH_PT_popover_scene_setup,
 )
 
 __all__ = [
@@ -361,13 +243,10 @@ __all__ = [
     "OMNIMESH_PT_popover_sanitize",
     "OMNIMESH_PT_popover_materials",
     "OMNIMESH_PT_popover_collision",
-    "OMNIMESH_PT_popover_configure",
     "OMNIMESH_PT_popover_generate",
     "OMNIMESH_PT_popover_lod_preset",
     "OMNIMESH_PT_popover_impostor",
-    "OMNIMESH_PT_popover_export",
     "OMNIMESH_PT_popover_export_preset",
-    "OMNIMESH_PT_popover_scene_setup",
     "WORKFLOW_POPOVER_CLASSES",
     "POPOVER_CLASSES",
 ]

@@ -14,7 +14,6 @@ from .lod_properties import (
     LODLevelItem,
     LODPresetTierItem,
     on_lod_preset_property_modified,
-    on_split_preview_updated,
 )
 from .material_properties import OMNIMESH_MaterialPresetSettings
 from .msfs_cfg_properties import OMNIMESH_MSFSConfigSettings
@@ -605,21 +604,6 @@ class LODToolSettings(PropertyGroup):
     bridge_connected: BoolProperty(
         name="Bridge Connected", default=False, description="Cached active connection handshake status with bridge"
     )
-
-    # A/B Split-Screen Comparison Preview Properties
-    is_split_active: BoolProperty(
-        name="Split View Active", default=False, description="Toggle dual-tier visual comparison overlay"
-    )
-    split_ratio: FloatProperty(
-        name="Divider Ratio",
-        default=0.5,
-        min=0.05,
-        max=0.95,
-        subtype="FACTOR",
-        precision=2,
-        update=on_split_preview_updated,
-    )
-    split_compare_tier: IntProperty(name="Compare Tier", default=3, min=1, max=7, update=on_split_preview_updated)
 
     # Side-by-Side Viewport Alignment Inspection
     is_side_by_side_active: BoolProperty(
