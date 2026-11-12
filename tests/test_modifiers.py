@@ -219,3 +219,18 @@ def test_apply_all_modifiers_in_place_removes_hidden():
         assert visible_mod.render_levels == 3
         # modifier_apply was called ONLY for visible_mod
         mock_bpy.ops.object.modifier_apply.assert_called_once_with(modifier="Subsurf")
+
+
+def test_apply_all_modifiers_in_place_multi_user_unlink_failure_aborts():
+    obj = MockObject()
+    obj.data.users = 3
+    # Simulating data.copy() failure
+    obj.data.copy = MagicMock(side_effect=RuntimeError("Data block copy failed"))
+    obj.modifiers = [MockModifier("Subsurf", "SUBSURF", show_viewport=True)]
+
+    mock_bpy = MagicMock()
+    with patch("core.modifiers.bpy", mock_bpy):
+        res = ModifierManager.apply_all_modifiers_in_place(obj)
+        assert res is False
+        # modifiers must NOT have been applied
+        assert not mock_bpy.ops.object.modifier_apply.called

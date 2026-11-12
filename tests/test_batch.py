@@ -296,3 +296,26 @@ def test_worker_process_handle_edge_cases(tmp_path: Path):
     # close_log with None file
     handle.close_log()
     assert handle.log_file is None
+
+
+def test_batch_processor_get_exporter_lazy_load_and_fallback(monkeypatch):
+    """Verify _get_exporter pops failed engine and returns None on ImportError."""
+    from unittest.mock import MagicMock
+    import builtins
+
+    orig_import = builtins.__import__
+
+    def faulty_import(name, *args, **kwargs):
+        if "exporters" in name:
+            raise ImportError(f"Simulated missing exporter module: {name}")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", faulty_import)
+
+    # Pre-populate with dummy to verify pop works on failure
+    BatchProcessorEngine._exporters["MSFS_2024"] = MagicMock()
+    del BatchProcessorEngine._exporters["MSFS_2024"]
+
+    exporter = BatchProcessorEngine._get_exporter("MSFS_2024")
+    assert exporter is None
+    assert "MSFS_2024" not in BatchProcessorEngine._exporters

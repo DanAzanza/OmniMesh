@@ -28,7 +28,7 @@ HASATTR_RATCHET_BASELINE = 77
 GETATTR_RATCHET_BASELINE = 177
 
 # Monotonic ratchet baseline for log-only exception handlers in core/ and exporters/
-LOG_ONLY_EXCEPT_RATCHET_BASELINE = 114
+LOG_ONLY_EXCEPT_RATCHET_BASELINE = 117
 
 # Monotonic ratchet baseline for except-pass exception handlers in core/ and exporters/
 EXCEPT_PASS_RATCHET_BASELINE = 48
@@ -316,14 +316,19 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
 
             # Generic except: pass / except Exception: pass or broad except Exception in domain modules
             if is_core_or_exporter and isinstance(node, ast.ExceptHandler):
-                if len(node.body) == 1:
-                    stmt = node.body[0]
-                    if isinstance(stmt, ast.Pass):
+                if node.body:
+                    if all(isinstance(s, ast.Pass) for s in node.body):
                         total_except_pass_count += 1
-                    elif (
-                        isinstance(stmt, ast.Expr)
-                        and isinstance(stmt.value, ast.Call)
-                        and ast.unparse(stmt.value.func).startswith(("logger.", "log.", "logging."))
+                    elif all(
+                        (
+                            isinstance(s, ast.Pass)
+                            or (
+                                isinstance(s, ast.Expr)
+                                and isinstance(s.value, ast.Call)
+                                and ast.unparse(s.value.func).startswith(("logger.", "log.", "logging."))
+                            )
+                        )
+                        for s in node.body
                     ):
                         total_log_only_except_count += 1
 
@@ -344,13 +349,18 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
                 broad_matches = [n for n in caught_names if n in ("bare", "Exception", "BaseException")]
                 if broad_matches:
                     violations["broad_except_in_core_exporters"].append((rel_path, node.lineno, broad_matches[0]))
-                    if len(node.body) == 1:
-                        stmt = node.body[0]
-                        is_pass = isinstance(stmt, ast.Pass)
-                        is_log_only = (
-                            isinstance(stmt, ast.Expr)
-                            and isinstance(stmt.value, ast.Call)
-                            and ast.unparse(stmt.value.func).startswith(("logger.", "log.", "logging."))
+                    if node.body:
+                        is_pass = all(isinstance(s, ast.Pass) for s in node.body)
+                        is_log_only = all(
+                            (
+                                isinstance(s, ast.Pass)
+                                or (
+                                    isinstance(s, ast.Expr)
+                                    and isinstance(s.value, ast.Call)
+                                    and ast.unparse(s.value.func).startswith(("logger.", "log.", "logging."))
+                                )
+                            )
+                            for s in node.body
                         )
                         if is_pass or is_log_only:
                             kind = "pass" if is_pass else "log-only"

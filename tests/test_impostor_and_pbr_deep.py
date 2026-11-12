@@ -237,7 +237,9 @@ def test_impostor_preview_material_rig_turntable_and_teardown(tmp_path: Path) ->
     bdata.images = MagicMock()
     bdata.images.__iter__.return_value = []
 
-    with patch.object(prev_mod, "bpy", fake_bpy):
+    import core.impostor_preview_material as prev_mat_mod
+
+    with patch.object(prev_mod, "bpy", fake_bpy), patch.object(prev_mat_mod, "bpy", fake_bpy):
         assert safe_load_image(str(base_tex), blend_data=None) is None  # type: ignore[arg-type]
         assert create_octahedral_preview_material("M", str(base_tex), blend_data=None) is None  # type: ignore[arg-type]
 

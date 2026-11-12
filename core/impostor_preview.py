@@ -15,8 +15,8 @@ import os
 from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
 
 from .impostor_preview_material import (
-    create_octahedral_preview_material as _impl_create_octahedral_preview_material,
-    safe_load_image as _impl_safe_load_image,
+    create_octahedral_preview_material,
+    safe_load_image,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,38 +38,6 @@ else:
 
         Matrix = None  # type: ignore
     BlendData = object  # runtime fallback for type annotations
-
-
-def safe_load_image(
-    filepath: str,
-    *,
-    blend_data: BlendData,
-) -> Optional[bpy.types.Image]:
-    """Loads image datablock while delegating to impostor preview material engine."""
-    return _impl_safe_load_image(filepath, blend_data=blend_data, active_bpy=bpy)
-
-
-def create_octahedral_preview_material(
-    mat_name: str,
-    base_color_path: str,
-    normal_path: Optional[str] = None,
-    orm_path: Optional[str] = None,
-    grid_size: int = 8,
-    target_engine: str = "UE5",
-    *,
-    blend_data: BlendData,
-) -> Optional[bpy.types.Material]:
-    """Constructs octahedral preview material delegating to material engine."""
-    return _impl_create_octahedral_preview_material(
-        mat_name=mat_name,
-        base_color_path=base_color_path,
-        normal_path=normal_path,
-        orm_path=orm_path,
-        grid_size=grid_size,
-        target_engine=target_engine,
-        blend_data=blend_data,
-        active_bpy=bpy,
-    )
 
 
 def _resolve_scene(context: bpy.types.Context | None, blend_data: BlendData) -> bpy.types.Scene | None:

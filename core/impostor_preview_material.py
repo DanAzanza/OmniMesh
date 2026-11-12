@@ -31,13 +31,12 @@ def safe_load_image(
     filepath: str,
     *,
     blend_data: BlendData,
-    active_bpy: object | None = None,
 ) -> Optional[bpy.types.Image]:
     """
     Loads an image from filepath while preventing duplicate datablocks in Blender.
     Re-uses existing image if already loaded with matching absolute path.
     """
-    if not (bpy or active_bpy) or not filepath or not os.path.exists(filepath) or blend_data is None:
+    if not bpy or not filepath or not os.path.exists(filepath) or blend_data is None:
         return None
 
     abs_target = os.path.abspath(filepath)
@@ -72,7 +71,6 @@ def create_octahedral_preview_material(
     target_engine: str = "UE5",
     *,
     blend_data: BlendData,
-    active_bpy: object | None = None,
 ) -> Optional[bpy.types.Material]:
     """
     Constructs a native Blender Shader Node material that evaluates the upper-hemisphere
@@ -82,7 +80,7 @@ def create_octahedral_preview_material(
     and applies BaseColor cutout, Normal map (with DirectX Green-inversion compensation for UE5),
     and optional ORM roughness.
     """
-    if not (bpy or active_bpy) or blend_data is None:
+    if not bpy or blend_data is None:
         return None
 
     mat = blend_data.materials.get(mat_name)

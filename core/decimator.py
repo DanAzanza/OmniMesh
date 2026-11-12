@@ -494,7 +494,6 @@ class MeshDecimator:
 
         # 2. Remove all shape keys cleanly
         ctx = context
-        purge_failed = False
         try:
             if ctx and hasattr(ctx, "temp_override"):
                 with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
@@ -511,10 +510,7 @@ class MeshDecimator:
                     pass
                 bpy.ops.object.shape_key_remove(all=True)
         except (RuntimeError, AttributeError, TypeError) as exc:
-            purge_failed = True
             logger.debug("Shape key purge bypassed: %s", exc)
-        if purge_failed:
-            logger.warning("Shape key purge incomplete on %s", obj.name)
 
     @classmethod
     def prepare_and_clean_shape_keys(

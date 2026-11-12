@@ -116,8 +116,10 @@ def test_mock_preview_material_construction(monkeypatch):
     mock_blend_data.materials.new.return_value = mock_mat
 
     import core.impostor_preview as preview_module
+    import core.impostor_preview_material as preview_mat_module
 
     monkeypatch.setattr(preview_module, "bpy", mock_bpy)
+    monkeypatch.setattr(preview_mat_module, "bpy", mock_bpy)
 
     # Test with target_engine="UE5" (should create SeparateColor and Math for Green inversion)
     mat = preview_module.create_octahedral_preview_material(
@@ -156,7 +158,10 @@ def test_impostor_preview_pure_di_lifecycle_with_mock_blend_data(tmp_path, monke
 
     mock_bdata = MockBlendData()
     mock_bpy = MagicMock()
+    import core.impostor_preview_material as preview_mat_module
+
     monkeypatch.setattr(preview_mod, "bpy", mock_bpy)
+    monkeypatch.setattr(preview_mat_module, "bpy", mock_bpy)
 
     # Mock texture files
     base_color_path = tmp_path / "T_SM_Asset_Impostor_BaseColor.png"

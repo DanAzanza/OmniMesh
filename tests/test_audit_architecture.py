@@ -331,3 +331,32 @@ def test_audit_catches_except_pass_ratchet_overflow(tmp_path: Path, monkeypatch:
     ratchet = violations["except_pass_ratchet_in_core_exporters"]
     assert len(ratchet) == 1
     assert "exceed ratchet baseline" in str(ratchet[0][2])
+
+
+def test_audit_catches_compound_log_and_pass_except_handler(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.audit_architecture as audit_mod
+
+    monkeypatch.setattr(audit_mod, "LOG_ONLY_EXCEPT_RATCHET_BASELINE", 0)
+
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "compound_log_mod.py").write_text(
+        "import logging\n"
+        "logger = logging.getLogger(__name__)\n"
+        "def f():\n"
+        "    try:\n"
+        "        pass\n"
+        "    except RuntimeError as e:\n"
+        "        logger.debug('First log: %s', e)\n"
+        "        logger.warning('Second log')\n"
+        "    try:\n"
+        "        pass\n"
+        "    except ValueError as e:\n"
+        "        logger.debug('Log with pass: %s', e)\n"
+        "        pass\n",
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    ratchet = violations["log_only_except_ratchet_in_core_exporters"]
+    assert len(ratchet) == 1
+    assert "log-only exception handlers (2) exceed ratchet baseline (0)" in str(ratchet[0][2])

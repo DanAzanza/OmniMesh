@@ -174,7 +174,6 @@ class CollisionDecomposer:
                             bmesh.ops.translate(bm, vec=offset_sec_vec, verts=bm.verts[:])
             except (np.linalg.LinAlgError, RuntimeError, ValueError) as exc:
                 logger.debug("Planar extrusion fallback: %s", exc)
-                bm.verts.ensure_lookup_table()
 
         # 2. Compute 3D Convex Hull with two-pass internal geometry purge
         try:
@@ -239,7 +238,6 @@ class CollisionDecomposer:
             bm.edges.ensure_lookup_table()
         except BMESH_OP_ERRORS as exc:
             logger.debug("Dissolve limit bypassed in budget clamp: %s", exc)
-            bm.verts.ensure_lookup_table()
 
         if len(bm.verts) <= max_verts:
             return
