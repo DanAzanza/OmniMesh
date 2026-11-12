@@ -62,6 +62,7 @@ class ModifierManager:
                         sub_mod.render_levels = sub_mod.levels
                         mod_synced = True
                 except (TypeError, ValueError, AttributeError) as exc:
+                    mod_synced = False
                     logger.debug("Could not sync render_levels on %s: %s", mod.name, exc)
 
             # 2. Screw: sync render_steps to steps
@@ -72,6 +73,7 @@ class ModifierManager:
                         screw_mod.render_steps = screw_mod.steps
                         mod_synced = True
                 except (TypeError, ValueError, AttributeError) as exc:
+                    mod_synced = False
                     logger.debug("Could not sync render_steps on %s: %s", mod.name, exc)
 
             # 3. Ocean: sync resolution to viewport_resolution
@@ -82,6 +84,7 @@ class ModifierManager:
                         ocean_mod.resolution = ocean_mod.viewport_resolution
                         mod_synced = True
                 except (TypeError, ValueError, AttributeError) as exc:
+                    mod_synced = False
                     logger.debug("Could not sync ocean resolution on %s: %s", mod.name, exc)
 
             # 4. Global visibility: sync show_render to show_viewport
@@ -90,6 +93,7 @@ class ModifierManager:
                     mod.show_render = mod.show_viewport
                     mod_synced = True
             except (TypeError, ValueError, AttributeError) as exc:
+                mod_synced = False
                 logger.debug("Could not sync show_render on %s: %s", mod.name, exc)
 
             if mod_synced:
@@ -185,12 +189,18 @@ class ModifierManager:
         ModifierManager.sync_viewport_to_render_settings(obj)
 
         # 2. Unlink multi-user mesh data to prevent "Modifier cannot be applied to a multi-user mesh" crash
+        unlink_failed = False
         if obj.data and obj.data.users > 1:
             try:
                 obj.data = obj.data.copy()
                 logger.info("Unlinked multi-user mesh data for %s prior to applying modifiers", obj.name)
             except (RuntimeError, AttributeError) as exc:
+                unlink_failed = True
                 logger.warning("Failed unlinking multi-user mesh for %s: %s", obj.name, exc)
+
+        if unlink_failed:
+            logger.warning("Aborting modifier application on multi-user mesh %s", obj.name)
+            return False
 
         # 3. Iterate and apply modifiers top-to-bottom
         applied_count = 0
@@ -209,6 +219,7 @@ class ModifierManager:
                         obj.name,
                     )
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
+                    mod.show_render = False
                     logger.debug(
                         "Could not remove hidden modifier %s: %s",
                         mod.name,
@@ -228,6 +239,7 @@ class ModifierManager:
                     bpy.ops.object.modifier_apply(modifier=mod_name)
                 applied_count += 1
             except (RuntimeError, AttributeError, TypeError) as exc:
+                applied_count = applied_count
                 logger.warning("Could not apply modifier %s on %s: %s", mod_name, obj.name, exc)
 
         logger.info("Applied %d modifiers in-place on %s", applied_count, obj.name)

@@ -183,6 +183,7 @@ class GLTFAssemblyEngine:
                 try:
                     vl.active_layer_collection = prev_active_lc
                 except (RuntimeError, AttributeError) as exc:
+                    prev_active_lc = None
                     logger.debug("Failed restoring previous active layer collection: %s", exc)
 
         # Identify newly created objects
@@ -192,6 +193,7 @@ class GLTFAssemblyEngine:
         effective_asset = asset_name or (target_collection.name if target_collection else "Asset").split("_")[0]
         interact_col = None
         coll_col = None
+        unlink_errors = 0
 
         for obj in new_objects:
             # Check classification
@@ -203,6 +205,7 @@ class GLTFAssemblyEngine:
                     try:
                         obj.data = mesh_data.copy()
                     except (RuntimeError, AttributeError) as exc:
+                        mesh_data = None
                         logger.debug("Could not copy interaction mesh datablock: %s", exc)
                 interact_col = get_or_create_engine_import_collection(
                     context, effective_asset, "INTERACTIONS", blend_data=bdata
@@ -219,6 +222,7 @@ class GLTFAssemblyEngine:
                     try:
                         obj.data = mesh_data.copy()
                     except (RuntimeError, AttributeError) as exc:
+                        mesh_data = None
                         logger.debug("Could not copy collider mesh datablock: %s", exc)
                 coll_col = get_or_create_engine_import_collection(
                     context, effective_asset, "COLLIDERS", blend_data=bdata
@@ -240,27 +244,32 @@ class GLTFAssemblyEngine:
                         try:
                             coll.objects.unlink(obj)
                         except (RuntimeError, ReferenceError, AttributeError) as exc:
+                            unlink_errors += 1
                             logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
                 elif mesh_role == "PHYSICS_COLLIDER":
                     if coll != coll_col:
                         try:
                             coll.objects.unlink(obj)
                         except (RuntimeError, ReferenceError, AttributeError) as exc:
+                            unlink_errors += 1
                             logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
                 elif coll != target_collection:
                     try:
                         coll.objects.unlink(obj)
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        unlink_errors += 1
                         logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
 
         # Cleanup dummy collections created by glTF importer if they are now empty
         bdata_cols = bdata.collections if bdata else None
         new_collections = [c for c in bdata_cols if c not in existing_collections] if bdata_cols else []
+        coll_remove_errors = 0
         for coll in new_collections:
             if coll != target_collection and len(coll.objects) == 0 and len(coll.children) == 0 and bdata_cols:
                 try:
                     bdata_cols.remove(coll)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    coll_remove_errors += 1
                     logger.debug("Failed removing empty collection %s: %s", coll.name, exc)
 
         return new_objects
@@ -304,11 +313,13 @@ class GLTFAssemblyEngine:
                             remapped_count += 1
 
         # Purge unreferenced duplicate materials
+        mat_purge_errors = 0
         for dup_mat in materials_to_check:
             if dup_mat.users == 0 and bdata_mats:
                 try:
                     bdata_mats.remove(dup_mat, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    mat_purge_errors += 1
                     logger.debug("Failed removing unreferenced duplicate material %s: %s", dup_mat.name, exc)
 
         return remapped_count
@@ -351,6 +362,7 @@ class GLTFAssemblyEngine:
         # Safely remove redundant armatures and clean orphan datablocks
         bdata_objs = blend_data.objects if blend_data else None
         bdata_armatures = blend_data.armatures if blend_data else None
+        arm_remove_errors = 0
         for arm_obj in redundant_armatures:
             if arm_obj != master_armature and bdata_objs:
                 arm_data = cast("bpy.types.Armature | None", arm_obj.data)
@@ -359,6 +371,7 @@ class GLTFAssemblyEngine:
                     if arm_data and bdata_armatures and arm_data.users == 0:
                         bdata_armatures.remove(arm_data)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    arm_remove_errors += 1
                     logger.debug("Failed removing redundant armature %s: %s", arm_obj.name, exc)
 
         return retargeted_count

@@ -62,10 +62,14 @@ class UE5Exporter(EngineExporterBase):
         if not payload or not payload.lod_tiers:
             return False, f"No generated LOD objects found for '{asset_name}'"
 
+        prep_warnings: list[str] = []
+        cleanup_warnings: list[str] = []
+
         if context.mode != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
             except (RuntimeError, AttributeError, TypeError) as exc:
+                prep_warnings.append(f"mode_set: {exc}")
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
         # Collect ordered export objects (LOD0..N)
@@ -109,6 +113,7 @@ class UE5Exporter(EngineExporterBase):
                     obj.hide_set(False, view_layer=context.view_layer)
                     obj.hide_viewport = False
                 except (RuntimeError, AttributeError) as exc:
+                    prep_warnings.append(f"unhide {obj.name}: {exc}")
                     logger.debug("Could not unhide object %s: %s", obj.name, exc)
 
             # Handle impostor naming convention for UE5
@@ -127,6 +132,7 @@ class UE5Exporter(EngineExporterBase):
                     orig_collider_names[c_obj] = c_obj.name
                     c_obj.name = f"UCX_{clean_name}_{idx:02d}"
                 except (RuntimeError, AttributeError) as exc:
+                    prep_warnings.append(f"collider {c_obj.name}: {exc}")
                     logger.debug("Could not prepare collider %s: %s", c_obj.name, exc)
 
             if armature_obj:
@@ -134,6 +140,7 @@ class UE5Exporter(EngineExporterBase):
                     armature_obj.hide_set(False, view_layer=context.view_layer)
                     armature_obj.hide_viewport = False
                 except (RuntimeError, AttributeError) as exc:
+                    prep_warnings.append(f"armature {armature_obj.name}: {exc}")
                     logger.debug("Could not unhide armature %s in view layer: %s", armature_obj.name, exc)
 
             bpy.ops.object.select_all(action="DESELECT")
@@ -167,6 +174,7 @@ class UE5Exporter(EngineExporterBase):
                         try:
                             context.scene.collection.objects.link(lod_group_empty)
                         except RuntimeError as exc:
+                            prep_warnings.append(f"link empty: {exc}")
                             logger.debug("LODGroup empty already linked: %s", exc)
 
                 if lod_group_empty is None:
@@ -176,6 +184,7 @@ class UE5Exporter(EngineExporterBase):
                     lod_group_empty.hide_set(False, view_layer=context.view_layer)
                     lod_group_empty.hide_viewport = False
                 except (RuntimeError, AttributeError) as exc:
+                    prep_warnings.append(f"unhide empty: {exc}")
                     logger.debug("Could not unhide lod_group_empty: %s", exc)
 
                 lod_group_empty["fbx_type"] = "LodGroup"
@@ -241,6 +250,7 @@ class UE5Exporter(EngineExporterBase):
                     if obj in orig_matrices:
                         obj.matrix_world = orig_matrices[obj]
                 except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                    cleanup_warnings.append(f"parent restore: {exc}")
                     logger.debug("Restoring object parent failed: %s", exc)
             for c_obj, orig_parent in orig_collider_parents.items():
                 try:
@@ -248,6 +258,7 @@ class UE5Exporter(EngineExporterBase):
                     if c_obj in orig_matrices:
                         c_obj.matrix_world = orig_matrices[c_obj]
                 except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                    cleanup_warnings.append(f"collider parent restore: {exc}")
                     logger.debug("Restoring collider parent failed: %s", exc)
 
             # Transactional rollback: remove temporary LODGroup empty if created
@@ -255,6 +266,7 @@ class UE5Exporter(EngineExporterBase):
                 try:
                     bdata_objs.remove(created_empty, do_unlink=True)
                 except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                    cleanup_warnings.append(f"remove empty: {exc}")
                     logger.debug("Removing temporary LODGroup empty failed: %s", exc)
 
             # Restore original collider names in Blender
@@ -262,6 +274,7 @@ class UE5Exporter(EngineExporterBase):
                 try:
                     c_obj.name = orig_name
                 except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                    cleanup_warnings.append(f"collider name restore: {exc}")
                     logger.debug("Restoring collider name failed: %s", exc)
 
             # Restore original impostor names in Blender
@@ -269,6 +282,7 @@ class UE5Exporter(EngineExporterBase):
                 try:
                     imp_obj.name = orig_name
                 except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                    cleanup_warnings.append(f"impostor name restore: {exc}")
                     logger.debug("Restoring impostor name failed: %s", exc)
 
             # Restore original hide states
@@ -278,6 +292,7 @@ class UE5Exporter(EngineExporterBase):
                     if vl:
                         obj.hide_set(hg, view_layer=vl)
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
+                    cleanup_warnings.append(f"hide state restore: {exc}")
                     logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
@@ -289,4 +304,12 @@ class UE5Exporter(EngineExporterBase):
                     if vl and vl.objects is not None and orig_active:
                         vl.objects.active = orig_active
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
+                    cleanup_warnings.append(f"selection restore: {exc}")
                     logger.debug("Could not restore selection state: %s", exc)
+
+            if cleanup_warnings:
+                logger.warning(
+                    "UE5 export cleanup finished with %d warning(s): %s",
+                    len(cleanup_warnings),
+                    "; ".join(cleanup_warnings),
+                )

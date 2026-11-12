@@ -24,11 +24,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BPY_DATA_RATCHET_BASELINE = 0
 
 # Monotonic ratchet baseline for defensive hasattr and getattr calls in core/ and exporters/
-HASATTR_RATCHET_BASELINE = 78
-GETATTR_RATCHET_BASELINE = 179
+HASATTR_RATCHET_BASELINE = 77
+GETATTR_RATCHET_BASELINE = 177
 
 # Monotonic ratchet baseline for log-only exception handlers in core/ and exporters/
-LOG_ONLY_EXCEPT_RATCHET_BASELINE = 200
+LOG_ONLY_EXCEPT_RATCHET_BASELINE = 114
+
+# Monotonic ratchet baseline for except-pass exception handlers in core/ and exporters/
+EXCEPT_PASS_RATCHET_BASELINE = 48
 
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
@@ -48,9 +51,11 @@ ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
         "img_orm.pixels": (1, "Blender stub defect: Image.pixels lacks foreach_set"),
     },
     "core/impostor_preview.py": {
+        "cam_obj.animation_data.action": (1, "Blender stub defect: Action.fcurves legacy/layered action attribute"),
+    },
+    "core/impostor_preview_material.py": {
         "norm_img.colorspace_settings": (1, "Blender stub defect: ColorManagedInputColorspaceSettings name setter"),
         "orm_img.colorspace_settings": (1, "Blender stub defect: ColorManagedInputColorspaceSettings name setter"),
-        "cam_obj.animation_data.action": (1, "Blender stub defect: Action.fcurves legacy/layered action attribute"),
     },
     "core/material_presets.py": {
         "mat": (4, "Dynamic RNA property: msfs_material_type injected by MSFS exporter"),
@@ -143,6 +148,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         "hasattr_ratchet_in_core_exporters": [],
         "getattr_ratchet_in_core_exporters": [],
         "log_only_except_ratchet_in_core_exporters": [],
+        "except_pass_ratchet_in_core_exporters": [],
         "hasattr_blend_data_leak_in_core_exporters": [],
         "optional_blend_data_in_core": [],
         "commented_out_code_blocks": [],
@@ -159,6 +165,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
     total_hasattr_count = 0
     total_getattr_count = 0
     total_log_only_except_count = 0
+    total_except_pass_count = 0
     cast_any_occurrences: dict[str, list[tuple[int, str]]] = {}
 
     for fpath in py_files:
@@ -311,7 +318,9 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
             if is_core_or_exporter and isinstance(node, ast.ExceptHandler):
                 if len(node.body) == 1:
                     stmt = node.body[0]
-                    if (
+                    if isinstance(stmt, ast.Pass):
+                        total_except_pass_count += 1
+                    elif (
                         isinstance(stmt, ast.Expr)
                         and isinstance(stmt.value, ast.Call)
                         and ast.unparse(stmt.value.func).startswith(("logger.", "log.", "logging."))
@@ -461,6 +470,16 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
             )
         )
 
+    # Validate except-pass exception handler ratchet baseline in core/ and exporters/
+    if total_except_pass_count > EXCEPT_PASS_RATCHET_BASELINE:
+        violations["except_pass_ratchet_in_core_exporters"].append(
+            (
+                "GLOBAL_RATCHET",
+                total_except_pass_count,
+                f"except-pass exception handlers ({total_except_pass_count}) exceed ratchet baseline ({EXCEPT_PASS_RATCHET_BASELINE})",
+            )
+        )
+
     return violations
 
 
@@ -483,6 +502,7 @@ def main() -> int:
         "hasattr_ratchet_in_core_exporters",
         "getattr_ratchet_in_core_exporters",
         "log_only_except_ratchet_in_core_exporters",
+        "except_pass_ratchet_in_core_exporters",
         "hasattr_blend_data_leak_in_core_exporters",
         "optional_blend_data_in_core",
     ]

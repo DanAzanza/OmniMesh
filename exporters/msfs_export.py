@@ -164,10 +164,14 @@ class MSFSExporter(EngineExporterBase):
         if not payload or not payload.lod_tiers:
             return False, f"No valid LOD objects found to export for '{clean_name}'."
 
+        prep_warnings: list[str] = []
+        cleanup_warnings: list[str] = []
+
         if context.mode != "OBJECT":
             try:
                 bpy.ops.object.mode_set(mode="OBJECT")
             except (RuntimeError, AttributeError, TypeError) as exc:
+                prep_warnings.append(f"mode_set: {exc}")
                 logger.debug("Mode set to OBJECT skipped: %s", exc)
 
         vl = context.view_layer
@@ -205,6 +209,7 @@ class MSFSExporter(EngineExporterBase):
                         obj.hide_set(False, view_layer=context.view_layer)
                         obj.hide_viewport = False
                     except (RuntimeError, AttributeError) as exc:
+                        prep_warnings.append(f"unhide {obj.name}: {exc}")
                         logger.debug("Could not unhide object %s in view layer: %s", obj.name, exc)
                     obj.select_set(True)
 
@@ -216,6 +221,7 @@ class MSFSExporter(EngineExporterBase):
                             att_node.hide_set(False, view_layer=context.view_layer)
                             att_node.hide_viewport = False
                         except (RuntimeError, AttributeError) as exc:
+                            prep_warnings.append(f"unhide att {att_node.name}: {exc}")
                             logger.debug("Could not unhide attachment node %s: %s", att_node.name, exc)
                         att_node.select_set(True)
 
@@ -284,6 +290,7 @@ class MSFSExporter(EngineExporterBase):
                     if vl:
                         obj.hide_set(hg, view_layer=vl)
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
+                    cleanup_warnings.append(f"hide state {obj.name}: {exc}")
                     logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
@@ -295,7 +302,15 @@ class MSFSExporter(EngineExporterBase):
                     if vl and vl.objects is not None and orig_active:
                         vl.objects.active = orig_active
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
+                    cleanup_warnings.append(f"selection: {exc}")
                     logger.debug("Could not restore selection state: %s", exc)
+
+            if cleanup_warnings:
+                logger.warning(
+                    "MSFS export cleanup finished with %d warning(s): %s",
+                    len(cleanup_warnings),
+                    "; ".join(cleanup_warnings),
+                )
 
     @classmethod
     def export_project_package(
@@ -382,6 +397,7 @@ class MSFSExporter(EngineExporterBase):
                 f.write("\n".join(cfg_lines))
         except OSError as exc:
             logger.warning("Could not write model.cfg: %s", exc)
+            return False, f"Failed writing model.cfg for package '{clean_base}': {exc}"
 
         # 4. Export Variants if present
         if bdata_cols:
@@ -445,6 +461,7 @@ class MSFSExporter(EngineExporterBase):
                                 vf.write("\n".join(var_cfg_lines))
                         except OSError as exc:
                             logger.warning("Could not write variant model.cfg: %s", exc)
+                            return False, f"Failed writing variant model.cfg for '{c_name}': {exc}"
 
         if exported_count == 0:
             return False, f"No model geometry found to export for package '{clean_base}'."

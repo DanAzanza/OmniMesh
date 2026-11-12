@@ -233,6 +233,14 @@ class MeshMergeEngine:
                             skipped_face_count += 1
                             logger.debug("Merged mesh face addition skipped: %s", exc)
 
+                    if skipped_face_count > 0:
+                        logger.info(
+                            "Skipped %d degenerate or duplicate face(s) while merging '%s' into '%s'",
+                            skipped_face_count,
+                            obj.name,
+                            output_obj_name,
+                        )
+
                 finally:
                     temp_bm.free()
                     if eval_obj is not None:

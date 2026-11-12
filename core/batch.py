@@ -101,6 +101,7 @@ class BatchProcessorEngine:
 
                 return UnityExporter.export_asset
         except (ImportError, ValueError) as exc:
+            cls._exporters.pop(engine, None)
             logger.debug("Lazy exporter load failed for engine '%s': %s", engine, exc)
         return None
 
@@ -136,6 +137,7 @@ class BatchProcessorEngine:
                         if ext in extensions:
                             discovered_files.append(full_p)
         except OSError as exc:
+            discovered_files.clear()
             logger.error("Failed during asset discovery in '%s': %s", resolved_source, exc)
 
         return sorted(discovered_files)
@@ -179,6 +181,7 @@ class BatchProcessorEngine:
                         if item.lower().endswith(".blend") and not item.startswith((".", "~", "#")):
                             discovered_files.append(full_p)
         except OSError as exc:
+            discovered_files.clear()
             logger.error("Failed during .blend discovery in '%s': %s", resolved_source, exc)
 
         return sorted(discovered_files)
@@ -523,6 +526,7 @@ class BatchProcessorEngine:
             logger.error("Error during batch processing of '%s': %s", filepath, exc, exc_info=True)
             result["message"] = f"Pipeline exception: {exc}"
         finally:
+            cleanup_errors: list[str] = []
             # 6. Strict Memory & Datablock Teardown
             all_created = imported_objs + generated_lod_objs
             cls.cleanup_imported_objects(all_created, blend_data=bdata)
@@ -530,6 +534,7 @@ class BatchProcessorEngine:
                 try:
                     bdata_cols.remove(coll)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    cleanup_errors.append(f"collection remove: {exc}")
                     logger.debug("Collection cleanup failed: %s", exc)
 
             # Purge orphan datablocks
@@ -538,13 +543,18 @@ class BatchProcessorEngine:
                     is_bg = bool(bpy.app.background) if (bpy and bpy.app) else False
                     bdata.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=is_bg)
                 except (RuntimeError, ValueError, AttributeError) as exc:
+                    cleanup_errors.append(f"orphans purge: {exc}")
                     logger.debug("Orphan purge bypassed: %s", exc)
 
             gc.collect()
             try:
                 TextureChannelPacker.compact_memory()
             except (RuntimeError, AttributeError) as exc:
+                cleanup_errors.append(f"texture pack compact: {exc}")
                 logger.debug("Texture packer memory compact bypassed: %s", exc)
+
+            if cleanup_errors:
+                result["cleanup_warnings"] = cleanup_errors
 
         result["duration_sec"] = round(time.time() - start_time, 2)
         return result
@@ -560,6 +570,8 @@ class BatchProcessorEngine:
         bdata_meshes = blend_data.meshes if blend_data else None
 
         meshes_to_remove = set()
+        obj_errors = 0
+        mesh_errors = 0
         for obj in objects:
             if not obj:
                 continue
@@ -569,6 +581,7 @@ class BatchProcessorEngine:
                 try:
                     bdata_objs.remove(obj, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    obj_errors += 1
                     logger.debug("Object remove error: %s", exc)
 
         for mesh in meshes_to_remove:
@@ -576,20 +589,24 @@ class BatchProcessorEngine:
                 try:
                     bdata_meshes.remove(mesh, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    mesh_errors += 1
                     logger.debug("Mesh remove error: %s", exc)
 
     @classmethod
     def force_garbage_collection(cls) -> None:
         """Triggers cyclic garbage collection and releases uncommitted memory back to the OS."""
         gc.collect()
+        os_errors: list[str] = []
         if sys.platform == "win32":
             try:
                 ctypes.windll.kernel32.SetProcessWorkingSetSize(-1, -1, -1)
             except (OSError, AttributeError) as exc:
+                os_errors.append(f"SetProcessWorkingSetSize: {exc}")
                 logger.debug("Win32 SetProcessWorkingSetSize error: %s", exc)
             try:
                 ctypes.cdll.msvcrt._heapmin()
             except (OSError, AttributeError) as exc:
+                os_errors.append(f"_heapmin: {exc}")
                 logger.debug("Win32 _heapmin error: %s", exc)
         elif sys.platform.startswith("linux"):
             try:
@@ -599,4 +616,5 @@ class BatchProcessorEngine:
                     if hasattr(libc, "malloc_trim"):
                         libc.malloc_trim(0)
             except (OSError, AttributeError) as exc:
+                os_errors.append(f"malloc_trim: {exc}")
                 logger.debug("Linux malloc_trim error: %s", exc)

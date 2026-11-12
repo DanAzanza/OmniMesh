@@ -127,6 +127,7 @@ class MeshSanitizer:
                                 is_duplicate = True
                                 break
                     except (AttributeError, TypeError, ValueError, ReferenceError) as exc:
+                        is_duplicate = False
                         logger.debug("Duplicate face normal check error: %s", exc)
 
                 if is_duplicate:
@@ -142,7 +143,8 @@ class MeshSanitizer:
                 bm.verts.ensure_lookup_table()
                 return len(faces_to_delete)
             except BMESH_OP_ERRORS as exc:
-                logger.debug("Delete duplicate faces error: %s", exc)
+                logger.warning("Delete duplicate faces error: %s", exc)
+                return 0
 
         return 0
 
@@ -199,7 +201,8 @@ class MeshSanitizer:
                     bm.edges.ensure_lookup_table()
                     bm.verts.ensure_lookup_table()
                 except BMESH_OP_ERRORS as exc:
-                    logger.debug("Delete zero faces error: %s", exc)
+                    total_stats["zero_faces"] -= len(zero_faces)
+                    logger.warning("Delete zero faces error: %s", exc)
 
             # Step B: Zero-length edges
             zero_edges = []
@@ -217,13 +220,15 @@ class MeshSanitizer:
                 try:
                     bmesh.ops.collapse(bm, edges=zero_edges)
                 except (RuntimeError, ValueError, IndexError) as exc:
-                    logger.debug("Edge collapse fallback in Tier 0: %s", exc)
+                    total_stats["zero_edges"] -= len(zero_edges)
+                    logger.warning("Edge collapse fallback in Tier 0: %s", exc)
                 try:
                     bm.verts.ensure_lookup_table()
                     bm.edges.ensure_lookup_table()
                     bm.faces.ensure_lookup_table()
                 except BMESH_OP_ERRORS as exc:
-                    logger.debug("Lookup table ensure error: %s", exc)
+                    total_stats["lookup_table_error"] = 1
+                    logger.warning("Lookup table ensure error: %s", exc)
 
             # Step C: Wire edges (no linked faces)
             wire_edges: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = [
@@ -237,7 +242,8 @@ class MeshSanitizer:
                     bm.edges.ensure_lookup_table()
                     bm.verts.ensure_lookup_table()
                 except BMESH_OP_ERRORS as exc:
-                    logger.debug("Delete wire edges error: %s", exc)
+                    total_stats["wire_edges"] -= len(wire_edges)
+                    logger.warning("Delete wire edges error: %s", exc)
 
             # Step D: Isolated loose vertices (no linked edges)
             loose_verts: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = [
@@ -250,7 +256,8 @@ class MeshSanitizer:
                     bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
                     bm.verts.ensure_lookup_table()
                 except BMESH_OP_ERRORS as exc:
-                    logger.debug("Delete loose verts error: %s", exc)
+                    total_stats["loose_verts"] -= len(loose_verts)
+                    logger.warning("Delete loose verts error: %s", exc)
 
             if pass_culled == 0:
                 break
@@ -258,7 +265,8 @@ class MeshSanitizer:
         try:
             bm.verts.index_update()
         except BMESH_OP_ERRORS as exc:
-            logger.debug("Index update error: %s", exc)
+            total_stats["index_update_error"] = 1
+            logger.warning("Index update error: %s", exc)
         return total_stats
 
     # Backward compatibility alias
@@ -318,7 +326,8 @@ class MeshSanitizer:
                     if abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4:
                         has_unapplied_scale = True
                 except (AttributeError, TypeError, ValueError) as e:
-                    logger.debug("Failed checking unapplied scale on %s: %s", obj.name, e)
+                    has_unapplied_scale = True
+                    logger.warning("Failed checking unapplied scale on %s: %s", obj.name, e)
 
             slots = obj.material_slots
             if slots is not None:
@@ -326,7 +335,8 @@ class MeshSanitizer:
                     if len(slots) == 0 or any(slot.material is None for slot in slots):
                         missing_mats += 1
                 except (TypeError, ValueError, AttributeError) as e:
-                    logger.debug("Failed checking material slots on %s: %s", obj.name, e)
+                    missing_mats += 1
+                    logger.warning("Failed checking material slots on %s: %s", obj.name, e)
 
             mesh_data = cast("bpy.types.Mesh | None", obj.data)
             if not mesh_data or not bmesh:
@@ -351,6 +361,7 @@ class MeshSanitizer:
                 finally:
                     bm.free()
             except (AttributeError, RuntimeError, ReferenceError, ValueError, TypeError) as exc:
+                total_degenerate_tris += 1
                 logger.warning("Failed during mesh inspection: %s", exc)
 
         props.preflight_inspected = True
@@ -454,12 +465,14 @@ class MeshSanitizer:
                     return {"recalculated_normals": True, "manifold_faces_aligned": len(all_closed_faces)}
                 except BMESH_OP_ERRORS as exc:
                     logger.warning("Manifold normal recalc fallback: %s", exc)
+                    return {"recalculated_normals": False, "error": str(exc)}
         elif normal_recalc_policy == "FORCE_ALL":
             try:
                 bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
                 return {"recalculated_normals": True, "forced_all_aligned": len(bm.faces)}
             except BMESH_OP_ERRORS as exc:
                 logger.warning("Forced normal recalc fallback: %s", exc)
+                return {"recalculated_normals": False, "error": str(exc)}
 
         return {"recalculated_normals": False}
 

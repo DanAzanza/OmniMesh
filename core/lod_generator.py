@@ -153,6 +153,7 @@ def _process_merged_tier(
 
     owned_ref = False
     target_ref = ref_merged_obj
+    ref_cleanup_exc: Exception | None = None
     try:
         if not target_ref:
             ref_merged_name = f"__OM_Ref_Merged_LOD0_{tier_idx}__"
@@ -193,7 +194,10 @@ def _process_merged_tier(
                     bdata_meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
                 logger.error("Cleanup ref_merged_obj exception: %s", exc)
-                raise OmniMeshError(f"Failed removing temporary reference mesh: {exc}") from exc
+                ref_cleanup_exc = exc
+
+    if ref_cleanup_exc is not None:
+        raise OmniMeshError(f"Failed removing temporary reference mesh: {ref_cleanup_exc}") from ref_cleanup_exc
 
     if armature_obj and len(tier_obj.vertex_groups) > 0:
         if bool(props.enable_bone_pruning) and tier_idx >= 2:
@@ -417,6 +421,7 @@ def generate_all_lods(
 
     bdata = blend_data
     shared_ref_merged_obj = None
+    shared_ref_cleanup_err: str | None = None
     try:
         base_name = base_name.split("_LOD")[0]
 
@@ -634,11 +639,17 @@ def generate_all_lods(
                 if ref_mesh and ref_mesh.users == 0 and bdata_meshes:
                     bdata_meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
+                shared_ref_cleanup_err = f"{shared_ref_merged_obj.name}: {exc}"
                 logger.error("Cleanup shared_ref_merged_obj exception: %s", exc)
-                raise OmniMeshError(f"Failed removing shared temporary reference mesh: {exc}") from exc
 
         if arm_data and orig_pose_pos and hasattr(arm_data, "pose_position"):
             arm_data.pose_position = orig_pose_pos
+
+        if shared_ref_cleanup_err:
+            logger.warning(
+                "generate_all_lods completed with shared reference cleanup warning: %s",
+                shared_ref_cleanup_err,
+            )
 
 
 __all__ = [

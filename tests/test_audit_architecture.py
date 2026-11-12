@@ -306,3 +306,28 @@ def test_audit_catches_log_only_except_ratchet_overflow(tmp_path: Path, monkeypa
     ratchet = violations["log_only_except_ratchet_in_core_exporters"]
     assert len(ratchet) == 1
     assert "exceed ratchet baseline" in str(ratchet[0][2])
+
+
+def test_audit_catches_except_pass_ratchet_overflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.audit_architecture as audit_mod
+
+    monkeypatch.setattr(audit_mod, "EXCEPT_PASS_RATCHET_BASELINE", 1)
+
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "except_pass_mod.py").write_text(
+        "def f():\n"
+        "    try:\n"
+        "        pass\n"
+        "    except RuntimeError:\n"
+        "        pass\n"
+        "    try:\n"
+        "        pass\n"
+        "    except ValueError:\n"
+        "        pass\n",
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    ratchet = violations["except_pass_ratchet_in_core_exporters"]
+    assert len(ratchet) == 1
+    assert "exceed ratchet baseline" in str(ratchet[0][2])

@@ -142,6 +142,7 @@ def configure_game_scene_settings(
             unit_settings.scale_length = float(opts.unit_scale)
             unit_settings.length_unit = opts.length_unit  # type: ignore[assignment]
     except (AttributeError, TypeError, ValueError) as exc:
+        result["unit_settings_warning"] = str(exc)
         logger.debug("Could not set unit_settings: %s", exc)
 
     # 2. Game Frame Rate Standards (fps + fps_base)
@@ -150,13 +151,14 @@ def configure_game_scene_settings(
             scene.render.fps = int(opts.fps)
             scene.render.fps_base = 1.0
     except (AttributeError, TypeError, ValueError) as exc:
+        result["fps_warning"] = str(exc)
         logger.debug("Could not set render.fps: %s", exc)
 
     result["scene_configured"] = True
 
     # 3. Viewport Shading, Clipping & Overlay Inspections (Safely traversed)
     ctx = context
-    wm = ctx.window_manager if ctx and hasattr(ctx, "window_manager") else None
+    wm = getattr(ctx, "window_manager", None)
     viewports_count = 0
 
     if wm and getattr(wm, "windows", None):
@@ -179,6 +181,7 @@ def configure_game_scene_settings(
                                 )
                                 viewports_count += 1
         except (AttributeError, ReferenceError, RuntimeError, TypeError) as exc:
+            result["viewport_traversal_warning"] = str(exc)
             logger.debug("Viewport space traversal skipped or partially failed: %s", exc)
 
     result["viewports_updated"] = viewports_count
@@ -253,7 +256,7 @@ def setup_asset_collections(
         return {}
 
     scene = context.scene if context else None
-    if not scene or not getattr(scene, "collection", None):
+    if not scene or not scene.collection:
         return {}
 
     opts = options or AssetCollectionOptions()
@@ -269,6 +272,7 @@ def setup_asset_collections(
         try:
             scene.collection.children.link(root_col)
         except RuntimeError as exc:
+            collections["link_warning"] = str(exc)
             logger.debug("Root collection link skipped: %s", exc)
 
     root_col["_omnimesh_role"] = "MODEL_ROOT"
@@ -288,12 +292,14 @@ def setup_asset_collections(
                 try:
                     root_col.children.link(sub_col)
                 except RuntimeError as exc:
+                    collections[f"sub_link_{role_key}"] = str(exc)
                     logger.debug("Subcollection link skipped: %s", exc)
             # Unlink from scene.collection if misplaced there directly
             if scene.collection.children is not None and sub_col.name in scene.collection.children:
                 try:
                     scene.collection.children.unlink(sub_col)
                 except RuntimeError as exc:
+                    collections[f"sub_unlink_{role_key}"] = str(exc)
                     logger.debug("Subcollection unlink from scene skipped: %s", exc)
 
         sub_col["_omnimesh_role"] = role_key
@@ -364,7 +370,7 @@ def assign_objects_to_asset_hierarchy(
         obj_name = obj.name or "Unnamed"
 
         # 1. Library-linked datablock guard (cannot modify external library membership)
-        if getattr(obj, "library", None) is not None:
+        if obj.library is not None:
             summary["skipped_library"].append(obj_name)
             continue
 
@@ -418,7 +424,7 @@ def assign_objects_to_asset_hierarchy(
             try:
                 target_col.objects.link(obj)
             except RuntimeError as exc:
-                logger.debug("Could not link %s to %s: %s", obj_name, getattr(target_col, "name", ""), exc)
+                logger.debug("Could not link %s to %s: %s", obj_name, target_col.name, exc)
                 continue
 
         if unlink_from_others:
@@ -427,6 +433,7 @@ def assign_objects_to_asset_hierarchy(
                     try:
                         col.objects.unlink(obj)
                     except (RuntimeError, ReferenceError) as exc:
+                        summary.setdefault("unlink_warnings", []).append(f"{obj_name}: {exc}")
                         logger.debug("Object unlink from collection skipped: %s", exc)
 
             if scene and scene.collection and scene.collection != target_col:
@@ -434,6 +441,7 @@ def assign_objects_to_asset_hierarchy(
                     try:
                         scene.collection.objects.unlink(obj)
                     except (RuntimeError, ReferenceError) as exc:
+                        summary.setdefault("unlink_warnings", []).append(f"{obj_name} scene: {exc}")
                         logger.debug("Object unlink from scene collection skipped: %s", exc)
 
         if target_category:

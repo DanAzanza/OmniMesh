@@ -464,6 +464,8 @@ def safe_remove_collection_objects(
     effective_data = blend_data
 
     removed = 0
+    deselect_failed_count = 0
+    last_deselect_err: str | None = None
     # Create shallow snapshot of objects to prevent mutation during iteration
     objs_to_remove = [o for o in list(col.objects) if o is not None and (predicate is None or predicate(o))]
 
@@ -479,8 +481,9 @@ def safe_remove_collection_objects(
             # Deselect if selected
             try:
                 obj.select_set(False)
-            except (RuntimeError, ReferenceError):
-                pass
+            except (RuntimeError, ReferenceError) as deselect_err:
+                deselect_failed_count += 1
+                last_deselect_err = f"{obj.name}: {deselect_err}"
 
             # Capture unshared data block
             data_to_remove: bpy.types.ID | None = None
@@ -511,5 +514,12 @@ def safe_remove_collection_objects(
             raise CollectionHierarchyError(
                 f"Safe object removal failed for '{getattr(obj, 'name', '<unnamed>')}': {exc}"
             ) from exc
+
+    if deselect_failed_count > 0:
+        logger.warning(
+            "safe_remove_collection_objects completed with %d deselection warning(s); last: %s",
+            deselect_failed_count,
+            last_deselect_err,
+        )
 
     return removed

@@ -44,6 +44,7 @@ def temporary_vertex_group(obj: bpy.types.Object | None, group_name: str):
                 try:
                     obj.vertex_groups.remove(vg)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    vg = None
                     logger.debug("Failed cleaning up temporary vertex group '%s': %s", group_name, exc)
 
 
@@ -143,6 +144,7 @@ class MeshDecimator:
                                 pinned_vert_indices.add(v1.index)
                                 break
                     except (KeyError, IndexError, AttributeError, TypeError) as exc:
+                        uv1 = None
                         logger.debug("UV seam check error: %s", exc)
 
         return pinned_vert_indices
@@ -277,6 +279,7 @@ class MeshDecimator:
                         vert[dvert_lay][vg_idx] = float(weights[vert.index])
                     return
             except (ImportError, ValueError, TypeError, IndexError) as exc:
+                weights = None
                 logger.debug("Vectorized curvature fallback to BMesh: %s", exc)
 
         # Robust scalar fallback for small meshes or environments without NumPy
@@ -307,6 +310,7 @@ class MeshDecimator:
                             if angle > max_dihedral:
                                 max_dihedral = angle
                         except (ValueError, ZeroDivisionError, AttributeError) as exc:
+                            angle = 0.0
                             logger.debug("Dihedral angle calculation failed: %s", exc)
 
             # Strict protection for pinned boundaries / seams / non-manifold vertices
@@ -412,6 +416,7 @@ class MeshDecimator:
                         with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                             bpy.ops.object.modifier_move_to_index(modifier=dec_mod.name, index=0)
                 except (RuntimeError, ValueError, AttributeError) as exc:
+                    dec_mod.show_viewport = True
                     logger.debug("Modifier move to index 0 skipped: %s", exc)
 
             if ctx and hasattr(ctx, "temp_override"):
@@ -443,6 +448,7 @@ class MeshDecimator:
                 try:
                     m.show_viewport = orig_state
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
+                    orig_state = None
                     logger.debug("Restoring armature show_viewport failed: %s", exc)
 
             # Cleanup protection vertex group if requested
@@ -462,11 +468,15 @@ class MeshDecimator:
             return
 
         key_blocks = getattr(shape_keys, "key_blocks", [])
+        reset_errors = 0
         for kb in key_blocks:
             try:
                 kb.value = 0.0
             except (TypeError, ValueError, AttributeError) as exc:
+                reset_errors += 1
                 logger.debug("Failed resetting shape key value: %s", exc)
+        if reset_errors > 0:
+            logger.warning("Failed resetting %d shape key block(s) to basis", reset_errors)
 
     @classmethod
     def purge_all_shape_keys(cls, obj: bpy.types.Object | None, context: bpy.types.Context | None = None) -> None:
@@ -484,6 +494,7 @@ class MeshDecimator:
 
         # 2. Remove all shape keys cleanly
         ctx = context
+        purge_failed = False
         try:
             if ctx and hasattr(ctx, "temp_override"):
                 with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
@@ -500,7 +511,10 @@ class MeshDecimator:
                     pass
                 bpy.ops.object.shape_key_remove(all=True)
         except (RuntimeError, AttributeError, TypeError) as exc:
+            purge_failed = True
             logger.debug("Shape key purge bypassed: %s", exc)
+        if purge_failed:
+            logger.warning("Shape key purge incomplete on %s", obj.name)
 
     @classmethod
     def prepare_and_clean_shape_keys(

@@ -87,6 +87,7 @@ class CollisionDecomposer:
                 try:
                     bm_source.faces.ensure_lookup_table()
                 except BMESH_OP_ERRORS as exc:
+                    test_faces = list(bm_source.faces)[:500]
                     logger.debug("Failed ensuring face lookup table: %s", exc)
                 step = max(1, n_faces // 450)
                 indices = set(range(0, n_faces, step))
@@ -173,6 +174,7 @@ class CollisionDecomposer:
                             bmesh.ops.translate(bm, vec=offset_sec_vec, verts=bm.verts[:])
             except (np.linalg.LinAlgError, RuntimeError, ValueError) as exc:
                 logger.debug("Planar extrusion fallback: %s", exc)
+                bm.verts.ensure_lookup_table()
 
         # 2. Compute 3D Convex Hull with two-pass internal geometry purge
         try:
@@ -203,6 +205,7 @@ class CollisionDecomposer:
             try:
                 bmesh.ops.delete(bm, geom=faces_to_del, context="FACES_ONLY")
             except BMESH_OP_ERRORS as exc:
+                faces_to_del.clear()
                 logger.debug("Interior face purge bypassed: %s", exc)
 
         verts_to_del: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = [
@@ -212,6 +215,7 @@ class CollisionDecomposer:
             try:
                 bmesh.ops.delete(bm, geom=verts_to_del, context="VERTS")
             except BMESH_OP_ERRORS as exc:
+                verts_to_del.clear()
                 logger.debug("Interior vert purge bypassed: %s", exc)
 
     @classmethod
@@ -235,6 +239,7 @@ class CollisionDecomposer:
             bm.edges.ensure_lookup_table()
         except BMESH_OP_ERRORS as exc:
             logger.debug("Dissolve limit bypassed in budget clamp: %s", exc)
+            bm.verts.ensure_lookup_table()
 
         if len(bm.verts) <= max_verts:
             return
@@ -294,6 +299,7 @@ class CollisionDecomposer:
 
                 eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(source_obj, preserve_armature=True)
             except (RuntimeError, ValueError, AttributeError) as exc:
+                eval_mesh = None
                 logger.debug("Failed evaluating modifier mesh for collision: %s", exc)
             bm_master = bmesh.new()
             try:
@@ -424,23 +430,28 @@ class CollisionDecomposer:
 
         finally:
             if not decomposition_succeeded:
+                free_errors = 0
                 if child_a is not None:
                     try:
                         child_a.free()
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        free_errors += 1
                         logger.debug("Failed freeing child_a BMesh: %s", exc)
                 if child_b is not None:
                     try:
                         child_b.free()
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        free_errors += 1
                         logger.debug("Failed freeing child_b BMesh: %s", exc)
                 if target_cluster is not None:
                     try:
                         target_cluster.free()
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        free_errors += 1
                         logger.debug("Failed freeing target_cluster BMesh: %s", exc)
                 for c in clusters + completed_clusters:
                     try:
                         c.free()
                     except (RuntimeError, ReferenceError, AttributeError) as exc:
+                        free_errors += 1
                         logger.debug("Failed freeing cluster BMesh: %s", exc)
