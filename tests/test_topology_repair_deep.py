@@ -72,8 +72,11 @@ class MockFace:
 
 
 class MockBMeshLookup:
+    layers: Any
+
     def __init__(self, items: list[Any]):
         self.items = items
+        self.layers = MagicMock()
 
     def __len__(self) -> int:
         return len(self.items)
@@ -101,6 +104,8 @@ class MockBMeshLookup:
 class MockBMeshSimple:
     def __init__(self):
         self.verts = MockBMeshLookup([])
+        self.verts.layers = MagicMock()
+        self.verts.layers.deform.active = None
         self.edges = MockBMeshLookup([])
         self.faces = MockBMeshLookup([])
         self.loops = MagicMock()
@@ -380,3 +385,83 @@ def test_execute_tier1_topological_repair_orchestration():
         assert res["split_non_manifold_edges"] == 1
         assert res["filled_holes"] == 3
         assert res["culled_islands"] == 4
+
+
+# ==============================================================================
+# 8. Boundary and Exception Fail-Fast Tests
+# ==============================================================================
+
+
+def test_split_bowtie_vertices_lookup_init_failure_raises():
+    bm = MockBMeshSimple()
+    bm.verts.ensure_lookup_table = MagicMock(side_effect=RuntimeError("Corrupt lookup"))  # type: ignore[assignment]
+    with pytest.raises(TopologyError, match="Failed initializing vertex lookup table in split_bowtie_vertices"):
+        TopologyRepairEngine.split_bowtie_vertices(bm)  # type: ignore[arg-type]
+
+
+def test_split_non_manifold_edges_lookup_init_failure_raises():
+    bm = MockBMeshSimple()
+    bm.edges.ensure_lookup_table = MagicMock(side_effect=RuntimeError("Corrupt edge table"))  # type: ignore[assignment]
+    with pytest.raises(TopologyError, match="Failed initializing edge lookup table in split_non_manifold_edges"):
+        TopologyRepairEngine.split_non_manifold_edges(bm)  # type: ignore[arg-type]
+
+
+def test_fill_small_boundary_holes_lookup_init_failure_raises():
+    bm = MockBMeshSimple()
+    bm.edges.ensure_lookup_table = MagicMock(side_effect=RuntimeError("Corrupt edge table"))  # type: ignore[assignment]
+    with patch("core.topology_repair.bmesh", MagicMock()):
+        with pytest.raises(TopologyError, match="Failed initializing edge lookup table in fill_small_boundary_holes"):
+            TopologyRepairEngine.fill_small_boundary_holes(bm)  # type: ignore[arg-type]
+
+
+def test_fill_small_boundary_holes_operation_failure_raises():
+    bm = MockBMeshSimple()
+    e = MockEdge(MockVert(), MockVert())
+    e.is_boundary = True
+    bm.edges.items.append(e)
+
+    mock_bmesh = MagicMock()
+    mock_bmesh.ops.holes_fill.side_effect = RuntimeError("holes_fill internal error")
+
+    with patch("core.topology_repair.bmesh", mock_bmesh):
+        with pytest.raises(TopologyError, match="Failed filling small boundary holes"):
+            TopologyRepairEngine.fill_small_boundary_holes(bm, max_edges=4)  # type: ignore[arg-type]
+
+
+def test_cull_subpixel_islands_lookup_init_failure_raises():
+    bm = MockBMeshSimple()
+    bm.faces.ensure_lookup_table = MagicMock(side_effect=RuntimeError("Corrupt faces"))  # type: ignore[assignment]
+    with patch("core.topology_repair.bmesh", MagicMock()):
+        with pytest.raises(TopologyError, match="Failed initializing face lookup table in cull_subpixel_islands"):
+            TopologyRepairEngine.cull_subpixel_islands(bm, w_crit=0.05)  # type: ignore[arg-type]
+
+
+def test_cull_subpixel_islands_delete_failure_raises():
+    bm = MockBMeshSimple()
+    v1, v2, v3 = MockVert((0.0, 0.0, 0.0)), MockVert((0.001, 0.0, 0.0)), MockVert((0.0, 0.001, 0.0))
+    face_tiny = MockFace([v1, v2, v3])
+    v4, v5, v6 = MockVert((10.0, 0.0, 0.0)), MockVert((20.0, 0.0, 0.0)), MockVert((10.0, 20.0, 0.0))
+    face_large = MockFace([v4, v5, v6])
+    bm.verts.items.extend([v1, v2, v3, v4, v5, v6])
+    bm.faces.items.extend([face_tiny, face_large])
+
+    mock_bmesh = MagicMock()
+    mock_bmesh.ops.delete.side_effect = RuntimeError("Delete failed")
+
+    with patch("core.topology_repair.bmesh", mock_bmesh):
+        with pytest.raises(TopologyError, match="Failed deleting culled island faces"):
+            TopologyRepairEngine.cull_subpixel_islands(bm, w_crit=0.05)  # type: ignore[arg-type]
+
+
+def test_execute_tier1_triangulate_ngons_failure_raises():
+    bm = MockBMeshSimple()
+    opts = TopologyRepairOptions(enable_triangulate_ngons=True)
+    f = MockFace([MockVert(), MockVert(), MockVert(), MockVert(), MockVert()])  # 5-gon
+    bm.faces.items.append(f)
+
+    mock_bmesh = MagicMock()
+    mock_bmesh.ops.triangulate.side_effect = RuntimeError("Triangulation error")
+
+    with patch("core.topology_repair.bmesh", mock_bmesh):
+        with pytest.raises(TopologyError, match="Failed triangulating N-gons"):
+            TopologyRepairEngine.execute_tier1_topological_repair(bm, options=opts)  # type: ignore[arg-type]

@@ -284,7 +284,12 @@ def test_add_config_preset_non_destructive(monkeypatch: pytest.MonkeyPatch):
             self.data = data
             self.location = [0.0, 0.0, 0.0]
             self.rotation_euler = [0.0, 0.0, 0.0]
+            self.parent: Any = None
+            self.children: list[Any] = []
             self._props: dict[str, Any] = {}
+
+        def select_set(self, state: bool) -> None:
+            pass
 
         def __setitem__(self, key: str, value: Any):
             self._props[key] = value
@@ -450,6 +455,9 @@ def test_smart_replace_and_autofit_geometry(monkeypatch: pytest.MonkeyPatch):
             self.parent: Any = None
             self.children: list[Any] = []
             self._dict: dict[str, Any] = {}
+
+        def select_set(self, state: bool) -> None:
+            pass
 
         def __setitem__(self, k, v):
             self._dict[k] = v

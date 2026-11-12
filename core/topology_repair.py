@@ -113,7 +113,10 @@ def _remap_fan_to_new_vertex(
                         try:
                             new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
                         except BMESH_INSPECTION_ERRORS as exc:
-                            logger.debug("Reapply UV error: %s", exc)
+                            logger.error("Reapply UV error in _remap_fan_to_new_vertex: %s", exc)
+                            raise TopologyError(
+                                f"Failed reapplying UV coordinates during fan remapping: {exc}"
+                            ) from exc
             split_count += 1
         except (ValueError, RuntimeError) as exc:
             logger.warning("Fan remapping face creation failed (%s), attempting topological rollback", exc)
@@ -150,15 +153,14 @@ class TopologyRepairEngine:
         try:
             bm.verts.ensure_lookup_table()
         except BMESH_OP_ERRORS as exc:
-            logger.debug("Lookup table init error in split_bowtie_vertices: %s", exc)
-            return 0
+            logger.error("Lookup table init error in split_bowtie_vertices: %s", exc)
+            raise TopologyError(f"Failed initializing vertex lookup table in split_bowtie_vertices: {exc}") from exc
 
         split_count = 0
-        dvert_lay = (
-            bm.verts.layers.deform.active
-            if (hasattr(bm.verts, "layers") and hasattr(bm.verts.layers, "deform"))
-            else None
-        )
+        try:
+            dvert_lay = bm.verts.layers.deform.active
+        except (AttributeError, ReferenceError):
+            dvert_lay = None
         uv_layers = (
             list(bm.loops.layers.uv.values())
             if (bm.loops is not None and bm.loops.layers is not None and bm.loops.layers.uv is not None)
@@ -189,7 +191,8 @@ class TopologyRepairEngine:
                         for g_idx, w in orig_weights.items():
                             dvert[g_idx] = w
                     except BMESH_INSPECTION_ERRORS as exc:
-                        logger.debug("Deform weight assign error: %s", exc)
+                        logger.error("Deform weight assign error in split_bowtie_vertices: %s", exc)
+                        raise TopologyError(f"Failed assigning deform weights to split bowtie vertex: {exc}") from exc
 
                 split_count += _remap_fan_to_new_vertex(bm, extra_fan, vert, new_vert, uv_layers)
 
@@ -200,7 +203,8 @@ class TopologyRepairEngine:
                 bm.faces.ensure_lookup_table()
                 bm.verts.index_update()
             except BMESH_OP_ERRORS as exc:
-                logger.debug("Lookup table ensure error: %s", exc)
+                logger.error("Lookup table ensure error after vertex split: %s", exc)
+                raise TopologyError(f"Failed ensuring BMesh lookup tables after vertex split: {exc}") from exc
 
         return split_count
 
@@ -215,19 +219,18 @@ class TopologyRepairEngine:
         try:
             bm.edges.ensure_lookup_table()
         except BMESH_OP_ERRORS as exc:
-            logger.debug("Lookup table init error in split_non_manifold_edges: %s", exc)
-            return 0
+            logger.error("Lookup table init error in split_non_manifold_edges: %s", exc)
+            raise TopologyError(f"Failed initializing edge lookup table in split_non_manifold_edges: {exc}") from exc
 
         split_count = 0
         non_manifold_edges = [e for e in bm.edges if e.is_valid and len(e.link_faces) > 2]
         if not non_manifold_edges:
             return 0
 
-        dvert_lay = (
-            bm.verts.layers.deform.active
-            if (hasattr(bm.verts, "layers") and hasattr(bm.verts.layers, "deform"))
-            else None
-        )
+        try:
+            dvert_lay = bm.verts.layers.deform.active
+        except (AttributeError, ReferenceError):
+            dvert_lay = None
         uv_layers = (
             list(bm.loops.layers.uv.values())
             if (bm.loops is not None and bm.loops.layers is not None and bm.loops.layers.uv is not None)
@@ -256,7 +259,10 @@ class TopologyRepairEngine:
                             for g_idx, w in dict(v2[dvert_lay]).items():
                                 dvert2[g_idx] = w
                     except BMESH_INSPECTION_ERRORS as exc:
-                        logger.debug("Deform weight copy error in split_non_manifold_edges: %s", exc)
+                        logger.error("Deform weight copy error in split_non_manifold_edges: %s", exc)
+                        raise TopologyError(
+                            f"Failed copying deform weights in split_non_manifold_edges: {exc}"
+                        ) from exc
 
                 face_verts = [nv1 if v == v1 else (nv2 if v == v2 else v) for v in face.verts]
                 mat_idx = face.material_index
@@ -283,7 +289,10 @@ class TopologyRepairEngine:
                                 try:
                                     new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
                                 except BMESH_INSPECTION_ERRORS as exc:
-                                    logger.debug("Loop UV restoration failed: %s", exc)
+                                    logger.error("Loop UV restoration failed in split_non_manifold_edges: %s", exc)
+                                    raise TopologyError(
+                                        f"Failed restoring loop UV in split_non_manifold_edges: {exc}"
+                                    ) from exc
                     split_count += 1
                 except (ValueError, RuntimeError) as exc:
                     logger.warning("Edge split face creation failed (%s), attempting rollback", exc)
@@ -310,7 +319,8 @@ class TopologyRepairEngine:
                 bm.faces.ensure_lookup_table()
                 bm.verts.index_update()
             except BMESH_OP_ERRORS as exc:
-                logger.debug("Lookup table update failed: %s", exc)
+                logger.error("Lookup table update failed after edge split: %s", exc)
+                raise TopologyError(f"Failed ensuring BMesh lookup tables after edge split: {exc}") from exc
 
         return split_count
 
@@ -325,8 +335,8 @@ class TopologyRepairEngine:
         try:
             bm.edges.ensure_lookup_table()
         except BMESH_OP_ERRORS as exc:
-            logger.debug("Lookup table init error in fill_small_boundary_holes: %s", exc)
-            return 0
+            logger.error("Lookup table init error in fill_small_boundary_holes: %s", exc)
+            raise TopologyError(f"Failed initializing edge lookup table in fill_small_boundary_holes: {exc}") from exc
 
         boundary_edges = [e for e in bm.edges if e.is_valid and e.is_boundary]
         if not boundary_edges:
@@ -345,7 +355,8 @@ class TopologyRepairEngine:
                 bm.faces.index_update()
                 return len(new_faces)
         except BMESH_OP_ERRORS as exc:
-            logger.debug("Hole filling error: %s", exc)
+            logger.error("Hole filling error in fill_small_boundary_holes: %s", exc)
+            raise TopologyError(f"Failed filling small boundary holes: {exc}") from exc
 
         return 0
 
@@ -362,8 +373,8 @@ class TopologyRepairEngine:
         try:
             bm.faces.ensure_lookup_table()
         except BMESH_OP_ERRORS as exc:
-            logger.debug("Lookup table init error in cull_subpixel_islands: %s", exc)
-            return 0
+            logger.error("Lookup table init error in cull_subpixel_islands: %s", exc)
+            raise TopologyError(f"Failed initializing face lookup table in cull_subpixel_islands: {exc}") from exc
 
         if len(bm.faces) == 0:
             return 0
@@ -395,7 +406,7 @@ class TopologyRepairEngine:
                 continue
 
             try:
-                if world_matrix is not None and hasattr(world_matrix, "__matmul__"):
+                if world_matrix is not None:
                     coords = [world_matrix @ v.co for v in unique_verts]
                 else:
                     coords = [v.co for v in unique_verts]
@@ -423,7 +434,8 @@ class TopologyRepairEngine:
                 MeshSanitizer.execute_tier0_pure_hygiene(bm)
                 return culled_count
             except BMESH_OP_ERRORS as exc:
-                logger.debug("Delete island faces error: %s", exc)
+                logger.error("Delete island faces error in cull_subpixel_islands: %s", exc)
+                raise TopologyError(f"Failed deleting culled island faces: {exc}") from exc
 
         return 0
 
@@ -478,7 +490,8 @@ class TopologyRepairEngine:
                     bm.verts.ensure_lookup_table()
                     stats["triangulated_ngons"] = len(ngons)
             except BMESH_OP_ERRORS as exc:
-                logger.debug("N-gon triangulation error: %s", exc)
+                logger.error("N-gon triangulation error: %s", exc)
+                raise TopologyError(f"Failed triangulating N-gons: {exc}") from exc
 
         # 5. Cull Subpixel / Micro Islands
         if opts.enable_cull_micro_islands and opts.island_size_threshold > 1e-6:

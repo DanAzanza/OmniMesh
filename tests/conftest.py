@@ -261,6 +261,19 @@ class MockNodeList(list):
         return default
 
 
+class MockScene(_MockBase):
+    """Mock Blender Scene datablock."""
+
+    def __init__(self, name: str = "Scene"):
+        self.name = name
+        self.collection = MockCollection(name=f"{name} Collection")
+        self.camera = None
+        self.world = None
+        self.render = MagicMock()
+        self.view_layers: list[Any] = []
+        self.objects: list[Any] = []
+
+
 class MockMaterial(_MockBase):
     """Mock Blender Material datablock with Principled BSDF node tree."""
 
@@ -701,15 +714,7 @@ class MockBlendData(_MockBase):
         self.meshes = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name))
         self.materials = MockBlendDataContainer(factory=lambda name, *a, **kw: MockMaterial(name=name))
         self.images = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name, filepath=name))
-        self.scenes = MockBlendDataContainer(
-            factory=lambda name, *a, **kw: MagicMock(
-                name=name,
-                collection=MockCollection(name=f"{name} Collection"),
-                camera=None,
-                world=None,
-                render=MagicMock(),
-            )
-        )
+        self.scenes = MockBlendDataContainer(factory=lambda name, *a, **kw: MockScene(name=name))
         self.scenes.new("Scene")
         self.lights = MockBlendDataContainer()
         self.cameras = MockBlendDataContainer(factory=lambda name, *a, **kw: MagicMock(name=name))

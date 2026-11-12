@@ -6,78 +6,15 @@ modifier evaluation, topological repair, and bone pruning pipeline.
 
 from __future__ import annotations
 
-from .exceptions import OmniMeshError
-
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Protocol, Sequence, cast
-
-
-class LODTierProtocol(Protocol):
-    """Structural protocol for an individual LOD tier."""
-
-    screen_size_pct: float
-    target_tris_pct: float
-    distance_m: float
-    last_baked_target_pct: float
-    last_baked_screen_pct: float
-    actual_tris: int
-    actual_triangles: int
-    mat_slots_count: int
-    generated_obj: bpy.types.Object | None
-    state: str
-    target_tris: int
-
-
-class LODSettingsProtocol(Protocol):
-    """Structural protocol for LOD tool settings across UI properties and headless doubles."""
-
-    enable_slender_culling: bool
-    tau_sse: float
-    enable_occlusion_culling: bool
-    occlusion_lod_start: int
-    occlusion_ray_density: int
-    occlusion_evaluate_alpha: bool
-    pin_uv_seams: bool
-    pin_material_borders: bool
-    msfs_preserve_decals: bool
-    purge_shape_keys: bool
-    preserve_slot_indexing: bool
-    enable_bone_pruning: bool
-    max_bone_influences: int
-    hierarchy_mode: str
-    consolidate_hierarchy: bool
-    merge_start_tier: int
-    enable_impostor_lod: bool
-    lods: Sequence[LODTierProtocol]
-    last_culled_slender_count: int
-    last_generated_base_tris: int
-    last_generated_final_tris: int
-    last_generated_reduction_pct: float
-    last_generated_tier_count: int
-
-
-logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    import bmesh
-    import bpy
-    from bpy.types import BlendData
-    from mathutils import Vector
-else:
-    try:
-        import bmesh
-        import bpy
-        from mathutils import Vector
-    except ImportError:
-        bpy = None
-        bmesh = None
-        Vector = None
-    BlendData = object
+from typing import TYPE_CHECKING, Any, cast
 
 from .decimator import MeshDecimator
-from .exceptions import DecimationError
+from .exceptions import OmniMeshError
 from .hierarchy import CollectionCloneDAG, LayerCollectionGuard, MeshMergeEngine
+from .lod_protocols import LODSettingsProtocol, LODTierProtocol
+from .lod_stats import _compute_lod0_stats, _count_triangles
 from .material_analyzer import MSFSMaterialAnalyzer, MSFSMaterialKind
 from .materials import MaterialOptimizer
 from .metrics import (
@@ -93,49 +30,24 @@ from .rigging import KinematicBonePruner, WeightSanitizer
 from .sanitizer import MeshSanitizer, SanitizeOptions
 from .slender import SlenderFeatureCuller
 
+logger = logging.getLogger(__name__)
 
-def _count_triangles(mesh_data: bpy.types.Mesh | bmesh.types.BMesh | object | None) -> int:
-    """Computes true triangle count in O(1) via loop-poly invariant with safe fallback."""
-    if not mesh_data:
-        return 0
+if TYPE_CHECKING:
+    import bmesh
+    import bpy
+    from bpy.types import BlendData
+    from mathutils import Vector
+else:
     try:
-        loops = mesh_data.loops  # type: ignore[union-attr]
-        polys = mesh_data.polygons  # type: ignore[union-attr]
-        if loops is not None and polys is not None:
-            n_loops = len(loops)
-            n_polys = len(polys)
-            return max(0, n_loops - 2 * n_polys) if n_polys > 0 else 0
-        if polys is not None:
-            return sum(max(0, len(cast("Sequence[int]", p.vertices)) - 2) for p in polys)
-    except (AttributeError, TypeError):
-        pass
-    try:
-        faces = mesh_data.faces  # type: ignore[union-attr]
-        if faces is not None:
-            return len(faces)
-    except (AttributeError, TypeError):
-        pass
-    return 0
-
-
-def _compute_lod0_stats(mesh_objs: list[bpy.types.Object]) -> tuple[int, int]:
-    """Calculates initial triangle count and material slot count for LOD0."""
-    tier_tris = 0
-    tier_mats = sum(len(obj.material_slots) for obj in mesh_objs)
-    for obj in mesh_objs:
-        if ModifierManager.has_unapplied_modifiers(obj):
-            eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(obj, preserve_armature=True)
-            if eval_mesh:
-                try:
-                    tier_tris += _count_triangles(eval_mesh)
-                finally:
-                    if eval_obj:
-                        eval_obj.to_mesh_clear()
-            else:
-                tier_tris += _count_triangles(obj.data)
-        else:
-            tier_tris += _count_triangles(obj.data)
-    return tier_tris, tier_mats
+        import bmesh
+        import bpy
+        from bpy.types import BlendData
+        from mathutils import Vector
+    except ImportError:
+        bpy = None
+        bmesh = None
+        BlendData = object
+        Vector = None
 
 
 def _process_merged_tier(
@@ -173,18 +85,19 @@ def _process_merged_tier(
             try:
                 bdata_meshes.remove(old_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
+                logger.error("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
+                raise OmniMeshError(f"Failed removing old mesh '{old_mesh.name}': {exc}") from exc
     tier_obj = MeshMergeEngine.consolidate_and_merge_meshes(
         mesh_objs, merged_name, armature_obj=armature_obj, pivot_obj=tier_pivot, blend_data=bdata
     )
     if not tier_obj:
-        raise DecimationError(f"Mesh consolidation failed for {merged_name}.")
-    if tier_coll and tier_obj.name not in tier_coll.objects:
+        return 0, 0, 0, None
+    if tier_coll:
         tier_coll.objects.link(tier_obj)
 
     tier_mesh = cast("bpy.types.Mesh", tier_obj.data)
-    culled_slender_count = 0
     bm = bmesh.new()
+    culled_slender_count = 0
     try:
         bm.from_mesh(tier_mesh)
         MeshSanitizer.sanitize_mesh_full(
@@ -220,25 +133,11 @@ def _process_merged_tier(
             pin_uv_seams=bool(props.pin_uv_seams),
             pin_material_borders=bool(props.pin_material_borders),
         )
-
-        # Decal vertex protection: pin vertices belonging to decal materials to protect planar fidelity
-        if bool(props.msfs_preserve_decals) and MSFSMaterialAnalyzer:
-            mat_slots = tier_obj.material_slots
-            for f in bm.faces:
-                mat_idx = f.material_index
-                if 0 <= mat_idx < len(mat_slots):
-                    mat = mat_slots[mat_idx].material
-                    if mat and MSFSMaterialAnalyzer.classify_material(mat).kind == MSFSMaterialKind.DECAL:
-                        for v in f.verts:
-                            pinned_verts.add(v.index)
-
         MeshDecimator.inject_curvature_weights(tier_obj, bm, pinned_verts)
         bm.to_mesh(tier_mesh)
     finally:
         bm.free()
-
-    if bool(props.purge_shape_keys) and tier_idx >= 1:
-        MeshDecimator.purge_all_shape_keys(tier_obj, context=context)
+    tier_mesh.update()
 
     target_tris_pct = float(tier.target_tris_pct)
     qem_ratio = target_tris_pct / 100.0 if target_tris_pct > 0.0 else tolerances["qem_ratio"]
@@ -246,16 +145,14 @@ def _process_merged_tier(
         tier_obj, min(1.0, max(0.001, qem_ratio)), use_curvature_weight=True, context=context
     )
 
-    tier_mesh.update()
     MaterialOptimizer.consolidate_micro_materials(
         tier_obj,
         area_crit=tolerances["area_crit"],
         preserve_slot_indexing=bool(props.preserve_slot_indexing),
     )
 
-    # Reproject custom split normals against consolidated source geometry
-    target_ref = ref_merged_obj
     owned_ref = False
+    target_ref = ref_merged_obj
     try:
         if not target_ref:
             ref_merged_name = f"__OM_Ref_Merged_LOD0_{tier_idx}__"
@@ -277,11 +174,14 @@ def _process_merged_tier(
                     tier_obj, mesh_objs[0], tolerances["delta_world"], context=context
                 )
             except (RuntimeError, ValueError, AttributeError) as fb_exc:
-                logger.warning(
+                logger.error(
                     "Fallback single-mesh normal reprojection also failed for '%s': %s",
                     tier_obj.name,
                     fb_exc,
                 )
+                raise OmniMeshError(
+                    f"Custom split normal reprojection failed for '{tier_obj.name}': {fb_exc}"
+                ) from fb_exc
     finally:
         bdata_objs = bdata.objects if bdata else None
         if owned_ref and target_ref and bdata_objs:
@@ -292,7 +192,8 @@ def _process_merged_tier(
                 if ref_mesh and ref_mesh.users == 0 and bdata_meshes:
                     bdata_meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Cleanup ref_merged_obj exception: %s", exc)
+                logger.error("Cleanup ref_merged_obj exception: %s", exc)
+                raise OmniMeshError(f"Failed removing temporary reference mesh: {exc}") from exc
 
     if armature_obj and len(tier_obj.vertex_groups) > 0:
         if bool(props.enable_bone_pruning) and tier_idx >= 2:
@@ -360,7 +261,8 @@ def _process_unmerged_tier(
                 try:
                     bdata_meshes.remove(old_mesh)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
+                    logger.error("Failed deallocating orphan mesh %s: %s", old_mesh.name, exc)
+                    raise OmniMeshError(f"Failed removing old mesh '{old_mesh.name}': {exc}") from exc
 
         lod_obj = source_obj.copy()
         if lod_obj is None:
@@ -497,17 +399,6 @@ def generate_all_lods(
     collection cloning, mesh merging, geometry sanitization, slender feature culling,
     occlusion face culling, QEM decimation, material slot consolidation, normal
     reprojection, and kinematic bone pruning.
-
-    Args:
-        context: Active Blender execution context.
-        props: LODToolSettings instance for active asset or scene.
-        mesh_objs: List of source LOD0 mesh objects to decimate.
-        armature_obj: Optional associated armature object.
-        base_name: Resolved base name for the asset.
-        only_out_of_sync: When True, skips already baked in-sync tiers.
-
-    Returns:
-        tuple[bool, str]: (Success status, descriptive user-facing message).
     """
     if not bpy or not context:
         return True, "Blender context not available."
@@ -639,7 +530,7 @@ def generate_all_lods(
                                 blend_data=bdata,
                             )
                         except (RuntimeError, ValueError, AttributeError) as exc:
-                            logger.debug("Failed creating shared ref_merged_obj: %s", exc)
+                            logger.warning("Failed creating shared ref_merged_obj: %s", exc)
                             shared_ref_merged_obj = None
 
                     tris, mats, slender_cull, gen_obj = _process_merged_tier(
@@ -700,19 +591,23 @@ def generate_all_lods(
             props.last_generated_reduction_pct = reduction_pct
             props.last_generated_tier_count = len(lods_list)
 
-        if bool(props.enable_impostor_lod):
-            try:
-                ops = getattr(bpy, "ops", None)
-                lod_ops = getattr(ops, "lod_tool", None) if ops else None
-                if lod_ops and hasattr(lod_ops, "generate_impostor"):
-                    lod_ops.generate_impostor()
-            except (RuntimeError, AttributeError, TypeError) as exc:
-                logger.debug("Automatic impostor generation skipped: %s", exc)
-
         if only_out_of_sync:
             msg = f"Successfully updated {updated_tier_count} out-of-sync LOD tier(s) for '{base_name}'"
         else:
             msg = f"Successfully generated {len(lods_list)} Sibling LOD Collections for '{base_name}'"
+
+        if bool(props.enable_impostor_lod):
+            ops = getattr(bpy, "ops", None)
+            lod_ops = getattr(ops, "lod_tool", None) if ops else None
+            if lod_ops and hasattr(lod_ops, "generate_impostor"):
+                try:
+                    res = lod_ops.generate_impostor()
+                    if res != {"FINISHED"}:
+                        logger.warning("Automatic impostor generation returned: %s", res)
+                except (RuntimeError, AttributeError, TypeError) as exc:
+                    logger.warning("Automatic impostor generation failed: %s", exc)
+                    msg += f" (Note: Impostor generation skipped: {exc})"
+
         return True, msg
 
     except (
@@ -739,10 +634,34 @@ def generate_all_lods(
                 if ref_mesh and ref_mesh.users == 0 and bdata_meshes:
                     bdata_meshes.remove(ref_mesh)
             except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Cleanup shared_ref_merged_obj exception: %s", exc)
+                logger.error("Cleanup shared_ref_merged_obj exception: %s", exc)
+                raise OmniMeshError(f"Failed removing shared temporary reference mesh: {exc}") from exc
 
         if arm_data and orig_pose_pos and hasattr(arm_data, "pose_position"):
             arm_data.pose_position = orig_pose_pos
 
 
-__all__ = ["generate_all_lods"]
+__all__ = [
+    "generate_all_lods",
+    "LODTierProtocol",
+    "LODSettingsProtocol",
+    "_count_triangles",
+    "_compute_lod0_stats",
+    "_process_merged_tier",
+    "_process_unmerged_tier",
+    "MeshDecimator",
+    "MeshSanitizer",
+    "SlenderFeatureCuller",
+    "HardenedOcclusionCuller",
+    "MaterialOptimizer",
+    "NormalManager",
+    "KinematicBonePruner",
+    "WeightSanitizer",
+    "CollectionCloneDAG",
+    "LayerCollectionGuard",
+    "MeshMergeEngine",
+    "PivotPreservationEngine",
+    "ModifierManager",
+    "MSFSMaterialAnalyzer",
+    "MSFSMaterialKind",
+]

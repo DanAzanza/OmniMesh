@@ -12,6 +12,7 @@ else:
 
 from typing import Any, cast
 
+from core.exceptions import CollectionHierarchyError
 from core.hierarchy import (
     CollectionCloneDAG,
     MeshMergeEngine,
@@ -186,3 +187,53 @@ def test_pivot_preservation_di_without_bpy_data(monkeypatch):
     assert pivot is not None
     assert pivot.name == "Asset_LOD1_Pivot"
     assert bdata.objects.get("Asset_LOD1_Pivot") is pivot
+
+
+# ==============================================================================
+# Negative & Boundary Fail-Fast Tests
+# ==============================================================================
+
+
+def test_get_or_create_engine_import_collection_root_link_failure_raises(monkeypatch):
+    import pytest
+    from unittest.mock import MagicMock
+
+    bdata = MockBlendData()
+    scene = bdata.scenes[0]
+    # Existing collection not in scene, link raises RuntimeError
+    bdata.collections.new("BrokenAsset")
+    scene.collection.children.link = MagicMock(side_effect=RuntimeError("Link failed"))  # type: ignore[assignment]
+
+    with pytest.raises(CollectionHierarchyError, match="Root collection link failed"):
+        get_or_create_engine_import_collection(scene, "BrokenAsset", "SPATIAL", blend_data=cast(Any, bdata))
+
+
+def test_get_or_create_engine_import_collection_config_link_failure_raises(monkeypatch):
+    import pytest
+    from unittest.mock import MagicMock
+
+    bdata = MockBlendData()
+    scene = bdata.scenes[0]
+    # Create root and config collections beforehand so config link fails
+    root_col = bdata.collections.new("Vehicle")
+    scene.collection.children.link(root_col)
+    bdata.collections.new("Vehicle_Config")
+    root_col.children.link = MagicMock(side_effect=RuntimeError("Config link failed"))  # type: ignore[assignment]
+
+    with pytest.raises(CollectionHierarchyError, match="Config collection link failed"):
+        get_or_create_engine_import_collection(scene, "Vehicle", "SPATIAL", blend_data=cast(Any, bdata))
+
+
+def test_safe_remove_collection_objects_removal_failure_raises():
+    import pytest
+    from unittest.mock import MagicMock
+
+    bdata = MockBlendData()
+    col = bdata.collections.new("Temp_Col")
+    obj = bdata.objects.new("Faulty_Obj")
+    col.objects.link(obj)
+
+    bdata.objects.remove = MagicMock(side_effect=RuntimeError("Object locked"))  # type: ignore[assignment]
+
+    with pytest.raises(CollectionHierarchyError, match="Safe object removal failed"):
+        safe_remove_collection_objects(col, blend_data=cast(Any, bdata))

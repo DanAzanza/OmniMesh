@@ -24,11 +24,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BPY_DATA_RATCHET_BASELINE = 0
 
 # Monotonic ratchet baseline for defensive hasattr and getattr calls in core/ and exporters/
-HASATTR_RATCHET_BASELINE = 83
-GETATTR_RATCHET_BASELINE = 180
+HASATTR_RATCHET_BASELINE = 78
+GETATTR_RATCHET_BASELINE = 179
 
 # Monotonic ratchet baseline for log-only exception handlers in core/ and exporters/
-LOG_ONLY_EXCEPT_RATCHET_BASELINE = 228
+LOG_ONLY_EXCEPT_RATCHET_BASELINE = 200
 
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
