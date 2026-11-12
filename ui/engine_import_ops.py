@@ -108,11 +108,16 @@ class OMNIMESH_OT_import_engine_project(Operator):
             return {"CANCELLED"}
         props = getattr(context.scene, "lod_tool", None)
         eng_dir = getattr(props, "engine_import_directory", "") if props else ""
-        if eng_dir:
+        if eng_dir and hasattr(bpy, "path"):
             abs_dir = bpy.path.abspath(eng_dir)
             if os.path.isdir(abs_dir):
                 self.directory = abs_dir
-                return self.execute(context)
+        if not self.directory:
+            blend_file = getattr(getattr(bpy, "data", None), "filepath", None)
+            if blend_file:
+                blend_dir = os.path.dirname(os.path.abspath(blend_file))
+                if os.path.isdir(blend_dir):
+                    self.directory = blend_dir
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 

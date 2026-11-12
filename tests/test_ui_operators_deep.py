@@ -310,7 +310,10 @@ def test_engine_import_project_and_preset_operators(tmp_path: Path) -> None:
         assert op_imp.execute(ctx) == {"CANCELLED"}
 
         # Positive invoke & execute
-        assert op_imp.invoke(ctx, MagicMock()) == {"FINISHED"}
+        assert op_imp.invoke(ctx, MagicMock()) == {"RUNNING_MODAL"}
+        ctx.window_manager.fileselect_add.assert_called_with(op_imp)
+        op_imp.directory = str(tmp_path)
+        assert op_imp.execute(ctx) == {"FINISHED"}
 
         # Preset CRUD operators
         op_c = OMNIMESH_OT_create_engine_import_preset()

@@ -14,12 +14,12 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
-    from bpy.props import CollectionProperty, StringProperty
+    from bpy.props import BoolProperty, CollectionProperty, StringProperty
     from bpy.types import Operator, OperatorFileListElement
 else:
     try:
         import bpy
-        from bpy.props import CollectionProperty, StringProperty
+        from bpy.props import BoolProperty, CollectionProperty, StringProperty
         from bpy.types import Operator, OperatorFileListElement
     except ImportError:
         bpy = None
@@ -29,6 +29,7 @@ else:
         def _mock_prop(*args: Any, **kwargs: Any) -> Any:
             return None
 
+        BoolProperty = _mock_prop  # type: ignore
         StringProperty = _mock_prop  # type: ignore
         CollectionProperty = _mock_prop  # type: ignore
 
@@ -104,6 +105,7 @@ class LOD_OT_import_pbr_set(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     directory: StringProperty(subtype="DIR_PATH")
+    filter_folder: BoolProperty(default=True, options={"HIDDEN"})
     files: CollectionProperty(type=OperatorFileListElement)
 
     def execute(self, context: Any) -> set[Any]:
@@ -240,22 +242,29 @@ class LOD_OT_import_pbr_set(Operator):
             msg = f"PBR Import: All {summary.total_nodes_checked} textures verified and valid."
             safe_report(self, {"INFO"}, msg)
 
+        if props and hasattr(props, "last_pbr_import_summary"):
+            props.last_pbr_import_summary = msg
+
         return {"FINISHED"}
 
     def invoke(self, context: Any, event: Any) -> set[Any]:
         if not bpy or not context:
-            return {"FINISHED"}
+            return {"CANCELLED"}
         props, _, _ = resolve_lod_context(context)
         if not props:
             props = getattr(context.scene, "lod_tool", None)
 
         pbr_dir = getattr(props, "pbr_import_directory", "") if props else ""
-        blend_file = getattr(getattr(bpy, "data", None), "filepath", None)
-
-        if (pbr_dir and os.path.isdir(bpy.path.abspath(pbr_dir))) or blend_file:
-            if pbr_dir and os.path.isdir(bpy.path.abspath(pbr_dir)):
-                self.directory = bpy.path.abspath(pbr_dir)
-            return self.execute(context)
+        if pbr_dir and hasattr(bpy, "path"):
+            abs_p = bpy.path.abspath(pbr_dir)
+            if os.path.isdir(abs_p):
+                self.directory = abs_p
+        if not self.directory:
+            blend_file = getattr(getattr(bpy, "data", None), "filepath", None)
+            if blend_file:
+                blend_dir = os.path.dirname(os.path.abspath(blend_file))
+                if os.path.isdir(blend_dir):
+                    self.directory = blend_dir
 
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}

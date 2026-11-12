@@ -320,3 +320,26 @@ def test_operator_import_pbr_set_error_toast_on_unresolved():
         args, _ = op.report.call_args
         assert args[0] == {"ERROR"}
         assert "M_Wing" in args[1]
+
+
+def test_operator_import_pbr_set_invoke_opens_fileselect():
+    """Verify LOD_OT_import_pbr_set.invoke opens the file/directory browser modal dialog."""
+    from ui.pbr_ops import LOD_OT_import_pbr_set
+
+    op = LOD_OT_import_pbr_set()
+    mock_ctx = MagicMock()
+    mock_props = MagicMock()
+    mock_props.pbr_import_directory = "C:/Textures"
+    mock_ctx.scene.lod_tool = mock_props
+
+    mock_bpy = MagicMock()
+    mock_bpy.path.abspath.return_value = "C:/Textures"
+
+    with (
+        patch("ui.pbr_ops.bpy", mock_bpy),
+        patch("os.path.isdir", return_value=True),
+    ):
+        res = op.invoke(mock_ctx, MagicMock())
+        assert res == {"RUNNING_MODAL"}
+        assert op.directory == "C:/Textures"
+        mock_ctx.window_manager.fileselect_add.assert_called_once_with(op)

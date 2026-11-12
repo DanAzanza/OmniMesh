@@ -63,10 +63,6 @@ def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
     sub_del_eng.enabled = not is_builtin_eng
     sub_del_eng.operator("omnimesh.delete_engine_import_preset", text="", icon="X")
 
-    row_eng_path = box_engine.row(align=True)
-    row_eng_path.use_property_split = False
-    row_eng_path.prop(props, "engine_import_directory", text="Path")
-
     row_eng_act = box_engine.row(align=True)
     row_eng_act.use_property_split = False
     row_eng_act.scale_y = 1.2
@@ -92,14 +88,13 @@ def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
     sub_del_pbr.enabled = not is_builtin_pbr
     sub_del_pbr.operator("lod_tool.delete_import_preset", text="", icon="X")
 
-    row_path = box_pbr.row(align=True)
-    row_path.use_property_split = False
-    row_path.prop(props, "pbr_import_directory", text="Path")
-
     row_btn = box_pbr.row(align=True)
     row_btn.use_property_split = False
     row_btn.scale_y = 1.2
     row_btn.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
+
+    if getattr(props, "last_pbr_import_summary", ""):
+        box_pbr.label(text=props.last_pbr_import_summary, icon="CHECKMARK")
 
 
 # Tab 2: Modify & Add Features
