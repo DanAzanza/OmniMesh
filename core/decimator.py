@@ -73,8 +73,8 @@ class MeshDecimator:
             bm.faces.ensure_lookup_table()
             bm.verts.index_update()
         except (RuntimeError, ValueError, AttributeError) as exc:
-            logger.debug("Decimator lookup table init error: %s", exc)
-            return pinned_vert_indices
+            logger.error("Decimator lookup table initialization failed: %s", exc)
+            raise DecimationError(f"Failed to initialize BMesh lookup tables for boundary tagging: {exc}") from exc
 
         # 1. Tag Boundaries & Non-Manifold Junctions (Always protected for topological integrity)
         for edge in bm.edges:
@@ -107,9 +107,7 @@ class MeshDecimator:
         # 4. Tag UV Seams across Face Loops (Winding-Order Invariant)
         uv_layers = []
         if pin_uv_seams and bm.loops is not None and bm.loops.layers is not None and bm.loops.layers.uv is not None:
-            uv_layers = (
-                list(bm.loops.layers.uv.values()) if hasattr(bm.loops.layers.uv, "values") else list(bm.loops.layers.uv)
-            )
+            uv_layers = list(bm.loops.layers.uv.values())
 
         if uv_layers:
             for edge in bm.edges:
@@ -216,8 +214,8 @@ class MeshDecimator:
             bm.faces.ensure_lookup_table()
             bm.normal_update()
         except (RuntimeError, ValueError, AttributeError) as exc:
-            logger.debug("Lookup table init error in inject_curvature_weights: %s", exc)
-            return
+            logger.error("Lookup table initialization error in inject_curvature_weights: %s", exc)
+            raise DecimationError(f"Failed to initialize BMesh tables for curvature weights: {exc}") from exc
 
         if not hasattr(bm.verts, "layers") or not hasattr(bm.verts.layers, "deform"):
             return

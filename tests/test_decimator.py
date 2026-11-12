@@ -11,8 +11,10 @@ else:
     _MockBase = object
 
 from unittest.mock import MagicMock
+import pytest
 
 from core.decimator import MeshDecimator
+from core.exceptions import DecimationError
 from core.lod_generator import generate_all_lods
 
 
@@ -22,6 +24,19 @@ from tests.conftest import MockBMesh, MockEdge, MockFace, MockVert
 def test_tag_boundaries_and_uv_seams_null():
     assert MeshDecimator.tag_boundaries_and_uv_seams(None) == set()
     assert MeshDecimator.tag_boundaries_and_uv_seams(MagicMock(verts=None)) == set()
+
+
+def test_tag_boundaries_and_uv_seams_corrupted_bmesh_raises():
+    """Verify corrupted BMesh tables fail fast with DecimationError instead of silent empty return."""
+    bm = MagicMock()
+    bm.verts = MagicMock()
+    bm.edges = MagicMock()
+    bm.faces = MagicMock()
+    bm.verts.ensure_lookup_table.side_effect = RuntimeError("Corrupted BMesh state")
+
+    with pytest.raises(DecimationError) as exc_info:
+        MeshDecimator.tag_boundaries_and_uv_seams(bm)
+    assert "Corrupted BMesh state" in str(exc_info.value)
 
 
 def test_tag_boundaries_and_uv_seams_with_boundaries_and_materials():
