@@ -415,7 +415,10 @@ class ImpostorAtlasBaker:
 
         # Export companion Unreal Engine 5 setup guide
         try:
-            from exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
+            try:
+                from ..exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
+            except (ImportError, ValueError):
+                from exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
 
             center_tup = (float(center.x), float(center.y), float(center.z))
             guide_text = generate_ue5_setup_guide(
@@ -425,7 +428,7 @@ class ImpostorAtlasBaker:
             with open(guide_path, "w", encoding="utf-8") as gf:
                 gf.write(guide_text)
             results["UE5_Guide"] = guide_path
-        except (OSError, UnicodeError) as e:
+        except (OSError, UnicodeError, ImportError, ValueError) as e:
             logger.warning("Could not generate UE5 setup guide: %s", e)
 
         results["sphere_radius"] = str(radius)

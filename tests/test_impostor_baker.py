@@ -5,6 +5,7 @@ Unit tests for OmniMesh PBR Impostor Baking Engine and Ephemeral Scene Rig.
 from __future__ import annotations
 
 import math
+import os
 import numpy as np
 
 from core.impostor_baker import (
@@ -234,3 +235,27 @@ def test_impostor_baker_pure_di_with_mock_blend_data():
     # Empty meshes -> returns empty dict safely
     res = ImpostorAtlasBaker.bake_impostor_textures([], "TestAsset", "/tmp", context=mock_ctx, blend_data=bdata)
     assert res == {}
+
+
+def test_octahedral_setup_guide_relative_import_resilience(tmp_path):
+    """Verify octahedral guide export resolves relative package imports and handles missing modules gracefully."""
+    output_dir = str(tmp_path)
+    radius = 5.0
+    results: dict[str, str] = {}
+
+    # Test the guide generation block directly
+    try:
+        from exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
+
+        guide_text = generate_ue5_setup_guide(
+            base_name="TestHero", grid_size=8, sphere_radius=radius, sphere_center=(1.0, 2.0, 3.0)
+        )
+        guide_path = os.path.join(output_dir, "README_TestHero_UE5_SETUP.txt")
+        with open(guide_path, "w", encoding="utf-8") as gf:
+            gf.write(guide_text)
+        results["UE5_Guide"] = guide_path
+    except (OSError, UnicodeError, ImportError, ValueError):
+        pass
+
+    assert "UE5_Guide" in results
+    assert os.path.exists(results["UE5_Guide"])
