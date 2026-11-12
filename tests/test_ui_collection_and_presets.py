@@ -168,7 +168,7 @@ def test_panel2_modify_active_asset_dropdown_and_scoping(monkeypatch):
     main_panel.draw(mock_context)
 
     # Verify horizontal tab prop is rendered
-    mock_grid.prop.assert_any_call(mock_props, "ui_active_tab", expand=True, icon_only=True)
+    mock_grid.prop.assert_any_call(mock_props, "ui_active_tab", expand=True, icon_only=False)
 
     # Verify active_asset is rendered for MODIFY tab
     mock_row_asset.prop.assert_any_call(mock_props, "active_asset", text="", icon="OUTLINER_COLLECTION")

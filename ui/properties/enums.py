@@ -12,10 +12,10 @@ LOD_GENERATION_SOURCE_ITEMS: list[tuple[str, str, str]] = [
 ]
 
 OMNIMESH_UI_TAB_ITEMS: list[tuple[str, str, str, str, int]] = [
-    ("IMPORT", "Import", "Import", "IMPORT", 0),
-    ("MODIFY", "Modify", "Modify", "TOOL_SETTINGS", 1),
-    ("LODS", "LODs", "LODs", "MOD_DECIM", 2),
-    ("EXPORT", "Export", "Export", "EXPORT", 3),
+    ("IMPORT", "Import", "Import engine packages and PBR texture sets", "IMPORT", 0),
+    ("MODIFY", "Modify", "Sanitize meshes, clean materials, and configure asset features", "TOOL_SETTINGS", 1),
+    ("LODS", "LODs", "Configure, generate, and inspect LOD tiers", "MOD_DECIM", 2),
+    ("EXPORT", "Export", "Select target engine preset, pack textures, and export", "EXPORT", 3),
 ]
 
 TARGET_ENGINE_ITEMS: list[tuple[str, str, str]] = [

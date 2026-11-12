@@ -237,7 +237,7 @@ class OMNIMESH_PT_popover_import_preset(Panel):
             box_detail.enabled = not is_builtin
             col = box_detail.column(align=True)
             col.prop(active_map, "name", text="Map Name")
-            col.prop(active_map, "suffixes_str", text="Kürzel / Suffixes")
+            col.prop(active_map, "suffixes_str", text="Suffixes")
 
             col.prop(active_map, "color_space", text="Color Space")
 
