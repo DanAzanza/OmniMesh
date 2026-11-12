@@ -208,7 +208,7 @@ Clone or copy the repository into your Blender scripts folder:
 1. **Collection-First Setup (No Selection Needed)**: Group your asset into a root collection named `{Asset}_LOD0` (e.g. `Vehicle_LOD0`). Any sub-collections inside `{Asset}_LOD0` are automatically treated and exported as separate modular objects. No viewport selection is required!
 2. **Open OmniMesh**: Press `N` in the 3D Viewport to open the sidebar and switch to the **OmniMesh** tab. OmniMesh automatically resolves your active asset collection.
 3. **Step 1 - Import (Optional)**: If you have raw textures, point to the folder and click **"Import PBR Textures"** to auto-wire the shader graph.
-4. **Step 2 - Modify**: Click **"Sanitize Base Mesh"** to repair topology and **"Generate Colliders"** to create game-ready physics hulls.
+4. **Step 2 - Modify**: Click **"Clean Mesh"** to repair topology and **"Colliders"** to create game-ready physics hulls.
 5. **Step 3 - LODs**: Select your target engine preset (*Unreal Engine 5, Unity 6, MSFS 2024*), choose your target fidelity via **Visual Stability (SSE)**, and click **"Generate All LODs"**.
 6. **Inspect**: Click **"Live Simulator"** to orbit around your asset and watch LOD transitions dynamically, or drag the **Virtual Distance** slider.
 7. **Step 4 - Export**: Set your target export directory and click **"Export"** (or toggle **Live Link** for instant synchronization with your engine).

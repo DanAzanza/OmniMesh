@@ -132,7 +132,7 @@ class OMNIMESH_PT_popover_sanitize(Panel):
 
         layout.separator()
         layout.label(text="Interior Occlusion Culling", icon="XRAY")
-        layout.prop(props, "cleanup_cull_interior_faces", text="Remove Interior Polygons on Sanitize")
+        layout.prop(props, "cleanup_cull_interior_faces", text="Remove Interior Polygons on Clean")
         row_occ = layout.row(align=True)
         row_occ.prop(props, "occlusion_ray_density", text="Rays")
         row_occ.prop(props, "occlusion_evaluate_alpha", text="Alpha")

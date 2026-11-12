@@ -172,13 +172,8 @@ def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
     row_san = box_clean.row(align=True)
     row_san.use_property_split = False
     row_san.scale_y = 1.2
-    row_san.operator("lod_tool.clean_and_repair_mesh", text="Sanitize Base Mesh", icon="BRUSH_DATA")
+    row_san.operator("lod_tool.clean_and_repair_mesh", text="Clean Mesh", icon="BRUSH_DATA")
     row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
-
-    row_occ = box_clean.row(align=True)
-    row_occ.use_property_split = False
-    row_occ.scale_y = 1.15
-    row_occ.operator("lod_tool.cull_interior_faces", text="Remove Interior Polygons", icon="XRAY")
 
     row_mat = box_clean.row(align=True)
     row_mat.use_property_split = False
