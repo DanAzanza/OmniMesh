@@ -136,6 +136,11 @@ class OMNIMESH_ConfigPresetSettings(PropertyGroup):
         name="Last Spawn Summary",
         default="",
     )
+    show_helpers: BoolProperty(
+        name="Vehicle & MSFS Helpers",
+        default=False,
+        description="Show spatial, ground, lighting, camera, and attachment helper tools",
+    )
 
 
 def register():

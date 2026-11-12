@@ -32,6 +32,7 @@ try:
     from ..core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
     from ..core.pbr_presets import DEFAULT_PRESET_ID, PBRExportPresetManager, PBRImportPresetManager
     from .operators import resolve_lod_context
+    from .panel_helpers import draw_vehicle_helpers
     from .popovers import POPOVER_CLASSES
     from .utils import get_asset_base_meshes, get_available_asset_names, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
@@ -40,6 +41,7 @@ except (ImportError, ValueError):
     from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
     from core.pbr_presets import DEFAULT_PRESET_ID, PBRExportPresetManager, PBRImportPresetManager
     from ui.operators import resolve_lod_context
+    from ui.panel_helpers import draw_vehicle_helpers
     from ui.popovers import POPOVER_CLASSES
     from ui.utils import get_asset_base_meshes, get_available_asset_names, is_object_valid, resolve_effective_asset_name
 
@@ -142,6 +144,8 @@ def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
         if cfg_props.last_spawn_summary:
             box_cfg.label(text=cfg_props.last_spawn_summary, icon="CHECKMARK")
 
+        draw_vehicle_helpers(box_cfg, cfg_props)
+
     int_props = getattr(props, "interaction", None)
     if int_props:
         box_int = layout.box()
@@ -163,6 +167,10 @@ def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
     # 1. Mesh & Material Cleanup Card
     box_clean = layout.box()
     box_clean.label(text="Mesh & Material Cleanup", icon="BRUSH_DATA")
+
+    row_insp = box_clean.row(align=True)
+    row_insp.use_property_split = False
+    row_insp.operator("lod_tool.inspect_lod0", text="Inspect Base Mesh", icon="VIEWZOOM")
 
     row_san = box_clean.row(align=True)
     row_san.use_property_split = False
@@ -356,13 +364,14 @@ def _draw_tab_lods(layout: Any, context: Any, props: Any) -> None:
         box_info.label(text="No LOD tiers projected.", icon="INFO")
         box_info.operator("lod_tool.reset_to_preset", text="Project From Preset", icon="FILE_REFRESH")
 
-    col_act = box_lod.column(align=True)
-    col_act.use_property_split = False
-    col_act.scale_y = 1.35
+    row_act = box_lod.row(align=True)
+    row_act.use_property_split = False
+    row_act.scale_y = 1.35
     action_text = "Update Out-of-Sync LODs" if has_out_of_sync else "Generate All LODs"
-    op_gen = col_act.operator("lod_tool.generate_all", text=action_text, icon="GEOMETRY_NODES")
+    op_gen = row_act.operator("lod_tool.generate_all", text=action_text, icon="GEOMETRY_NODES")
     if op_gen is not None:
         op_gen.only_out_of_sync = has_out_of_sync
+    row_act.popover(panel="OMNIMESH_PT_popover_generate", icon="PREFERENCES", text="")
 
     # Interactive Simulation & Testing Section
     _draw_lods_testing_content(layout, context, props)

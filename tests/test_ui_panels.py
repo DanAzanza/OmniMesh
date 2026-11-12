@@ -551,13 +551,15 @@ def test_add_panel_draw(monkeypatch):
     mock_row_p = MagicMock()
     mock_sub_del = MagicMock()
     mock_row_act = MagicMock()
+    mock_row_hlp = MagicMock()
     mock_layout.box.side_effect = [mock_box_gen, mock_box_cfg, mock_box_int]
-    mock_box_cfg.row.side_effect = [mock_row_p, mock_row_act]
+    mock_box_cfg.row.side_effect = [mock_row_p, mock_row_act, mock_row_hlp]
     mock_row_p.row.return_value = mock_sub_del
 
     mock_cfg_props = MagicMock()
     mock_cfg_props.config_preset = "plane_general_aviation"
     mock_cfg_props.last_spawn_summary = "Added 4 marker(s)"
+    mock_cfg_props.show_helpers = False
     mock_props.config_presets = mock_cfg_props
 
     mock_int_props = MagicMock()
@@ -584,11 +586,13 @@ def test_add_panel_draw(monkeypatch):
     ConfigPresetManager.load_presets()["my_custom_vehicle"] = {"_is_builtin": False, "name": "My Custom"}
     mock_layout.box.side_effect = [mock_box_gen, mock_box_cfg, mock_box_int]
     mock_box_cfg.reset_mock()
-    mock_box_cfg.row.side_effect = [mock_row_p, mock_row_act]
+    mock_box_cfg.row.side_effect = [mock_row_p, mock_row_act, mock_row_hlp]
     mock_cfg_props.config_preset = "my_custom_vehicle"
     mock_cfg_props.last_spawn_summary = ""
+    mock_cfg_props.show_helpers = True
     panel_add.draw(mock_context)
     assert mock_sub_del.enabled is True
+    assert mock_box_cfg.box.called
 
 
 def test_cull_interior_faces_and_multi_mesh_modify_ops(monkeypatch):
