@@ -133,6 +133,50 @@ class TestUIPipeline(unittest.TestCase):
             self.assertEqual(res_col_rem, {"FINISHED"})
             self.assertEqual(len(coll_col.objects), 0)
 
+    def test_toggle_side_by_side_in_blender(self) -> None:
+        """Verify side-by-side inspection placement and reset alignment in Blender."""
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+
+            mesh_objs = create_hierarchy_fixture("SM_SBSAsset")
+            for obj in mesh_objs:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = mesh_objs[0]
+
+            scene_any: Any = scene
+            base_obj: Any = mesh_objs[0]
+
+            ops_om: Any = cast(Any, bpy.ops).omnimesh
+            ops_lod: Any = cast(Any, bpy.ops).lod_tool
+
+            ops_om.initialize_asset(asset_name="SM_SBSAsset")
+
+            # Create an artificial LOD1 collection and duplicate mesh
+            lod1_col = bpy.data.collections.new("SM_SBSAsset_LOD1")
+            scene.collection.children.link(lod1_col)
+            lod1_obj: Any = base_obj.copy()
+            lod1_obj.data = base_obj.data.copy()
+            lod1_obj.name = "SM_SBSAsset_LOD1_Mesh"
+            lod1_col.objects.link(lod1_obj)
+            orig_x = float(lod1_obj.location.x)
+
+            scene_any.lod_tool.active_asset = "SM_SBSAsset"
+
+            # 1. Activate Side-by-Side
+            res_act = ops_lod.toggle_side_by_side()
+            self.assertEqual(res_act, {"FINISHED"})
+            self.assertTrue(scene_any.lod_tool.is_side_by_side_active)
+            self.assertGreater(lod1_obj.location.x, orig_x)
+            self.assertFalse(lod1_col.hide_viewport)
+
+            # 2. Reset Side-by-Side
+            res_rst = ops_lod.toggle_side_by_side()
+            self.assertEqual(res_rst, {"FINISHED"})
+            self.assertFalse(scene_any.lod_tool.is_side_by_side_active)
+            self.assertAlmostEqual(lod1_obj.location.x, orig_x, places=4)
+            self.assertTrue(lod1_col.hide_viewport)
+
 
 if __name__ == "__main__":
     unittest.main()

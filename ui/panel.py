@@ -224,26 +224,27 @@ def _calculate_base_tris(context: Any, props: Any, active_obj: Any) -> int:
     base_tris = getattr(props, "base_triangles", 0) or getattr(props, "last_generated_base_tris", 0)
     if isinstance(base_tris, (int, float)) and base_tris > 0:
         return int(base_tris)
-
     effective_asset = resolve_effective_asset_name(context, props)
-    l0_meshes = get_asset_base_meshes(context, effective_asset) if effective_asset else []
-    if l0_meshes:
-        return sum(
-            sum(len(p.vertices) - 2 for p in m.data.polygons)
-            for m in l0_meshes
-            if hasattr(m, "data") and hasattr(m.data, "polygons")
-        )
-    if (
-        active_obj
-        and getattr(active_obj, "type", "") == "MESH"
-        and hasattr(active_obj, "data")
-        and hasattr(active_obj.data, "polygons")
-    ):
-        return sum(len(p.vertices) - 2 for p in active_obj.data.polygons)
-    return 0
+    meshes = get_asset_base_meshes(context, effective_asset) if effective_asset else []
+    if not meshes and active_obj and getattr(active_obj, "type", "") == "MESH":
+        meshes = [active_obj]
+    return sum(
+        sum(len(p.vertices) - 2 for p in m.data.polygons)
+        for m in meshes
+        if hasattr(m, "data") and hasattr(m.data, "polygons")
+    )
 
 
-def _draw_lod_card(box_lod: Any, tier: Any, idx: int, base_tris: int, total_tiers: int) -> bool:
+def _calculate_base_materials(context: Any, props: Any, active_obj: Any) -> int:
+    effective_asset = resolve_effective_asset_name(context, props)
+    meshes = get_asset_base_meshes(context, effective_asset) if effective_asset else []
+    if not meshes and active_obj and getattr(active_obj, "type", "") == "MESH":
+        meshes = [active_obj]
+    mats = {s.material for m in meshes for s in getattr(m, "material_slots", []) if getattr(s, "material", None)}
+    return len(mats)
+
+
+def _draw_lod_card(box_lod: Any, tier: Any, idx: int, base_tris: int, base_mats: int, total_tiers: int) -> bool:
     card = box_lod.box()
     card.use_property_split = False
 
@@ -253,13 +254,18 @@ def _draw_lod_card(box_lod: Any, tier: Any, idx: int, base_tris: int, total_tier
         arrow_icon = "TRIA_DOWN" if show_det else "TRIA_RIGHT"
         row_hdr.prop(tier, "show_details", text="", icon=arrow_icon, emboss=False)
 
-    is_solo = getattr(tier, "is_soloed", False)
-    solo_icon = "HIDE_OFF" if is_solo else "HIDE_ON"
-    op_s = row_hdr.operator("lod_tool.solo_tier", text="", icon=solo_icon, emboss=False)
-    op_s.tier_index = idx
-
     tier_name = getattr(tier, "name", f"LOD{idx}")
     actual_t = getattr(tier, "actual_tris", 0)
+
+    raw_mats = getattr(tier, "mat_slots_count", 0)
+    mat_slots = int(raw_mats) if isinstance(raw_mats, (int, float)) else 0
+    if getattr(tier, "is_impostor", False):
+        mat_count = mat_slots or 1
+    elif mat_slots > 0:
+        mat_count = mat_slots
+    else:
+        mat_count = base_mats
+    mat_suffix = f"  •  {mat_count} mat" if mat_count == 1 else f"  •  {mat_count} mats"
 
     is_out_of_sync = False
     last_target = getattr(tier, "last_baked_target_pct", -1.0)
@@ -274,24 +280,18 @@ def _draw_lod_card(box_lod: Any, tier: Any, idx: int, base_tris: int, total_tier
         state = "PLANNED"
 
     if getattr(tier, "is_impostor", False):
-        row_hdr.label(text=f"{tier_name} (Impostor)", icon="IMAGE_DATA")
+        row_hdr.label(text=f"{tier_name} (Impostor){mat_suffix}", icon="IMAGE_DATA")
     elif actual_t > 0:
-        row_hdr.label(text=f"{tier_name}  •  {actual_t:,} tris", icon="MESH_DATA")
+        row_hdr.label(text=f"{tier_name}  •  {actual_t:,} tris{mat_suffix}", icon="MESH_DATA")
     else:
         target_calc = (
             int(base_tris * (tier.target_tris_pct / 100.0)) if base_tris > 0 else getattr(tier, "target_tris", 0)
         )
         target_str = f"  •  ~{target_calc:,} tris" if target_calc > 0 else f"  •  {tier.target_tris_pct:.0f}%"
-        row_hdr.label(text=f"{tier_name}{target_str}", icon="MESH_DATA")
+        row_hdr.label(text=f"{tier_name}{target_str}{mat_suffix}", icon="MESH_DATA")
 
-    if state == "SOURCE":
-        row_hdr.label(text="Source")
-    elif state == "BAKED":
-        row_hdr.label(text="Baked")
-    elif state == "OUT_OF_SYNC":
-        row_hdr.label(text="Out of Sync")
-    else:
-        row_hdr.label(text="Planned")
+    state_labels = {"SOURCE": "Source", "BAKED": "Baked", "OUT_OF_SYNC": "Out of Sync"}
+    row_hdr.label(text=state_labels.get(state, "Planned"))
 
     if idx > 0 and total_tiers > 1:
         op_del = row_hdr.operator("lod_tool.remove_lod_tier", text="", icon="X", emboss=False)
@@ -301,22 +301,11 @@ def _draw_lod_card(box_lod: Any, tier: Any, idx: int, base_tris: int, total_tier
         target_calc = (
             int(base_tris * (tier.target_tris_pct / 100.0)) if base_tris > 0 else getattr(tier, "target_tris", 0)
         )
-        row_pct = card.row()
-        row_pct.prop(
-            tier,
-            "target_tris_pct",
-            text=f"Tris: {tier.target_tris_pct:.0f}%  (~{target_calc:,})",
-            slider=True,
+        card.row().prop(
+            tier, "target_tris_pct", text=f"Tris: {tier.target_tris_pct:.0f}%  (~{target_calc:,})", slider=True
         )
-
-        row_dist = card.row()
         dist_text = f"  ({tier.distance_m:.1f}m)" if tier.distance_m > 0 else ""
-        row_dist.prop(
-            tier,
-            "screen_size_pct",
-            text=f"Screen: {tier.screen_size_pct:.0f}%{dist_text}",
-            slider=True,
-        )
+        card.row().prop(tier, "screen_size_pct", text=f"Screen: {tier.screen_size_pct:.0f}%{dist_text}", slider=True)
 
     return is_out_of_sync
 
@@ -349,18 +338,19 @@ def _draw_tab_lods(layout: Any, context: Any, props: Any) -> None:
 
     active_obj = getattr(context, "active_object", None)
     base_tris = _calculate_base_tris(context, props, active_obj)
+    base_mats = _calculate_base_materials(context, props, active_obj)
 
     has_out_of_sync = False
     if props.lods:
         for idx, tier in enumerate(props.lods):
-            if _draw_lod_card(box_lod, tier, idx, base_tris, len(props.lods)):
+            if _draw_lod_card(box_lod, tier, idx, base_tris, base_mats, len(props.lods)):
                 has_out_of_sync = True
-
-        row_cull = box_lod.row(align=True)
-        row_cull.prop(props, "cull_screen_size_pct", text="Cull at Screen Size", slider=True)
 
         row_add = box_lod.row(align=True)
         row_add.operator("lod_tool.add_lod_tier", text="Add LOD Tier", icon="ADD")
+
+        row_cull = box_lod.row(align=True)
+        row_cull.prop(props, "cull_screen_size_pct", text="Cull at Screen Size", slider=True)
     else:
         box_info = box_lod.box()
         box_info.label(text="No LOD tiers projected.", icon="INFO")
@@ -394,6 +384,11 @@ def _draw_lods_testing_content(layout: Any, context: Any, props: Any) -> None:
         row_test.operator("lod_tool.toggle_split_preview", text="Exit Split", icon="CANCEL")
     else:
         row_test.operator("lod_tool.toggle_split_preview", text="A/B Split", icon="UV_SYNC_SELECT")
+
+    if getattr(props, "is_side_by_side_active", False):
+        row_test.operator("lod_tool.toggle_side_by_side", text="Reset Alignment", icon="CANCEL")
+    else:
+        row_test.operator("lod_tool.toggle_side_by_side", text="Side-by-Side", icon="ALIGN_JUSTIFY")
 
     if props.is_split_active:
         box_split = box_test.box()

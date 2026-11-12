@@ -258,33 +258,33 @@ class LODToolSettings(PropertyGroup):
     enable_impostor_lod: BoolProperty(
         name="Enable Impostor LOD",
         default=False,
-        description="Generate distant camera billboard impostor for this asset",
+        description="Generate billboard impostor",
         update=on_lod_preset_property_modified,
     )
     impostor_mode: EnumProperty(
         name="Impostor Mode",
         items=enums.IMPOSTOR_MODE_ITEMS,
         default="ORTHO_3_AXES",
-        description="Billboard geometry type and multi-angle projection layout",
+        description="Billboard projection layout",
         update=on_lod_preset_property_modified,
     )
     impostor_resolution: EnumProperty(
         name="Atlas Resolution",
         items=enums.IMPOSTOR_RESOLUTION_ITEMS,
         default="2048",
-        description="Texture resolution for baked Impostor PBR atlas maps",
+        description="Atlas resolution",
         update=on_lod_preset_property_modified,
     )
     auto_impostor_resolution: BoolProperty(
         name="Auto-Calculate Resolution",
         default=True,
-        description="Automatically derive atlas resolution from switching screen size",
+        description="Derive resolution from screen size",
         update=on_lod_preset_property_modified,
     )
     impostor_replace_last_lod: BoolProperty(
         name="Use as Final LOD Tier",
         default=True,
-        description="Automatically assign the generated Impostor billboard as the final LOD tier in the scene",
+        description="Assign Impostor as final tier",
         update=on_lod_preset_property_modified,
     )
     last_impostor_status: StringProperty(name="Last Impostor Status", default="")
@@ -608,7 +608,7 @@ class LODToolSettings(PropertyGroup):
 
     # A/B Split-Screen Comparison Preview Properties
     is_split_active: BoolProperty(
-        name="Split View Active", default=False, description="Toggle dual-tier visual comparison overlay in Viewport"
+        name="Split View Active", default=False, description="Toggle dual-tier visual comparison overlay"
     )
     split_ratio: FloatProperty(
         name="Divider Ratio",
@@ -621,6 +621,13 @@ class LODToolSettings(PropertyGroup):
     )
     split_compare_tier: IntProperty(name="Compare Tier", default=3, min=1, max=7, update=on_split_preview_updated)
 
+    # Side-by-Side Viewport Alignment Inspection
+    is_side_by_side_active: BoolProperty(
+        name="Side-by-Side View",
+        default=False,
+        description="Place all LOD tiers side-by-side along the X-axis for visual inspection",
+    )
+
     # Batch Processing Properties
     batch_mode: BoolProperty(
         name="Batch Export (.blend files)",
@@ -632,14 +639,14 @@ class LODToolSettings(PropertyGroup):
         name="Source Folder",
         subtype="DIR_PATH",
         default="",
-        description="Directory containing .blend assets to process in batch",
+        description="Source directory for batch assets",
         update=callbacks.on_batch_source_updated,
     )
     batch_export_directory: StringProperty(
         name="Export Folder",
         subtype="DIR_PATH",
         default="",
-        description="Destination folder for exported engine packages",
+        description="Destination folder for exported packages",
         update=callbacks.on_batch_export_directory_updated,
     )
     batch_recursive_scan: BoolProperty(
@@ -656,29 +663,19 @@ class LODToolSettings(PropertyGroup):
     msfs_export_full_package: BoolProperty(name="Export Full Package", default=True)
     msfs_target_version: EnumProperty(name="MSFS Target Version", items=enums.MSFS_TARGET_VERSION_ITEMS, default="2024")
     msfs_with_exterior_show_interior: BoolProperty(
-        name="Show Interior with Exterior",
-        default=True,
-        description="Render cockpit/interior when viewing exterior model (MSFS 2024 [model.options])",
+        name="Show Interior with Exterior", default=True, description="Render interior when viewing exterior model"
     )
     msfs_with_exterior_show_interior_hide_first_lod: BoolProperty(
-        name="Hide First LOD of Interior",
-        default=False,
-        description="Hide LOD0 of interior when viewing exterior model to optimize VRAM (MSFS 2024)",
+        name="Hide First LOD of Interior", default=False, description="Hide LOD0 interior when viewing exterior"
     )
     msfs_with_interior_force_first_lod: BoolProperty(
-        name="Force First LOD Interior",
-        default=False,
-        description="Always render interior at LOD0 when inside cockpit (MSFS 2024)",
+        name="Force First LOD Interior", default=False, description="Render interior at LOD0 in cockpit"
     )
     msfs_with_interior_show_exterior: BoolProperty(
-        name="Show Exterior with Interior",
-        default=True,
-        description="Render airframe/wings when viewing from inside cockpit (MSFS 2024)",
+        name="Show Exterior with Interior", default=True, description="Render exterior when inside cockpit"
     )
     msfs_preserve_decals: BoolProperty(
-        name="Preserve Decals",
-        default=True,
-        description="Constrain decimation on decal meshes to eliminate Z-fighting",
+        name="Preserve Decals", default=True, description="Constrain decimation on decal meshes"
     )
 
     # Legacy MSFS properties preserved for API compatibility

@@ -40,8 +40,11 @@ try:
     from .properties import project_preset_tiers
     from .utils import (
         get_asset_base_meshes,
+        get_asset_existing_lods,
         get_associated_armature,
+        get_available_asset_names,
         get_selected_mesh_objects,
+        is_object_valid,
         resolve_effective_asset_name,
         resolve_lod_context,
         safe_report,
@@ -64,8 +67,11 @@ except (ImportError, ValueError):
     from .properties import project_preset_tiers
     from .utils import (
         get_asset_base_meshes,
+        get_asset_existing_lods,
         get_associated_armature,
+        get_available_asset_names,
         get_selected_mesh_objects,
+        is_object_valid,
         resolve_effective_asset_name,
         resolve_lod_context,
         safe_report,
@@ -522,6 +528,138 @@ class LOD_OT_select_master_asset(Operator):
         return {"CANCELLED"}
 
 
+class LOD_OT_toggle_side_by_side(Operator):
+    """Place all generated LOD tiers side-by-side along the X-axis for visual inspection, or restore original positions."""
+
+    bl_idname = "lod_tool.toggle_side_by_side"
+    bl_label = "Toggle Side-by-Side LOD View"
+    bl_description = (
+        "Place all generated LOD tiers side-by-side along the X-axis for simultaneous inspection, or restore alignment"
+    )
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"FINISHED"}
+        props, _, _ = resolve_lod_context(context)
+        if not props:
+            props = context.scene.lod_tool
+
+        view_layer = context.view_layer
+        is_active = bool(getattr(props, "is_side_by_side_active", False))
+
+        active_asset = getattr(props, "active_asset", "")
+        if active_asset and active_asset != "ALL":
+            target_assets = [active_asset]
+        else:
+            target_assets = get_available_asset_names(context)
+            if not target_assets:
+                eff = resolve_effective_asset_name(context, props)
+                if eff:
+                    target_assets = [eff]
+
+        if not target_assets:
+            safe_report(self, {"WARNING"}, "No assets found in scene for side-by-side inspection.")
+            return {"CANCELLED"}
+
+        if is_active:
+            restored = 0
+            for asset_name in target_assets:
+                existing = get_asset_existing_lods(context, asset_name)
+                for tier_idx, info in existing.items():
+                    coll = bpy.data.collections.get(info.get("collection_name", ""))
+                    is_lod0 = tier_idx == 0
+                    if coll:
+                        coll.hide_viewport = not is_lod0
+                    for obj in info.get("meshes", []):
+                        if not is_object_valid(obj):
+                            continue
+                        if "_om_sbs_orig_x" in obj:
+                            try:
+                                obj.location.x = float(obj["_om_sbs_orig_x"])
+                                del obj["_om_sbs_orig_x"]
+                            except (KeyError, ValueError, TypeError) as exc:
+                                logger.debug("Could not restore object X location: %s", exc)
+                        if "_om_sbs_orig_y" in obj:
+                            try:
+                                obj.location.y = float(obj["_om_sbs_orig_y"])
+                                del obj["_om_sbs_orig_y"]
+                            except (KeyError, ValueError, TypeError) as exc:
+                                logger.debug("Could not restore object Y location: %s", exc)
+                        obj.hide_set(not is_lod0, view_layer=view_layer)
+                        restored += 1
+
+            props.is_side_by_side_active = False
+            safe_report(self, {"INFO"}, f"Restored LOD alignment to original positions ({restored} objects).")
+        else:
+            total_tiers_found = 0
+            for asset_name in target_assets:
+                existing = get_asset_existing_lods(context, asset_name)
+                if len(existing) >= 2:
+                    total_tiers_found += len(existing)
+
+            if total_tiers_found < 2:
+                safe_report(
+                    self, {"WARNING"}, "At least 2 generated LOD tiers are required for side-by-side inspection."
+                )
+                return {"CANCELLED"}
+
+            arranged = 0
+            for asset_idx, asset_name in enumerate(target_assets):
+                existing = get_asset_existing_lods(context, asset_name)
+                if len(existing) < 2:
+                    continue
+
+                lod0_info = existing.get(0)
+                lod0_objs = lod0_info.get("meshes", []) if lod0_info else []
+                dim_x = max(
+                    (float(getattr(getattr(o, "dimensions", None), "x", 2.0)) for o in lod0_objs),
+                    default=2.0,
+                )
+                dim_y = max(
+                    (float(getattr(getattr(o, "dimensions", None), "y", 2.0)) for o in lod0_objs),
+                    default=2.0,
+                )
+                dim_x = 2.0 if dim_x <= 0.05 else dim_x
+                dim_y = 2.0 if dim_y <= 0.05 else dim_y
+
+                spacing_x = max(dim_x * 1.4, dim_x + 0.5, 1.5)
+                spacing_y = max(dim_y * 1.4, dim_y + 0.5, 1.5)
+                offset_y = float(asset_idx) * spacing_y
+
+                for tier_order, tier_idx in enumerate(sorted(existing.keys())):
+                    offset_x = float(tier_order) * spacing_x
+                    info = existing[tier_idx]
+                    coll = bpy.data.collections.get(info.get("collection_name", ""))
+                    if coll:
+                        coll.hide_viewport = False
+
+                    for obj in info.get("meshes", []):
+                        if not is_object_valid(obj):
+                            continue
+                        if "_om_sbs_orig_x" not in obj:
+                            obj["_om_sbs_orig_x"] = float(obj.location.x)
+                        if "_om_sbs_orig_y" not in obj:
+                            obj["_om_sbs_orig_y"] = float(obj.location.y)
+
+                        obj.location.x = float(obj["_om_sbs_orig_x"]) + offset_x
+                        obj.location.y = float(obj["_om_sbs_orig_y"]) + offset_y
+                        obj.hide_set(False, view_layer=view_layer)
+                        arranged += 1
+
+            props.is_side_by_side_active = True
+            safe_report(self, {"INFO"}, f"Side-by-side inspection active: arranged {arranged} objects across tiers.")
+
+        LODViewportHUD.update_cache(context)
+        LODViewportHUD.tag_redraw()
+        if hasattr(context, "screen") and context.screen:
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    area.tag_redraw()
+
+        return {"FINISHED"}
+
+
 LOD_OPERATOR_CLASSES = (
     LOD_OT_reset_to_preset,
     LOD_OT_analyze_and_configure,
@@ -532,6 +670,7 @@ LOD_OPERATOR_CLASSES = (
     LOD_OT_preview_tier,
     LOD_OT_sync_selection_settings,
     LOD_OT_select_master_asset,
+    LOD_OT_toggle_side_by_side,
 )
 
 __all__ = [
@@ -545,6 +684,7 @@ __all__ = [
     "LOD_OT_preview_tier",
     "LOD_OT_sync_selection_settings",
     "LOD_OT_select_master_asset",
+    "LOD_OT_toggle_side_by_side",
     "LOD_OT_add_preset_tier",
     "LOD_OT_remove_preset_tier",
     "LOD_OT_save_preset_tiers",

@@ -690,3 +690,54 @@ def test_main_panel_tab_switching_and_target_asset_visibility(monkeypatch):
             assert not has_target_asset
         else:
             assert has_target_asset
+
+
+def test_lods_ui_reordering_materials_and_side_by_side(monkeypatch):
+    """Verify LOD card material counter, removal of solo eye icon, button ordering, and side-by-side operator."""
+    import ui.panel as panel_mod
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(panel_mod, "bpy", mock_bpy)
+
+    mock_box = MagicMock()
+    mock_card = MagicMock()
+    mock_row = MagicMock()
+    mock_box.box.return_value = mock_card
+    mock_card.row.return_value = mock_row
+
+    tier0 = MagicMock(name="LOD0", actual_tris=1000, mat_slots_count=3, is_impostor=False, show_details=False)
+    panel_mod._draw_lod_card(mock_box, tier0, 0, 1000, 3, 2)
+    assert not any(c.args and "lod_tool.solo_tier" in str(c.args[0]) for c in mock_row.operator.call_args_list)
+    assert any(c.kwargs.get("text", "").endswith("3 mats") for c in mock_row.label.call_args_list)
+
+    mock_props = MagicMock(
+        lods=[tier0],
+        cull_screen_size_pct=5.0,
+        is_simulator_running=False,
+        is_split_active=False,
+        is_side_by_side_active=False,
+    )
+    mock_ctx = MagicMock(active_object=None, scene=MagicMock(lod_tool=mock_props))
+    monkeypatch.setattr(panel_mod, "resolve_effective_asset_name", lambda ctx, props: "Asset")
+    monkeypatch.setattr(panel_mod, "get_asset_base_meshes", lambda ctx, name: [])
+
+    mock_layout = MagicMock()
+    mock_test_box = MagicMock()
+    mock_test_row = MagicMock()
+    mock_layout.box.return_value = mock_test_box
+    mock_test_box.row.return_value = mock_test_row
+
+    mock_props.is_side_by_side_active = False
+    panel_mod._draw_lods_testing_content(mock_layout, mock_ctx, mock_props)
+    assert any(
+        "lod_tool.toggle_side_by_side" in str(c) and c.kwargs.get("text") == "Side-by-Side"
+        for c in mock_test_row.operator.call_args_list
+    )
+
+    mock_test_row.reset_mock()
+    mock_props.is_side_by_side_active = True
+    panel_mod._draw_lods_testing_content(mock_layout, mock_ctx, mock_props)
+    assert any(
+        "lod_tool.toggle_side_by_side" in str(c) and c.kwargs.get("text") == "Reset Alignment"
+        for c in mock_test_row.operator.call_args_list
+    )

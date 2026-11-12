@@ -58,6 +58,7 @@ from .lod_ops import (
     LOD_OT_select_master_asset,
     LOD_OT_solo_tier,
     LOD_OT_sync_selection_settings,
+    LOD_OT_toggle_side_by_side,
 )
 from .pbr_ops import (
     PBR_OPERATOR_CLASSES,
@@ -184,6 +185,7 @@ __all__ = [
     "LOD_OT_toggle_simulator",
     "LOD_OT_reset_virtual_distance",
     "LOD_OT_toggle_split_preview",
+    "LOD_OT_toggle_side_by_side",
     "LOD_OT_clean_and_repair_mesh",
     "LOD_OT_cull_interior_faces",
     "LOD_OT_clean_and_repair_materials",

@@ -557,3 +557,73 @@ def test_setup_and_simulator_ops_deep() -> None:
 
         rst_op = simulator_ops.LOD_OT_reset_virtual_distance()
         assert rst_op.execute(ctx) == {"FINISHED"}
+
+
+def test_lod_ot_toggle_side_by_side_lifecycle(monkeypatch):
+    """Verify side-by-side arrangement and restoration across LOD tiers."""
+    from ui.lod_ops import LOD_OT_toggle_side_by_side
+    import ui.lod_ops as lod_ops_mod
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(lod_ops_mod, "bpy", mock_bpy)
+
+    ctx = MagicMock()
+    mock_props = MagicMock()
+    mock_props.is_side_by_side_active = False
+    mock_props.active_asset = "HeroProp"
+    ctx.scene.lod_tool = mock_props
+
+    op = LOD_OT_toggle_side_by_side()
+
+    # 1. No assets found
+    monkeypatch.setattr(lod_ops_mod, "get_available_asset_names", lambda c: [])
+    monkeypatch.setattr(lod_ops_mod, "resolve_effective_asset_name", lambda c, p: "")
+    mock_props.active_asset = ""
+    assert op.execute(ctx) == {"CANCELLED"}
+
+    # 2. Fewer than 2 tiers found
+    mock_props.active_asset = "HeroProp"
+    monkeypatch.setattr(
+        lod_ops_mod,
+        "get_asset_existing_lods",
+        lambda c, name: {0: {"collection_name": "HeroProp_LOD0", "meshes": [MagicMock()]}},
+    )
+    assert op.execute(ctx) == {"CANCELLED"}
+
+    # 3. Activate Side-by-Side with 2 tiers
+    obj0 = MagicMock(location=MagicMock(x=0.0, y=0.0), dimensions=MagicMock(x=2.0, y=2.0))
+    obj0_dict = {}
+    obj0.__contains__ = lambda self, k: k in obj0_dict
+    obj0.__getitem__ = lambda self, k: obj0_dict[k]
+    obj0.__setitem__ = lambda self, k, v: obj0_dict.__setitem__(k, v)
+    obj0.__delitem__ = lambda self, k: obj0_dict.__delitem__(k)
+
+    obj1 = MagicMock(location=MagicMock(x=0.0, y=0.0), dimensions=MagicMock(x=2.0, y=2.0))
+    obj1_dict = {}
+    obj1.__contains__ = lambda self, k: k in obj1_dict
+    obj1.__getitem__ = lambda self, k: obj1_dict[k]
+    obj1.__setitem__ = lambda self, k, v: obj1_dict.__setitem__(k, v)
+    obj1.__delitem__ = lambda self, k: obj1_dict.__delitem__(k)
+
+    coll0 = MagicMock(hide_viewport=False)
+    coll1 = MagicMock(hide_viewport=True)
+    mock_bpy.data.collections.get.side_effect = lambda name: coll0 if "LOD0" in name else coll1
+
+    existing_tiers = {
+        0: {"collection_name": "HeroProp_LOD0", "meshes": [obj0]},
+        1: {"collection_name": "HeroProp_LOD1", "meshes": [obj1]},
+    }
+    monkeypatch.setattr(lod_ops_mod, "get_asset_existing_lods", lambda c, name: existing_tiers)
+    monkeypatch.setattr(lod_ops_mod, "is_object_valid", lambda o: True)
+
+    assert op.execute(ctx) == {"FINISHED"}
+    assert mock_props.is_side_by_side_active is True
+    assert obj1.location.x > 0.0
+    assert "_om_sbs_orig_x" in obj1_dict
+    assert coll1.hide_viewport is False
+
+    # 4. Reset / Restore alignment
+    assert op.execute(ctx) == {"FINISHED"}
+    assert mock_props.is_side_by_side_active is False
+    assert "_om_sbs_orig_x" not in obj1_dict
+    assert coll1.hide_viewport is True
