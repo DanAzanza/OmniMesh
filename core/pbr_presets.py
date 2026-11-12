@@ -151,7 +151,10 @@ class BasePresetManager:
     @classmethod
     def get_state_file(cls) -> Path:
         """Returns path to the user state JSON file tracking cross-session preferences."""
-        if bpy and hasattr(bpy.utils, "user_resource"):
+        custom_root = os.environ.get("OMNIMESH_PRESETS_DIR")
+        if custom_root:
+            base = Path(custom_root)
+        elif bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets"
             except (RuntimeError, ValueError, AttributeError, TypeError):
@@ -220,7 +223,10 @@ class BasePresetManager:
     @classmethod
     def get_user_dir(cls) -> Path:
         """Returns path to user custom presets directory for this category."""
-        if bpy and hasattr(bpy.utils, "user_resource"):
+        custom_root = os.environ.get("OMNIMESH_PRESETS_DIR")
+        if custom_root:
+            base = Path(custom_root) / cls.CATEGORY
+        elif bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / cls.CATEGORY
             except (RuntimeError, ValueError, AttributeError, TypeError):

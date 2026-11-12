@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from pathlib import Path
 import tempfile
@@ -179,50 +180,59 @@ class TestShaderAndPBROpsPipeline(unittest.TestCase):
             res_builtin_add = ops.add_preset_map()
             self.assertEqual(res_builtin_add, {"CANCELLED"})
 
-            # Duplicate built-in presets to custom editable presets
-            res_dup_imp = ops.duplicate_preset(preset_type="IMPORT", new_name="Custom_Import_Test")
-            self.assertEqual(res_dup_imp, {"FINISHED"})
+            imp_dup_created = False
+            exp_dup_created = False
+            try:
+                # Duplicate built-in presets to custom editable presets
+                res_dup_imp = ops.duplicate_preset(preset_type="IMPORT", new_name="Custom_Import_Test")
+                self.assertEqual(res_dup_imp, {"FINISHED"})
+                imp_dup_created = True
 
-            res_dup_exp = ops.duplicate_preset(preset_type="EXPORT", new_name="Custom_Export_Test")
-            self.assertEqual(res_dup_exp, {"FINISHED"})
+                res_dup_exp = ops.duplicate_preset(preset_type="EXPORT", new_name="Custom_Export_Test")
+                self.assertEqual(res_dup_exp, {"FINISHED"})
+                exp_dup_created = True
 
-            # 2. Add custom map to active import preset
-            res_add = ops.add_preset_map()
-            self.assertEqual(res_add, {"FINISHED"})
-            orig_len = len(props.pbr_active_maps)
-            self.assertGreaterEqual(orig_len, 1)
+                # 2. Add custom map to active import preset
+                res_add = ops.add_preset_map()
+                self.assertEqual(res_add, {"FINISHED"})
+                orig_len = len(props.pbr_active_maps)
+                self.assertGreaterEqual(orig_len, 1)
 
-            # 3. Add map template
-            res_tpl = ops.add_map_template(template_type="NORMAL_OPENGL")
-            self.assertEqual(res_tpl, {"FINISHED"})
-            self.assertEqual(len(props.pbr_active_maps), orig_len + 1)
+                # 3. Add map template
+                res_tpl = ops.add_map_template(template_type="NORMAL_OPENGL")
+                self.assertEqual(res_tpl, {"FINISHED"})
+                self.assertEqual(len(props.pbr_active_maps), orig_len + 1)
 
-            # 4. Move preset map
-            props.pbr_active_map_index = len(props.pbr_active_maps) - 1
-            res_move = ops.move_preset_map(direction="UP")
-            self.assertEqual(res_move, {"FINISHED"})
+                # 4. Move preset map
+                props.pbr_active_map_index = len(props.pbr_active_maps) - 1
+                res_move = ops.move_preset_map(direction="UP")
+                self.assertEqual(res_move, {"FINISHED"})
 
-            # 5. Delete preset map
-            res_del = ops.delete_preset_map()
-            self.assertEqual(res_del, {"FINISHED"})
+                # 5. Delete preset map
+                res_del = ops.delete_preset_map()
+                self.assertEqual(res_del, {"FINISHED"})
 
-            # 6. Test Export Map Operators
-            res_exp_add = ops.add_export_preset_map()
-            self.assertEqual(res_exp_add, {"FINISHED"})
+                # 6. Test Export Map Operators
+                res_exp_add = ops.add_export_preset_map()
+                self.assertEqual(res_exp_add, {"FINISHED"})
 
-            res_exp_tpl = ops.add_export_map_template(template_type="ORM")
-            self.assertEqual(res_exp_tpl, {"FINISHED"})
+                res_exp_tpl = ops.add_export_map_template(template_type="ORM")
+                self.assertEqual(res_exp_tpl, {"FINISHED"})
 
-            props.pbr_export_active_map_index = len(props.pbr_export_active_maps) - 1
-            res_exp_move = ops.move_export_preset_map(direction="UP")
-            self.assertEqual(res_exp_move, {"FINISHED"})
+                props.pbr_export_active_map_index = len(props.pbr_export_active_maps) - 1
+                res_exp_move = ops.move_export_preset_map(direction="UP")
+                self.assertEqual(res_exp_move, {"FINISHED"})
 
-            res_exp_del = ops.delete_export_preset_map()
-            self.assertEqual(res_exp_del, {"FINISHED"})
-
-            # Cleanup custom presets
-            ops.delete_import_preset()
-            ops.delete_export_preset()
+                res_exp_del = ops.delete_export_preset_map()
+                self.assertEqual(res_exp_del, {"FINISHED"})
+            finally:
+                # Cleanup custom presets
+                if imp_dup_created:
+                    with contextlib.suppress(Exception):
+                        ops.delete_import_preset()
+                if exp_dup_created:
+                    with contextlib.suppress(Exception):
+                        ops.delete_export_preset()
 
     def test_pbr_folder_matching_and_relinking(self) -> None:
         """Verify auto-matching PBR texture folder and relinking project textures."""

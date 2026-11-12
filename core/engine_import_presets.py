@@ -7,6 +7,7 @@ Manages decoupled JSON-based templates for importing full game/simulation engine
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
@@ -40,7 +41,10 @@ class EngineImportPresetManager(BasePresetManager):
     @classmethod
     def get_user_dir(cls) -> Path:
         """Returns path to user custom presets directory for engine imports."""
-        if bpy and hasattr(bpy.utils, "user_resource"):
+        custom_root = os.environ.get("OMNIMESH_PRESETS_DIR")
+        if custom_root:
+            base = Path(custom_root) / "engine_import"
+        elif bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / "engine_import"
             except (RuntimeError, ValueError, AttributeError, TypeError):

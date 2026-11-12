@@ -1,12 +1,8 @@
-"""
-OmniMesh Global Pytest Configuration and Shared Test Fixtures.
-Provides standard, reusable mock primitives for Blender RNA data structures
-(Objects, Meshes, Materials, Sockets, Collections, and Contexts) to avoid
-boilerplate proliferation across test modules.
-"""
+"""OmniMesh Global Pytest Configuration and Shared Test Fixtures."""
 
 from __future__ import annotations
-from typing import TYPE_CHECKING as _TC, Any as _Any
+import os
+from typing import TYPE_CHECKING as _TC, Any as _Any, Generator
 
 if _TC:
     _MockBase: type[_Any] = object
@@ -20,9 +16,7 @@ import numpy as np
 import pytest
 
 
-# ==============================================================================
-# Vector & Matrix Mocks
-# ==============================================================================
+# --- Vector & Matrix Mocks ---
 
 
 class MockVector(_MockBase):
@@ -163,9 +157,7 @@ class MockQuaternion(_MockBase):
         return f"MockQuaternion(({self.w:.4f}, {self.x:.4f}, {self.y:.4f}, {self.z:.4f}))"
 
 
-# ==============================================================================
-# Shader Node & Socket Mocks
-# ==============================================================================
+# --- Shader Node & Socket Mocks ---
 
 
 class MockSocket(_MockBase):
@@ -308,9 +300,7 @@ class MockMaterial(_MockBase):
             self.node_tree = None
 
 
-# ==============================================================================
-# Geometry & Scene Graph Mocks
-# ==============================================================================
+# --- Geometry & Scene Graph Mocks ---
 
 
 class MockPolygon(_MockBase):
@@ -481,9 +471,7 @@ class MockCollection(_MockBase):
         return objs
 
 
-# ==============================================================================
-# BMesh Mocks
-# ==============================================================================
+# --- BMesh Mocks ---
 
 
 class MockVert(_MockBase):
@@ -611,9 +599,7 @@ class MockBMesh(_MockBase):
         pass
 
 
-# ==============================================================================
-# Pytest Fixtures
-# ==============================================================================
+# --- Pytest Fixtures ---
 
 
 @pytest.fixture
@@ -721,18 +707,10 @@ class MockBlendData(_MockBase):
         self.actions = MockBlendDataContainer()
         self.armatures = MockBlendDataContainer()
         self.worlds = MockBlendDataContainer(
-            factory=lambda name, *a, **kw: MagicMock(
-                name=name,
-                node_tree=MagicMock(nodes=MockBlendDataContainer()),
-            )
+            factory=lambda name, *a, **kw: MagicMock(name=name, node_tree=MagicMock(nodes=MockBlendDataContainer()))
         )
 
-    def orphans_purge(
-        self,
-        do_local_ids: bool = True,
-        do_linked_ids: bool = True,
-        do_recursive: bool = False,
-    ) -> int:
+    def orphans_purge(self, do_local_ids: bool = True, do_linked_ids: bool = True, do_recursive: bool = False) -> int:
         return 0
 
 
@@ -747,3 +725,18 @@ def mock_scene_context() -> MagicMock:
     ctx.active_object = None
     ctx.blend_data = MockBlendData()
     return ctx
+
+
+@pytest.fixture(autouse=True, scope="session")
+def isolate_session_presets(tmp_path_factory: pytest.TempPathFactory) -> Generator[None, None, None]:
+    """Isolate OmniMesh custom preset storage to a transient session directory."""
+    temp_dir = tmp_path_factory.mktemp("om_presets")
+    old_env = os.environ.get("OMNIMESH_PRESETS_DIR")
+    os.environ["OMNIMESH_PRESETS_DIR"] = str(temp_dir)
+    try:
+        yield
+    finally:
+        if old_env is not None:
+            os.environ["OMNIMESH_PRESETS_DIR"] = old_env
+        else:
+            os.environ.pop("OMNIMESH_PRESETS_DIR", None)

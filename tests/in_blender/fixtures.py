@@ -30,6 +30,34 @@ except (ImportError, ValueError):
     from ...core.simulator import LODSimulatorEngine
 
 
+def _collect_custom_preset_files() -> set[str]:
+    """Find all custom JSON preset files across all categories."""
+    found: set[str] = set()
+    try:
+        from core.config_presets import ConfigPresetManager
+        from core.engine_import_presets import EngineImportPresetManager
+        from core.lod_presets import LODPresetManager
+        from core.pbr_presets import PBRExportPresetManager, PBRImportPresetManager
+    except (ImportError, ValueError):
+        from ...core.config_presets import ConfigPresetManager
+        from ...core.engine_import_presets import EngineImportPresetManager
+        from ...core.lod_presets import LODPresetManager
+        from ...core.pbr_presets import PBRExportPresetManager, PBRImportPresetManager
+
+    for mgr in (
+        PBRImportPresetManager,
+        PBRExportPresetManager,
+        EngineImportPresetManager,
+        ConfigPresetManager,
+        LODPresetManager,
+    ):
+        with contextlib.suppress(Exception):
+            user_dir = mgr.get_user_dir()
+            if user_dir.is_dir():
+                found.update(str(p.resolve()) for p in user_dir.glob("*.json") if p.is_file())
+    return found
+
+
 @contextlib.contextmanager
 def in_blender_sandbox() -> Generator[bpy.types.Scene | None, None, None]:
     """Isolate in-blender test execution within a transient Blender scene.
@@ -69,9 +97,21 @@ def in_blender_sandbox() -> Generator[bpy.types.Scene | None, None, None]:
                 orig_props.active_asset = "AUTO"
                 orig_props.export_base_name = ""
 
+    initial_preset_files = _collect_custom_preset_files()
     try:
         yield test_scene
     finally:
+        # Purge any transient custom preset files generated during the test
+        current_presets = _collect_custom_preset_files()
+        for leaked_path_str in current_presets - initial_preset_files:
+            try:
+                import os
+
+                if os.path.isfile(leaked_path_str):
+                    os.remove(leaked_path_str)
+            except Exception as exc:
+                logger.debug("Failed removing leaked preset '%s': %s", leaked_path_str, exc)
+
         # Restore active workspace scene first
         if win is not None and orig_scene is not None:
             win.scene = orig_scene

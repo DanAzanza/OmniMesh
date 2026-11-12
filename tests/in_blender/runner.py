@@ -255,9 +255,18 @@ def run_all_in_blender_tests() -> dict[str, Any]:
         stream = io.StringIO()
         runner = unittest.TextTestRunner(stream=stream, verbosity=2)
 
-        start_time = time.time()
-        test_result = runner.run(suite)
-        duration = time.time() - start_time
+        with tempfile.TemporaryDirectory(prefix="omnimesh-test-presets-") as temp_presets_dir:
+            old_presets_env = os.environ.get("OMNIMESH_PRESETS_DIR")
+            os.environ["OMNIMESH_PRESETS_DIR"] = temp_presets_dir
+            try:
+                start_time = time.time()
+                test_result = runner.run(suite)
+                duration = time.time() - start_time
+            finally:
+                if old_presets_env is not None:
+                    os.environ["OMNIMESH_PRESETS_DIR"] = old_presets_env
+                else:
+                    os.environ.pop("OMNIMESH_PRESETS_DIR", None)
 
         output_text = stream.getvalue()
         print(output_text)

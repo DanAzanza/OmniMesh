@@ -194,34 +194,44 @@ class TestGLTFRoundtripAndHierarchyPipeline(unittest.TestCase):
             ts = int(time.time() * 1000)
             initial_name = f"EnginePre_{ts}"
             dup_name = f"EnginePreDup_{ts}"
+            renamed_name = f"EnginePreRenamed_{ts}"
 
             ops_omni: Any = cast(Any, bpy.ops).omnimesh
-            # 1. Create preset
-            res = ops_omni.create_engine_import_preset(preset_name=initial_name)
-            self.assertEqual(res, {"FINISHED"})
+            new_id = ""
+            dup_id = ""
+            renamed_id = ""
+            try:
+                # 1. Create preset
+                res = ops_omni.create_engine_import_preset(preset_name=initial_name)
+                self.assertEqual(res, {"FINISHED"})
 
-            props = getattr(scene, "lod_tool", None)
-            self.assertIsNotNone(props)
-            new_id = getattr(props, "engine_import_preset", "")
-            self.assertTrue(len(new_id) > 0)
+                props = getattr(scene, "lod_tool", None)
+                self.assertIsNotNone(props)
+                new_id = getattr(props, "engine_import_preset", "")
+                self.assertTrue(len(new_id) > 0)
 
-            # 2. Duplicate preset
-            res_dup = ops_omni.duplicate_engine_import_preset(new_name=dup_name)
-            self.assertEqual(res_dup, {"FINISHED"})
-            dup_id = getattr(props, "engine_import_preset", "")
-            self.assertNotEqual(new_id, dup_id)
+                # 2. Duplicate preset
+                res_dup = ops_omni.duplicate_engine_import_preset(new_name=dup_name)
+                self.assertEqual(res_dup, {"FINISHED"})
+                dup_id = getattr(props, "engine_import_preset", "")
+                self.assertNotEqual(new_id, dup_id)
 
-            # 3. Rename preset
-            renamed_name = f"EnginePreRenamed_{ts}"
-            res_ren = ops_omni.rename_engine_import_preset(new_name=renamed_name)
-            self.assertEqual(res_ren, {"FINISHED"})
+                # 3. Rename preset
+                res_ren = ops_omni.rename_engine_import_preset(new_name=renamed_name)
+                self.assertEqual(res_ren, {"FINISHED"})
+                renamed_id = getattr(props, "engine_import_preset", "")
 
-            # 4. Delete duplicated preset
-            res_del = ops_omni.delete_engine_import_preset()
-            self.assertEqual(res_del, {"FINISHED"})
-
-            # Clean up initial preset from disk
-            EngineImportPresetManager.delete_custom_preset(new_id)
+                # 4. Delete duplicated preset
+                res_del = ops_omni.delete_engine_import_preset()
+                self.assertEqual(res_del, {"FINISHED"})
+            finally:
+                # Clean up all created custom presets from disk
+                if renamed_id:
+                    EngineImportPresetManager.delete_custom_preset(renamed_id)
+                if dup_id and dup_id != renamed_id:
+                    EngineImportPresetManager.delete_custom_preset(dup_id)
+                if new_id and new_id not in (dup_id, renamed_id):
+                    EngineImportPresetManager.delete_custom_preset(new_id)
 
     def test_safe_remove_collection_objects_and_negative_boundaries(self) -> None:
         """Verify safe removal of collection items and negative bounds for glTF import."""

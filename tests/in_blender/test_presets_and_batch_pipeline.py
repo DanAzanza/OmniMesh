@@ -58,39 +58,46 @@ class TestPresetsAndBatchPipeline(unittest.TestCase):
             preset_init_name = f"Preset_{unique_tag}"
             preset_renamed = f"Renamed_{unique_tag}"
 
-            # 1. Create a new custom config preset
-            res_create = ops.create_config_preset(
-                preset_name=preset_init_name,
-                template_type="plane_commercial_airliner",
-            )
-            self.assertEqual(res_create, {"FINISHED"})
-            cfg_props = getattr(props, "config_presets", None)
-            self.assertIsNotNone(cfg_props)
-            curr_id = getattr(cfg_props, "config_preset", "")
-            preset = ConfigPresetManager.get_preset(curr_id)
-            self.assertEqual(preset.get("name"), preset_init_name)
+            curr_id = ""
+            renamed_id = ""
+            dup_id = ""
+            try:
+                # 1. Create a new custom config preset
+                res_create = ops.create_config_preset(
+                    preset_name=preset_init_name,
+                    template_type="plane_commercial_airliner",
+                )
+                self.assertEqual(res_create, {"FINISHED"})
+                cfg_props = getattr(props, "config_presets", None)
+                self.assertIsNotNone(cfg_props)
+                curr_id = getattr(cfg_props, "config_preset", "")
+                preset = ConfigPresetManager.get_preset(curr_id)
+                self.assertEqual(preset.get("name"), preset_init_name)
 
-            # 2. Rename preset
-            res_rename = ops.rename_config_preset(new_name=preset_renamed)
-            self.assertEqual(res_rename, {"FINISHED"})
-            renamed_id = getattr(cfg_props, "config_preset", "")
-            renamed_preset = ConfigPresetManager.get_preset(renamed_id)
-            self.assertEqual(renamed_preset.get("name"), preset_renamed)
+                # 2. Rename preset
+                res_rename = ops.rename_config_preset(new_name=preset_renamed)
+                self.assertEqual(res_rename, {"FINISHED"})
+                renamed_id = getattr(cfg_props, "config_preset", "")
+                renamed_preset = ConfigPresetManager.get_preset(renamed_id)
+                self.assertEqual(renamed_preset.get("name"), preset_renamed)
 
-            # 3. Duplicate preset
-            res_dup = ops.duplicate_config_preset()
-            self.assertEqual(res_dup, {"FINISHED"})
-            dup_id = getattr(cfg_props, "config_preset", "")
-            self.assertNotEqual(dup_id, renamed_id)
+                # 3. Duplicate preset
+                res_dup = ops.duplicate_config_preset()
+                self.assertEqual(res_dup, {"FINISHED"})
+                dup_id = getattr(cfg_props, "config_preset", "")
+                self.assertNotEqual(dup_id, renamed_id)
 
-            # 4. Delete duplicated preset
-            res_del = ops.delete_config_preset()
-            self.assertEqual(res_del, {"FINISHED"})
-
-            # Clean up renamed preset
-            if cfg_props:
-                cfg_props.config_preset = renamed_id
-                ops.delete_config_preset()
+                # 4. Delete duplicated preset
+                res_del = ops.delete_config_preset()
+                self.assertEqual(res_del, {"FINISHED"})
+            finally:
+                # Clean up all created custom presets from disk
+                if dup_id:
+                    ConfigPresetManager.delete_custom_preset(dup_id)
+                if renamed_id:
+                    ConfigPresetManager.delete_custom_preset(renamed_id)
+                if curr_id and curr_id not in (renamed_id, dup_id):
+                    ConfigPresetManager.delete_custom_preset(curr_id)
 
     def test_interaction_volume_operator(self) -> None:
         """Verify omnimesh.add_interaction_volume creates Box, Sphere, and Cylinder triggers with engine tags."""

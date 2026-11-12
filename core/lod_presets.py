@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
@@ -41,7 +42,10 @@ class LODPresetManager(BasePresetManager):
     @classmethod
     def get_user_dir(cls) -> Path:
         """Returns path to user custom presets directory for LOD tier configurations."""
-        if bpy and hasattr(bpy.utils, "user_resource"):
+        custom_root = os.environ.get("OMNIMESH_PRESETS_DIR")
+        if custom_root:
+            base = Path(custom_root) / "lod_presets"
+        elif bpy and hasattr(bpy.utils, "user_resource"):
             try:
                 base = Path(bpy.utils.user_resource("SCRIPTS")) / "omnimesh_presets" / "lod_presets"
             except (RuntimeError, ValueError, AttributeError, TypeError):
