@@ -81,8 +81,6 @@ def test_callbacks_and_presets_deep() -> None:
         callbacks.on_export_directory_updated(props, ctx)
         callbacks.on_import_ao_mode_updated(props, ctx)
         callbacks.on_import_preserve_updated(props, ctx)
-        callbacks.on_batch_mode_updated(props, ctx)
-        callbacks.on_batch_source_updated(props, ctx)
         callbacks.on_engine_import_directory_updated(props, ctx)
 
     # 7. Engine import preset callbacks

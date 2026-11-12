@@ -16,4 +16,4 @@ license = [
 ]
 
 [permissions]
-files = "Read and write geometry files, XML metadata, FBX, glTF packages, and spawn background worker processes"
+files = "Read and write geometry files, XML metadata, FBX, and glTF packages"

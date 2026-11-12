@@ -4,7 +4,6 @@ UI package for OmniMesh add-on with modular subpanel hierarchy.
 
 from __future__ import annotations
 
-from .batch_panel import register_batch_ops, unregister_batch_ops
 from .config_preset_ops import register as register_config_presets, unregister as unregister_config_presets
 from .engine_import_ops import register as register_engine_import, unregister as unregister_engine_import
 from .hud import LODViewportHUD
@@ -38,13 +37,11 @@ def register_ui() -> None:
     register_panel()
 
     register_simulator_ops()
-    register_batch_ops()
     LODViewportHUD.register()
 
 
 def unregister_ui() -> None:
     LODViewportHUD.unregister()
-    unregister_batch_ops()
     unregister_simulator_ops()
     unregister_panel()
     unregister_msfs_attachments()

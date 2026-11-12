@@ -177,13 +177,6 @@ LOD_PRESET_BUDGET_MODE_ITEMS: list[tuple[str, str, str]] = [
     ("ABSOLUTE", "Absolute Tris", "Explicit absolute triangle budget per tier"),
 ]
 
-BATCH_FILE_FORMATS_ITEMS: list[tuple[str, str, str]] = [
-    ("ALL", "All Supported (*.fbx, *.gltf, *.glb, *.obj, *.blend)", "Process all 3D formats"),
-    ("FBX", "FBX (*.fbx)", "Process FBX files only"),
-    ("GLTF", "glTF / GLB (*.gltf, *.glb)", "Process glTF/GLB files only"),
-    ("BLEND", "Blender (*.blend)", "Process .blend files only"),
-]
-
 ENGINE_IMPORT_MODEL_TARGET_ITEMS: list[tuple[str, str, str]] = [
     ("EXTERIOR_ONLY", "Exterior Only", "Import exterior airframe LODs (normal model)"),
     ("INTERIOR_ONLY", "Interior Only", "Import interior / cockpit flight deck LODs"),

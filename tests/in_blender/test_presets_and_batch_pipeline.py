@@ -1,9 +1,8 @@
-"""In-Blender Integration Tests for Config Presets, Interaction Volumes, Animation Tagging, and Batch Engine."""
+"""In-Blender Integration Tests for Config Presets, Interaction Volumes, Animation Tagging, and Project Import."""
 
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 import tempfile
 from typing import TYPE_CHECKING, Any, cast
@@ -25,15 +24,13 @@ else:
         in_blender_sandbox = None  # type: ignore
 
 try:
-    from core.batch import BatchProcessorEngine
     from core.config_presets import ConfigPresetManager
 except (ImportError, ValueError):
-    from ...core.batch import BatchProcessorEngine
     from ...core.config_presets import ConfigPresetManager
 
 
 class TestPresetsAndBatchPipeline(unittest.TestCase):
-    """Verify configuration presets lifecycle, interaction trigger volumes, animation tagging, and batch engine."""
+    """Verify configuration presets lifecycle, interaction trigger volumes, animation tagging, and project import."""
 
     def setUp(self) -> None:
         if not bpy:
@@ -155,41 +152,16 @@ class TestPresetsAndBatchPipeline(unittest.TestCase):
             res_cyl = ops.add_interaction_volume()
             self.assertEqual(res_cyl, {"FINISHED"})
 
-    def test_batch_processor_engine_and_import_project(self) -> None:
-        """Verify BatchProcessorEngine asset discovery and engine project folder ingestion."""
+    def test_import_engine_project_operator(self) -> None:
+        """Verify engine project folder ingestion and invalid path rejection."""
         with in_blender_sandbox() as scene:
             if scene is None or bpy is None:
                 return
 
-            with tempfile.TemporaryDirectory(prefix="omnimesh_batch_") as temp_dir:
-                # Create synthetic asset files
+            with tempfile.TemporaryDirectory(prefix="omnimesh_import_") as temp_dir:
                 (Path(temp_dir) / "PropA.obj").write_text("# OBJ file\nv 0 0 0\n", encoding="utf-8")
                 (Path(temp_dir) / "PropB.gltf").write_text('{"asset": {"version": "2.0"}}', encoding="utf-8")
-                sub_dir = Path(temp_dir) / "SubAssets"
-                sub_dir.mkdir()
-                (sub_dir / "PropC.blend").write_text("BLENDER", encoding="utf-8")
 
-                # 1. Discover assets
-                discovered = BatchProcessorEngine.discover_assets(temp_dir, recursive=True)
-                self.assertGreaterEqual(len(discovered), 2)
-
-                # 2. Discover blend files
-                blend_files = BatchProcessorEngine.discover_blend_files(temp_dir, recursive=True)
-                self.assertGreaterEqual(len(blend_files), 1)
-
-                # 3. Compute mirrored output path
-                out_dir, asset_name = BatchProcessorEngine.compute_mirrored_export_path(
-                    blend_path=str(sub_dir / "PropC.blend"),
-                    source_root=temp_dir,
-                    export_root=os.path.join(temp_dir, "Export"),
-                )
-                self.assertEqual(asset_name, "PropC")
-                self.assertIn("SubAssets", out_dir)
-
-                # 4. Test GC
-                BatchProcessorEngine.force_garbage_collection()
-
-                # 5. Ingest project folder via operator
                 ops: Any = cast(Any, bpy.ops).omnimesh
                 res_import = ops.import_engine_project(directory=temp_dir)
                 self.assertIn(res_import, ({"FINISHED"}, {"CANCELLED"}))

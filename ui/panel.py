@@ -5,7 +5,7 @@ Integrates all workflow stages into a single panel with a vertical icon navigati
 - 2. Add (Vehicle & Asset Configuration Presets, Impostors, Colliders & Clickspots)
 - 3. Modify (Base Prep, Sanitization, Modifiers, Materials, Chunking & Voxel Remesh)
 - 4. LODs (Tier Configuration, Compact Responsive Cards, Decimation & Testing)
-- 5. Engine Export (Single-Asset Multi-Engine Package Export, Live Link & Batch Export)
+- 5. Engine Export (Multi-Engine Package Export)
 """
 
 from __future__ import annotations
@@ -450,24 +450,6 @@ def _draw_tab_export(layout: Any, context: Any, props: Any) -> None:
     row2_exp.use_property_split = False
     row2_exp.scale_y = 1.2
     row2_exp.operator("lod_tool.export_engine_package", text="Export", icon="PACKAGE")
-
-    _draw_batch_export_content(layout, context, props)
-
-
-def _draw_batch_export_content(layout: Any, context: Any, props: Any) -> None:
-    box_batch = layout.box()
-    box_batch.label(text="Batch Export (.blend Folder)", icon="FILE_FOLDER")
-
-    row_act = box_batch.row(align=True)
-    row_act.use_property_split = False
-    row_act.scale_y = 1.2
-    if getattr(props, "is_batch_running", False):
-        row_act.alert = True
-        row_act.operator("lod_tool.batch_cancel", text="Cancel Batch", icon="CANCEL")
-        box_status = box_batch.box()
-        box_status.label(text=getattr(props, "batch_status_text", "Batch running..."), icon="TIME")
-    else:
-        row_act.operator("lod_tool.batch_process", text="Batch Export Folder...", icon="PACKAGE")
 
 
 # Central Panel

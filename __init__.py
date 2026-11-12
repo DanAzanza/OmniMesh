@@ -31,8 +31,6 @@ if __package__:
         animation_manager,
         animations,
         asset_scanner,
-        batch,
-        batch_worker,
         chunking,
         collision,
         compat,
@@ -84,7 +82,6 @@ if __package__:
         manager as exporter_manager,
     )
     from .ui import (
-        batch_panel,
         chunk_ops,
         cleanup_ops,
         config_preset_ops,
@@ -119,8 +116,6 @@ else:
         animation_manager,
         animations,
         asset_scanner,
-        batch,
-        batch_worker,
         chunking,
         collision,
         compat,
@@ -172,7 +167,6 @@ else:
         manager as exporter_manager,
     )
     from ui import (
-        batch_panel,
         chunk_ops,
         cleanup_ops,
         config_preset_ops,
@@ -247,8 +241,6 @@ if _OMNIMESH_RELOAD:
         textures,
         animations,
         animation_manager,
-        batch,
-        batch_worker,
         config_presets,
         engine_import_presets,
         gltf_assembly,
@@ -292,7 +284,6 @@ if _OMNIMESH_RELOAD:
         operators,
         panel,
         simulator_ops,
-        batch_panel,
         hud,
         engine_import_ops,
         msfs_spatial_ops,
@@ -320,7 +311,6 @@ def register():
     setup_ops.register()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
-    batch_panel.register_batch_ops()
     engine_export.register_exporters()
     hud.LODViewportHUD.register()
 
@@ -329,7 +319,6 @@ def unregister():
     for fn in (
         hud.LODViewportHUD.unregister,
         engine_export.unregister_exporters,
-        batch_panel.unregister_batch_ops,
         simulator_ops.unregister_simulator_ops,
         panel.unregister_panel,
         setup_ops.unregister,

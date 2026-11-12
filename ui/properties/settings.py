@@ -591,37 +591,6 @@ class LODToolSettings(PropertyGroup):
         description="Place all LOD tiers side-by-side along the X-axis for visual inspection",
     )
 
-    # Batch Processing Properties
-    batch_mode: BoolProperty(
-        name="Batch Export (.blend files)",
-        default=False,
-        description="Batch-process all .blend files in a source directory with mirrored folder hierarchy",
-        update=callbacks.on_batch_mode_updated,
-    )
-    batch_source_directory: StringProperty(
-        name="Source Folder",
-        subtype="DIR_PATH",
-        default="",
-        description="Source directory for batch assets",
-        update=callbacks.on_batch_source_updated,
-    )
-    batch_export_directory: StringProperty(
-        name="Export Folder",
-        subtype="DIR_PATH",
-        default="",
-        description="Destination folder for exported packages",
-        update=callbacks.on_batch_export_directory_updated,
-    )
-    batch_recursive_scan: BoolProperty(
-        name="Recursive Subfolders", default=True, description="Scan nested subdirectories for 3D asset files"
-    )
-    batch_file_formats: EnumProperty(name="Formats", items=enums.BATCH_FILE_FORMATS_ITEMS, default="ALL")
-    batch_status_text: StringProperty(name="Batch Status", default="Batch Ready")
-    is_batch_running: BoolProperty(name="Batch Running", default=False)
-    batch_total_count: IntProperty(name="Total Assets", default=0)
-    batch_processed_count: IntProperty(name="Processed Assets", default=0)
-    batch_current_asset: StringProperty(name="Current Asset", default="")
-
     # MSFS Package & Export Settings
     msfs_export_full_package: BoolProperty(name="Export Full Package", default=True)
     msfs_target_version: EnumProperty(name="MSFS Target Version", items=enums.MSFS_TARGET_VERSION_ITEMS, default="2024")

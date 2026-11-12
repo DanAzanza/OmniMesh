@@ -78,7 +78,6 @@ def bootstrap_addon() -> None:
         "rigging",
         "textures",
         "animations",
-        "batch",
         "simulator",
         "properties",
         "lists",
@@ -90,7 +89,6 @@ def bootstrap_addon() -> None:
         "operators",
         "panel",
         "simulator_ops",
-        "batch_panel",
         "setup_ops",
         "hud",
         "msfs_export",
@@ -217,7 +215,6 @@ def run_all_in_blender_tests() -> dict[str, Any]:
         from tests.in_blender.test_gltf_roundtrip_and_hierarchy_pipeline import TestGLTFRoundtripAndHierarchyPipeline
         from tests.in_blender.test_shader_deep_baking_pipeline import TestShaderDeepBakingPipeline
         from tests.in_blender.test_engine_export_and_simulator_pipeline import TestEngineExportAndSimulatorPipeline
-        from tests.in_blender.test_batch_worker_blend_pipeline import TestBatchWorkerBlendPipeline
         from tests.in_blender.test_geometry_prep_and_cleanup_ops_pipeline import TestGeometryPrepAndCleanupOpsPipeline
 
         suite = unittest.TestSuite()
@@ -247,7 +244,6 @@ def run_all_in_blender_tests() -> dict[str, Any]:
         suite.addTests(loader.loadTestsFromTestCase(TestGLTFRoundtripAndHierarchyPipeline))
         suite.addTests(loader.loadTestsFromTestCase(TestShaderDeepBakingPipeline))
         suite.addTests(loader.loadTestsFromTestCase(TestEngineExportAndSimulatorPipeline))
-        suite.addTests(loader.loadTestsFromTestCase(TestBatchWorkerBlendPipeline))
         suite.addTests(loader.loadTestsFromTestCase(TestGeometryPrepAndCleanupOpsPipeline))
 
         stream = io.StringIO()
