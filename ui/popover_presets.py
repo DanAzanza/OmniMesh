@@ -485,6 +485,7 @@ class OMNIMESH_PT_popover_export_preset(Panel):
         layout.label(text="Preset Configuration", icon="SETTINGS")
         col_cfg = layout.column(align=True)
         col_cfg.enabled = not is_builtin
+        col_cfg.prop(props, "target_engine", text="Target Engine")
         col_cfg.prop(props, "pbr_export_texture_strategy", text="Strategy")
         if props.pbr_export_texture_strategy in {"SMART_AUTO", "BAKE"}:
             col_cfg.prop(props, "texture_max_resolution", text="Bake Resolution")

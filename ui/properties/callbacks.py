@@ -124,6 +124,15 @@ def on_target_engine_updated(self: Any, context: Any) -> None:
         export_preset_id = getattr(self, "pbr_export_preset", "")
         current_preset = PBRExportPresetManager.get_preset(export_preset_id) if export_preset_id else {}
         if current_preset.get("target_engine") != engine:
+            if export_preset_id and not PBRExportPresetManager.is_builtin(export_preset_id):
+                try:
+                    pdata = copy.deepcopy(current_preset)
+                    pdata["target_engine"] = engine
+                    PBRExportPresetManager.save_custom_preset(pdata, custom_id=export_preset_id)
+                except Exception as exc:
+                    logger.debug("Failed updating custom preset target_engine '%s': %s", export_preset_id, exc)
+                return
+
             factory_id = ENGINE_TO_FACTORY_PRESET.get(engine, "unreal_engine_5")
             if hasattr(self, "pbr_export_preset"):
                 self.pbr_export_preset = factory_id

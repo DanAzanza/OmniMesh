@@ -688,3 +688,30 @@ def test_msfs_ground_ops_deep(tmp_path) -> None:
 
         op_gear = MagicMock()
         assert msfs_ground_ops.OMNIMESH_OT_align_gear_ground_level.execute(op_gear, ctx) == {"FINISHED"}
+
+
+def test_callbacks_custom_export_preset_target_engine_update(monkeypatch):
+    """Verify changing target_engine on a custom export preset updates it in-place."""
+    import ui.properties.callbacks as cb
+
+    save_mock = MagicMock()
+    monkeypatch.setattr(cb, "update_bridge_status_cached", MagicMock())
+    monkeypatch.setattr(cb.PBRExportPresetManager, "is_builtin", lambda pid: False)
+    monkeypatch.setattr(
+        cb.PBRExportPresetManager,
+        "get_preset",
+        lambda pid: {"id": pid, "name": "My Custom", "target_engine": "UE5"},
+    )
+    monkeypatch.setattr(cb.PBRExportPresetManager, "save_custom_preset", save_mock)
+
+    props = MagicMock()
+    props.pbr_export_preset = "my_custom_export"
+    props.target_engine = "UNITY_6"
+    props.export_directory = ""
+
+    cb.on_target_engine_updated(props, None)
+    assert props.pbr_export_preset == "my_custom_export"
+    save_mock.assert_called_once()
+    saved_payload = save_mock.call_args.args[0]
+    assert saved_payload["target_engine"] == "UNITY_6"
+    assert save_mock.call_args.kwargs["custom_id"] == "my_custom_export"
