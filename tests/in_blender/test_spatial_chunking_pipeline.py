@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-import os
 import shutil
-import tempfile
 from typing import TYPE_CHECKING, Any, cast
 import unittest
 
@@ -56,40 +54,6 @@ class TestSpatialChunkingPipeline(unittest.TestCase):
             self.assertIsNotNone(col)
             if col:
                 self.assertGreater(len(col.objects), 0)
-
-    def test_impostor_preview_rig_setup_and_teardown(self) -> None:
-        """Verify setup and teardown of turntable and tracking camera rigs for impostors."""
-        with in_blender_sandbox() as scene:
-            if scene is None or bpy is None:
-                return
-            mesh_objs = create_hierarchy_fixture("SM_ImpPreview")
-            for obj in mesh_objs:
-                obj.select_set(True)
-            bpy.context.view_layer.objects.active = mesh_objs[0]
-
-            props: Any = getattr(scene, "lod_tool", None)
-            temp_dir = tempfile.mkdtemp(prefix="om_test_prev_")
-            self._temp_dirs.append(temp_dir)
-            tex_subfolder = os.path.join(temp_dir, "Textures")
-            os.makedirs(tex_subfolder, exist_ok=True)
-
-            if props:
-                props.export_directory = temp_dir
-                props.export_base_name = mesh_objs[0].name
-
-            # Create dummy BaseColor atlas in both roots so preview rig finds it
-            for d in (temp_dir, tex_subfolder):
-                base_color_file = os.path.join(d, f"T_{mesh_objs[0].name}_Impostor_BaseColor.png")
-                with open(base_color_file, "wb") as f:
-                    f.write(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
-
-            ops: Any = cast(Any, bpy.ops).lod_tool
-            res_setup = ops.setup_impostor_preview_rig()
-            self.assertEqual(res_setup, {"FINISHED"})
-
-            # Teardown
-            res_rem = ops.remove_impostor_preview_rig()
-            self.assertEqual(res_rem, {"FINISHED"})
 
     def test_spatial_chunk_and_hlod_generation(self) -> None:
         """Verify spatial chunking partitions meshes and builds HLOD clusters."""

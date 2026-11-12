@@ -130,10 +130,6 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
             bpy.context.view_layer.objects.active = obj
 
             ops_omni: Any = cast(Any, bpy.ops).omnimesh
-            # Quick scene setup
-            res_scene = ops_omni.quick_scene_setup()
-            self.assertEqual(res_scene, {"FINISHED"})
-
             # Initialize asset hierarchy
             res_init = ops_omni.initialize_asset(
                 asset_name="SM_Turret",

@@ -12,25 +12,14 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import bpy
-    from bpy.props import BoolProperty, EnumProperty, IntProperty
     from bpy.types import Operator
 else:
     try:
         import bpy
-        from bpy.props import BoolProperty, EnumProperty, IntProperty
         from bpy.types import Operator
     except ImportError:
         bpy = None
         Operator = object
-
-        def BoolProperty(**kwargs: Any) -> Any:
-            return Any
-
-        def EnumProperty(**kwargs: Any) -> Any:
-            return Any
-
-        def IntProperty(**kwargs: Any) -> Any:
-            return Any
 
 
 try:
@@ -38,7 +27,6 @@ try:
     from ..core.exceptions import OmniMeshError
     from ..core.impostor import ImpostorManager, resolve_impostor_export_dir
     from ..core.impostor_baker import ImpostorAtlasBaker
-    from ..core.impostor_preview import setup_impostor_preview_rig, teardown_impostor_preview_rig
     from ..exporters.shaders import export_companion_shaders
     from .utils import (
         get_lod0_mesh_objects,
@@ -53,7 +41,6 @@ except (ImportError, ValueError):
     from core.exceptions import OmniMeshError
     from core.impostor import ImpostorManager, resolve_impostor_export_dir
     from core.impostor_baker import ImpostorAtlasBaker
-    from core.impostor_preview import setup_impostor_preview_rig, teardown_impostor_preview_rig
     from exporters.shaders import export_companion_shaders
     from ui.utils import (
         get_lod0_mesh_objects,
@@ -184,166 +171,6 @@ class LOD_OT_generate_impostor(Operator):
         return {"FINISHED"}
 
 
-class LOD_OT_setup_impostor_preview_rig(Operator):
-    """Setup non-destructive In-Blender comparison turntable preview rig for Octahedral Impostor."""
-
-    bl_idname = "lod_tool.setup_impostor_preview_rig"
-    bl_label = "Setup Preview Rig"
-    bl_options = {"REGISTER", "UNDO"}
-
-    mode: EnumProperty(  # type: ignore
-        name="Layout Mode",
-        description="Preview layout arrangement",
-        items=[
-            ("SIDE_BY_SIDE", "Side-by-Side", "Side-by-side comparison with synchronous pedestal rotation"),
-            ("CENTER_OVERLAY", "Centered Overlay", "Impostor centered directly over source mesh for A/B inspection"),
-        ],
-        default="SIDE_BY_SIDE",
-    )
-
-    num_frames: IntProperty(  # type: ignore
-        name="Turntable Frames",
-        description="Number of frames for cyclic 360-degree pedestal turntable",
-        default=72,
-        min=16,
-        max=360,
-    )
-
-    create_turntable: BoolProperty(  # type: ignore
-        name="Create Turntable Animation",
-        description="Keyframe cyclic 360-degree pedestal turntable for timeline playback",
-        default=False,
-    )
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bool(context and (get_selected_mesh_objects(context) or get_lod0_mesh_objects(context)))
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"FINISHED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            props = context.scene.lod_tool
-
-        mesh_objs = get_lod0_mesh_objects(context)
-        if not mesh_objs:
-            mesh_objs = get_selected_mesh_objects(context)
-        if not mesh_objs:
-            safe_report(self, {"WARNING"}, "No valid mesh objects selected for preview rig.")
-            return {"CANCELLED"}
-
-        base_name = resolve_effective_asset_name(context, props)
-        if not base_name or base_name in {"AUTO", "NONE"}:
-            base_name = resolve_asset_base_name(context, mesh_objs)
-
-        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
-        if bdata is None:
-            return {"CANCELLED"}
-        tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""), blend_data=bdata)
-        target_engine = getattr(props, "target_engine", "UE5")
-
-        rig_info = setup_impostor_preview_rig(
-            context=context,
-            mesh_objs=mesh_objs,
-            base_name=base_name,
-            texture_dir=tex_dir,
-            mode=self.mode,
-            num_frames=self.num_frames,
-            target_engine=target_engine,
-            create_turntable=self.create_turntable,
-            blend_data=bdata,
-        )
-
-        if not rig_info:
-            safe_report(
-                self,
-                {"WARNING"},
-                f"Could not setup preview rig. Ensure octahedral atlas was baked first for '{base_name}'.",
-            )
-            return {"CANCELLED"}
-
-        if not self.create_turntable:
-            try:
-                from .impostor_viewport_ops import start_impostor_viewport_timer
-
-                start_impostor_viewport_timer(base_name)
-            except (ImportError, ValueError) as exc:
-                logger.debug("Impostor viewport ops timer not loaded: %s", exc)
-
-        # Presentation logic: Switch active 3D Viewport to Camera View
-        if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
-            for area in getattr(context.screen, "areas", []):
-                if getattr(area, "type", "") == "VIEW_3D":
-                    for space in getattr(area, "spaces", []):
-                        if getattr(space, "type", "") == "VIEW_3D":
-                            try:
-                                space.region_3d.view_perspective = "CAMERA"
-                                if hasattr(space, "lock_camera"):
-                                    space.lock_camera = True
-                                if hasattr(space, "shading"):
-                                    space.shading.type = "MATERIAL"
-                            except Exception as vp_err:
-                                logger.debug("Could not switch viewport to camera: %s", vp_err)
-
-        msg = f"Preview rig created in collection '{rig_info.get('collection')}'."
-        if self.create_turntable:
-            msg += " (Press Space to play turntable)."
-        else:
-            msg += " (Real-time Viewport Tracking active)."
-        safe_report(self, {"INFO"}, msg)
-        return {"FINISHED"}
-
-
-class LOD_OT_remove_impostor_preview_rig(Operator):
-    """Cleanly delete the Impostor Preview Rig and restore default viewport and camera."""
-
-    bl_idname = "lod_tool.remove_impostor_preview_rig"
-    bl_label = "Remove Preview Rig"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bool(context)
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"FINISHED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            props = context.scene.lod_tool
-
-        mesh_objs = get_selected_mesh_objects(context)
-        base_name = resolve_effective_asset_name(context, props)
-        if not base_name or base_name in {"AUTO", "NONE"}:
-            base_name = resolve_asset_base_name(context, mesh_objs) if mesh_objs else "Asset"
-
-        try:
-            from .impostor_viewport_ops import stop_impostor_viewport_timer
-
-            stop_impostor_viewport_timer(base_name)
-        except (ImportError, ValueError) as exc:
-            logger.debug("Impostor viewport ops timer not loaded: %s", exc)
-
-        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
-        if bdata is None:
-            return {"CANCELLED"}
-        success = teardown_impostor_preview_rig(context, base_name, blend_data=bdata)
-
-        if not getattr(bpy.app, "background", False) and hasattr(context, "screen") and context.screen:
-            for area in getattr(context.screen, "areas", []):
-                if getattr(area, "type", "") == "VIEW_3D":
-                    for space in getattr(area, "spaces", []):
-                        if getattr(space, "type", "") == "VIEW_3D" and hasattr(space, "lock_camera"):
-                            space.lock_camera = False
-
-        if success:
-            safe_report(self, {"INFO"}, f"Removed preview rig for '{base_name}'.")
-        else:
-            safe_report(self, {"INFO"}, f"No active preview rig found for '{base_name}'.")
-        return {"FINISHED"}
-
-
 class LOD_OT_generate_collision_hulls(Operator):
     """Generate multi-convex collision decomposition hulls in sibling collection {BaseName}_Colliders."""
 
@@ -399,7 +226,5 @@ class LOD_OT_generate_collision_hulls(Operator):
 
 HULL_IMPOSTOR_OPERATOR_CLASSES = (
     LOD_OT_generate_impostor,
-    LOD_OT_setup_impostor_preview_rig,
-    LOD_OT_remove_impostor_preview_rig,
     LOD_OT_generate_collision_hulls,
 )

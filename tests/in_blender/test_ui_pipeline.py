@@ -48,16 +48,6 @@ class TestUIPipeline(unittest.TestCase):
             root_col = bpy.data.collections.get("SM_UIHero")
             self.assertIsNotNone(root_col)
 
-            # 2. Quick scene setup (60 FPS, Metric, Clip)
-            res_setup = ops_om.quick_scene_setup()
-            self.assertEqual(res_setup, {"FINISHED"})
-            self.assertEqual(scene.render.fps, 60)
-            self.assertEqual(scene.unit_settings.system, "METRIC")
-
-            # 3. Viewport overlay toggles
-            res_overlay = ops_om.toggle_viewport_overlay(mode="STATS")
-            self.assertEqual(res_overlay, {"FINISHED"})
-
     def test_tier_management_and_solo_operators(self) -> None:
         """Verify adding, removing, resetting, and soloing LOD tiers."""
         with in_blender_sandbox() as scene:

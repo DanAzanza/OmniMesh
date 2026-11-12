@@ -516,13 +516,6 @@ def test_setup_and_simulator_ops_deep() -> None:
         setup_ops.OMNIMESH_OT_initialize_asset.draw(op_init, ctx)
         assert setup_ops.OMNIMESH_OT_initialize_asset.execute(op_init, ctx) == {"FINISHED"}
 
-        op_quick = MagicMock()
-        assert setup_ops.OMNIMESH_OT_quick_scene_setup.execute(op_quick, ctx) == {"FINISHED"}
-
-        for mode in ("FACE_ORIENTATION", "STATS", "CAVITY", "BACKFACE"):
-            op_ov = MagicMock(mode=mode)
-            assert setup_ops.OMNIMESH_OT_toggle_viewport_overlay.execute(op_ov, ctx) == {"FINISHED"}
-
     with (
         patch.object(simulator_ops, "bpy", mock_bpy),
         patch.object(simulator_ops.LODSimulatorEngine, "index_scene_assets", return_value=2),

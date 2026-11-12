@@ -4,8 +4,6 @@ OmniMesh Scene Setup & Asset Initialization Operators.
 Architected for Blender 4.2+ LTS & Blender 5.2 LTS.
 Features:
 - OMNIMESH_OT_initialize_asset: 1-Click interactive setup creating standard collections and routing meshes/armatures.
-- OMNIMESH_OT_quick_scene_setup: 1-Click game engine scene and viewport configuration without modifying collections.
-- OMNIMESH_OT_toggle_viewport_overlay: Fast viewport inspection toggles (Face Normals, Cavity, Stats).
 - Resilient C-RNA enum cache handling and headless CI compatibility.
 """
 
@@ -16,12 +14,12 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import bpy
-    from bpy.props import BoolProperty, EnumProperty, StringProperty
+    from bpy.props import BoolProperty, StringProperty
     from bpy.types import Operator
 else:
     try:
         import bpy
-        from bpy.props import BoolProperty, EnumProperty, StringProperty
+        from bpy.props import BoolProperty, StringProperty
         from bpy.types import Operator
     except ImportError:
         bpy = None
@@ -31,9 +29,6 @@ else:
             return Any
 
         def BoolProperty(**kwargs: Any) -> Any:
-            return Any
-
-        def EnumProperty(**kwargs: Any) -> Any:
             return Any
 
 
@@ -288,113 +283,7 @@ class OMNIMESH_OT_initialize_asset(Operator):
         return {"FINISHED"}
 
 
-class OMNIMESH_OT_quick_scene_setup(Operator):
-    """Applies game engine standards to the active scene and 3D viewports without altering collections."""
-
-    bl_idname = "omnimesh.quick_scene_setup"
-    bl_label = "Quick Game Scene Setup"
-    bl_description = (
-        "Configures Metric 1.0 units, 60 FPS, optimized camera clipping (0.05m - 1000m), "
-        "statistics overlay, cavity shading, and backface culling"
-    )
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"CANCELLED"}
-
-        scene = getattr(context, "scene", None)
-        if not scene:
-            self.report({"ERROR"}, "No active scene.")
-            return {"CANCELLED"}
-
-        res = configure_game_scene_settings(scene, context=context)
-        viewports_count = res.get("viewports_updated", 0)
-
-        self.report(
-            {"INFO"},
-            f"Scene configured: Metric 1.0, 60 FPS, {viewports_count} viewport(s) updated.",
-        )
-        return {"FINISHED"}
-
-
-class OMNIMESH_OT_toggle_viewport_overlay(Operator):
-    """Toggles specific viewport overlays and shading modes across active 3D viewports."""
-
-    bl_idname = "omnimesh.toggle_viewport_overlay"
-    bl_label = "Toggle Viewport Overlay"
-    bl_description = "Quick toggle for Face Orientation, Cavity Shading, or Scene Statistics"
-    bl_options = {"REGISTER"}
-
-    mode: EnumProperty(
-        name="Mode",
-        items=[
-            ("FACE_ORIENTATION", "Face Orientation", "Toggle inverted normal detection (red/blue)"),
-            ("CAVITY", "Cavity Shading", "Toggle silhouette and ridge cavity shading"),
-            ("STATS", "Statistics", "Toggle viewport vertex/triangle count HUD"),
-            ("BACKFACE", "Backface Culling", "Toggle game-engine backface culling"),
-        ],
-        default="STATS",
-    )
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"CANCELLED"}
-
-        wm = getattr(context, "window_manager", None)
-        if not wm or not hasattr(wm, "windows"):
-            return {"CANCELLED"}
-
-        toggled_state: bool = False
-        state_determined: bool = False
-
-        for window in getattr(wm, "windows", []):
-            screen = getattr(window, "screen", None)
-            if not screen or not hasattr(screen, "areas"):
-                continue
-            for area in getattr(screen, "areas", []):
-                if getattr(area, "type", "") == "VIEW_3D":
-                    for space in getattr(area, "spaces", []):
-                        if getattr(space, "type", "") == "VIEW_3D":
-                            overlay = getattr(space, "overlay", None)
-                            shading = getattr(space, "shading", None)
-
-                            if self.mode == "FACE_ORIENTATION" and overlay:
-                                if not state_determined:
-                                    toggled_state = not getattr(overlay, "show_face_orientation", False)
-                                    state_determined = True
-                                overlay.show_face_orientation = toggled_state
-
-                            elif self.mode == "STATS" and overlay:
-                                if not state_determined:
-                                    toggled_state = not getattr(overlay, "show_stats", False)
-                                    state_determined = True
-                                overlay.show_stats = toggled_state
-
-                            elif self.mode == "CAVITY" and shading:
-                                if not state_determined:
-                                    toggled_state = not getattr(shading, "show_cavity", False)
-                                    state_determined = True
-                                shading.show_cavity = toggled_state
-                                if toggled_state and hasattr(shading, "cavity_type"):
-                                    shading.cavity_type = "BOTH"
-
-                            elif self.mode == "BACKFACE" and shading:
-                                if not state_determined:
-                                    toggled_state = not getattr(shading, "show_backface_culling", False)
-                                    state_determined = True
-                                shading.show_backface_culling = toggled_state
-
-        status_text = "enabled" if toggled_state else "disabled"
-        self.report({"INFO"}, f"{self.mode.title()}: {status_text}.")
-        return {"FINISHED"}
-
-
-OPERATOR_CLASSES = (
-    OMNIMESH_OT_initialize_asset,
-    OMNIMESH_OT_quick_scene_setup,
-    OMNIMESH_OT_toggle_viewport_overlay,
-)
+OPERATOR_CLASSES = (OMNIMESH_OT_initialize_asset,)
 
 
 def register() -> None:
