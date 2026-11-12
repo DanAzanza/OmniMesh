@@ -1,16 +1,16 @@
 # OmniMesh 🚀
-### All-in-One 3D Mesh Optimization, Physics Collision, LOD Engine & Live Multi-Engine Pipeline for Blender (5.0+ & 5.2 LTS)
+### All-in-One 3D Mesh Optimization, Physics Collision, LOD Engine & Multi-Engine Export Pipeline for Blender (5.0+)
 
-[![Blender 5.0+ / 5.2 LTS](https://img.shields.io/badge/Blender-5.0%2B%20%7C%205.2%20LTS-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
+[![Blender 5.0+](https://img.shields.io/badge/Blender-5.0%2B-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OmniMesh CI](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/DanAzanza/OmniMesh/actions/workflows/ci.yml)
 [![Engines](https://img.shields.io/badge/Engines-MSFS%202024%20%7C%20UE5.4%2B%20%7C%20Unity%206-purple.svg)]()
 
 > ⚠️ **Work in Progress (WIP):** This project is actively under development and may change significantly over time.
 
-**OmniMesh** is an open-source, production-grade 3D mesh optimization and engine-export pipeline for **Blender 5.0+ and 5.2 LTS**.
+**OmniMesh** is an open-source 3D mesh optimization and engine-export pipeline for **Blender 5.0+**.
 
-It bridges the gap between raw, multi-million-polygon photogrammetry, CAD, sculpted heroes, or kitbash models and ready-to-ship game assets. Instead of running destructive decimation scripts or paying thousands of dollars for proprietary external software, OmniMesh provides a seamless, non-destructive 4-step pipeline directly inside Blender with live synchronization to **Unreal Engine 5 (5.4+)**, **Unity 6 (6000.x LTS)**, and **Microsoft Flight Simulator 2024**.
+It bridges the gap between raw, multi-million-polygon photogrammetry, CAD, sculpted heroes, or kitbash models and ready-to-ship game assets. Instead of running destructive decimation scripts or paying thousands of dollars for proprietary external software, OmniMesh provides a seamless, non-destructive 5-step pipeline directly inside Blender targeting **Unreal Engine 5 (5.4+)**, **Unity 6 (6000.x LTS)**, and **Microsoft Flight Simulator 2024**.
 
 ---
 
@@ -30,7 +30,7 @@ Optimizing 3D assets for modern real-time engines usually means choosing between
 | **Billboard Impostors** | ❌ None | ✔️ Expensive module | **✔️ 8-Way & Octahedral with Gutter Dilation** |
 | **Massive Open-World Assets** | ❌ Manual slicing | ✔️ Expensive HLOD module | **✔️ Spatial Grid Chunking & Seam-Locking** |
 | **PBR Texture Packing** | ❌ Manual Shader Nodes | ❌ Limited | **✔️ Auto-Packs ORM, MaskMap, COMP & Split** |
-| **Engine Live-Sync** | ❌ Manual export/import | ❌ File-based | **✔️ Real-Time Bridges (UE5, Unity, MSFS)** |
+| **Multi-Engine Packaging** | ❌ Manual folder & XML setup | ✔️ Custom scripts | **✔️ 1-Click Package Export & Static Shader Guides (UE5, Unity, MSFS)** |
 | **Perceptual Error Metric** | ❌ Arbitrary % reduction | ✔️ Screen-Space Error | **✔️ Screen-Space Error Bound (SSE) in Pixels** |
 
 > *Decimation Architecture Note:* OmniMesh orchestrates Blender's native Garland-Heckbert Quadric Error Metric (QEM) decimate solver non-destructively, governing it via perceptual Screen-Space Error Bounds ($\tau_{\text{sse}}$), seam-locked vertex groups, and split normal transfer—delivering enterprise-grade pipeline automation without proprietary external software subscriptions.
@@ -92,15 +92,16 @@ Unlike traditional Blender add-ons that force artists to manually select objects
 
 ---
 
-## 🔄 The 4-Step Production Pipeline
+## 🔄 The 5-Step Production Pipeline
 
-OmniMesh organizes your asset pipeline into four sequential, ergonomic N-Panel tabs:
+OmniMesh organizes your asset pipeline into five sequential, ergonomic N-Panel tabs:
 
 ```mermaid
 graph LR
-    A["1. Import<br/>PBR Auto-Matching"] --> B["2. Modify<br/>Sanitize & Physics"]
-    B --> C["3. LODs<br/>SSE & Live Sim"]
-    C --> D["4. Engine Export<br/>Live Bridge & Packages"]
+    A["1. Import<br/>PBR Auto-Matching"] --> B["2. Add<br/>Vehicle & Helpers"]
+    B --> C["3. Modify<br/>Sanitize & Physics"]
+    C --> D["4. LODs<br/>SSE & Live Sim"]
+    D --> E["5. Engine Export<br/>Packages & Shaders"]
 ```
 
 ### 1. 📥 Import (PBR Texture Auto-Matcher)
@@ -108,27 +109,30 @@ graph LR
 * **Smart Channel Demuxing**: Unpacks or repacks metallic, roughness, and ambient occlusion channels. Automatically handles DirectX (-Y) to OpenGL (+Y) normal map conversion.
 * **Engine Presets**: Shipped with battle-tested presets for UE5, Unity HDRP/URP, and MSFS 2024 COMP.
 
-### 2. 🛡️ Modify (Sanitize, Repair & Physics Colliders)
+### 2. ➕ Add (Vehicle & Asset Config Helpers)
+* **Preset Config Spawner**: Spawns spatial markers, lights, cameras, exits, engines, and interaction volumes scaled to asset geometry bounds.
+* **Geometry Helpers**: Vertex snapping, L/R marker mirroring, scrape-point generation, landing gear alignment, and camera/attachment helpers.
+
+### 3. 🛡️ Modify (Sanitize, Repair & Physics Colliders)
 * **Base Mesh Sanitization**: Eliminates zero-length edges, zero-area faces, duplicate faces, and resolves non-manifold bowties without ruining geometry.
 * **Material AST Deduplication**: Hashes shader node networks to eliminate identical duplicate material slots (`.001`, `.002`) and strips orphaned nodes.
 * **Automatic Convex Decomposition (ACD)**: Generates hierarchical physics collision hulls with SVD splitting planes, zero-volume planar extrusion guards, and PhysX/Jolt vertex budget clamping (e.g. 64 verts max).
 * **Slender & Sub-Pixel Feature Culling**: Evaluates curved wires, antennas, and railings via invariant hydraulic calipers ($t = 4V/A$) to cull sub-pixel noise without degrading silhouettes.
 
-### 3. 📐 LODs (Perceptual SSE & Live Simulation)
+### 4. 📐 LODs (Perceptual SSE & Live Simulation)
 * **Screen-Space Error (SSE)**: Decimation tolerances are computed from viewport pixel resolution and viewing distance—not arbitrary reduction percentages.
 * **Split Normal & UV Shield**: Preserves CAD bevels, hard-surface custom split normals, and UV seams using non-destructive data transfer and pinning.
 * **Skeletal Rigging Guard**: Clamps GPU bone weights to 4 (glTF/Unity/Mobile) or 8 (UE5), normalizes weights ($\sum w = 1.0$), and recursively prunes micro leaf bones (fingers, facial rigs) on distant LODs.
 * **Octahedral Impostors**: Generates 8-way or full-sphere octahedral billboard cards with tangent-space normal maps and morphological gutter dilation.
-* **Live Viewport Simulator**: 25 Hz non-blocking modal simulation with a real-time HUD (active tris, distance in meters, screen %) and a Unity-style virtual distance slider.
-* **A/B Split-Screen Viewport**: Drag an interactive split slider directly across the 3D viewport to inspect visual parity between LOD0 and any lower LOD tier.
+* **Live Viewport Simulator**: 25 Hz non-blocking modal simulation switching active LOD tier visibility dynamically based on camera distance, projected screen %, and the Virtual Distance slider.
+* **Side-by-Side Inspection**: Layout generated LOD tiers side-by-side along the X-axis in the scene to inspect visual parity across tiers.
 
-### 4. 📦 Engine Export & Live Bridges
-* **1-Click Packaging**: Automatically exports game-ready packages with correct hierarchies, naming conventions, and channel-packed PBR textures.
-* **Live Engine Bridges**:
-  * **Unreal Engine 5**: Live communication via Python Remote Execution (port 6776) / Web Remote Control (port 30010), instanced static mesh matching, and `UCX_` collision setup.
-  * **Unity 6**: Installs `OmniMeshUnityPostprocessor.cs`, auto-creates `LODGroup` components, sets up convex `MeshCollider` objects, and configures URP/HDRP MaskMaps.
-  * **Microsoft Flight Simulator 2024**: Multi-hive registry SDK discovery, compiles packages via `fspackagetool.exe`, and generates official SDK-compliant `ModelInfo` XML with `<LOD minSize="...">`.
-* **Batch Processing**: Process entire directories of `.blend` files in headless background workers.
+### 5. 📦 Engine Export & Setup Guides
+* **1-Click Packaging**: Automatically exports game-ready packages (FBX / glTF 2.0 / XML) with correct hierarchies, naming conventions, physics colliders, and channel-packed PBR textures.
+* **Target-Engine Formats & Shader Guides**:
+  * **Unreal Engine 5**: Exports FBX (`SM_` / `SK_`) meshes and `UCX_` collision hulls with packed ORM textures and static UE5 HLSL/Material setup instructions.
+  * **Unity 6**: Exports FBX meshes with URP/HDRP MaskMaps and static Unity octahedral impostor HLSL shader code.
+  * **Microsoft Flight Simulator 2024**: Multi-model glTF export, official SDK-compliant `ModelInfo` XML with `<LOD minSize="...">`, and lossless `.cfg` roundtrip sync.
 
 ---
 
@@ -179,7 +183,7 @@ OmniMesh provides a reproducible headless benchmark harness (`scripts/run_benchm
 
 | Verification Scope | Methodology & Guarantees |
 | :--- | :--- |
-| **In-Blender Headless Suite** | Automated test suite running inside headless Blender 5.0+ & 5.2 LTS via `--python-exit-code 1` |
+| **In-Blender Headless Suite** | Automated test suite running inside headless Blender 5.0+ via `--python-exit-code 1` |
 | **Normal & Shading Integrity** | High-precision custom split normal reprojection via `DATA_TRANSFER` and KDTree spatial fallback |
 | **Perceptual Error Metric** | Screen-Space Error Bound (SSE) pixel-accuracy projection based on distance, FOV, and AABB radius |
 | **Skeletal Rig Safety** | Normalized bone weight clamping (4 for mobile/glTF/Unity, 8 for UE5) and anchor bone singularity guards |
@@ -189,7 +193,7 @@ OmniMesh provides a reproducible headless benchmark harness (`scripts/run_benchm
 
 ## 📥 Installation
 
-### Method A: Blender 5.0+ / 5.2 LTS Extension (Recommended)
+### Method A: Blender 5.0+ Extension (Recommended)
 1. Download a Zip of the Code. When the plugin reaches a finished state, there will be a release at [Releases](https://github.com/DanAzanza/OmniMesh/releases).
 2. In Blender, navigate to `Edit` > `Preferences` > `Get Extensions` (or `Add-ons`).
 3. Click the **Repositories** / gear icon (top right) > **Install from Disk...**
@@ -197,9 +201,9 @@ OmniMesh provides a reproducible headless benchmark harness (`scripts/run_benchm
 
 ### Method B: Manual Installation
 Clone or copy the repository into your Blender scripts folder:
-* **Windows**: `%APPDATA%\Blender Foundation\Blender\5.2\scripts\addons\omnimesh`
-* **Linux**: `~/.config/blender/5.2/scripts/addons/omnimesh`
-* **macOS**: `~/Library/Application Support/Blender/5.2/scripts/addons/omnimesh`
+* **Windows**: `%APPDATA%\Blender Foundation\Blender\5.0\scripts\addons\omnimesh`
+* **Linux**: `~/.config/blender/5.0/scripts/addons/omnimesh`
+* **macOS**: `~/Library/Application Support/Blender/5.0/scripts/addons/omnimesh`
 
 ---
 
@@ -207,11 +211,12 @@ Clone or copy the repository into your Blender scripts folder:
 
 1. **Collection-First Setup (No Selection Needed)**: Group your asset into a root collection named `{Asset}_LOD0` (e.g. `Vehicle_LOD0`). Any sub-collections inside `{Asset}_LOD0` are automatically treated and exported as separate modular objects. No viewport selection is required!
 2. **Open OmniMesh**: Press `N` in the 3D Viewport to open the sidebar and switch to the **OmniMesh** tab. OmniMesh automatically resolves your active asset collection.
-3. **Step 1 - Import (Optional)**: If you have raw textures, point to the folder and click **"Import PBR Textures"** to auto-wire the shader graph.
-4. **Step 2 - Modify**: Click **"Clean Mesh"** to repair topology and **"Colliders"** to create game-ready physics hulls.
-5. **Step 3 - LODs**: Select your target engine preset (*Unreal Engine 5, Unity 6, MSFS 2024*), choose your target fidelity via **Visual Stability (SSE)**, and click **"Generate All LODs"**.
-6. **Inspect**: Click **"Live Simulator"** to orbit around your asset and watch LOD transitions dynamically, or drag the **Virtual Distance** slider.
-7. **Step 4 - Export**: Set your target export directory and click **"Export"** (or toggle **Live Link** for instant synchronization with your engine).
+3. **Step 1 - Import (Optional)**: If you have raw textures, point to the folder and click **"Import PBR Textures"** to auto-wire the shader graph, or import an existing engine project.
+4. **Step 2 - Add (Optional)**: Spawn vehicle/asset markers, cameras, lights, attachments, or interaction volumes using presets and geometry helpers.
+5. **Step 3 - Modify**: Click **"Clean Mesh"** to repair topology and **"Colliders"** to create game-ready physics hulls.
+6. **Step 4 - LODs**: Select your target engine preset (*Unreal Engine 5, Unity 6, MSFS 2024*), choose your target fidelity via **Visual Stability (SSE)**, and click **"Generate All LODs"**.
+7. **Inspect**: Click **"Live Simulator"** to orbit around your asset and watch LOD transitions dynamically, drag the **Virtual Distance** slider, or toggle **Side-by-Side** layout.
+8. **Step 5 - Export**: Set your target export directory and click **"Export"** to generate ready-to-import asset packages and shaders.
 
 ---
 
@@ -223,7 +228,7 @@ OmniMesh maintains a deterministic, strict CI quality gate covering automated un
 # Run CI verification (dependencies, linter, formatter, type checker, unit tests with coverage)
 python scripts/verify_ci.py
 
-# Run headless In-Blender integration tests (Blender 5.0+ & 5.2 LTS)
+# Run headless In-Blender integration tests (Blender 5.0+)
 python scripts/run_blender_tests.py
 
 # Run reproducible performance benchmarks

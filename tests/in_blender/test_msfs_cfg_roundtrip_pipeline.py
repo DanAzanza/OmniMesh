@@ -25,13 +25,13 @@ else:
 
 
 try:
-    from ui.msfs_camera_ops import find_cameras_collection
-    from ui.msfs_lighting_ops import find_lights_collection
-    from ui.msfs_spatial_ops import find_spatial_collection
+    from ui.vehicle_camera_ops import find_cameras_collection
+    from ui.vehicle_lighting_ops import find_lights_collection
+    from ui.vehicle_spatial_ops import find_spatial_collection
 except (ImportError, ValueError):
-    from ...ui.msfs_camera_ops import find_cameras_collection
-    from ...ui.msfs_lighting_ops import find_lights_collection
-    from ...ui.msfs_spatial_ops import find_spatial_collection
+    from ...ui.vehicle_camera_ops import find_cameras_collection
+    from ...ui.vehicle_lighting_ops import find_lights_collection
+    from ...ui.vehicle_spatial_ops import find_spatial_collection
 
 
 class TestMSFSCFGRoundtripPipeline(unittest.TestCase):
@@ -132,7 +132,7 @@ class TestMSFSCFGRoundtripPipeline(unittest.TestCase):
             bpy.context.view_layer.objects.active = marker
 
             ops: Any = cast(Any, bpy.ops).omnimesh
-            res_snap = ops.snap_msfs_point_to_vertex()
+            res_snap = ops.snap_vehicle_point_to_vertex()
             self.assertEqual(res_snap, {"FINISHED"})
 
             # Marker location should have snapped to one of the cube vertices (0.75, 0.75, 0.75 for size 1.5)
@@ -156,7 +156,7 @@ class TestMSFSCFGRoundtripPipeline(unittest.TestCase):
             bpy.context.view_layer.objects.active = center_marker
             center_marker.select_set(True)
 
-            res_center = ops.mirror_msfs_marker()
+            res_center = ops.mirror_vehicle_marker()
             self.assertEqual(res_center, {"CANCELLED"})
 
             # 2. Test valid bilateral pair: Left and Right markers
@@ -176,7 +176,7 @@ class TestMSFSCFGRoundtripPipeline(unittest.TestCase):
             bpy.context.view_layer.objects.active = left_marker
             left_marker.select_set(True)
 
-            res_mirror = ops.mirror_msfs_marker()
+            res_mirror = ops.mirror_vehicle_marker()
             self.assertEqual(res_mirror, {"FINISHED"})
             self.assertAlmostEqual(right_marker.location.x, 2.5, places=3)
 
@@ -323,7 +323,7 @@ class TestMSFSCFGRoundtripPipeline(unittest.TestCase):
                 self.assertEqual(res_import, {"FINISHED"})
 
                 # 2. Add an attachment hotspot
-                res_add = ops.add_msfs_attachment(
+                res_add = ops.add_vehicle_attachment(
                     alias="Garmin_G1000",
                     attachment_path="Submodels/Screen.xml",
                     attach_to_model="Interior",

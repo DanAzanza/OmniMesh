@@ -69,7 +69,7 @@ if not TYPE_CHECKING and Vector is None:
 
 try:
     from ..core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
-    from ..core.msfs.preset_spawner import ConfigPresetSpawner
+    from ..core.preset_spawner import ConfigPresetSpawner
     from .utils import (
         get_asset_base_meshes,
         get_or_create_engine_import_collection,
@@ -78,7 +78,7 @@ try:
     )
 except (ImportError, ValueError):
     from core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
-    from core.msfs.preset_spawner import ConfigPresetSpawner
+    from core.preset_spawner import ConfigPresetSpawner
     from ui.utils import (
         get_asset_base_meshes,
         get_or_create_engine_import_collection,
@@ -88,12 +88,12 @@ except (ImportError, ValueError):
 
 
 class OMNIMESH_OT_add_config_preset(Operator):
-    """Adds missing MSFS configuration objects (spatial, lights, cameras, engines, exits) from preset."""
+    """Adds missing vehicle configuration objects (spatial, lights, cameras, engines, exits) from preset."""
 
     bl_idname = "omnimesh.add_config_preset"
     bl_label = "Add Config Objects"
     bl_description = (
-        "Adds missing MSFS configuration markers (Spatial, Lights, Cameras) to the active asset. "
+        "Adds missing vehicle configuration markers (Spatial, Lights, Cameras) to the active asset. "
         "Positions are automatically scaled and anchored to the active model geometry without overwriting existing objects."
     )
     bl_options = {"REGISTER", "UNDO"}

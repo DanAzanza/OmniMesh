@@ -7,40 +7,18 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import ui.engine_import_ops as eng_ops_mod
-import ui.msfs_attachment_ops as att_ops_mod
-import ui.msfs_camera_ops as cam_ops_mod
-import ui.msfs_lighting_ops as lit_ops_mod
-import ui.msfs_spatial_ops as spat_ops_mod
 import ui.pbr_preset_ops as pbr_ops_mod
 import ui.popover_presets as pop_mod
+import ui.vehicle_attachment_ops as att_ops_mod
+import ui.vehicle_camera_ops as cam_ops_mod
+import ui.vehicle_lighting_ops as lit_ops_mod
+import ui.vehicle_spatial_ops as spat_ops_mod
 from ui.engine_import_ops import (
     OMNIMESH_OT_create_engine_import_preset,
     OMNIMESH_OT_delete_engine_import_preset,
     OMNIMESH_OT_duplicate_engine_import_preset,
     OMNIMESH_OT_import_engine_project,
     OMNIMESH_OT_rename_engine_import_preset,
-)
-from ui.msfs_attachment_ops import (
-    OMNIMESH_OT_add_msfs_attachment,
-    find_attachments_collection,
-    find_mounting_socket_node,
-    get_or_create_attachments_collection,
-)
-from ui.msfs_camera_ops import (
-    OMNIMESH_OT_align_msfs_camera_to_view,
-    OMNIMESH_OT_look_through_msfs_camera,
-    OMNIMESH_OT_restore_scene_camera,
-    find_cameras_collection,
-    get_or_create_cameras_collection,
-)
-from ui.msfs_lighting_ops import (
-    find_lights_collection,
-    get_or_create_lights_collection,
-)
-from ui.msfs_spatial_ops import (
-    OMNIMESH_OT_mirror_msfs_marker,
-    find_spatial_collection,
-    get_or_create_spatial_collection,
 )
 from ui.pbr_preset_ops import (
     LOD_OT_create_export_preset,
@@ -62,6 +40,28 @@ from ui.popover_presets import (
     OMNIMESH_PT_popover_export_preset,
     OMNIMESH_PT_popover_import_preset,
     OMNIMESH_PT_popover_lod_preset,
+)
+from ui.vehicle_attachment_ops import (
+    OMNIMESH_OT_add_vehicle_attachment,
+    find_attachments_collection,
+    find_mounting_socket_node,
+    get_or_create_attachments_collection,
+)
+from ui.vehicle_camera_ops import (
+    OMNIMESH_OT_align_vehicle_camera_to_view,
+    OMNIMESH_OT_look_through_vehicle_camera,
+    OMNIMESH_OT_restore_scene_camera,
+    find_cameras_collection,
+    get_or_create_cameras_collection,
+)
+from ui.vehicle_lighting_ops import (
+    find_lights_collection,
+    get_or_create_lights_collection,
+)
+from ui.vehicle_spatial_ops import (
+    OMNIMESH_OT_mirror_vehicle_marker,
+    find_spatial_collection,
+    get_or_create_spatial_collection,
 )
 
 
@@ -362,7 +362,7 @@ def test_msfs_spatial_camera_attachment_and_lighting_ops() -> None:
         find_spatial_collection(ctx, "C172")
         get_or_create_spatial_collection(ctx, "C172")
 
-        op_mir = OMNIMESH_OT_mirror_msfs_marker()
+        op_mir = OMNIMESH_OT_mirror_vehicle_marker()
         op_mir.report = MagicMock()
 
         marker: dict[str, Any] = {
@@ -390,7 +390,7 @@ def test_msfs_spatial_camera_attachment_and_lighting_ops() -> None:
         new_mir.name = "Wheel_Right"
         fake_bpy.data.objects.new.return_value = new_mir
         assert op_mir.execute(ctx) == {"FINISHED"}
-        assert OMNIMESH_OT_mirror_msfs_marker._compute_mirrored_name("Nav_Port") == "Nav_Stbd"
+        assert OMNIMESH_OT_mirror_vehicle_marker._compute_mirrored_name("Nav_Port") == "Nav_Stbd"
 
     # 2. Camera look-through, restore, and align to view
     with patch.object(cam_ops_mod, "bpy", fake_bpy):
@@ -414,13 +414,13 @@ def test_msfs_spatial_camera_attachment_and_lighting_ops() -> None:
         ctx.scene.__contains__.side_effect = lambda k: k in scene_dict
         ctx.scene.get.side_effect = lambda k, d=None: scene_dict.get(k, d)
 
-        op_look = OMNIMESH_OT_look_through_msfs_camera()
+        op_look = OMNIMESH_OT_look_through_vehicle_camera()
         op_look.report = MagicMock()
-        assert OMNIMESH_OT_look_through_msfs_camera.poll(ctx) is True
+        assert OMNIMESH_OT_look_through_vehicle_camera.poll(ctx) is True
         assert op_look.execute(ctx) == {"FINISHED"}
         assert space.region_3d.view_perspective == "CAMERA"
 
-        op_align = OMNIMESH_OT_align_msfs_camera_to_view()
+        op_align = OMNIMESH_OT_align_vehicle_camera_to_view()
         op_align.report = MagicMock()
         assert op_align.execute(ctx) == {"FINISHED"}
 
@@ -443,7 +443,7 @@ def test_msfs_spatial_camera_attachment_and_lighting_ops() -> None:
         assert found_obj is sock_obj and found_bone is None
 
         ctx.active_object = sock_obj
-        op_add_att = OMNIMESH_OT_add_msfs_attachment()
+        op_add_att = OMNIMESH_OT_add_vehicle_attachment()
         op_add_att.alias = "G1000"
         op_add_att.attachment_path = "model/g1000.xml"
         op_add_att.attach_to_model = "Interior"

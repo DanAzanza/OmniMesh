@@ -27,15 +27,6 @@ from .transforms import (
 )
 from .camera_cst import MSFSCameraCST, detect_file_format
 from .cst_parser import MSFSCSTParser
-from .geometry import (
-    EXCLUDED_OBJECT_PATTERN,
-    SCRAPE_CLASS_2_DEFAULTS,
-    collect_airframe_vertices,
-    detect_airframe_extrema,
-    extract_world_vertices_numpy,
-    format_class_2_scrape_tokens,
-    is_structural_airframe_object,
-)
 from .project_scanner import (
     MSFSLODInfo,
     MSFSModelTargetInfo,
@@ -55,7 +46,6 @@ __all__ = [
     "CameraConfigFile",
     "CameraDefinition",
     "ModelXMLMerger",
-    "EXCLUDED_OBJECT_PATTERN",
     "LightPoint",
     "MSFSCameraCST",
     "MSFSCSTParser",
@@ -63,21 +53,15 @@ __all__ = [
     "MSFSModelTargetInfo",
     "MSFSProjectManifest",
     "MSFSProjectScanner",
-    "SCRAPE_CLASS_2_DEFAULTS",
     "SpatialPoint",
     "blender_focal_length_to_msfs_zoom",
     "blender_rotation_to_msfs_pbh",
     "detect_file_format",
     "blender_to_msfs",
-    "collect_airframe_vertices",
-    "detect_airframe_extrema",
-    "extract_world_vertices_numpy",
     "FEET_TO_METERS",
     "METERS_TO_FEET",
     "find_package_root",
-    "format_class_2_scrape_tokens",
     "format_coordinate_float",
-    "is_structural_airframe_object",
     "mirror_pbh_rotation",
     "mirror_spatial_coords",
     "msfs_pbh_to_blender_rotation",

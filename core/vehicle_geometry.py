@@ -1,12 +1,12 @@
 # -----------------------------------------------------------------------------
-# OmniMesh - MSFS Geometry Analysis & Feature Extraction
+# OmniMesh - Vehicle Geometry Analysis & Feature Extraction
 # -----------------------------------------------------------------------------
 
-"""Geometry processing routines for MSFS aircraft models.
+"""Geometry processing routines for vehicle and airframe models.
 
 Provides vectorized NumPy vertex extraction, semantic object filtering to ignore
-propellers, antennas, and static wicks, extreme airframe boundary detection
-(wingtips, nose, tail, keel, vertical fin), and Class 2 scrape point formatting.
+propellers, antennas, and static wicks, extreme airframe and ground-vehicle boundary
+detection, wheel submesh matching, and Class 2 scrape point formatting.
 """
 
 from __future__ import annotations

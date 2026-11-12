@@ -396,13 +396,13 @@ def run_all_tests():
     # =========================================================================
     t0 = time.time()
     try:
-        # Add MSFS attachment marker
-        res_att = bpy.ops.omnimesh.add_msfs_attachment()
-        assert res_att == {"FINISHED"}, f"add_msfs_attachment returned {res_att}"
+        # Add vehicle attachment marker
+        res_att = bpy.ops.omnimesh.add_vehicle_attachment()
+        assert res_att == {"FINISHED"}, f"add_vehicle_attachment returned {res_att}"
 
         # Generate scrape points
-        res_scrape = bpy.ops.omnimesh.generate_msfs_scrape_points()
-        assert res_scrape == {"FINISHED"}, f"generate_msfs_scrape_points returned {res_scrape}"
+        res_scrape = bpy.ops.omnimesh.generate_vehicle_scrape_points()
+        assert res_scrape == {"FINISHED"}, f"generate_vehicle_scrape_points returned {res_scrape}"
 
         # Copy authentic flight_model.cfg to temp folder to test sync
         msfs_cfg_dir = os.path.join(temp_export_dir, "msfs_configs")

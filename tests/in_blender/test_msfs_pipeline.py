@@ -40,7 +40,7 @@ class TestMSFSPipeline(unittest.TestCase):
 
             # 1. Generate scrape points
             ops: Any = cast(Any, bpy.ops).omnimesh
-            res_scrape = ops.generate_msfs_scrape_points()
+            res_scrape = ops.generate_vehicle_scrape_points()
             self.assertEqual(res_scrape, {"FINISHED"})
 
             spatial_col = next(
@@ -92,8 +92,8 @@ class TestMSFSPipeline(unittest.TestCase):
             bpy.context.view_layer.objects.active = cam_obj
 
             ops: Any = cast(Any, bpy.ops).omnimesh
-            self.assertEqual(ops.look_through_msfs_camera(), {"FINISHED"})
-            self.assertIn(ops.align_msfs_camera_to_view(), ({"FINISHED"}, {"CANCELLED"}))
+            self.assertEqual(ops.look_through_vehicle_camera(), {"FINISHED"})
+            self.assertIn(ops.align_vehicle_camera_to_view(), ({"FINISHED"}, {"CANCELLED"}))
             self.assertEqual(ops.restore_scene_camera(), {"FINISHED"})
 
 

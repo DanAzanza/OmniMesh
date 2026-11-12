@@ -415,12 +415,12 @@ class OMNIMESH_OT_export_msfs_attachments(Operator):
             return {"CANCELLED"}
 
 
-class OMNIMESH_OT_add_msfs_attachment(Operator):
+class OMNIMESH_OT_add_vehicle_attachment(Operator):
     """Spawns a new modular attachment hotspot Empty at 3D cursor or active socket node."""
 
-    bl_idname = "omnimesh.add_msfs_attachment"
+    bl_idname = "omnimesh.add_vehicle_attachment"
     bl_label = "Add Attachment Hotspot"
-    bl_description = "Spawn a new attachment Empty with standard MSFS 2024 modular attachment properties"
+    bl_description = "Spawn a new modular attachment Empty with socket and attach properties"
     bl_options = {"REGISTER", "UNDO"}
 
     alias: StringProperty(name="Alias", default="Instrument")
@@ -493,7 +493,7 @@ class OMNIMESH_OT_add_msfs_attachment(Operator):
 classes = (
     OMNIMESH_OT_import_msfs_attachments,
     OMNIMESH_OT_export_msfs_attachments,
-    OMNIMESH_OT_add_msfs_attachment,
+    OMNIMESH_OT_add_vehicle_attachment,
 )
 
 
@@ -524,7 +524,7 @@ def unregister():
 __all__ = [
     "OMNIMESH_OT_import_msfs_attachments",
     "OMNIMESH_OT_export_msfs_attachments",
-    "OMNIMESH_OT_add_msfs_attachment",
+    "OMNIMESH_OT_add_vehicle_attachment",
     "find_attachments_collection",
     "get_or_create_attachments_collection",
     "register",

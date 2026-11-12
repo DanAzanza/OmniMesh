@@ -454,12 +454,12 @@ class OMNIMESH_OT_export_msfs_cameras(Operator):
         return {"FINISHED"}
 
 
-class OMNIMESH_OT_look_through_msfs_camera(Operator):
-    """Switches Blender viewport to look through the active MSFS camera."""
+class OMNIMESH_OT_look_through_vehicle_camera(Operator):
+    """Switches Blender viewport to look through the active vehicle camera."""
 
-    bl_idname = "omnimesh.look_through_msfs_camera"
-    bl_label = "Look Through MSFS Camera"
-    bl_description = "Set active MSFS camera as active scene camera and view through it"
+    bl_idname = "omnimesh.look_through_vehicle_camera"
+    bl_label = "Look Through Camera"
+    bl_description = "Set active vehicle/config camera as active scene camera and view through it"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -539,12 +539,12 @@ class OMNIMESH_OT_restore_scene_camera(Operator):
         return {"FINISHED"}
 
 
-class OMNIMESH_OT_align_msfs_camera_to_view(Operator):
-    """Aligns the selected MSFS camera directly to current 3D viewport position and orientation."""
+class OMNIMESH_OT_align_vehicle_camera_to_view(Operator):
+    """Aligns the selected vehicle camera directly to current 3D viewport position and orientation."""
 
-    bl_idname = "omnimesh.align_msfs_camera_to_view"
-    bl_label = "Align MSFS Camera to View"
-    bl_description = "Copies current 3D viewport perspective and position into active MSFS camera"
+    bl_idname = "omnimesh.align_vehicle_camera_to_view"
+    bl_label = "Align Camera to View"
+    bl_description = "Copies current 3D viewport perspective and position into active vehicle camera"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -593,9 +593,9 @@ class OMNIMESH_OT_align_msfs_camera_to_view(Operator):
 classes = (
     OMNIMESH_OT_import_msfs_cameras,
     OMNIMESH_OT_export_msfs_cameras,
-    OMNIMESH_OT_look_through_msfs_camera,
+    OMNIMESH_OT_look_through_vehicle_camera,
     OMNIMESH_OT_restore_scene_camera,
-    OMNIMESH_OT_align_msfs_camera_to_view,
+    OMNIMESH_OT_align_vehicle_camera_to_view,
 )
 
 

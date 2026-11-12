@@ -467,11 +467,11 @@ def test_operator_classes_type_hints_clean():
         config_preset_ops,
         engine_import_ops,
         hull_impostor_ops,
-        msfs_camera_ops,
-        msfs_lighting_ops,
-        msfs_spatial_ops,
         operators,
         setup_ops,
+        vehicle_camera_ops,
+        vehicle_lighting_ops,
+        vehicle_spatial_ops,
     )
 
     tested = 0
@@ -479,9 +479,9 @@ def test_operator_classes_type_hints_clean():
         operators,
         config_preset_ops,
         engine_import_ops,
-        msfs_camera_ops,
-        msfs_lighting_ops,
-        msfs_spatial_ops,
+        vehicle_camera_ops,
+        vehicle_lighting_ops,
+        vehicle_spatial_ops,
         setup_ops,
         cleanup_ops,
         chunk_ops,

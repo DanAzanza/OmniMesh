@@ -383,7 +383,7 @@ def test_smart_replace_and_autofit_geometry(monkeypatch: pytest.MonkeyPatch):
     and replaces existing objects cleanly without duplicates.
     """
     import numpy as np
-    from core.msfs.preset_spawner import ConfigPresetSpawner
+    from core.preset_spawner import ConfigPresetSpawner
 
     mock_context = MagicMock()
     mock_bpy = MagicMock()
@@ -422,7 +422,7 @@ def test_smart_replace_and_autofit_geometry(monkeypatch: pytest.MonkeyPatch):
             return np.array(pts, dtype=np.float32)
         return np.empty((0, 3), dtype=np.float32)
 
-    monkeypatch.setattr("core.msfs.geometry.extract_world_vertices_numpy", _mock_extract)
+    monkeypatch.setattr("core.vehicle_geometry.extract_world_vertices_numpy", _mock_extract)
 
     # Collections
     spatial_objs: list[Any] = []

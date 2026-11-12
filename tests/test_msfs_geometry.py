@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from core.msfs.cst_parser import MSFSCSTParser
-from core.msfs.geometry import (
+from core.vehicle_geometry import (
     detect_airframe_extrema,
     format_class_2_scrape_tokens,
     is_structural_airframe_object,

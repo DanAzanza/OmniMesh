@@ -401,12 +401,12 @@ class OMNIMESH_OT_export_msfs_spatial(Operator):
         return {"FINISHED"}
 
 
-class OMNIMESH_OT_snap_msfs_point_to_vertex(Operator):
-    """Snaps the active MSFS marker empty directly to the nearest vertex of selected mesh geometry."""
+class OMNIMESH_OT_snap_vehicle_point_to_vertex(Operator):
+    """Snaps the active marker empty directly to the nearest vertex of selected mesh geometry."""
 
-    bl_idname = "omnimesh.snap_msfs_point_to_vertex"
+    bl_idname = "omnimesh.snap_vehicle_point_to_vertex"
     bl_label = "Snap Marker to Nearest Vertex"
-    bl_description = "Snap the active MSFS marker empty to the nearest vertex of the active mesh object"
+    bl_description = "Snap the active spatial marker empty to the nearest vertex of the active mesh object"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -475,10 +475,10 @@ class OMNIMESH_OT_snap_msfs_point_to_vertex(Operator):
             eval_mesh_obj.to_mesh_clear()
 
 
-class OMNIMESH_OT_mirror_msfs_marker(Operator):
-    """Reflects the active MSFS marker across the longitudinal symmetry plane (X=0) to its counterpart."""
+class OMNIMESH_OT_mirror_vehicle_marker(Operator):
+    """Reflects the active marker across the longitudinal symmetry plane (X=0) to its counterpart."""
 
-    bl_idname = "omnimesh.mirror_msfs_marker"
+    bl_idname = "omnimesh.mirror_vehicle_marker"
     bl_label = "Mirror Selected Marker (L ↔ R)"
     bl_description = "Reflects active contact point, tank, or light across the sagittal plane (X=0) to counterpart"
     bl_options = {"REGISTER", "UNDO"}
@@ -597,8 +597,8 @@ class OMNIMESH_OT_mirror_msfs_marker(Operator):
 classes = (
     OMNIMESH_OT_import_msfs_spatial,
     OMNIMESH_OT_export_msfs_spatial,
-    OMNIMESH_OT_snap_msfs_point_to_vertex,
-    OMNIMESH_OT_mirror_msfs_marker,
+    OMNIMESH_OT_snap_vehicle_point_to_vertex,
+    OMNIMESH_OT_mirror_vehicle_marker,
 )
 
 

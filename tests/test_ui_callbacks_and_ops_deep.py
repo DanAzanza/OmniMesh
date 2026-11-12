@@ -465,8 +465,8 @@ def test_engine_import_helpers_deep(tmp_path) -> None:
         patch.object(engine_import_helpers, "get_or_create_engine_import_collection", return_value=col_mock),
         patch.object(engine_import_helpers.MSFSCSTParser, "parse_file", side_effect=[parsed_fm, parsed_lights]),
         patch.object(engine_import_helpers.MSFSCSTParser, "parse_cameras_file", return_value=parsed_cams),
-        patch("ui.msfs_lighting_ops.OMNIMESH_OT_import_msfs_lights._ensure_light_object"),
-        patch("ui.msfs_attachment_ops.OMNIMESH_OT_import_msfs_attachments") as mock_att_cls,
+        patch("ui.vehicle_lighting_ops.OMNIMESH_OT_import_msfs_lights._ensure_light_object"),
+        patch("ui.vehicle_attachment_ops.OMNIMESH_OT_import_msfs_attachments") as mock_att_cls,
     ):
         mock_att_inst = mock_att_cls.return_value
         mock_att_inst.execute.return_value = {"FINISHED"}
@@ -556,10 +556,10 @@ def test_lod_preset_ops_deep(tmp_path) -> None:
         assert lod_preset_ops.LOD_OT_capture_scene_tiers.execute(op_cap, ctx) == {"FINISHED"}
 
 
-def test_msfs_ground_ops_deep(tmp_path) -> None:
-    """Exercise OMNIMESH_OT_generate_msfs_scrape_points and OMNIMESH_OT_align_gear_ground_level."""
+def test_vehicle_ground_ops_deep(tmp_path) -> None:
+    """Exercise OMNIMESH_OT_generate_vehicle_scrape_points and OMNIMESH_OT_align_gear_ground_level."""
     import numpy as np
-    from ui import msfs_ground_ops
+    from ui import vehicle_ground_ops
 
     mock_bpy = MagicMock()
     ctx = MagicMock()
@@ -611,19 +611,19 @@ def test_msfs_ground_ops_deep(tmp_path) -> None:
     )
 
     with (
-        patch.object(msfs_ground_ops, "bpy", mock_bpy),
-        patch.object(msfs_ground_ops, "get_or_create_spatial_collection", return_value=col_mock),
-        patch.object(msfs_ground_ops, "find_spatial_collection", return_value=col_mock),
-        patch.object(msfs_ground_ops, "collect_airframe_vertices", return_value=verts),
-        patch.object(msfs_ground_ops, "extract_world_vertices_numpy", return_value=verts),
-        patch.object(msfs_ground_ops.MSFSCSTParser, "parse_file", return_value=MagicMock()),
-        patch.object(msfs_ground_ops.MSFSCSTParser, "update_scalar_param", return_value=str(cfg_file) + ".bak"),
+        patch.object(vehicle_ground_ops, "bpy", mock_bpy),
+        patch.object(vehicle_ground_ops, "get_or_create_spatial_collection", return_value=col_mock),
+        patch.object(vehicle_ground_ops, "find_spatial_collection", return_value=col_mock),
+        patch.object(vehicle_ground_ops, "collect_airframe_vertices", return_value=verts),
+        patch.object(vehicle_ground_ops, "extract_world_vertices_numpy", return_value=verts),
+        patch.object(vehicle_ground_ops.MSFSCSTParser, "parse_file", return_value=MagicMock()),
+        patch.object(vehicle_ground_ops.MSFSCSTParser, "update_scalar_param", return_value=str(cfg_file) + ".bak"),
     ):
         op_scrape = MagicMock()
-        assert msfs_ground_ops.OMNIMESH_OT_generate_msfs_scrape_points.execute(op_scrape, ctx) == {"FINISHED"}
+        assert vehicle_ground_ops.OMNIMESH_OT_generate_vehicle_scrape_points.execute(op_scrape, ctx) == {"FINISHED"}
 
         op_gear = MagicMock()
-        assert msfs_ground_ops.OMNIMESH_OT_align_gear_ground_level.execute(op_gear, ctx) == {"FINISHED"}
+        assert vehicle_ground_ops.OMNIMESH_OT_align_gear_ground_level.execute(op_gear, ctx) == {"FINISHED"}
 
 
 def test_callbacks_custom_export_preset_target_engine_update(monkeypatch):

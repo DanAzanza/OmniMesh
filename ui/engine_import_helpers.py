@@ -178,7 +178,7 @@ def import_lighting_points(
     )
     if lights_col:
         try:
-            from .msfs_lighting_ops import OMNIMESH_OT_import_msfs_lights
+            from .vehicle_lighting_ops import OMNIMESH_OT_import_msfs_lights
 
             cfg_lights = MSFSCSTParser.parse_file(manifest.systems_cfg_path)
             datum = datum_empty or bpy.data.objects.get("Datum") or bpy.data.objects.get("MSFS_Datum")
@@ -325,7 +325,7 @@ def import_attachments(context: Any, manifest: Any) -> int:
     if not manifest.attached_objects_cfg_path or not os.path.isfile(manifest.attached_objects_cfg_path):
         return 0
     try:
-        from .msfs_attachment_ops import OMNIMESH_OT_import_msfs_attachments
+        from .vehicle_attachment_ops import OMNIMESH_OT_import_msfs_attachments
 
         att_op = OMNIMESH_OT_import_msfs_attachments()
         att_op.filepath = manifest.attached_objects_cfg_path

@@ -1,6 +1,6 @@
 """
-OmniMesh MSFS Config Preset Spawning Subsystem.
-Instantiates MSFS spatial markers, lights, cameras, exits, and engines from preset definitions
+OmniMesh Vehicle & Asset Config Preset Spawning Subsystem.
+Instantiates vehicle spatial markers, lights, cameras, exits, and engines from preset definitions
 into the active asset collection hierarchy ({AssetName}_Config -> _Spatial, _Lights, _Cameras).
 """
 
@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 logger = logging.getLogger(__name__)
 
-from ..compat import Vector
+from .compat import Vector
 from .preset_anchor import compute_preset_anchor_position
 
 if TYPE_CHECKING:
@@ -299,7 +299,7 @@ class ConfigPresetSpawner:
         for item in items:
             i_name = item.get("name", "Interaction")
             try:
-                from ..interaction_volumes import create_interaction_volume
+                from .interaction_volumes import create_interaction_volume
 
                 create_interaction_volume(
                     context=context,
@@ -463,7 +463,7 @@ class ConfigPresetSpawner:
 
         mesh_fn = get_base_meshes_fn
         if not mesh_fn:
-            from ..asset_scanner import get_asset_base_meshes as _get_base_meshes
+            from .asset_scanner import get_asset_base_meshes as _get_base_meshes
 
             def _default_mesh_fn(ctx: bpy.types.Context | None, name: str) -> list[bpy.types.Object]:
                 return _get_base_meshes(ctx, name, blend_data=blend_data)
@@ -472,7 +472,7 @@ class ConfigPresetSpawner:
 
         col_fn = get_import_collection_fn
         if not col_fn:
-            from ..hierarchy import get_or_create_engine_import_collection as _get_import_col
+            from .hierarchy import get_or_create_engine_import_collection as _get_import_col
 
             def _default_col_fn(
                 ctx: bpy.types.Context | bpy.types.Scene | None, name: str, role: str
@@ -481,14 +481,14 @@ class ConfigPresetSpawner:
 
             col_fn = _default_col_fn
 
-        from .geometry import (
+        from .vehicle_geometry import (
             detect_airframe_extrema,
             detect_ground_vehicle_extrema,
             detect_wheel_submeshes,
             extract_world_vertices_numpy,
         )
 
-        from ..hierarchy import safe_remove_collection_objects
+        from .hierarchy import safe_remove_collection_objects
 
         # 1. Inspect geometry extrema & detected wheels
         base_meshes = mesh_fn(context, asset_name)

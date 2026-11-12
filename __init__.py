@@ -60,6 +60,8 @@ if __package__:
         pbr_presets,
         pivot,
         png_writer,
+        preset_anchor,
+        preset_spawner,
         rigging,
         sanitizer,
         shader_tracer,
@@ -68,6 +70,7 @@ if __package__:
         texture_pool,
         textures,
         topology_repair,
+        vehicle_geometry,
     )
     from .exporters import (
         base as exporter_base,
@@ -92,11 +95,6 @@ if __package__:
         lists,
         lod_ops,
         lod_preset_ops,
-        msfs_attachment_ops,
-        msfs_camera_ops,
-        msfs_ground_ops,
-        msfs_lighting_ops,
-        msfs_spatial_ops,
         operators,
         panel,
         pbr_map_ops,
@@ -109,6 +107,11 @@ if __package__:
         setup_ops,
         simulator_ops,
         utils,
+        vehicle_attachment_ops,
+        vehicle_camera_ops,
+        vehicle_ground_ops,
+        vehicle_lighting_ops,
+        vehicle_spatial_ops,
     )
 else:
     from core import (
@@ -144,6 +147,8 @@ else:
         pbr_presets,
         pivot,
         png_writer,
+        preset_anchor,
+        preset_spawner,
         rigging,
         sanitizer,
         shader_tracer,
@@ -152,6 +157,7 @@ else:
         texture_pool,
         textures,
         topology_repair,
+        vehicle_geometry,
     )
     from exporters import (
         base as exporter_base,
@@ -176,11 +182,6 @@ else:
         lists,
         lod_ops,
         lod_preset_ops,
-        msfs_attachment_ops,
-        msfs_camera_ops,
-        msfs_ground_ops,
-        msfs_lighting_ops,
-        msfs_spatial_ops,
         operators,
         panel,
         pbr_map_ops,
@@ -193,6 +194,11 @@ else:
         setup_ops,
         simulator_ops,
         utils,
+        vehicle_attachment_ops,
+        vehicle_camera_ops,
+        vehicle_ground_ops,
+        vehicle_lighting_ops,
+        vehicle_spatial_ops,
     )
 
 # Dynamic reloading for live development sessions
@@ -245,7 +251,10 @@ if _OMNIMESH_RELOAD:
         interaction_volumes,
         material_presets,
         msfs,
+        preset_anchor,
+        preset_spawner,
         simulator,
+        vehicle_geometry,
     ):
         importlib.reload(mod)
 
@@ -283,11 +292,11 @@ if _OMNIMESH_RELOAD:
         panel,
         simulator_ops,
         engine_import_ops,
-        msfs_spatial_ops,
-        msfs_ground_ops,
-        msfs_lighting_ops,
-        msfs_camera_ops,
-        msfs_attachment_ops,
+        vehicle_spatial_ops,
+        vehicle_ground_ops,
+        vehicle_lighting_ops,
+        vehicle_camera_ops,
+        vehicle_attachment_ops,
         setup_ops,
     ):
         importlib.reload(mod)
@@ -300,11 +309,11 @@ def register():
     config_preset_ops.register()
     interaction_ops.register()
     engine_import_ops.register()
-    msfs_spatial_ops.register()
-    msfs_ground_ops.register()
-    msfs_lighting_ops.register()
-    msfs_camera_ops.register()
-    msfs_attachment_ops.register()
+    vehicle_spatial_ops.register()
+    vehicle_ground_ops.register()
+    vehicle_lighting_ops.register()
+    vehicle_camera_ops.register()
+    vehicle_attachment_ops.register()
     setup_ops.register()
     panel.register_panel()
     simulator_ops.register_simulator_ops()
@@ -317,11 +326,11 @@ def unregister():
         simulator_ops.unregister_simulator_ops,
         panel.unregister_panel,
         setup_ops.unregister,
-        msfs_attachment_ops.unregister,
-        msfs_camera_ops.unregister,
-        msfs_lighting_ops.unregister,
-        msfs_ground_ops.unregister,
-        msfs_spatial_ops.unregister,
+        vehicle_attachment_ops.unregister,
+        vehicle_camera_ops.unregister,
+        vehicle_lighting_ops.unregister,
+        vehicle_ground_ops.unregister,
+        vehicle_spatial_ops.unregister,
         engine_import_ops.unregister,
         interaction_ops.unregister,
         config_preset_ops.unregister,

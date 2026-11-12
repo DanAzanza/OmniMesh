@@ -1,12 +1,12 @@
 """
-OmniMesh MSFS Config Preset Anchor Geometry Positioning Engine.
+OmniMesh Vehicle Config Preset Anchor Geometry Positioning Engine.
 Computes world-space anchor locations from normalized bounding box dimensions and detected wheel contact points.
 """
 
 from __future__ import annotations
 
 
-from ..compat import Vector
+from .compat import Vector
 
 
 def compute_preset_anchor_position(

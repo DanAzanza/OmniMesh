@@ -1,6 +1,6 @@
 # pyright: reportInvalidTypeForm=none
 """
-MSFS Airframe Geometry & Ground Level Alignment Operators.
+Vehicle Airframe Geometry & Ground Level Alignment Operators.
 Provides operators for auto-generating Class 2 scrape points and aligning
 landing gear contact points to tire contact patches with static CG height calculation.
 """
@@ -31,14 +31,14 @@ else:
 
 try:
     from ..core.msfs.cst_parser import MSFSCSTParser
-    from ..core.msfs.geometry import (
+    from ..core.msfs.transforms import METERS_TO_FEET
+    from ..core.vehicle_geometry import (
         collect_airframe_vertices,
         detect_airframe_extrema,
         extract_world_vertices_numpy,
         format_class_2_scrape_tokens,
     )
-    from ..core.msfs.transforms import METERS_TO_FEET
-    from .msfs_spatial_ops import (
+    from .vehicle_spatial_ops import (
         COLLECTION_NAME,
         DATUM_POINT_ID,
         find_spatial_collection,
@@ -46,15 +46,15 @@ try:
     )
 except (ImportError, ValueError):
     from core.msfs.cst_parser import MSFSCSTParser
-    from core.msfs.geometry import (
+    from core.msfs.transforms import METERS_TO_FEET
+    from core.vehicle_geometry import (
         collect_airframe_vertices,
         detect_airframe_extrema,
         extract_world_vertices_numpy,
         format_class_2_scrape_tokens,
     )
-    from core.msfs.transforms import METERS_TO_FEET
 
-    from .msfs_spatial_ops import (
+    from .vehicle_spatial_ops import (
         COLLECTION_NAME,
         DATUM_POINT_ID,
         find_spatial_collection,
@@ -64,10 +64,10 @@ except (ImportError, ValueError):
 logger = logging.getLogger(__name__)
 
 
-class OMNIMESH_OT_generate_msfs_scrape_points(Operator):
+class OMNIMESH_OT_generate_vehicle_scrape_points(Operator):
     """Automatically analyzes airframe mesh geometry to detect extreme boundary points for Class 2 scrape points."""
 
-    bl_idname = "omnimesh.generate_msfs_scrape_points"
+    bl_idname = "omnimesh.generate_vehicle_scrape_points"
     bl_label = "Auto-Generate Scrape Points"
     bl_description = "Vectorized geometry analysis to compute Wingtips, Nose, Tail, Keel, and Fin scrape points"
     bl_options = {"REGISTER", "UNDO"}
@@ -334,7 +334,7 @@ class OMNIMESH_OT_align_gear_ground_level(Operator):
 
 
 classes = (
-    OMNIMESH_OT_generate_msfs_scrape_points,
+    OMNIMESH_OT_generate_vehicle_scrape_points,
     OMNIMESH_OT_align_gear_ground_level,
 )
 
