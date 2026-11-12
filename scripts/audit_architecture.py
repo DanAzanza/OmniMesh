@@ -28,7 +28,7 @@ HASATTR_RATCHET_BASELINE = 83
 GETATTR_RATCHET_BASELINE = 180
 
 # Monotonic ratchet baseline for log-only exception handlers in core/ and exporters/
-LOG_ONLY_EXCEPT_RATCHET_BASELINE = 230
+LOG_ONLY_EXCEPT_RATCHET_BASELINE = 228
 
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }

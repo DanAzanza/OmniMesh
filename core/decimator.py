@@ -181,8 +181,9 @@ class MeshDecimator:
             bm.edges.index_update()
             bm.faces.index_update()
             bm.normal_update()
-        except (RuntimeError, ValueError) as exc:
-            logger.debug("Planar limited dissolve exception: %s", exc)
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            logger.error("Planar limited dissolve failed: %s", exc)
+            raise DecimationError(f"Planar limited dissolve operation failed: {exc}") from exc
 
     @staticmethod
     def inject_curvature_weights(
@@ -318,7 +319,8 @@ class MeshDecimator:
                 dvert = vert[dvert_lay]
                 dvert[vg_idx] = final_weight
             except (RuntimeError, ValueError, TypeError, KeyError) as exc:
-                logger.debug("Error assigning deform weight: %s", exc)
+                logger.error("Failed assigning curvature deform weight to vertex %d: %s", vert.index, exc)
+                raise DecimationError(f"Deform weight assignment failed for vertex {vert.index}: {exc}") from exc
 
     @staticmethod
     def lock_chunk_boundaries(obj: bpy.types.Object | None, group_name: str = "OMNIMESH_SEAM_LOCKED") -> set[int]:

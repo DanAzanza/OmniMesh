@@ -95,6 +95,26 @@ def test_apply_planar_limited_dissolve_null_or_zero():
     MeshDecimator.apply_planar_limited_dissolve(mock_bm, 0.5)
 
 
+def test_apply_planar_limited_dissolve_failure_raises(monkeypatch):
+    """Verify planar limited dissolve failure raises typed DecimationError."""
+    mock_bmesh = MagicMock()
+    mock_bmesh.ops.dissolve_limit.side_effect = RuntimeError("BMesh internal dissolve fault")
+    monkeypatch.setattr("core.decimator.bmesh", mock_bmesh)
+
+    bm = MagicMock()
+    bm.verts = MagicMock()
+    bm.edges = MagicMock()
+    bm.faces = MagicMock()
+    bm.faces.__len__.return_value = 4
+    bm.edges.__len__.return_value = 6
+    bm.edges.__getitem__.return_value = []
+    bm.verts.__getitem__.return_value = []
+
+    with pytest.raises(DecimationError) as exc_info:
+        MeshDecimator.apply_planar_limited_dissolve(bm, 0.5)
+    assert "BMesh internal dissolve fault" in str(exc_info.value)
+
+
 def test_inject_curvature_weights_null_and_mock():
     MeshDecimator.inject_curvature_weights(None, None, set())
 
