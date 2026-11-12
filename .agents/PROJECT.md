@@ -30,7 +30,7 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
 * `[CI]`: Quality gate scripts, GitHub Actions workflows (`scripts/`, `.github/`).
 
 ### 0.3 Architecture Audit (`scripts/audit_architecture.py`) & Type Checking Contracts
-* **Single Source of Truth for Ratchet Baselines**: Monotonic ceilings for `bpy.data` (locked at `0`), `hasattr`/`getattr` calls, local `: Any` assignments (locked at `0`), and the scoped `ALLOWED_CAST_ANY` allowlist are maintained exclusively in `scripts/audit_architecture.py`.
+* **Single Source of Truth for Ratchet Baselines**: Monotonic ceilings for `bpy.data` (locked at `0`), `hasattr`/`getattr` calls, log-only exception handlers in domain modules (`core/` & `exporters/`), local `: Any` assignments (locked at `0`), and the scoped `ALLOWED_CAST_ANY` allowlist are maintained exclusively in `scripts/audit_architecture.py`.
 * **Audit Integrity**:
   * Every audit rule must catch semantic evasions (`getattr(bpy, "context")`, `except` blocks that only log without re-raising or handling) rather than bare syntax alone.
   * Never document "safe" workarounds for banned patterns; legitimate exceptions require a narrow, named allowlist entry in `scripts/audit_architecture.py`.

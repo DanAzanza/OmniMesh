@@ -27,6 +27,9 @@ BPY_DATA_RATCHET_BASELINE = 0
 HASATTR_RATCHET_BASELINE = 83
 GETATTR_RATCHET_BASELINE = 180
 
+# Monotonic ratchet baseline for log-only exception handlers in core/ and exporters/
+LOG_ONLY_EXCEPT_RATCHET_BASELINE = 230
+
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
 ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
@@ -139,6 +142,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         "bpy_data_ratchet_in_core_exporters": [],
         "hasattr_ratchet_in_core_exporters": [],
         "getattr_ratchet_in_core_exporters": [],
+        "log_only_except_ratchet_in_core_exporters": [],
         "hasattr_blend_data_leak_in_core_exporters": [],
         "optional_blend_data_in_core": [],
         "commented_out_code_blocks": [],
@@ -154,6 +158,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
     total_bpy_data_count = 0
     total_hasattr_count = 0
     total_getattr_count = 0
+    total_log_only_except_count = 0
     cast_any_occurrences: dict[str, list[tuple[int, str]]] = {}
 
     for fpath in py_files:
@@ -304,6 +309,15 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
 
             # Generic except: pass / except Exception: pass or broad except Exception in domain modules
             if is_core_or_exporter and isinstance(node, ast.ExceptHandler):
+                if len(node.body) == 1:
+                    stmt = node.body[0]
+                    if (
+                        isinstance(stmt, ast.Expr)
+                        and isinstance(stmt.value, ast.Call)
+                        and ast.unparse(stmt.value.func).startswith(("logger.", "log.", "logging."))
+                    ):
+                        total_log_only_except_count += 1
+
                 caught_names: list[str] = []
                 if node.type is None:
                     caught_names.append("bare")
@@ -437,6 +451,16 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
             )
         )
 
+    # Validate log-only exception handler ratchet baseline in core/ and exporters/
+    if total_log_only_except_count > LOG_ONLY_EXCEPT_RATCHET_BASELINE:
+        violations["log_only_except_ratchet_in_core_exporters"].append(
+            (
+                "GLOBAL_RATCHET",
+                total_log_only_except_count,
+                f"log-only exception handlers ({total_log_only_except_count}) exceed ratchet baseline ({LOG_ONLY_EXCEPT_RATCHET_BASELINE})",
+            )
+        )
+
     return violations
 
 
@@ -458,6 +482,7 @@ def main() -> int:
         "bpy_data_ratchet_in_core_exporters",
         "hasattr_ratchet_in_core_exporters",
         "getattr_ratchet_in_core_exporters",
+        "log_only_except_ratchet_in_core_exporters",
         "hasattr_blend_data_leak_in_core_exporters",
         "optional_blend_data_in_core",
     ]

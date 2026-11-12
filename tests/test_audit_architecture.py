@@ -279,3 +279,30 @@ def test_audit_catches_optional_blend_data_in_core(tmp_path: Path) -> None:
     violations = scan_repository(tmp_path)
     opt_violations = violations["optional_blend_data_in_core"]
     assert len(opt_violations) == 2
+
+
+def test_audit_catches_log_only_except_ratchet_overflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import scripts.audit_architecture as audit_mod
+
+    monkeypatch.setattr(audit_mod, "LOG_ONLY_EXCEPT_RATCHET_BASELINE", 1)
+
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "swallow_mod.py").write_text(
+        "import logging\n"
+        "logger = logging.getLogger(__name__)\n"
+        "def f():\n"
+        "    try:\n"
+        "        pass\n"
+        "    except RuntimeError as e:\n"
+        "        logger.debug('err1: %s', e)\n"
+        "    try:\n"
+        "        pass\n"
+        "    except ValueError as e:\n"
+        "        logger.debug('err2: %s', e)\n",
+        encoding="utf-8",
+    )
+    violations = scan_repository(tmp_path)
+    ratchet = violations["log_only_except_ratchet_in_core_exporters"]
+    assert len(ratchet) == 1
+    assert "exceed ratchet baseline" in str(ratchet[0][2])
