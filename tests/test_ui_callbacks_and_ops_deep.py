@@ -188,8 +188,7 @@ def test_callbacks_asset_state_and_tiers_deep() -> None:
         callbacks.on_lod_budget_mode_updated(props, ctx)
         assert props.lod_preset_is_dirty is True
 
-    with patch("ui.hud.LODViewportHUD.update_cache"), patch("ui.hud.LODViewportHUD.tag_redraw"):
-        callbacks.on_active_lod_index_updated(props, ctx)
+    callbacks.on_active_lod_index_updated(props, ctx)
 
     with patch(
         "core.simulator.LODSimulatorEngine.evaluate_distance_scrub",
@@ -253,8 +252,7 @@ def test_lod_ops_deep() -> None:
         patch.object(lod_ops, "bpy", mock_bpy),
         patch.object(lod_ops, "resolve_lod_context", return_value=(props, mesh_obj, False)),
         patch.object(lod_ops, "project_preset_tiers"),
-        patch.object(lod_ops.LODViewportHUD, "update_cache"),
-        patch.object(lod_ops.LODViewportHUD, "tag_redraw"),
+        patch.object(lod_ops, "tag_view3d_redraw"),
     ):
         # 1. Add and remove LOD tier
         op_add = MagicMock()

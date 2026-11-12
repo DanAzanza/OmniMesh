@@ -536,9 +536,7 @@ def test_setup_and_simulator_ops_deep() -> None:
                 {"root_name": "Hero", "current_tier": 1, "screen_pct": 40.0, "distance_m": 15.0, "active_tris": 500}
             ],
         ),
-        patch.object(simulator_ops.LODViewportHUD, "update_simulation_hud"),
         patch.object(simulator_ops.LODSimulatorEngine, "restore_all_visibility"),
-        patch.object(simulator_ops.LODViewportHUD, "clear_simulation_hud"),
         patch.object(simulator_ops.LODSimulatorEngine, "reset_distance_scrub"),
     ):
         sim_op = simulator_ops.LOD_OT_toggle_simulator()

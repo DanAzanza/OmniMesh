@@ -4,11 +4,9 @@ Unit tests for OmniMesh 3-Panel UI architecture, UIList components, and operator
 
 from __future__ import annotations
 
-import time
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from ui.hud import LODViewportHUD, on_depsgraph_clear_toast
 from ui.lists import register_lists, unregister_lists
 from ui.operators import (
     LOD_OT_analyze_and_configure,
@@ -142,30 +140,6 @@ def test_fix_lod0_operators_poll_and_exec_mocked():
 
     op_col_gen = LOD_OT_generate_collision_hulls()
     assert op_col_gen.execute(None) == {"FINISHED"}
-
-
-def test_hud_cache_and_safety():
-    """Verify LODViewportHUD cache updates and safe fallback in headless environment."""
-    LODViewportHUD.update_cache(None)
-    assert LODViewportHUD._cached_data == {}
-
-    LODViewportHUD.update_simulation_hud(
-        context=None,
-        mode="LIVE",
-        active_name="LOD1",
-        screen_pct=50.0,
-        distance_m=15.0,
-        active_tris=1500,
-        tracked_count=1,
-    )
-    assert LODViewportHUD._cached_data["is_simulating"] is True
-    assert LODViewportHUD._cached_data["curr_tris"] == 1500
-
-    LODViewportHUD.clear_simulation_hud()
-    assert LODViewportHUD._cached_data["is_simulating"] is False
-
-    # Safe call without crashing in headless mode
-    LODViewportHUD.draw_callback_px()
 
 
 def test_registration_lifecycle_safety():
@@ -461,24 +435,6 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     mock_props.preflight_loose_verts = 0
     mock_props.preflight_non_manifold_edges = 0
     popover_san.draw(mock_context)
-
-
-def test_viewport_hud_toast_lifecycle():
-    """Verify LODViewportHUD toast notification show, clear, and draw lifecycle."""
-    LODViewportHUD.show_toast("Cleaned: 1 transform(s) applied.")
-    assert LODViewportHUD._toast_message == "Cleaned: 1 transform(s) applied."
-    assert LODViewportHUD._toast_time > 0
-    LODViewportHUD.draw_callback_px()
-
-    on_depsgraph_clear_toast(None, None)
-    LODViewportHUD._toast_time = time.time() - 4.0
-    on_depsgraph_clear_toast(None, None)
-    assert LODViewportHUD._toast_message == ""
-
-    LODViewportHUD.show_toast("Another message")
-    assert LODViewportHUD._toast_message == "Another message"
-    LODViewportHUD.clear_toast()
-    assert LODViewportHUD._toast_message == ""
 
 
 def test_add_panel_draw(monkeypatch):

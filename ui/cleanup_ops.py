@@ -31,7 +31,6 @@ try:
     from ..core.modifiers import ModifierManager
     from ..core.occlusion import HardenedOcclusionCuller
     from ..core.sanitizer import MeshSanitizer, SanitizeOptions
-    from .hud import LODViewportHUD
     from .utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -45,7 +44,6 @@ except (ImportError, ValueError):
     from core.modifiers import ModifierManager
     from core.occlusion import HardenedOcclusionCuller
     from core.sanitizer import MeshSanitizer, SanitizeOptions
-    from ui.hud import LODViewportHUD
     from ui.utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -301,12 +299,6 @@ class LOD_OT_clean_and_repair_mesh(Operator):
         # Refresh preflight diagnostic properties so popovers never display stale defects
         run_preflight_inspection(context, mesh_objs)
 
-        # Trigger transient viewport HUD toast notification
-        try:
-            LODViewportHUD.show_toast(summary)
-        except Exception as exc:
-            logger.debug("Could not show HUD toast: %s", exc)
-
         safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
 
@@ -375,11 +367,6 @@ class LOD_OT_cull_interior_faces(Operator):
         summary = f"Removed {total_culled_faces} interior polygons ({total_culled_islands} islands) across {len(mesh_objs)} LOD0 mesh(es)."
         props.last_cleanup_summary = summary
 
-        try:
-            LODViewportHUD.show_toast(summary)
-        except Exception as exc:
-            logger.debug("Could not show HUD toast: %s", exc)
-
         safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
 
@@ -426,12 +413,6 @@ class LOD_OT_clean_and_repair_materials(Operator):
                 MaterialOptimizer.clean_orphan_shader_nodes(blend_data=bdata)
 
         props.last_material_cleanup_summary = f"Purged {purged_slots} unused slots, merged {merged_blocks} materials."
-
-        # Trigger transient viewport HUD toast notification
-        try:
-            LODViewportHUD.show_toast(props.last_material_cleanup_summary)
-        except Exception as exc:
-            logger.debug("Could not show HUD toast: %s", exc)
 
         safe_report(self, {"INFO"}, props.last_material_cleanup_summary)
         return {"FINISHED"}

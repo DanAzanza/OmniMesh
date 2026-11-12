@@ -411,9 +411,10 @@ def _draw_lods_testing_content(layout: Any, context: Any, props: Any) -> None:
     v_dist = getattr(props, "virtual_distance_override", 0.0)
     if isinstance(v_dist, (int, float)) and v_dist > 0.0:
         row_sweep.operator("lod_tool.reset_virtual_distance", text="", icon="LOOP_BACK")
-    row_sweep.prop(props, "show_viewport_hud", text="", icon="WINDOW")
 
-    if isinstance(v_dist, (int, float)) and v_dist > 0.0 and getattr(props, "last_scrub_status", ""):
+    if getattr(props, "last_scrub_status", "") and (
+        (isinstance(v_dist, (int, float)) and v_dist > 0.0) or getattr(props, "is_simulator_running", False)
+    ):
         box_status = box_test.box()
         box_status.scale_y = 0.85
         row_status = box_status.row(align=True)

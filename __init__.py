@@ -87,7 +87,6 @@ if __package__:
         config_preset_ops,
         engine_import_ops,
         export_ops,
-        hud,
         hull_impostor_ops,
         interaction_ops,
         lists,
@@ -172,7 +171,6 @@ else:
         config_preset_ops,
         engine_import_ops,
         export_ops,
-        hud,
         hull_impostor_ops,
         interaction_ops,
         lists,
@@ -284,7 +282,6 @@ if _OMNIMESH_RELOAD:
         operators,
         panel,
         simulator_ops,
-        hud,
         engine_import_ops,
         msfs_spatial_ops,
         msfs_ground_ops,
@@ -312,12 +309,10 @@ def register():
     panel.register_panel()
     simulator_ops.register_simulator_ops()
     engine_export.register_exporters()
-    hud.LODViewportHUD.register()
 
 
 def unregister():
     for fn in (
-        hud.LODViewportHUD.unregister,
         engine_export.unregister_exporters,
         simulator_ops.unregister_simulator_ops,
         panel.unregister_panel,

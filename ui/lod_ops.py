@@ -29,7 +29,6 @@ try:
         compute_distance_from_screen_size,
         compute_vertical_fov,
     )
-    from .hud import LODViewportHUD
     from .lod_preset_ops import (
         LOD_OT_add_preset_tier,
         LOD_OT_apply_preset_tiers,
@@ -48,6 +47,7 @@ try:
         resolve_effective_asset_name,
         resolve_lod_context,
         safe_report,
+        tag_view3d_redraw,
     )
 except (ImportError, ValueError):
     from core.lod_generator import generate_all_lods
@@ -56,7 +56,6 @@ except (ImportError, ValueError):
         compute_vertical_fov,
     )
 
-    from .hud import LODViewportHUD
     from .lod_preset_ops import (
         LOD_OT_add_preset_tier,
         LOD_OT_apply_preset_tiers,
@@ -75,6 +74,7 @@ except (ImportError, ValueError):
         resolve_effective_asset_name,
         resolve_lod_context,
         safe_report,
+        tag_view3d_redraw,
     )
 
 
@@ -95,8 +95,7 @@ class LOD_OT_reset_to_preset(Operator):
 
         project_preset_tiers(props, context, ignore_cache=True)
         props.lod_preset_is_dirty = False
-        LODViewportHUD.update_cache(context)
-        LODViewportHUD.tag_redraw()
+        tag_view3d_redraw(context)
         safe_report(self, {"INFO"}, "Reset tiers to preset defaults.")
         return {"FINISHED"}
 
@@ -125,8 +124,7 @@ class LOD_OT_analyze_and_configure(Operator):
             props = context.scene.lod_tool
 
         project_preset_tiers(props, context)
-        LODViewportHUD.update_cache(context)
-        LODViewportHUD.tag_redraw()
+        tag_view3d_redraw(context)
         safe_report(
             self,
             {"INFO"},
@@ -201,8 +199,7 @@ class LOD_OT_generate_all(Operator):
         )
 
         if success:
-            LODViewportHUD.update_cache(context)
-            LODViewportHUD.tag_redraw()
+            tag_view3d_redraw(context)
             safe_report(self, {"INFO"}, msg)
             return {"FINISHED"}
         else:
@@ -260,8 +257,7 @@ class LOD_OT_add_lod_tier(Operator):
             item.distance_m = dist
 
         props.active_lod_index = new_idx
-        LODViewportHUD.update_cache(context)
-        LODViewportHUD.tag_redraw()
+        tag_view3d_redraw(context)
         safe_report(self, {"INFO"}, f"Added {item.name}.")
         return {"FINISHED"}
 
@@ -307,8 +303,7 @@ class LOD_OT_remove_lod_tier(Operator):
                 itm.name = f"LOD{idx}"
 
         props.active_lod_index = min(target_idx, len(props.lods) - 1)
-        LODViewportHUD.update_cache(context)
-        LODViewportHUD.tag_redraw()
+        tag_view3d_redraw(context)
         safe_report(self, {"INFO"}, f"Removed {removed_name}.")
         return {"FINISHED"}
 
@@ -528,12 +523,7 @@ class LOD_OT_toggle_side_by_side(Operator):
             props.is_side_by_side_active = True
             safe_report(self, {"INFO"}, f"Side-by-side inspection active: arranged {arranged} objects across tiers.")
 
-        LODViewportHUD.update_cache(context)
-        LODViewportHUD.tag_redraw()
-        if hasattr(context, "screen") and context.screen:
-            for area in context.screen.areas:
-                if area.type == "VIEW_3D":
-                    area.tag_redraw()
+        tag_view3d_redraw(context)
 
         return {"FINISHED"}
 

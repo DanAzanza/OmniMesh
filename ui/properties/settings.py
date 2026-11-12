@@ -538,9 +538,6 @@ class LODToolSettings(PropertyGroup):
         update=lambda self, context: callbacks.on_virtual_distance_updated(self, context),
     )
     last_scrub_status: StringProperty(name="Scrub Status", default="")
-    show_viewport_hud: BoolProperty(
-        name="Show Viewport HUD", default=True, description="Display real-time statistics HUD overlay in 3D Viewport"
-    )
 
     # Post-Generation Summary Metrics
     last_generated_base_tris: IntProperty(name="Base Tris", default=0)

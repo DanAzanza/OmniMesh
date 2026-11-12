@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from .config_preset_ops import register as register_config_presets, unregister as unregister_config_presets
 from .engine_import_ops import register as register_engine_import, unregister as unregister_engine_import
-from .hud import LODViewportHUD
 from .interaction_ops import register as register_interaction_ops, unregister as unregister_interaction_ops
 from .lists import register_lists, unregister_lists
 from .msfs_camera_ops import register as register_msfs_cameras, unregister as unregister_msfs_cameras
@@ -37,11 +36,9 @@ def register_ui() -> None:
     register_panel()
 
     register_simulator_ops()
-    LODViewportHUD.register()
 
 
 def unregister_ui() -> None:
-    LODViewportHUD.unregister()
     unregister_simulator_ops()
     unregister_panel()
     unregister_msfs_attachments()

@@ -672,6 +672,26 @@ def get_or_create_engine_import_collection(
     return _impl(context, asset_name, role, use_lod0_suffix, blend_data=bdata)
 
 
+def tag_view3d_redraw(context: Any) -> None:
+    """Tag all 3D Viewport areas in the active screen or window manager for redraw."""
+    screen = getattr(context, "screen", None) if context else None
+    if screen is not None:
+        for area in getattr(screen, "areas", ()):
+            if getattr(area, "type", "") == "VIEW_3D":
+                area.tag_redraw()
+        return
+
+    wm = getattr(context, "window_manager", None) if context else None
+    if wm is not None:
+        for window in getattr(wm, "windows", ()):
+            win_screen = getattr(window, "screen", None)
+            if win_screen is not None:
+                for area in getattr(win_screen, "areas", ()):
+                    if getattr(area, "type", "") == "VIEW_3D":
+                        area.tag_redraw()
+
+
 __all__ = [
     "get_or_create_engine_import_collection",
+    "tag_view3d_redraw",
 ]

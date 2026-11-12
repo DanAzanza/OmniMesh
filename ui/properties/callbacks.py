@@ -565,16 +565,18 @@ def on_engine_import_directory_updated(self: Any, _context: Any) -> None:
 
 
 def on_active_lod_index_updated(self: Any, context: Any) -> None:
-    """Updates HUD monitor and tags redraw when active LOD tier changes."""
+    """Tags 3D Viewport areas for redraw when active LOD tier changes."""
     if StateRestorationGuard.is_active():
         return
     try:
-        from ..hud import LODViewportHUD
+        try:
+            from ..utils import tag_view3d_redraw
+        except (ImportError, ValueError):
+            from ui.utils import tag_view3d_redraw
 
-        LODViewportHUD.update_cache(context)
-        LODViewportHUD.tag_redraw()
+        tag_view3d_redraw(context)
     except Exception as exc:
-        logger.debug("Active LOD index HUD update exception: %s", exc)
+        logger.debug("Active LOD index redraw update exception: %s", exc)
 
 
 def on_virtual_distance_updated(self: Any, context: Any) -> None:

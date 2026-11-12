@@ -26,7 +26,7 @@ else:
 
 
 class TestSimulatorPipeline(unittest.TestCase):
-    """Verify scene indexing, camera distance tracking, and simulation HUD data structures."""
+    """Verify scene indexing, camera distance tracking, and LOD tier visibility switching."""
 
     def setUp(self) -> None:
         if not bpy:

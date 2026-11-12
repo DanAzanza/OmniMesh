@@ -24,10 +24,8 @@ else:
 
 try:
     from ..core.simulator import LODSimulatorEngine, extract_viewport_camera_params
-    from .hud import LODViewportHUD
 except (ImportError, ValueError):
     from core.simulator import LODSimulatorEngine, extract_viewport_camera_params
-    from ui.hud import LODViewportHUD
 
 
 class LOD_OT_toggle_simulator(Operator):
@@ -119,15 +117,9 @@ class LOD_OT_toggle_simulator(Operator):
 
         if updates:
             primary = updates[0]
-            mode_tag = "VIRTUAL" if virtual_override is not None else getattr(props, "simulator_camera_mode", "LIVE")
-            LODViewportHUD.update_simulation_hud(
-                context,
-                mode=mode_tag,
-                active_name=f"{primary['root_name']} (LOD{primary['current_tier']})",
-                screen_pct=primary["screen_pct"],
-                distance_m=primary["distance_m"],
-                active_tris=primary["active_tris"],
-                tracked_count=len(updates),
+            props.last_scrub_status = (
+                f"Active: {primary['root_name']} (LOD{primary['current_tier']}, "
+                f"{primary['active_tris']:,} tris, {primary['distance_m']:.1f}m)"
             )
 
         # Redraw viewport areas
@@ -186,7 +178,6 @@ class LOD_OT_toggle_simulator(Operator):
 
         if context:
             LODSimulatorEngine.restore_all_visibility(context)
-            LODViewportHUD.clear_simulation_hud()
             if hasattr(context, "screen") and context.screen:
                 for area in context.screen.areas:
                     if area.type == "VIEW_3D":
