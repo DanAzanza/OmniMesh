@@ -23,7 +23,7 @@ else:
 
 logger = logging.getLogger("om_build_extension")
 
-INCLUDE_DIRS = ["bridges", "core", "exporters", "presets", "ui"]
+INCLUDE_DIRS = ["core", "exporters", "presets", "ui"]
 INCLUDE_FILES = [
     "__init__.py",
     "blender_manifest.toml",

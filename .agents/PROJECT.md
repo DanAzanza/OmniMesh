@@ -24,7 +24,6 @@ python scripts/verify_ci.py
 Repository-specific component scopes required by `AGENTS.md` Section 6:
 * `[Core]`: Core LOD decimation engine, modifier pipeline, impostor baking, property groups (`core/`).
 * `[Exporters]`: Target engine exporters (MSFS 2024, Unreal Engine 5, Unity 6) (`exporters/`).
-* `[Bridges]`: External tool bridges, IPC socket servers, subprocess execution (`bridges/`).
 * `[UI]`: 3D Viewport N-Panels, custom UILists, modal operators, popovers (`ui/`).
 * `[Tests]`: Test suite, test fixtures, headless Blender test runners (`tests/`, `scripts/test_engine_exports.py`).
 * `[CI]`: Quality gate scripts, GitHub Actions workflows (`scripts/`, `.github/`).
@@ -37,7 +36,7 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
   * Never loosen an audit rule in the same change that makes failing code pass it.
 * **`pyrightconfig.json` Ban**: Pyright silently prioritizes `pyrightconfig.json` over `[tool.pyright]` in `pyproject.toml`. Keep `pyproject.toml` as the sole configuration file.
 * **Strict Typing & `Any` Ban in Domain Modules**: Domain signatures and local variable annotations in `core/` and `exporters/` must use concrete stub types (`bpy.types.Object`, `bpy.types.Context`, `bmesh.types.BMesh`) or structural protocols (`LODTierProtocol`, `LODSettingsProtocol`, `QuaternionLike`) under `TYPE_CHECKING`. `cast(Any, ...)` is restricted to `ALLOWED_CAST_ANY` in `scripts/audit_architecture.py` for verified Blender stub defects; runtime operator dispatch is encapsulated in `core/compat.py`.
-* **Sanctioned File-Level Suppression**: `# pyright: reportInvalidTypeForm=none` is permitted only in UI modules declaring RNA properties (`ui/*_ops.py`, `ui/properties/`), never in `core/`, `exporters/`, or `bridges/`.
+* **Sanctioned File-Level Suppression**: `# pyright: reportInvalidTypeForm=none` is permitted only in UI modules declaring RNA properties (`ui/*_ops.py`, `ui/properties/`), never in `core/` or `exporters/`.
 
 ### 0.4 Cross-Platform Path & CI Test Invariants
 * **Blender 5.x Minimum Baseline**: Legacy Blender 4.x compatibility is dropped (`blender_manifest.toml` locks `blender_version_min = "5.0.0"`). Keep `version` synchronized between `blender_manifest.toml` and `pyproject.toml`. CI headless runners baseline against Blender 5.3.0 (`linux-x64`) with a 3-attempt `apt-get` retry loop in `.github/workflows/`.
@@ -54,7 +53,6 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
   * `ui/`: Presentation layer, 3D viewport panels, modal operators. Gathers user parameters and dispatches commands.
   * `core/`: Core decimation algorithms, impostor generation, mesh merging (`MeshMergeEngine`), hierarchy managers, and LOD chain calculators.
   * `exporters/`: Engine packaging logic (MSFS 2024, UE5, Unity 6) with transactional scene-graph rollback.
-  * `bridges/`: External IPC socket clients, health probes, and live engine sync. Strictly non-blocking.
 * **Zero Global Context / Database Reads in Domain (`core/`, `exporters/`)**:
   * Domain modules must never read `bpy.context` or `bpy.data` directly or indirectly (`getattr(bpy, "context" | "data")`).
   * `context`/`scene` and `blend_data: BlendData` must be injected explicitly from the presentation/CLI boundary.
@@ -95,7 +93,3 @@ Repository-specific component scopes required by `AGENTS.md` Section 6:
   * `attach_offset` coordinates in `[sim_attachment.N]` are strictly relative to the mounting socket empty (`attach_to_node`), never aircraft datum.
   * Official SDK samples frequently omit `attach_offset` and `attach_pbh` when zero. The Concrete Syntax Tree (CST) serializer must dynamically flush missing spatial keys upon section transition (or EOF) when non-zero coordinates exist, preserving comments, indentation, and custom SDK parameters losslessly.
   * Newly synthesized attachments must enforce gapless, monotonically increasing integer headers (`[sim_attachment.0]`, `[sim_attachment.1]`, ...).
-
-### 2.3 Engine Bridge CQS & Domain Exception Contracts
-* **Bridge Probe vs Command Invariance (CQS)**: Background UI heartbeat timers (`ping_engine`) are query probes and must return `(False, msg)` when target engine editors are offline—never raise `BridgeConnectionError`. `BridgeConnectionError` is reserved for active payload commands (`sync_asset`, `sync_asset_headless`) on broken sockets or network drops.
-* **Bridge Probe Timeout Isolation**: Heartbeat queries and unit tests against offline engine ports (e.g. Unreal Live Link on `127.0.0.1:6776` or WebControl on `30010`) must supply `timeout_sec <= 0.08` or mock `ConnectionRefusedError` to prevent 1s+ OS TCP timeout stalls.

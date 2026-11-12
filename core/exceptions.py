@@ -1,7 +1,7 @@
 """
 Typed Domain Exceptions for OmniMesh.
 Enforces the Fail-Fast principle (AGENTS.md Section 3 & 4) across decimation,
-topology sanitization, collection hierarchy operations, and engine bridges.
+topology sanitization, and collection hierarchy operations.
 """
 
 from __future__ import annotations
@@ -21,10 +21,6 @@ class TopologyError(OmniMeshError):
 
 class CollectionHierarchyError(OmniMeshError):
     """Raised when collection hierarchy, cloning, or Outliner isolation operations fail."""
-
-
-class BridgeConnectionError(OmniMeshError):
-    """Raised when IPC socket bridge connections to external game engines fail."""
 
 
 class ExportPipelineError(OmniMeshError):
@@ -48,7 +44,6 @@ __all__ = [
     "DecimationError",
     "TopologyError",
     "CollectionHierarchyError",
-    "BridgeConnectionError",
     "ExportPipelineError",
     "ImpostorBakeError",
     "RiggingError",

@@ -1,4 +1,4 @@
-"""In-Blender Integration Tests for glTF Multi-LOD Assembly, Bridge Sync, and Engine Exporters."""
+"""In-Blender Integration Tests for glTF Multi-LOD Assembly and Engine Exporters."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ except (ImportError, ValueError):
 
 
 class TestGLTFAssemblyPipeline(unittest.TestCase):
-    """Verify material deduplication, armature retargeting, companion script deployment, and bridge sync."""
+    """Verify material deduplication, armature retargeting, and PBR texture packing."""
 
     def setUp(self) -> None:
         if not bpy:
@@ -150,47 +150,6 @@ class TestGLTFAssemblyPipeline(unittest.TestCase):
 
                 tex_dir = Path(temp_dir) / "Textures"
                 self.assertTrue(tex_dir.is_dir())
-
-    def test_install_companion_scripts_operator(self) -> None:
-        """Verify deployment of engine integration scripts for Unreal, Unity, and Godot."""
-        with in_blender_sandbox() as scene:
-            if scene is None or bpy is None:
-                return
-
-            with tempfile.TemporaryDirectory(prefix="omnimesh_engine_proj_") as temp_dir:
-                (Path(temp_dir) / "Content").mkdir(exist_ok=True)
-                (Path(temp_dir) / "Assets").mkdir(exist_ok=True)
-                props = getattr(scene, "lod_tool", None)
-                if not props:
-                    return
-
-                props.engine_project_path = temp_dir
-                ops: Any = cast(Any, bpy.ops).lod_tool
-
-                for engine in ("UE5", "UNITY_6"):
-                    props.target_engine = engine
-                    res = ops.install_companion_scripts()
-                    self.assertEqual(res, {"FINISHED"})
-
-                # Negative test: missing project path should fail poll
-                props.engine_project_path = ""
-                self.assertFalse(ops.install_companion_scripts.poll())
-
-    def test_live_bridge_toggle_and_sync(self) -> None:
-        """Verify graceful error reporting when toggling and syncing live bridge without active daemon."""
-        with in_blender_sandbox() as scene:
-            if scene is None or bpy is None:
-                return
-
-            ops: Any = cast(Any, bpy.ops).lod_tool
-
-            # Toggling live bridge when daemon is offline should handle disconnect gracefully
-            res_toggle = ops.toggle_live_bridge()
-            self.assertIn(res_toggle, ({"FINISHED"}, {"CANCELLED"}))
-
-            # Syncing live bridge should report error / cancelled without crashing
-            res_sync = ops.sync_live_bridge()
-            self.assertIn(res_sync, ({"FINISHED"}, {"CANCELLED"}))
 
 
 if __name__ == "__main__":

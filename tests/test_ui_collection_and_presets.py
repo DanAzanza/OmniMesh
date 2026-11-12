@@ -523,7 +523,6 @@ def test_callbacks_target_engine_and_export_preset_sync(monkeypatch):
     import ui.properties.callbacks as cb
 
     monkeypatch.setattr(cb, "sync_export_maps_from_preset", MagicMock())
-    monkeypatch.setattr(cb, "update_bridge_status_cached", MagicMock())
 
     props = MagicMock()
     props.target_engine = "MSFS_2024"

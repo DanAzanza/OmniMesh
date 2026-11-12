@@ -451,25 +451,6 @@ def _draw_tab_export(layout: Any, context: Any, props: Any) -> None:
     row2_exp.scale_y = 1.2
     row2_exp.operator("lod_tool.export_engine_package", text="Export", icon="PACKAGE")
 
-    row3_link = box_exp.row(align=True)
-    row3_link.use_property_split = False
-    row3_link.scale_y = 1.1
-    if not props.enable_live_sync:
-        row3_link.alert = False
-        row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Off", icon="RADIOBUT_OFF")
-    elif props.bridge_connected:
-        row3_link.alert = False
-        row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Active", icon="COLOR_GREEN")
-        row3_link.operator("lod_tool.sync_live_bridge", text="Sync Now", icon="FILE_REFRESH")
-    else:
-        row3_link.alert = True
-        row3_link.operator("lod_tool.toggle_live_bridge", text="Live Link: Offline", icon="COLOR_RED")
-        row3_link.operator("lod_tool.sync_live_bridge", text="Retry Sync", icon="FILE_REFRESH")
-
-    if props.target_engine == "UNITY_6" and getattr(props, "engine_project_path", ""):
-        row_inst = box_exp.row(align=True)
-        row_inst.operator("lod_tool.install_companion_scripts", text="Install Engine Scripts", icon="SCRIPT")
-
     _draw_batch_export_content(layout, context, props)
 
 

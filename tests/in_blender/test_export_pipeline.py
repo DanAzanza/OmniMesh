@@ -63,7 +63,6 @@ class TestExportPipeline(unittest.TestCase):
                 return
             props.export_base_name = "SM_ExpAsset"
             props.export_packed_textures = False
-            props.enable_live_sync = False
 
             ops: Any = cast(Any, bpy.ops).lod_tool
             ops.analyze_and_configure()

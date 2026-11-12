@@ -49,7 +49,7 @@ jobs:
         run: python scripts/audit_architecture.py --strict
 
       - name: Run Pytest Test Suite with Coverage
-        run: python -m pytest --cov=core --cov=exporters --cov=ui --cov=bridges --cov-report=term-missing -v
+        run: python -m pytest --cov=core --cov=exporters --cov=ui --cov-report=term-missing -v
 
   blender-tests:
     name: In-Blender Integration Tests (Headless Blender)

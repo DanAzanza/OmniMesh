@@ -1,9 +1,8 @@
 """
 Multi-Engine Autonomous Export & Ingestion Test Suite.
-Validates export artifact schemas and companion scripts across:
+Validates export artifact schemas across:
 - Microsoft Flight Simulator 2024 (ModelInfo XML Schema, descending minSize to 0.0, glTF validity)
-- Unreal Engine 5 (FBX LODGroup & UCX collision hierarchy, live ingest payload)
-- Unity 6 (Postprocessor C# generation, LODGroup setup)
+- Unreal Engine 5 / Unity 6 export pipeline error handling
 
 Tier 1: Static schema and artifact validation without external engine binaries.
 Tier 2: Live engine integration tests (skipped if engine executables are missing).
@@ -20,8 +19,6 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from bridges.unity_bridge import UnityLiveBridge
-from bridges.unreal_bridge import UnrealLiveBridge
 from exporters.msfs_export import MSFSExporter
 
 
@@ -69,28 +66,6 @@ def test_msfs2024_model_info_xml_schema():
 
     # Terminal tier MUST end at 0 or 0.0
     assert float(lod_elements[-1].get("minSize", -1)) == 0.0
-
-
-def test_unity6_postprocessor_code_structure():
-    """Validates that Unity 6 postprocessor companion C# script contains correct LODGroup API calls."""
-    cs_code = UnityLiveBridge.generate_postprocessor_csharp_code()
-    assert "class OmniMeshUnityPostprocessor" in cs_code
-    assert "AssetPostprocessor" in cs_code
-    assert "LODGroup" in cs_code
-    assert "MeshCollider" in cs_code
-    assert "OnPostprocessModel" in cs_code
-    # Verify regex patterns for LOD tier matching
-    assert "_LOD" in cs_code
-
-
-def test_unreal_engine_ingest_payload_structure():
-    """Validates that Unreal Engine 5 ingest payload generates correct Python script with LODGroup setup."""
-    fbx_dummy_path = "C:/Projects/Game/Art/SM_Prop.fbx"
-    payload = UnrealLiveBridge.build_non_destructive_ingest_payload(fbx_dummy_path, "/Game/Props", "SM_Prop")
-    assert "unreal.AssetImportTask" in payload
-    assert "unreal.FbxImportUI" in payload
-    assert "import_mesh_lods = True" in payload
-    assert "SM_Prop" in payload
 
 
 # ==============================================================================

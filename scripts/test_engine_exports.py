@@ -12,8 +12,6 @@ import json
 import logging
 import os
 import re
-import shutil
-import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
@@ -83,63 +81,8 @@ def test_msfs_export(export_dir: str, asset_name: str) -> bool:
         return False
 
 
-def test_unity_cli_integration(fbx_path: str, asset_name: str) -> bool:
-    logger.info("=== Testing Unity 6 CLI Integration ===")
-    unity_bin = shutil.which("unity")
-    if not unity_bin and sys.platform == "win32":
-        default_unity = os.path.expandvars(r"%LOCALAPPDATA%\Unity\bin\unity.exe")
-        if os.path.exists(default_unity):
-            unity_bin = default_unity
-
-    if not unity_bin:
-        logger.warning("Unity CLI not located. Skipping Unity integration test.")
-        return False
-
-    from bridges.unity_bridge import UnityLiveBridge
-
-    postproc_code = UnityLiveBridge.generate_postprocessor_csharp_code()
-    if "OmniMeshUnityPostprocessor" not in postproc_code or "LODGroup" not in postproc_code:
-        logger.error("Unity postprocessor code generation failed.")
-        return False
-
-    # Check Unity Editors installed
-    res = subprocess.run([unity_bin, "editors"], capture_output=True, text=True)
-    if "6000." not in res.stdout:
-        logger.warning("Unity 6 editor not reported in unity editors list.")
-        return False
-
-    logger.info("[PASS] Unity CLI and postprocessor pipeline verified.")
-    return True
-
-
-def test_unreal_engine_integration(fbx_path: str, asset_name: str) -> bool:
-    logger.info("=== Testing Unreal Engine 5 Integration ===")
-    ue_cmd = os.path.expandvars(r"%ProgramFiles%\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe")
-    mcp_plugin = os.path.expandvars(
-        r"%ProgramFiles%\Epic Games\UE_5.8\Engine\Plugins\Experimental\ModelContextProtocol\ModelContextProtocol.uplugin"
-    )
-
-    if not os.path.exists(ue_cmd):
-        logger.warning("UnrealEditor-Cmd.exe not found at %s", ue_cmd)
-        return False
-
-    if not os.path.exists(mcp_plugin):
-        logger.warning("Unreal ModelContextProtocol plugin not found at %s", mcp_plugin)
-        return False
-
-    from bridges.unreal_bridge import UnrealLiveBridge
-
-    payload = UnrealLiveBridge.build_non_destructive_ingest_payload(fbx_path, "/Game/Test", asset_name)
-    if "unreal.AssetImportTask" not in payload or "unreal.FbxImportUI" not in payload:
-        logger.error("Unreal ingest payload generation failed.")
-        return False
-
-    logger.info("[PASS] Unreal Engine 5.8 commandlet and ModelContextProtocol verified.")
-    return True
-
-
 def main() -> int:
-    logger.info("Starting OmniMesh Multi-Engine Export & Integration Test Suite")
+    logger.info("Starting OmniMesh Export Artifact Test Suite")
     with tempfile.TemporaryDirectory() as tmpdir:
         # Generate synthetic MSFS package
         from exporters.msfs_export import MSFSExporter
@@ -162,11 +105,8 @@ def main() -> int:
                 json.dump({"asset": {"version": "2.0"}, "scenes": [{"nodes": [0]}], "nodes": [{"name": f"LOD{i}"}]}, gf)
 
         msfs_ok = test_msfs_export(tmpdir, "SM_Test")
-        unity_ok = test_unity_cli_integration(os.path.join(tmpdir, "SM_Test.fbx"), "SM_Test")
-        ue_ok = test_unreal_engine_integration(os.path.join(tmpdir, "SM_Test.fbx"), "SM_Test")
 
-    all_passed = msfs_ok and unity_ok and ue_ok
-    if all_passed:
+    if msfs_ok:
         logger.info("ALL MULTI-ENGINE EXPORT & INTEGRATION TESTS PASSED!")
         return 0
     else:

@@ -1,8 +1,8 @@
 # pyright: reportInvalidTypeForm=none
 """
-OmniMesh Export & Engine Bridge Operators.
+OmniMesh Export & Baking Operators.
 Provides UI operators for 1-click multi-engine packaging, PBR texture packing,
-animation baking, and live link synchronization.
+and animation baking.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     import bpy
@@ -24,18 +24,14 @@ else:
         Operator = object
 
 try:
-    from ..bridges.manager import BridgeManager
     from ..core.animations import AnimationRigSanitizer
-    from ..core.exceptions import BridgeConnectionError
     from ..core.pbr_presets import PBRExportPresetManager
     from ..core.textures import TextureChannelPacker, TexturePoolManager
     from ..exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
     from ..exporters.manager import ExporterManager
     from .utils import get_lod0_mesh_objects, resolve_effective_asset_name, resolve_lod_context
 except (ImportError, ValueError):
-    from bridges.manager import BridgeManager
     from core.animations import AnimationRigSanitizer
-    from core.exceptions import BridgeConnectionError
     from core.pbr_presets import PBRExportPresetManager
     from core.textures import TextureChannelPacker, TexturePoolManager
     from exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
@@ -200,197 +196,6 @@ class LOD_OT_bake_rig_animation(Operator):
             return {"CANCELLED"}
 
 
-import queue
-import threading
-import time
-
-_BRIDGE_SYNC_QUEUE: queue.Queue = queue.Queue()
-_TIMER_REGISTERED: bool = False
-_LAST_HEARTBEAT_TIME: float = 0.0
-_HEARTBEAT_IN_FLIGHT: bool = False
-
-
-def _ensure_bridge_timer() -> None:
-    global _TIMER_REGISTERED
-    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers") and not _TIMER_REGISTERED:
-        try:
-            bpy.app.timers.register(_poll_bridge_sync_queue, persistent=True)
-            _TIMER_REGISTERED = True
-        except Exception as exc:
-            logger.debug("Could not register bridge sync timer: %s", exc)
-
-
-def dispatch_async_bridge_ping(target_engine: str, proj_dir: str = "") -> None:
-    """Dispatches engine ping check on background daemon thread to prevent UI freezing."""
-    global _HEARTBEAT_IN_FLIGHT
-    _ensure_bridge_timer()
-
-    def _worker() -> None:
-        global _HEARTBEAT_IN_FLIGHT
-        try:
-            is_ready, msg = BridgeManager.ping_engine(target_engine, proj_dir)
-            _BRIDGE_SYNC_QUEUE.put((is_ready, msg, target_engine))
-        except Exception as exc:
-            _BRIDGE_SYNC_QUEUE.put((False, f"Ping error: {exc}", target_engine))
-        finally:
-            _HEARTBEAT_IN_FLIGHT = False
-
-    _HEARTBEAT_IN_FLIGHT = True
-    t = threading.Thread(target=_worker, name=f"OmniMesh_Ping_{target_engine}", daemon=True)
-    t.start()
-
-
-def _poll_bridge_sync_queue() -> Optional[float]:
-    """Timer callback on Blender main thread to process bridge worker results and trigger heartbeats."""
-    global _TIMER_REGISTERED, _LAST_HEARTBEAT_TIME, _HEARTBEAT_IN_FLIGHT
-    try:
-        while not _BRIDGE_SYNC_QUEUE.empty():
-            ok, msg, target = _BRIDGE_SYNC_QUEUE.get_nowait()
-            if bpy and hasattr(bpy, "context") and bpy.context and hasattr(bpy.context, "scene"):
-                props = getattr(bpy.context.scene, "lod_tool", None)
-                if props:
-                    props.bridge_connected = ok
-                    props.bridge_status_text = msg if ok else f"Not Ready: {msg}"
-            # Tag 3D views for redraw
-            if bpy and hasattr(bpy, "context") and bpy.context and hasattr(bpy.context, "window_manager"):
-                wm = bpy.context.window_manager
-                if wm:
-                    for window in getattr(wm, "windows", []):
-                        screen = getattr(window, "screen", None)
-                        if screen:
-                            for area in getattr(screen, "areas", []):
-                                if area.type == "VIEW_3D":
-                                    area.tag_redraw()
-
-        # Automatic Heartbeat: if live sync is active, ping engine periodically in background
-        now = time.time()
-        if (
-            bpy
-            and hasattr(bpy, "context")
-            and bpy.context
-            and hasattr(bpy.context, "scene")
-            and not _HEARTBEAT_IN_FLIGHT
-            and (now - _LAST_HEARTBEAT_TIME > 5.0)
-        ):
-            props = getattr(bpy.context.scene, "lod_tool", None)
-            if props and getattr(props, "enable_live_sync", False):
-                _LAST_HEARTBEAT_TIME = now
-                engine = getattr(props, "target_engine", "UE5")
-                p_dir = bpy.path.abspath(props.engine_project_path) if getattr(props, "engine_project_path", "") else ""
-                dispatch_async_bridge_ping(engine, p_dir)
-
-    except Exception as exc:
-        logger.debug("Bridge sync queue polling error: %s", exc)
-
-    return 0.25
-
-
-def dispatch_async_bridge_sync(target_engine: str, export_dir: str, asset_name: str, proj_dir: str = "") -> None:
-    """Dispatches headless bridge synchronization on a background daemon thread."""
-    _ensure_bridge_timer()
-
-    def _worker() -> None:
-        try:
-            ok, msg = BridgeManager.sync_asset_headless(target_engine, export_dir, asset_name, proj_dir)
-            _BRIDGE_SYNC_QUEUE.put((ok, msg, target_engine))
-        except BridgeConnectionError as exc:
-            logger.warning("Bridge live connection dropped during sync: %s", exc)
-            _BRIDGE_SYNC_QUEUE.put((False, f"Connection error: {exc}", target_engine))
-        except Exception as exc:
-            _BRIDGE_SYNC_QUEUE.put((False, f"Worker exception: {exc}", target_engine))
-
-    t = threading.Thread(target=_worker, name=f"OmniMesh_Bridge_{target_engine}", daemon=True)
-    t.start()
-
-
-class LOD_OT_sync_live_bridge(Operator):
-    bl_idname = "lod_tool.sync_live_bridge"
-    bl_label = "Sync to Engine"
-    bl_description = (
-        "Synchronize exported asset and textures with active game engine or project directory (Non-blocking)"
-    )
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        if not bpy or not context:
-            return False
-        props, _, _ = resolve_lod_context(context)
-        return bool(props)
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"CANCELLED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            return {"CANCELLED"}
-        export_dir = bpy.path.abspath(props.export_directory)
-        eff_name = resolve_effective_asset_name(context, props)
-        asset_name = (
-            (eff_name if eff_name and eff_name not in {"AUTO", "NONE"} else "") or props.export_base_name or "SM_Asset"
-        )
-        target = props.target_engine
-        proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
-
-        # Update status to in-progress
-        props.bridge_status_text = f"Syncing {asset_name} to {target}..."
-        dispatch_async_bridge_sync(target, export_dir, asset_name, proj_dir)
-        self.report({"INFO"}, f"[Live Bridge] Dispatching async sync for '{asset_name}' to {target}...")
-        return {"FINISHED"}
-
-
-class LOD_OT_toggle_live_bridge(Operator):
-    bl_idname = "lod_tool.toggle_live_bridge"
-    bl_label = "Toggle Live Link"
-    bl_description = "Toggle automatic Live Engine sync and verify bridge connection"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        if not bpy or not context:
-            return False
-        props, _, _ = resolve_lod_context(context)
-        return bool(props)
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"CANCELLED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            return {"CANCELLED"}
-        engine = props.target_engine
-
-        # If already enabled, clicking disconnects / turns it OFF
-        if props.enable_live_sync:
-            props.enable_live_sync = False
-            props.bridge_connected = False
-            props.bridge_status_text = "Live Link Disabled"
-            self.report({"INFO"}, "[Live Link] Disconnected.")
-            return {"FINISHED"}
-
-        # Enable Live Sync and verify connection
-        props.enable_live_sync = True
-
-        # Attempt project auto-detection
-        try:
-            from ..core.project_detector import detect_engine_project
-
-            bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
-            if bdata is not None:
-                detected = detect_engine_project(props.export_directory, engine, blend_data=bdata)
-                if detected:
-                    props.engine_project_path = detected
-        except Exception as exc:
-            logger.debug("Project detection during toggle: %s", exc)
-
-        proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
-        props.bridge_status_text = f"Connecting to {engine}..."
-        dispatch_async_bridge_ping(engine, proj_dir)
-        self.report({"INFO"}, f"[Live Link] Connecting to {engine} in background...")
-
-        return {"FINISHED"}
-
-
 class LOD_OT_export_engine_package(Operator):
     bl_idname = "lod_tool.export_engine_package"
     bl_label = "1-Click Export Asset"
@@ -469,58 +274,15 @@ class LOD_OT_export_engine_package(Operator):
 
         if success:
             self.report({"INFO"}, f"[LOD Export] {message}")
-
-            # Auto Live Bridge Trigger if enabled
-            if props.enable_live_sync:
-                proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
-                props.bridge_status_text = f"Syncing {asset_name} to {target}..."
-                dispatch_async_bridge_sync(target, export_dir, asset_name, proj_dir)
-                self.report({"INFO"}, f"[Live Bridge] Auto-sync dispatched for '{asset_name}' to {target}.")
-
             return {"FINISHED"}
         else:
             self.report({"ERROR"}, f"[LOD Export Failed] {message}")
             return {"CANCELLED"}
 
 
-class LOD_OT_install_companion_scripts(Operator):
-    bl_idname = "lod_tool.install_companion_scripts"
-    bl_label = "Install Companion Scripts"
-    bl_description = "Install engine post-processor scripts / plugins into target project directory"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        if not bpy or not context:
-            return False
-        props, _, _ = resolve_lod_context(context)
-        return bool(props and props.engine_project_path)
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"CANCELLED"}
-        props, _, _ = resolve_lod_context(context)
-        if not props:
-            return {"CANCELLED"}
-
-        engine = props.target_engine
-        proj_dir = bpy.path.abspath(props.engine_project_path)
-        ok, msg = BridgeManager.install_companion_scripts(engine, proj_dir)
-        if ok:
-            self.report({"INFO"}, f"[{engine}] {msg}")
-            props.bridge_status_text = msg
-            return {"FINISHED"}
-        else:
-            self.report({"ERROR"}, f"[{engine}] {msg}")
-            return {"CANCELLED"}
-
-
 EXPORT_OPS_CLASSES = (
     LOD_OT_pack_pbr_textures,
     LOD_OT_bake_rig_animation,
-    LOD_OT_sync_live_bridge,
-    LOD_OT_toggle_live_bridge,
-    LOD_OT_install_companion_scripts,
     LOD_OT_export_engine_package,
 )
 

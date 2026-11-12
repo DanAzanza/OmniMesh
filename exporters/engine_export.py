@@ -1,5 +1,5 @@
 """
-Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture, Animation & Live Bridge Integration.
+Master Engine Export Router & Pre-Flight Quality Gate with PBR Texture & Animation Integration.
 """
 
 from __future__ import annotations

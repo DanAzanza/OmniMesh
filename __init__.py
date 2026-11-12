@@ -24,7 +24,6 @@ _OMNIMESH_RELOAD = "_OMNIMESH_INITIALIZED" in locals()
 _OMNIMESH_INITIALIZED = True
 
 if __package__:
-    from . import bridges
     from . import core as core
     from . import exporters as exporters
     from . import ui as ui
@@ -63,7 +62,6 @@ if __package__:
         pbr_presets,
         pivot,
         png_writer,
-        project_detector,
         rigging,
         sanitizer,
         shader_tracer,
@@ -117,7 +115,6 @@ if __package__:
         utils,
     )
 else:
-    import bridges
     from core import (
         animation_manager,
         animations,
@@ -153,7 +150,6 @@ else:
         pbr_presets,
         pivot,
         png_writer,
-        project_detector,
         rigging,
         sanitizer,
         shader_tracer,
@@ -236,7 +232,6 @@ if _OMNIMESH_RELOAD:
         lod_generator,
         lod_presets,
         asset_scanner,
-        project_detector,
         shader_tracer,
         png_writer,
         texture_pool,
@@ -275,10 +270,7 @@ if _OMNIMESH_RELOAD:
     ):
         importlib.reload(mod)
 
-    # 3. Bridges
-    importlib.reload(bridges)
-
-    # 4. UI Layer
+    # 3. UI Layer
     for mod in (
         properties,
         lists,

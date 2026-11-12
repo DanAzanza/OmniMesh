@@ -1,6 +1,6 @@
 """
 OmniMesh Property Callback and Synchronization Handlers.
-Contains reactive update callbacks, project directory detectors, preset hydrators, and persistent state restorers.
+Contains reactive update callbacks, preset hydrators, and persistent state restorers.
 """
 
 import copy
@@ -55,8 +55,6 @@ _PERSISTENT_PIPELINE_KEYS: tuple[str, ...] = (
     "engine_import_directory",
     "export_directory",
     "pbr_import_ao_mode",
-    "engine_project_path",
-    "enable_live_sync",
     "batch_mode",
     "batch_source_directory",
     "batch_export_directory",
@@ -74,49 +72,8 @@ def _persist_pipeline_prop(self: Any, prop_name: str, default: Any) -> None:
         logger.debug("Persist %s: %s", prop_name, exc)
 
 
-def update_bridge_status_cached(self: Any, context: Any) -> None:
-    """Non-blocking status update hook for project directory changes."""
-    if not context or not hasattr(context, "scene"):
-        return
-    try:
-        try:
-            from ...bridges.manager import BridgeManager
-        except ImportError:
-            from bridges.manager import BridgeManager
-
-        props = context.scene.lod_tool
-        engine = props.target_engine
-        proj_dir = props.engine_project_path
-        if not proj_dir:
-            props.bridge_status_text = "Project Path not set"
-            props.bridge_connected = False
-            return
-
-        is_ready, msg = BridgeManager.ping_engine(engine, proj_dir)
-        props.bridge_connected = is_ready
-        props.bridge_status_text = msg if is_ready else f"Not Ready: {msg}"
-    except Exception as exc:
-        logger.debug("Bridge status refresh: %s", exc)
-
-
 def on_target_engine_updated(self: Any, context: Any) -> None:
-    """Synchronizes target engine selection with export preset and bridge status without mutating presets."""
-    if hasattr(self, "export_directory"):
-        try:
-            try:
-                from ...core.project_detector import detect_engine_project
-            except ImportError:
-                from core.project_detector import detect_engine_project
-
-            engine = getattr(self, "target_engine", "UE5")
-            bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
-            if bdata is not None:
-                detected = detect_engine_project(self.export_directory, engine, blend_data=bdata)
-                if detected and getattr(self, "engine_project_path", "") != detected:
-                    self.engine_project_path = detected
-        except Exception as exc:
-            logger.debug("Auto engine project detection skipped: %s", exc)
-    update_bridge_status_cached(self, context)
+    """Synchronizes target engine selection with export preset without mutating presets."""
     if StateRestorationGuard.is_active() or PresetSyncGuard.is_locked():
         return
     with PresetSyncGuard():
@@ -167,7 +124,6 @@ def on_export_preset_updated(self: Any, context: Any) -> None:
         target_eng = preset.get("target_engine")
         if target_eng and hasattr(self, "target_engine"):
             self.target_engine = target_eng
-            update_bridge_status_cached(self, context)
         if hasattr(self, "pbr_export_texture_strategy"):
             self.pbr_export_texture_strategy = preset.get("strategy", "SMART_AUTO")
         if hasattr(self, "pbr_export_bit_depth"):
@@ -251,27 +207,10 @@ def on_import_path_mode_updated(self: Any, _context: Any) -> None:
     _persist_pipeline_prop(self, "pbr_import_path_mode", "RELATIVE")
 
 
-def on_export_directory_updated(self: Any, context: Any) -> None:
+def on_export_directory_updated(self: Any, _context: Any) -> None:
     if StateRestorationGuard.is_active():
         return
-    val = getattr(self, "export_directory", "")
     _persist_pipeline_prop(self, "export_directory", "")
-
-    try:
-        try:
-            from ...core.project_detector import detect_engine_project
-        except ImportError:
-            from core.project_detector import detect_engine_project
-
-        engine = getattr(self, "target_engine", "UE5")
-        bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
-        if bdata is not None:
-            detected = detect_engine_project(val, engine, blend_data=bdata)
-            if detected and getattr(self, "engine_project_path", "") != detected:
-                self.engine_project_path = detected
-                update_bridge_status_cached(self, context)
-    except Exception as exc:
-        logger.debug("Project auto-detection on export dir update: %s", exc)
 
 
 def on_import_ao_mode_updated(self: Any, _context: Any) -> None:
@@ -280,15 +219,6 @@ def on_import_ao_mode_updated(self: Any, _context: Any) -> None:
 
 def on_import_preserve_updated(self: Any, _context: Any) -> None:
     _persist_pipeline_prop(self, "pbr_import_preserve_existing", False)
-
-
-def on_engine_project_path_updated(self: Any, context: Any) -> None:
-    update_bridge_status_cached(self, context)
-    _persist_pipeline_prop(self, "engine_project_path", "")
-
-
-def on_enable_live_sync_updated(self: Any, _context: Any) -> None:
-    _persist_pipeline_prop(self, "enable_live_sync", True)
 
 
 def on_batch_mode_updated(self: Any, _context: Any) -> None:
@@ -694,7 +624,6 @@ def on_virtual_distance_updated(self: Any, context: Any) -> None:
 
 __all__ = [
     "ENGINE_TO_FACTORY_PRESET",
-    "update_bridge_status_cached",
     "on_target_engine_updated",
     "on_export_preset_updated",
     "on_import_preset_updated",
@@ -707,8 +636,6 @@ __all__ = [
     "on_export_directory_updated",
     "on_import_ao_mode_updated",
     "on_import_preserve_updated",
-    "on_engine_project_path_updated",
-    "on_enable_live_sync_updated",
     "on_batch_mode_updated",
     "on_batch_source_updated",
     "on_batch_export_directory_updated",

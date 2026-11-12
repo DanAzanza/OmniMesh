@@ -82,7 +82,6 @@ def run_worker() -> int:
         props = bpy.context.scene.lod_tool
         props.export_directory = export_dir + "/"
         props.export_base_name = asset_name
-        props.enable_live_sync = False
 
         preset_id = args.preset
         if preset_id:

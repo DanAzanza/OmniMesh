@@ -11,14 +11,13 @@ else:
     _MockBase = object
 
 
-def test_callbacks_bridge_and_presets_deep() -> None:
+def test_callbacks_and_presets_deep() -> None:
     """Exercise callbacks in ui/properties/callbacks.py."""
     from ui.properties import callbacks
 
     ctx = MagicMock()
     props = ctx.scene.lod_tool
     props.target_engine = "UE5"
-    props.engine_project_path = "//ue5_proj"
     props.export_directory = "//exports"
     props.pbr_export_preset = "unreal_engine_5"
     props.pbr_import_preset = "unreal_engine_5"
@@ -29,37 +28,22 @@ def test_callbacks_bridge_and_presets_deep() -> None:
     props.lod_preset = "unreal_engine_5"
     props.engine_import_preset = "msfs_2024_aircraft"
 
-    # 1. update_bridge_status_cached
-    with patch("bridges.manager.BridgeManager.ping_engine", return_value=(True, "Connected")):
-        callbacks.update_bridge_status_cached(props, ctx)
-        assert props.bridge_connected is True
-        assert props.bridge_status_text == "Connected"
-
-    props.engine_project_path = ""
-    callbacks.update_bridge_status_cached(props, ctx)
-    assert props.bridge_connected is False
-
-    # 2. Dynamic enum item getters
+    # 1. Dynamic enum item getters
     assert len(callbacks.get_lod_preset_items(props, ctx)) > 0
     assert len(callbacks.get_pbr_import_preset_items(props, ctx)) > 0
     assert len(callbacks.get_pbr_export_preset_items(props, ctx)) > 0
     assert len(callbacks.get_engine_import_preset_items(props, ctx)) > 0
 
-    # 3. on_target_engine_updated across engines
-    with (
-        patch("core.project_detector.detect_engine_project", return_value="/proj/Game.uproject"),
-        patch("bridges.manager.BridgeManager.ping_engine", return_value=(False, "Offline")),
-        patch.object(callbacks, "sync_export_maps_from_preset"),
-    ):
+    # 2. on_target_engine_updated across engines
+    with patch.object(callbacks, "sync_export_maps_from_preset"):
         for eng in ("UE5", "UNITY_6", "MSFS_2024"):
             props.target_engine = eng
             props.pbr_export_preset = ""
             callbacks.on_target_engine_updated(props, ctx)
 
-    # 4. on_export_preset_updated & on_import_preset_updated & on_legacy_preset_updated
+    # 3. on_export_preset_updated & on_import_preset_updated & on_legacy_preset_updated
     with (
         patch("core.pbr_presets.PBRExportPresetManager.set_last_active_preset"),
-        patch("bridges.manager.BridgeManager.ping_engine", return_value=(True, "OK")),
         patch.object(callbacks, "sync_export_maps_from_preset"),
         patch.object(callbacks, "sync_maps_from_preset"),
         patch("core.pbr_presets.PBRImportPresetManager.set_last_active_preset"),
@@ -91,18 +75,12 @@ def test_callbacks_bridge_and_presets_deep() -> None:
         callbacks.on_export_strategy_updated(props, ctx)
 
     # 6. Pipeline persistence & directory callbacks
-    with (
-        patch.object(callbacks, "set_pipeline_setting"),
-        patch("core.project_detector.detect_engine_project", return_value="/proj/Game.uproject"),
-        patch("bridges.manager.BridgeManager.ping_engine", return_value=(True, "OK")),
-    ):
+    with patch.object(callbacks, "set_pipeline_setting"):
         callbacks.on_import_directory_updated(props, ctx)
         callbacks.on_import_path_mode_updated(props, ctx)
         callbacks.on_export_directory_updated(props, ctx)
         callbacks.on_import_ao_mode_updated(props, ctx)
         callbacks.on_import_preserve_updated(props, ctx)
-        callbacks.on_engine_project_path_updated(props, ctx)
-        callbacks.on_enable_live_sync_updated(props, ctx)
         callbacks.on_batch_mode_updated(props, ctx)
         callbacks.on_batch_source_updated(props, ctx)
         callbacks.on_engine_import_directory_updated(props, ctx)
@@ -334,7 +312,6 @@ def test_export_ops_deep(tmp_path) -> None:
     ctx = MagicMock()
     props = ctx.scene.lod_tool
     props.export_directory = str(tmp_path)
-    props.engine_project_path = str(tmp_path)
     props.target_engine = "UE5"
     props.pbr_export_preset = "unreal_engine_5"
     props.texture_max_resolution = "1024"
@@ -342,7 +319,6 @@ def test_export_ops_deep(tmp_path) -> None:
     props.pbr_export_bit_depth = "8"
     props.pbr_export_naming_pattern = "{asset}_{material}{suffix}{udim}"
     props.export_base_name = "Hero"
-    props.enable_live_sync = False
     props.export_packed_textures = True
     props.bake_animations = False
 
@@ -384,36 +360,13 @@ def test_export_ops_deep(tmp_path) -> None:
         ):
             assert export_ops.LOD_OT_bake_rig_animation.execute(op_bake, ctx) == {"FINISHED"}
 
-        # 3. Sync & Toggle live bridge & poll queue
-        op_sync = MagicMock()
-        with patch.object(export_ops, "dispatch_async_bridge_sync"):
-            assert export_ops.LOD_OT_sync_live_bridge.execute(op_sync, ctx) == {"FINISHED"}
-
-        op_toggle = MagicMock()
-        with patch.object(export_ops, "dispatch_async_bridge_ping"):
-            # Enable
-            assert export_ops.LOD_OT_toggle_live_bridge.execute(op_toggle, ctx) == {"FINISHED"}
-            assert props.enable_live_sync is True
-            # Disable
-            assert export_ops.LOD_OT_toggle_live_bridge.execute(op_toggle, ctx) == {"FINISHED"}
-            assert props.enable_live_sync is False
-
-        export_ops._BRIDGE_SYNC_QUEUE.put((True, "Synced OK", "UE5"))
-        mock_bpy.context.scene.lod_tool = props
-        assert export_ops._poll_bridge_sync_queue() == 0.25
-        assert props.bridge_connected is True
-
-        # 4. Export engine package & Install companion scripts
+        # 3. Export engine package
         op_exp = MagicMock()
         with (
             patch.object(export_ops.PreFlightValidator, "run_checks", return_value=[]),
             patch.object(export_ops.ExporterManager, "export_asset", return_value=(True, "Exported OK")),
         ):
             assert export_ops.LOD_OT_export_engine_package.execute(op_exp, ctx) == {"FINISHED"}
-
-        op_inst = MagicMock()
-        with patch.object(export_ops.BridgeManager, "install_companion_scripts", return_value=(True, "Installed")):
-            assert export_ops.LOD_OT_install_companion_scripts.execute(op_inst, ctx) == {"FINISHED"}
 
 
 def test_engine_import_helpers_deep(tmp_path) -> None:
@@ -682,7 +635,6 @@ def test_callbacks_custom_export_preset_target_engine_update(monkeypatch):
     import ui.properties.callbacks as cb
 
     save_mock = MagicMock()
-    monkeypatch.setattr(cb, "update_bridge_status_cached", MagicMock())
     monkeypatch.setattr(cb.PBRExportPresetManager, "is_builtin", lambda pid: False)
     monkeypatch.setattr(
         cb.PBRExportPresetManager,

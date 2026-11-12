@@ -584,27 +584,6 @@ class LODToolSettings(PropertyGroup):
     )
     export_base_name: StringProperty(name="Asset Base Name", default="")
 
-    # Live Engine Bridge Properties
-    engine_project_path: StringProperty(
-        name="Engine Project Path",
-        subtype="DIR_PATH",
-        default="",
-        description="Root path to active Unreal, Unity, or MSFS Community project folder",
-        update=callbacks.on_engine_project_path_updated,
-    )
-    enable_live_sync: BoolProperty(
-        name="Live Sync on Export",
-        default=True,
-        description="Automatically trigger engine re-import or compile package upon export",
-        update=callbacks.on_enable_live_sync_updated,
-    )
-    bridge_status_text: StringProperty(
-        name="Bridge Status", default="Bridge Ready", description="Cached status report from engine bridge"
-    )
-    bridge_connected: BoolProperty(
-        name="Bridge Connected", default=False, description="Cached active connection handshake status with bridge"
-    )
-
     # Side-by-Side Viewport Alignment Inspection
     is_side_by_side_active: BoolProperty(
         name="Side-by-Side View",

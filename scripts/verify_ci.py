@@ -138,7 +138,6 @@ def main() -> int:
         "--cov=core",
         "--cov=exporters",
         "--cov=ui",
-        "--cov=bridges",
         "--cov-report=term-missing",
         "-v",
     ]

@@ -1,7 +1,7 @@
 """
 OmniMesh Properties Package.
 Maintains data models for LOD tiers, screen metrics, collision hulls, rigging, PBR textures,
-engine presets, mesh cleanup, material cleanup, impostors, PBR importer, live simulation, and live engine bridges.
+engine presets, mesh cleanup, material cleanup, impostors, PBR importer, and live simulation.
 """
 
 import logging
@@ -44,8 +44,6 @@ from .callbacks import (
     on_active_lod_index_updated,
     on_batch_mode_updated,
     on_batch_source_updated,
-    on_enable_live_sync_updated,
-    on_engine_project_path_updated,
     on_export_bit_depth_updated,
     on_export_directory_updated,
     on_export_naming_updated,
@@ -62,7 +60,6 @@ from .callbacks import (
     on_target_engine_updated,
     project_preset_tiers,
     restore_preset_state_on_load,
-    update_bridge_status_cached,
 )
 from .guards import (
     ExportMapSyncGuard,
@@ -220,7 +217,6 @@ __all__ = [
     "on_export_map_item_updated",
     "sync_export_maps_from_preset",
     "sync_export_maps_to_preset",
-    "update_bridge_status_cached",
     "on_target_engine_updated",
     "on_export_preset_updated",
     "on_import_preset_updated",
@@ -233,8 +229,6 @@ __all__ = [
     "on_export_directory_updated",
     "on_import_ao_mode_updated",
     "on_import_preserve_updated",
-    "on_engine_project_path_updated",
-    "on_enable_live_sync_updated",
     "on_batch_mode_updated",
     "on_batch_source_updated",
     "restore_preset_state_on_load",

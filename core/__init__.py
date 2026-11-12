@@ -7,7 +7,6 @@ material optimization, collision decomposition, and normal handling.
 """
 
 from .exceptions import (
-    BridgeConnectionError,
     CollectionHierarchyError,
     DecimationError,
     ExportPipelineError,
@@ -22,7 +21,6 @@ __all__ = [
     "DecimationError",
     "TopologyError",
     "CollectionHierarchyError",
-    "BridgeConnectionError",
     "ExportPipelineError",
     "ImpostorBakeError",
     "RiggingError",

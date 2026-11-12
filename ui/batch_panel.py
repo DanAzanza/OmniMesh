@@ -27,12 +27,10 @@ else:
         Panel = object
 
 try:
-    from ..bridges.manager import BridgeManager
     from ..core.batch import BatchProcessorEngine
     from ..core.batch_worker_process import WorkerProcessHandle
     from .utils import safe_report
 except (ImportError, ValueError):
-    from bridges.manager import BridgeManager
     from core.batch import BatchProcessorEngine
     from core.batch_worker_process import WorkerProcessHandle
     from ui.utils import safe_report
@@ -270,18 +268,6 @@ class OMNIMESH_OT_batch_process(Operator):
         props = context.scene.lod_tool
         props.batch_status_text = f"Batch complete: {self._total_count} assets exported."
         safe_report(self, {"INFO"}, f"[OmniMesh] Batch Export Complete: {self._total_count} .blend files processed.")
-
-        # Deferred Bulk Live Link Sync on completion if enabled
-        if getattr(props, "enable_live_sync", False):
-            export_dir = bpy.path.abspath(props.export_directory)
-            target = props.target_engine
-            proj_dir = bpy.path.abspath(props.engine_project_path) if props.engine_project_path else ""
-            bridge_ok, bridge_msg = BridgeManager.sync_asset(context, target, export_dir, "Batch_Library", proj_dir)
-            props.bridge_connected = bridge_ok
-            if bridge_ok:
-                safe_report(self, {"INFO"}, f"[Live Bridge Bulk Sync] {bridge_msg}")
-            else:
-                safe_report(self, {"WARNING"}, f"[Live Bridge Bulk Sync] {bridge_msg}")
 
         return {"FINISHED"}
 

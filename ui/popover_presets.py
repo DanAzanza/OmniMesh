@@ -496,7 +496,6 @@ class OMNIMESH_PT_popover_export_preset(Panel):
         layout.label(text="Package Pipeline Toggles", icon="PACKAGE")
         layout.prop(props, "export_packed_textures", text="Pack PBR Textures on Export")
         layout.prop(props, "bake_animations", text="Bake Skeletal Animations")
-        layout.prop(props, "engine_project_path", text="Engine Project Path (Bridge)")
 
         # MSFS SDK Options Box
         if getattr(props, "target_engine", "") == "MSFS_2024":

@@ -79,7 +79,6 @@ def bootstrap_addon() -> None:
         "textures",
         "animations",
         "batch",
-        "bridges",
         "simulator",
         "properties",
         "lists",
