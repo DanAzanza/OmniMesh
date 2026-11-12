@@ -107,12 +107,11 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
 
         if is_builtin:
             box_badge = layout.box()
-            box_badge.label(text="Built-in Template (Read-Only)", icon="LOCKED")
+            box_badge.label(text="Built-in Preset (Duplicate to save as custom)", icon="INFO")
 
         layout.separator()
         layout.label(text="Package Components to Ingest", icon="CHECKBOX_HLT")
         box_comp = layout.box()
-        box_comp.enabled = not is_builtin
         box_comp.prop(props, "engine_import_geometry", text="Geometry & Multi-LODs")
         box_comp.prop(props, "engine_import_spatial", text="Spatial Markers (Datum, CG, Wheels)")
         box_comp.prop(props, "engine_import_lights", text="Aviation Lights (Nav, Strobe, Landing)")
@@ -121,13 +120,11 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
         layout.separator()
         layout.label(text="Model Target Selection", icon="OUTLINER_OB_MESH")
         row_tgt = layout.row(align=True)
-        row_tgt.enabled = not is_builtin
         row_tgt.prop(props, "engine_import_model_target", text="Target")
 
         layout.separator()
         layout.label(text="Pipeline Optimizations", icon="MODIFIER")
         box_opt = layout.box()
-        box_opt.enabled = not is_builtin
         box_opt.prop(props, "engine_import_use_lod0_suffix", text="Use '_LOD0' Suffix")
         box_opt.prop(props, "engine_import_auto_assign_screen_pct", text="Auto-Assign minSize to Screen %")
         box_opt.prop(props, "engine_import_deduplicate_materials", text="Deduplicate Re-imported Materials")
