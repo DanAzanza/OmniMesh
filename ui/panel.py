@@ -467,26 +467,18 @@ def _draw_tab_export(layout: Any, context: Any, props: Any) -> None:
 
 def _draw_batch_export_content(layout: Any, context: Any, props: Any) -> None:
     box_batch = layout.box()
-    box_batch.label(text="Batch Folder Export", icon="FILE_FOLDER")
-    row_src = box_batch.row(align=True)
-    row_src.use_property_split = False
-    row_src.prop(props, "batch_source_directory", text="Source")
-
-    row_dst = box_batch.row(align=True)
-    row_dst.use_property_split = False
-    row_dst.prop(props, "export_directory", text="Path")
+    box_batch.label(text="Batch Export (.blend Folder)", icon="FILE_FOLDER")
 
     row_act = box_batch.row(align=True)
     row_act.use_property_split = False
     row_act.scale_y = 1.2
     if getattr(props, "is_batch_running", False):
+        row_act.alert = True
         row_act.operator("lod_tool.batch_cancel", text="Cancel Batch", icon="CANCEL")
-    else:
-        row_act.operator("lod_tool.batch_process", text="Batch Export", icon="PACKAGE")
-
-    if getattr(props, "is_batch_running", False):
         box_status = box_batch.box()
-        box_status.label(text=props.batch_status_text, icon="TIME")
+        box_status.label(text=getattr(props, "batch_status_text", "Batch running..."), icon="TIME")
+    else:
+        row_act.operator("lod_tool.batch_process", text="Batch Export Folder...", icon="PACKAGE")
 
 
 # Central Panel

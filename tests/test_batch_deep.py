@@ -7,7 +7,7 @@ mirrored hierarchical path computation, object cleanup, and process_single_asset
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import os
 import tempfile
@@ -218,3 +218,83 @@ def test_process_single_asset_guards():
         assert res_no_mesh["success"] is False
         assert "No valid mesh geometry" in res_no_mesh["message"]
         assert mock_cleanup.called
+
+
+def test_batch_process_operator_dialog_and_lifecycle(monkeypatch):
+    """Verify OMNIMESH_OT_batch_process poll, invoke_props_dialog, draw, and execution validation."""
+    from ui.batch_panel import OMNIMESH_OT_batch_process
+    import ui.batch_panel as batch_mod
+    import ui.panel as panel_mod
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(batch_mod, "bpy", mock_bpy)
+
+    # 1. Poll logic
+    ctx = MagicMock()
+    mock_props = MagicMock()
+    mock_props.is_batch_running = False
+    mock_props.batch_source_directory = ""
+    ctx.scene.lod_tool = mock_props
+
+    assert OMNIMESH_OT_batch_process.poll(ctx) is True
+    mock_props.is_batch_running = True
+    assert OMNIMESH_OT_batch_process.poll(ctx) is False
+    mock_props.is_batch_running = False
+
+    op = OMNIMESH_OT_batch_process()
+
+    # 2. Invoke: opens dialog
+    mock_wm = MagicMock()
+    mock_wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+    ctx.window_manager = mock_wm
+    assert op.invoke(ctx, MagicMock()) == {"RUNNING_MODAL"}
+    mock_wm.invoke_props_dialog.assert_called_once_with(op, width=440)
+
+    # 3. Draw in popup dialog
+    mock_layout = MagicMock()
+    mock_box = MagicMock()
+    mock_col = MagicMock()
+    mock_layout.box.return_value = mock_box
+    mock_box.column.return_value = mock_col
+    cast(Any, op).layout = mock_layout
+    op.draw(ctx)
+    props_drawn = [c[0][1] for c in mock_col.prop.call_args_list if len(c[0]) > 1]
+    assert "batch_source_directory" in props_drawn
+    assert "export_directory" in props_drawn
+
+    # 4. Execute validation failures
+    mock_bpy.path.abspath = lambda p: p
+
+    # Non-existent source
+    mock_props.batch_source_directory = "/non/existent/path_xyz"
+    mock_props.export_directory = "/valid/export"
+    assert op.execute(ctx) == {"CANCELLED"}
+
+    # Empty export dir
+    with tempfile.TemporaryDirectory() as tmp_src:
+        mock_props.batch_source_directory = tmp_src
+        mock_props.export_directory = ""
+        assert op.execute(ctx) == {"CANCELLED"}
+
+        # Identical source and export dir
+        mock_props.export_directory = tmp_src
+        assert op.execute(ctx) == {"CANCELLED"}
+
+    # 5. UI Panel rendering of Batch Export content
+    mock_panel_layout = MagicMock()
+    mock_panel_box = MagicMock()
+    mock_panel_row = MagicMock()
+    mock_panel_layout.box.return_value = mock_panel_box
+    mock_panel_box.row.return_value = mock_panel_row
+
+    mock_props.is_batch_running = False
+    panel_mod._draw_batch_export_content(mock_panel_layout, ctx, mock_props)
+    assert any(
+        "lod_tool.batch_process" in str(c) and "Folder..." in c.kwargs.get("text", "")
+        for c in mock_panel_row.operator.call_args_list
+    )
+
+    mock_panel_row.reset_mock()
+    mock_props.is_batch_running = True
+    panel_mod._draw_batch_export_content(mock_panel_layout, ctx, mock_props)
+    assert any("lod_tool.batch_cancel" in str(c) for c in mock_panel_row.operator.call_args_list)

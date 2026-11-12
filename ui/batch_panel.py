@@ -30,10 +30,12 @@ try:
     from ..bridges.manager import BridgeManager
     from ..core.batch import BatchProcessorEngine
     from ..core.batch_worker_process import WorkerProcessHandle
+    from .utils import safe_report
 except (ImportError, ValueError):
     from bridges.manager import BridgeManager
     from core.batch import BatchProcessorEngine
     from core.batch_worker_process import WorkerProcessHandle
+    from ui.utils import safe_report
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +57,7 @@ class OMNIMESH_OT_batch_process(Operator):
     """Batch-process all .blend models in source directory with automated LOD generation and export"""
 
     bl_idname = "lod_tool.batch_process"
-    bl_label = "Start Batch Export"
+    bl_label = "Batch Export (.blend Folder)"
     bl_description = "Process all .blend files in the source folder with mirrored export directory"
     bl_options = {"REGISTER"}
 
@@ -75,25 +77,53 @@ class OMNIMESH_OT_batch_process(Operator):
         if not bpy or not context or not hasattr(context.scene, "lod_tool"):
             return False
         props = context.scene.lod_tool
-        return bool(props.batch_source_directory and props.batch_source_directory.strip())
+        return not getattr(props, "is_batch_running", False)
 
     def invoke(self, context: Any, event: Any) -> set[Any]:
+        if not bpy or not context:
+            return {"CANCELLED"}
+        wm = getattr(context, "window_manager", None)
+        if wm and hasattr(wm, "invoke_props_dialog"):
+            return wm.invoke_props_dialog(self, width=440)
+        return self.execute(context)
+
+    def draw(self, context: Any) -> None:
+        if not context or not hasattr(context.scene, "lod_tool") or not self.layout:
+            return
+        layout = self.layout
+        props = context.scene.lod_tool
+
+        box_dirs = layout.box()
+        box_dirs.label(text="Folder Selection:", icon="FILE_FOLDER")
+        col_dirs = box_dirs.column(align=True)
+        col_dirs.use_property_split = False
+        col_dirs.prop(props, "batch_source_directory", text="Source Folder")
+        col_dirs.prop(props, "export_directory", text="Destination")
+
+        box_opt = layout.box()
+        box_opt.label(text="Batch Options:", icon="PREFERENCES")
+        col_opt = box_opt.column(align=True)
+        col_opt.use_property_split = False
+        col_opt.prop(props, "batch_recursive_scan", text="Recursive Subfolders")
+        col_opt.prop(props, "batch_file_formats", text="Formats")
+
+    def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:
             return {"CANCELLED"}
         props = context.scene.lod_tool
         src_dir = bpy.path.abspath(props.batch_source_directory)
         if not src_dir or not os.path.exists(src_dir):
-            self.report({"ERROR"}, "Batch source directory does not exist or is empty.")
+            safe_report(self, {"ERROR"}, "Batch source directory does not exist or is empty.")
             return {"CANCELLED"}
 
         export_dir = bpy.path.abspath(props.export_directory)
         if not export_dir or not export_dir.strip():
-            self.report({"ERROR"}, "Export directory is empty.")
+            safe_report(self, {"ERROR"}, "Export directory is empty.")
             return {"CANCELLED"}
 
         # Prevent source directory from being equal to export directory
         if os.path.normpath(os.path.abspath(src_dir)) == os.path.normpath(os.path.abspath(export_dir)):
-            self.report({"ERROR"}, "Source folder and Export folder cannot be identical.")
+            safe_report(self, {"ERROR"}, "Source folder and Export folder cannot be identical.")
             return {"CANCELLED"}
 
         # Discover .blend files
@@ -101,7 +131,7 @@ class OMNIMESH_OT_batch_process(Operator):
             src_dir, recursive=props.batch_recursive_scan, export_dir=export_dir
         )
         if not files:
-            self.report({"WARNING"}, f"No .blend files found in '{src_dir}'.")
+            safe_report(self, {"WARNING"}, f"No .blend files found in '{src_dir}'.")
             return {"CANCELLED"}
 
         self._files_queue = list(files)
@@ -131,7 +161,7 @@ class OMNIMESH_OT_batch_process(Operator):
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
 
-        self.report({"INFO"}, f"Batch Export started ({self._total_count} .blend files). Press ESC to abort.")
+        safe_report(self, {"INFO"}, f"Batch Export started ({self._total_count} .blend files). Press ESC to abort.")
         return {"RUNNING_MODAL"}
 
     def modal(self, context: Any, event: Any) -> set[Any]:
@@ -239,7 +269,7 @@ class OMNIMESH_OT_batch_process(Operator):
         self.cleanup_modal(context)
         props = context.scene.lod_tool
         props.batch_status_text = f"Batch complete: {self._total_count} assets exported."
-        self.report({"INFO"}, f"[OmniMesh] Batch Export Complete: {self._total_count} .blend files processed.")
+        safe_report(self, {"INFO"}, f"[OmniMesh] Batch Export Complete: {self._total_count} .blend files processed.")
 
         # Deferred Bulk Live Link Sync on completion if enabled
         if getattr(props, "enable_live_sync", False):
@@ -249,9 +279,9 @@ class OMNIMESH_OT_batch_process(Operator):
             bridge_ok, bridge_msg = BridgeManager.sync_asset(context, target, export_dir, "Batch_Library", proj_dir)
             props.bridge_connected = bridge_ok
             if bridge_ok:
-                self.report({"INFO"}, f"[Live Bridge Bulk Sync] {bridge_msg}")
+                safe_report(self, {"INFO"}, f"[Live Bridge Bulk Sync] {bridge_msg}")
             else:
-                self.report({"WARNING"}, f"[Live Bridge Bulk Sync] {bridge_msg}")
+                safe_report(self, {"WARNING"}, f"[Live Bridge Bulk Sync] {bridge_msg}")
 
         return {"FINISHED"}
 
@@ -259,7 +289,7 @@ class OMNIMESH_OT_batch_process(Operator):
         self.cleanup_modal(context)
         props = context.scene.lod_tool
         props.batch_status_text = f"Batch cancelled: {reason}"
-        self.report({"WARNING"}, reason)
+        safe_report(self, {"WARNING"}, reason)
         return {"CANCELLED"}
 
     def cleanup_modal(self, context: Any) -> None:
