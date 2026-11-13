@@ -36,6 +36,103 @@ else:
 
 
 class UE5Exporter(EngineExporterBase):
+    @staticmethod
+    def generate_import_script_py(asset_name: str, is_skeletal: bool = False) -> str:
+        """Generates an Unreal Engine 5 Editor Python script to import FBX and packed PBR textures."""
+        safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f\r\n]', "_", str(asset_name)).strip() or "SM_Asset"
+        return f"""# OmniMesh Unreal Engine 5 Import Helper
+import os
+import unreal
+
+ASSET_NAME = {safe_name!r}
+IS_SKELETAL = {is_skeletal!r}
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEST_PATH = f"/Game/OmniMesh/{{ASSET_NAME}}"
+
+
+def import_omnimesh_asset():
+    asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+    fbx_path = os.path.join(BASE_DIR, f"{{ASSET_NAME}}.fbx")
+
+    options = unreal.FbxImportUI()
+    options.set_editor_property("import_mesh", True)
+    options.set_editor_property("import_as_skeletal", IS_SKELETAL)
+    options.set_editor_property(
+        "mesh_type_to_import",
+        unreal.FBXImportType.FBXIT_SKELETAL_MESH if IS_SKELETAL else unreal.FBXImportType.FBXIT_STATIC_MESH,
+    )
+    options.set_editor_property("import_materials", True)
+    options.set_editor_property("import_textures", True)
+    if not IS_SKELETAL:
+        sm_data = options.get_editor_property("static_mesh_import_data")
+        sm_data.set_editor_property("import_mesh_lo_ds", True)
+        sm_data.set_editor_property("auto_generate_collision", False)
+        sm_data.set_editor_property("combine_meshes", False)
+
+    fbx_task = unreal.AssetImportTask()
+    fbx_task.filename = fbx_path
+    fbx_task.destination_path = DEST_PATH
+    fbx_task.destination_name = ASSET_NAME
+    fbx_task.replace_existing = True
+    fbx_task.automated = True
+    fbx_task.save = True
+    fbx_task.options = options
+
+    tasks = [fbx_task]
+    tex_dir = os.path.join(BASE_DIR, "Textures")
+    if os.path.isdir(tex_dir):
+        for fname in sorted(os.listdir(tex_dir)):
+            if fname.lower().endswith((".png", ".tga", ".exr")):
+                t_task = unreal.AssetImportTask()
+                t_task.filename = os.path.join(tex_dir, fname)
+                t_task.destination_path = f"{{DEST_PATH}}/Textures"
+                t_task.replace_existing = True
+                t_task.automated = True
+                t_task.save = True
+                tasks.append(t_task)
+
+    asset_tools.import_asset_tasks(tasks)
+
+    # Apply linear compression settings on ORM and preserve Depth alpha on Impostor normals
+    for task in tasks[1:]:
+        for obj_path in task.imported_object_paths:
+            tex = unreal.EditorAssetLibrary.load_asset(obj_path)
+            if not isinstance(tex, unreal.Texture2D):
+                continue
+            low = obj_path.lower()
+            if "_orm" in low or "_comp" in low:
+                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)
+                tex.set_editor_property("srgb", False)
+            elif "_impostor_normal" in low:
+                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_DEFAULT)
+                tex.set_editor_property("srgb", False)
+            elif "_normal" in low or "_norm" in low:
+                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)
+                tex.set_editor_property("srgb", False)
+            unreal.EditorAssetLibrary.save_loaded_asset(tex)
+
+
+if __name__ == "__main__":
+    import_omnimesh_asset()
+"""
+
+    @classmethod
+    def _write_ue5_import_script(
+        cls,
+        export_dir: str,
+        clean_name: str,
+        is_skeletal: bool,
+        warnings: list[str],
+    ) -> None:
+        """Writes {clean_name}_ue5_import.py alongside the exported FBX."""
+        script_path = os.path.join(export_dir, f"{clean_name}_ue5_import.py")
+        try:
+            with open(script_path, "w", encoding="utf-8") as f:
+                f.write(cls.generate_import_script_py(clean_name, is_skeletal=is_skeletal))
+        except OSError as exc:
+            warnings.append(f"ue5_import_script: {exc}")
+            logger.warning("Could not write UE5 import script '%s': %s", script_path, exc)
+
     @classmethod
     def export_asset(
         cls,
@@ -200,6 +297,9 @@ class UE5Exporter(EngineExporterBase):
                     primary_bone_axis="Y",
                     secondary_bone_axis="X",
                     armature_nodetype="NULL",
+                )
+                cls._write_ue5_import_script(
+                    export_dir, clean_name, is_skeletal=bool(armature_obj), warnings=cleanup_warnings
                 )
                 return True, f"UE5 FBX package exported to: {fbx_path}"
         except (

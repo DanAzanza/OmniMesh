@@ -8,10 +8,16 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Iterable, Literal, Optional, Protocol, Tuple, cast
+
+
+class _CyclesSamplesProtocol(Protocol):
+    samples: int
+
+
 import numpy as np
 
-from .compat import get_socket_default_value
+from .compat import get_socket_default_value, run_cleanup_step
 
 if TYPE_CHECKING:
     import bpy
@@ -515,6 +521,16 @@ class ShaderTracer:
         old_engine = scene.render.engine
         cycles_mod = getattr(scene, "cycles", None)
         old_samples = cycles_mod.samples if cycles_mod else 1
+        bk = scene.render.bake
+        old_use_selected_to_active = bk.use_selected_to_active
+        old_bake_target = bk.target
+        old_active_node = nodes.active
+
+        vl = context.view_layer if context else (scene.view_layers[0] if scene.view_layers else None)
+        orig_active_obj = vl.objects.active if (vl and vl.objects is not None) else None
+        orig_selected = [o for o in scene.objects if vl is not None and o.select_get(view_layer=vl)]
+        orig_hide_viewport = act_obj.hide_viewport
+
         temp_nodes: list[bpy.types.Node] = []
         temp_img = None
 
@@ -540,9 +556,20 @@ class ShaderTracer:
             tex_node.image = temp_img
             nodes.active = tex_node
 
+            # Isolate selection and force direct-to-image bake so unrelated objects/textures cannot be cleared
+            act_obj.hide_viewport = False
+            if vl is not None:
+                for o in scene.objects:
+                    o.select_set(o == act_obj, view_layer=vl)
+                act_obj.select_set(True, view_layer=vl)
+                if vl.objects is not None:
+                    vl.objects.active = act_obj
+
             cast(Any, scene.render).engine = "CYCLES"
             if cycles_mod:
                 cycles_mod.samples = 1
+            bk.use_selected_to_active = False
+            bk.target = "IMAGE_TEXTURES"
 
             bpy.ops.object.bake(type="EMIT", margin=0, use_clear=True)
 
@@ -572,15 +599,84 @@ class ShaderTracer:
             logger.debug("Bake execution fallback: %s", exc)
             return None
         finally:
-            try:
-                cast(Any, scene.render).engine = old_engine
-                if cycles_mod and old_samples is not None:
-                    cycles_mod.samples = old_samples
-                if orig_surf_from:
-                    links.new(orig_surf_from, surf_sock)
-                for tn in temp_nodes:
-                    nodes.remove(tn)
-                if temp_img and bdata_images:
-                    bdata_images.remove(temp_img, do_unlink=True)
-            except (RuntimeError, ReferenceError, AttributeError) as exc:
-                logger.debug("Bake cleanup skipped: %s", exc)
+            _restore_socket_bake_state(
+                bk=bk,
+                old_use_selected_to_active=old_use_selected_to_active,
+                old_bake_target=old_bake_target,
+                scene=scene,
+                old_engine=old_engine,
+                cycles_mod=cycles_mod,
+                old_samples=old_samples,
+                vl=vl,
+                orig_selected=orig_selected,
+                orig_active_obj=orig_active_obj,
+                act_obj=act_obj,
+                orig_hide_viewport=orig_hide_viewport,
+                links=links,
+                orig_surf_from=orig_surf_from,
+                surf_sock=surf_sock,
+                nodes=nodes,
+                old_active_node=old_active_node,
+                temp_nodes=temp_nodes,
+                temp_img=temp_img,
+                bdata_images=bdata_images,
+            )
+
+
+def _restore_socket_bake_state(
+    *,
+    bk: bpy.types.BakeSettings,
+    old_use_selected_to_active: bool,
+    old_bake_target: Literal["IMAGE_TEXTURES", "VERTEX_COLORS"],
+    scene: bpy.types.Scene,
+    old_engine: str,
+    cycles_mod: _CyclesSamplesProtocol | None,
+    old_samples: int,
+    vl: bpy.types.ViewLayer | None,
+    orig_selected: list[bpy.types.Object],
+    orig_active_obj: bpy.types.Object | None,
+    act_obj: bpy.types.Object,
+    orig_hide_viewport: bool,
+    links: bpy.types.NodeLinks,
+    orig_surf_from: bpy.types.NodeSocket | None,
+    surf_sock: bpy.types.NodeSocket,
+    nodes: bpy.types.Nodes,
+    old_active_node: bpy.types.Node | None,
+    temp_nodes: list[bpy.types.Node],
+    temp_img: bpy.types.Image | None,
+    bdata_images: bpy.types.BlendDataImages | None,
+) -> None:
+    """Independently restores material graph, temp image, render settings, and selection after socket bake."""
+    cleanup_warnings: list[str] = []
+
+    def _restore_mat() -> None:
+        if orig_surf_from:
+            links.new(orig_surf_from, surf_sock)
+        nodes.active = old_active_node
+        for tn in temp_nodes:
+            nodes.remove(tn)
+        if temp_img and bdata_images:
+            bdata_images.remove(temp_img, do_unlink=True)
+
+    def _restore_render() -> None:
+        bk.use_selected_to_active = old_use_selected_to_active
+        bk.target = old_bake_target
+        cast(Any, scene.render).engine = old_engine
+        if cycles_mod is not None:
+            cycles_mod.samples = old_samples
+
+    run_cleanup_step(cleanup_warnings, "material", _restore_mat)
+    run_cleanup_step(cleanup_warnings, "render", _restore_render)
+    run_cleanup_step(cleanup_warnings, "visibility", lambda: setattr(act_obj, "hide_viewport", orig_hide_viewport))
+
+    if vl is not None:
+        orig_sel_set = set(orig_selected)
+        for o in scene.objects:
+            run_cleanup_step(
+                cleanup_warnings, "select", lambda target=o: target.select_set(target in orig_sel_set, view_layer=vl)
+            )
+        if vl.objects is not None:
+            run_cleanup_step(cleanup_warnings, "active_obj", lambda: setattr(vl.objects, "active", orig_active_obj))
+
+    if cleanup_warnings:
+        logger.warning("Socket bake cleanup warnings (%d): %s", len(cleanup_warnings), "; ".join(cleanup_warnings))

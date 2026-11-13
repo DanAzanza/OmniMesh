@@ -6,7 +6,7 @@ Blender 5.2+ Slotted/Layered Action F-Curve access, and EEVEE Next material help
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 import logging
 import math
 import os
@@ -423,6 +423,14 @@ def import_scene_asset(filepath: str) -> bool:
     return False
 
 
+def run_cleanup_step(warnings: list[str], label: str, fn: Callable[[], object]) -> None:
+    """Runs an isolated cleanup step and captures non-fatal Blender/runtime rollback failures."""
+    try:
+        fn()
+    except (RuntimeError, ReferenceError, AttributeError) as exc:
+        warnings.append(f"{label}: {exc}")
+
+
 __all__ = [
     "MatrixLike",
     "Vector",
@@ -431,6 +439,7 @@ __all__ = [
     "extract_action_fcurves",
     "get_socket_default_value",
     "import_scene_asset",
+    "run_cleanup_step",
     "safe_invert_matrix",
     "set_node_prop",
     "set_socket_default_value",

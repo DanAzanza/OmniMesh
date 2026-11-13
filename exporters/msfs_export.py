@@ -74,7 +74,73 @@ def _get_msfs_props(scene: bpy.types.Scene | None) -> MSFSExportSettingsProtocol
     return cast("MSFSExportSettingsProtocol | None", getattr(scene, "lod_tool", None)) if scene else None
 
 
+def _escape_xml_attr(value: str) -> str:
+    """Escapes XML attribute special characters."""
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+
+
 class MSFSExporter(EngineExporterBase):
+    @staticmethod
+    def _compute_msfs_lod_entries(
+        clean_name: str,
+        tiers: Sequence[dict[str, Any]],
+        cull_screen_size_pct: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Computes strictly descending MSFS LOD entries with ModelInfo minSize shift."""
+        escaped_asset_name = _escape_xml_attr(clean_name)
+        if not tiers:
+            cull_val = round(float(cull_screen_size_pct), 2) if cull_screen_size_pct > 0 else 0.0
+            min_str = str(int(cull_val)) if cull_val == int(cull_val) else str(cull_val)
+            return [{"min_size": cull_val, "min_size_str": min_str, "model_file": f"{escaped_asset_name}_LOD0.gltf"}]
+
+        sorted_tiers = sorted(tiers, key=lambda t: float(t.get("screen_size_pct", 0.0)), reverse=True)
+        num_tiers = len(sorted_tiers)
+        if num_tiers == 1:
+            cull_val = round(float(cull_screen_size_pct), 2) if cull_screen_size_pct > 0 else 0.0
+            min_str = str(int(cull_val)) if cull_val == int(cull_val) else str(cull_val)
+            tier_idx = int(sorted_tiers[0].get("index", 0))
+            return [
+                {
+                    "min_size": cull_val,
+                    "min_size_str": min_str,
+                    "model_file": f"{escaped_asset_name}_LOD{tier_idx}.gltf",
+                }
+            ]
+
+        entries: list[dict[str, Any]] = []
+        last_min_size = float("inf")
+        for i, tier in enumerate(sorted_tiers):
+            if i < num_tiers - 1:
+                raw_val = round(float(sorted_tiers[i + 1].get("screen_size_pct", 0.0)), 2)
+                if raw_val >= last_min_size:
+                    step = 0.1 if last_min_size > 0.1 else 0.01
+                    min_floor = round((num_tiers - 1 - i) * 0.01, 2)
+                    raw_val = max(min_floor, round(last_min_size - step, 2))
+                last_min_size = raw_val
+            else:
+                raw_val = round(float(cull_screen_size_pct), 2) if cull_screen_size_pct > 0 else 0.0
+                if raw_val >= last_min_size:
+                    step = 0.1 if last_min_size > 0.1 else 0.01
+                    raw_val = max(0.0, round(last_min_size - step, 2))
+                last_min_size = raw_val
+
+            min_str = str(int(raw_val)) if raw_val == int(raw_val) else str(raw_val)
+            tier_idx = int(tier.get("index", i))
+            entries.append(
+                {
+                    "min_size": raw_val,
+                    "min_size_str": min_str,
+                    "model_file": f"{escaped_asset_name}_LOD{tier_idx}.gltf",
+                }
+            )
+        return entries
+
     @staticmethod
     def generate_model_info_xml(
         asset_name: str,
@@ -88,53 +154,16 @@ class MSFSExporter(EngineExporterBase):
         )
         formatted_guid = f"{{{clean_guid}}}"
 
-        # XML attribute escaping
-        escaped_asset_name = (
-            clean_name.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-            .replace("'", "&apos;")
-        )
-
         lines = [
             '<?xml version="1.0" encoding="utf-8" ?>',
             f'<ModelInfo version="1.1" guid="{formatted_guid}">',
             "    <LODS>",
         ]
 
-        # Ensure descending sort by screen_size_pct
-        sorted_tiers = sorted(tiers, key=lambda t: float(t.get("screen_size_pct", 0.0)), reverse=True)
-        num_tiers = len(sorted_tiers)
-
-        if num_tiers == 0:
-            min_cull = str(round(cull_screen_size_pct, 2)) if cull_screen_size_pct > 0 else "0"
-            lines.append(f'        <LOD minSize="{min_cull}" ModelFile="{escaped_asset_name}_LOD0.gltf"/>')
-        elif num_tiers == 1:
-            min_cull = str(round(cull_screen_size_pct, 2)) if cull_screen_size_pct > 0 else "0"
-            lines.append(f'        <LOD minSize="{min_cull}" ModelFile="{escaped_asset_name}_LOD0.gltf"/>')
-        else:
-            last_min_size = float("inf")
-            for i in range(num_tiers):
-                # Descending minSize: minSize for LOD_i is the screen percentage of the NEXT tier
-                if i < num_tiers - 1:
-                    raw_val = round(float(sorted_tiers[i + 1].get("screen_size_pct", 0.0)), 2)
-                    if raw_val >= last_min_size:
-                        step = 0.1 if last_min_size > 0.1 else 0.01
-                        min_floor = round((num_tiers - 1 - i) * 0.01, 2)
-                        raw_val = max(min_floor, round(last_min_size - step, 2))
-                    last_min_size = raw_val
-                    min_size_str = str(int(raw_val)) if raw_val == int(raw_val) else str(raw_val)
-                else:
-                    cull_val = round(cull_screen_size_pct, 2) if cull_screen_size_pct > 0 else 0.0
-                    if cull_val >= last_min_size:
-                        step = 0.1 if last_min_size > 0.1 else 0.01
-                        cull_val = max(0.0, round(last_min_size - step, 2))
-                    last_min_size = cull_val
-                    min_size_str = str(int(cull_val)) if cull_val == int(cull_val) else str(cull_val)
-
-                model_file = f"{escaped_asset_name}_LOD{i}.gltf"
-                lines.append(f'        <LOD minSize="{min_size_str}" ModelFile="{model_file}"/>')
+        for entry in MSFSExporter._compute_msfs_lod_entries(
+            clean_name, tiers, cull_screen_size_pct=cull_screen_size_pct
+        ):
+            lines.append(f'        <LOD minSize="{entry["min_size_str"]}" ModelFile="{entry["model_file"]}"/>')
 
         lines.append("    </LODS>")
         lines.append("</ModelInfo>")
@@ -196,11 +225,12 @@ class MSFSExporter(EngineExporterBase):
                 for i, tier_objs in sorted(payload.lod_tiers.items()):
                     if not tier_objs:
                         continue
-                    s_pct = 50.0
                     if props and i < len(props.lods):
                         s_pct = float(props.lods[i].screen_size_pct)
                     elif payload.has_impostor_tier and i == max(payload.lod_tiers.keys()):
                         s_pct = float(props.cull_screen_size_pct) if props else 0.5
+                    else:
+                        s_pct = max(1.0, round(50.0 / (2**i), 2))
 
                     tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
                     err = cls._export_single_lod_tier_gltf(
@@ -222,18 +252,9 @@ class MSFSExporter(EngineExporterBase):
             cull_pct = float(props.cull_screen_size_pct) if props else 0.5
             xml_path = os.path.join(export_dir, f"{clean_name}.xml")
 
-            # Format tier payload for ModelXMLMerger
-            merger_tiers: list[dict[str, Any]] = []
-            for item in tier_data:
-                merger_tiers.append(
-                    {
-                        "min_size": item.get("screen_size_pct", 0.0),
-                        "model_file": f"{clean_name}_LOD{item.get('index', 0)}.gltf",
-                    }
-                )
-
-            # Surgical merge if file exists or write new
-            if ModelXMLMerger:
+            # Merge into existing ModelInfo XML (preserving behaviors/animations) or write full v1.1 XML
+            if ModelXMLMerger and os.path.isfile(xml_path):
+                merger_tiers = cls._compute_msfs_lod_entries(clean_name, tier_data, cull_screen_size_pct=cull_pct)
                 merged_ok = ModelXMLMerger.merge_lods_file(xml_path, merger_tiers)
                 if not merged_ok:
                     return False, f"Failed to write/merge ModelInfo XML at '{xml_path}'"

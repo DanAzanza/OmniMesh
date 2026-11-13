@@ -367,32 +367,75 @@ class TestShaderTracerDeep:
             def remove(self, img: Any, *, do_unlink: bool = True) -> None:
                 removed_images.append(img)
 
+        tree.nodes.active = bsdf
+
+        class _Obj:
+            def __init__(self, name: str, mats: list[Any], selected: bool = False) -> None:
+                self.name = name
+                self.type = "MESH"
+                self.data = SimpleNamespace(materials=mats)
+                self.hide_viewport = False
+                self._selected = selected
+
+            def select_get(self, *, view_layer: Any = None) -> bool:
+                return self._selected
+
+            def select_set(self, state: bool, *, view_layer: Any = None) -> None:
+                self._selected = bool(state)
+
+        mesh_obj: Any = _Obj("TargetObj", [mat], selected=False)
+        other_obj: Any = _Obj("OtherObj", [], selected=True)
+        vl: Any = SimpleNamespace(objects=SimpleNamespace(active=other_obj))
         scene: Any = SimpleNamespace(
-            render=SimpleNamespace(engine="BLENDER_EEVEE_NEXT"),
+            render=SimpleNamespace(
+                engine="BLENDER_EEVEE_NEXT",
+                bake=SimpleNamespace(use_selected_to_active=True, target="VERTEX_COLORS"),
+            ),
             cycles=SimpleNamespace(samples=64),
-            objects=[],
+            view_layers=[vl],
+            objects=[mesh_obj, other_obj],
         )
-        mesh_obj: Any = SimpleNamespace(type="MESH", data=SimpleNamespace(materials=[mat]))
-        scene.objects.append(mesh_obj)
         bdata: Any = SimpleNamespace(scenes=[scene], images=_Images())
+
+        observed_bake_state: dict[str, Any] = {}
+
+        def _fake_bake(**_kw: Any) -> None:
+            observed_bake_state["use_selected_to_active"] = scene.render.bake.use_selected_to_active
+            observed_bake_state["target"] = scene.render.bake.target
+            observed_bake_state["mesh_selected"] = mesh_obj.select_get(view_layer=vl)
+            observed_bake_state["other_selected"] = other_obj.select_get(view_layer=vl)
+            observed_bake_state["active_obj"] = vl.objects.active
 
         monkeypatch.setattr(
             tracer_mod,
             "bpy",
-            SimpleNamespace(ops=SimpleNamespace(object=SimpleNamespace(bake=lambda **_kw: None))),
+            SimpleNamespace(ops=SimpleNamespace(object=SimpleNamespace(bake=_fake_bake))),
         )
 
         baked = ShaderTracer.bake_material_socket(
             mat, "Base Color", (2, 2), bit_depth=8, scene=scene, active_obj=mesh_obj, blend_data=bdata
         )
         assert baked is not None and baked.shape == (2, 2, 3) and baked.dtype == np.uint8
+        assert observed_bake_state == {
+            "use_selected_to_active": False,
+            "target": "IMAGE_TEXTURES",
+            "mesh_selected": True,
+            "other_selected": False,
+            "active_obj": mesh_obj,
+        }
         assert scene.render.engine == "BLENDER_EEVEE_NEXT"
         assert scene.cycles.samples == 64
+        assert scene.render.bake.use_selected_to_active is True
+        assert scene.render.bake.target == "VERTEX_COLORS"
+        assert mesh_obj.select_get(view_layer=vl) is False
+        assert other_obj.select_get(view_layer=vl) is True
+        assert vl.objects.active is other_obj
+        assert tree.nodes.active is bsdf
         assert len(removed_images) == 1
         # Temp nodes removed and BSDF link restored on Surface
         assert out.inputs["Surface"].links[0].from_node is bsdf
 
-        # Negative branch: bake op raises RuntimeError -> still cleans up and returns None
+        # Negative branch: bake op raises RuntimeError -> still cleans up and restores all bake/selection state
         monkeypatch.setattr(
             tracer_mod,
             "bpy",
@@ -408,4 +451,36 @@ class TestShaderTracerDeep:
             )
             is None
         )
+        assert scene.render.engine == "BLENDER_EEVEE_NEXT"
+        assert scene.render.bake.use_selected_to_active is True
+        assert scene.render.bake.target == "VERTEX_COLORS"
+        assert vl.objects.active is other_obj
+        assert other_obj.select_get(view_layer=vl) is True
+        assert tree.nodes.active is bsdf
+
+        # Negative branch: excluded object raises RuntimeError on select_set during finally rollback ->
+        # shader graph, temp image, and render/bake settings MUST still be restored!
+        removed_before = len(removed_images)
+
+        def _raising_select_set(state: bool, *, view_layer: Any = None) -> None:
+            if len(removed_images) > removed_before or state is True:
+                raise RuntimeError("Object not in active ViewLayer")
+
+        other_obj.select_set = _raising_select_set
+        monkeypatch.setattr(
+            tracer_mod,
+            "bpy",
+            SimpleNamespace(ops=SimpleNamespace(object=SimpleNamespace(bake=_fake_bake))),
+        )
+        assert (
+            ShaderTracer.bake_material_socket(
+                mat, "Base Color", (2, 2), bit_depth=8, scene=scene, active_obj=mesh_obj, blend_data=bdata
+            )
+            is not None
+        )
+        assert len(removed_images) == removed_before + 1
+        assert len(tree.nodes) == 3  # no leaked temporary nodes
+        assert out.inputs["Surface"].links[0].from_node is bsdf
+        assert tree.nodes.active is bsdf
+        assert scene.render.bake.use_selected_to_active is True
         assert scene.render.engine == "BLENDER_EEVEE_NEXT"

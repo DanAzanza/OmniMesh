@@ -12,11 +12,18 @@ Provides:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import logging
 import math
 import os
 import tempfile
-from typing import TYPE_CHECKING, Any, Iterable, Optional, cast
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Protocol, cast
+
+
+class _CyclesSettingsProtocol(Protocol):
+    samples: int
+    use_denoising: bool
+
 
 import numpy as np
 
@@ -40,11 +47,17 @@ else:
     BlendData = object
 
 
+from .compat import run_cleanup_step
 from .exceptions import ImpostorBakeError
 from .impostor_harness import ImpostorShaderHarness
 from .impostor_math import ImpostorMath
 from .impostor_rig import EphemeralBakeSceneGuard, ImpostorCameraRig
 from .png_writer import write_png_direct
+
+
+def _set_render_engine(scene: bpy.types.Scene, engine_name: str) -> None:
+    """Assigns the scene render engine while isolating Blender stub typing quirks."""
+    cast(Any, scene.render).engine = engine_name
 
 
 def _set_cycles_device(scene: bpy.types.Scene | None, device: str) -> None:
@@ -496,78 +509,124 @@ class ImpostorAtlasBaker:
         scene = (ctx.scene if ctx else None) or (bdata_scenes[0] if bdata_scenes and len(bdata_scenes) > 0 else None)
         if not scene:
             return {}
-        orig_engine = scene.render.engine
-        cast(Any, scene.render).engine = "CYCLES"
-
-        # Automatically probe and configure best compute device (NVIDIA OptiX/CUDA, Apple Metal, AMD HIP, Intel oneAPI, or CPU)
-        cls.configure_cycles_compute_device(scene, context=ctx)
-
-        is_bg = bool(bpy.app.background) if (bpy and bpy.app) else False
-        cycles = getattr(scene, "cycles", None)
-        if cycles:
-            cycles.samples = 1 if is_bg else 16
-            cycles.use_denoising = not is_bg
-        scene.render.film_transparent = True
-
-        # Ensure objects are visible in view layer
-        orig_vis: list[tuple[bpy.types.Object, bool]] = []
-        for o in mesh_objs + [target_impostor]:
-            orig_vis.append((o, o.hide_viewport))
-            o.hide_viewport = False
-
-        # Prepare selection
-        bpy.ops.object.select_all(action="DESELECT")
-        for o in mesh_objs:
-            o.select_set(True)
-        target_impostor.select_set(True)
-        vl = ctx.view_layer if ctx else None
-        if not vl and scene and scene.view_layers and len(scene.view_layers) > 0:
-            vl = scene.view_layers[0]
-        if vl and vl.objects is not None:
-            vl.objects.active = target_impostor
-
-        # Bake configuration & temporary bake images
-        bk = scene.render.bake
-        bk.use_selected_to_active, bk.margin, bk.target = True, 4, "IMAGE_TEXTURES"
-        bk.cage_extrusion, bk.max_ray_distance = max(1.0, max_span * 1.0), max(4.0, max_span * 2.5)
-        res = atlas_resolution
         bdata_imgs = bdata.images if bdata else None
         if not bdata_imgs:
             return {}
-        img_diff = bdata_imgs.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
-        img_diff.colorspace_settings.name, img_diff.generated_color = "sRGB", (0.0, 0.0, 0.0, 0.0)  # type: ignore[assignment]
-        img_norm = bdata_imgs.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
-        img_norm.colorspace_settings.name, img_norm.generated_color = "Non-Color", (0.5, 0.5, 1.0, 0.0)  # type: ignore[assignment]
-        img_rough = bdata_imgs.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
-        img_rough.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
-        img_ao = bdata_imgs.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
-        img_ao.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
 
-        imp_data = cast("bpy.types.Mesh | None", target_impostor.data)
-        mat = imp_data.materials[0] if (imp_data and imp_data.materials) else None
-        bdata_mats = bdata.materials if bdata else None
-        if not mat and bdata_mats:
-            mat = bdata_mats.new(name=f"M_{base_name}_Impostor")
-            if imp_data and imp_data.materials is not None:
-                imp_data.materials.append(mat)
+        orig_engine = scene.render.engine
+        orig_film_transparent = scene.render.film_transparent
+        cycles = cast("_CyclesSettingsProtocol | None", getattr(scene, "cycles", None))
+        orig_samples = cycles.samples if cycles else None
+        orig_denoising = cycles.use_denoising if cycles else None
+        bk = scene.render.bake
+        orig_bk_state = (
+            bk.use_selected_to_active,
+            bk.margin,
+            bk.target,
+            bk.cage_extrusion,
+            bk.max_ray_distance,
+            bk.use_pass_direct,
+            bk.use_pass_indirect,
+            bk.use_pass_color,
+            bk.normal_space,
+        )
 
-        if not mat:
-            raise ImpostorBakeError(f"Failed creating target impostor material for '{base_name}'.")
+        vl = ctx.view_layer if ctx else None
+        if not vl and scene and scene.view_layers and len(scene.view_layers) > 0:
+            vl = scene.view_layers[0]
+        orig_active_obj = vl.objects.active if (vl and vl.objects is not None) else None
+        orig_selected = [o for o in scene.objects if vl is not None and o.select_get(view_layer=vl)]
 
-        mat.use_nodes = True
-        if not mat.node_tree:
-            raise ImpostorBakeError("Target impostor material has no node tree.")
-        nodes = mat.node_tree.nodes
-        bake_slot = cast("bpy.types.ShaderNodeTexImage", nodes.new("ShaderNodeTexImage"))
-        nodes.active = bake_slot
-
+        orig_vis: list[tuple[bpy.types.Object, bool]] = []
+        bake_slot: bpy.types.Node | None = None
+        orig_active_node: bpy.types.Node | None = None
+        nodes: bpy.types.Nodes | None = None
         muted_unbound_nodes: list[tuple[bpy.types.Node, bool]] = []
-        for n in nodes:
-            if n != bake_slot and n.type == "TEX_IMAGE" and cast("bpy.types.ShaderNodeTexImage", n).image is None:
-                muted_unbound_nodes.append((n, bool(n.mute)))
-                n.mute = True
+        temp_images: list[bpy.types.Image] = []
+
+        def _restore_render() -> None:
+            (
+                bk.use_selected_to_active,
+                bk.margin,
+                bk.target,
+                bk.cage_extrusion,
+                bk.max_ray_distance,
+                bk.use_pass_direct,
+                bk.use_pass_indirect,
+                bk.use_pass_color,
+                bk.normal_space,
+            ) = orig_bk_state
+            if cycles:
+                if orig_samples is not None:
+                    cycles.samples = orig_samples
+                if orig_denoising is not None:
+                    cycles.use_denoising = orig_denoising
+            scene.render.film_transparent = orig_film_transparent
+            _set_render_engine(scene, orig_engine)
 
         try:
+            _set_render_engine(scene, "CYCLES")
+
+            # Automatically probe and configure best compute device (NVIDIA OptiX/CUDA, Apple Metal, AMD HIP, Intel oneAPI, or CPU)
+            cls.configure_cycles_compute_device(scene, context=ctx)
+
+            is_bg = bool(bpy.app.background) if (bpy and bpy.app) else False
+            if cycles:
+                cycles.samples = 1 if is_bg else 16
+                cycles.use_denoising = not is_bg
+            scene.render.film_transparent = True
+
+            # Ensure objects are visible in view layer
+            for o in mesh_objs + [target_impostor]:
+                orig_vis.append((o, o.hide_viewport))
+                o.hide_viewport = False
+
+            # Prepare selection
+            bpy.ops.object.select_all(action="DESELECT")
+            for o in mesh_objs:
+                o.select_set(True)
+            target_impostor.select_set(True)
+            if vl and vl.objects is not None:
+                vl.objects.active = target_impostor
+
+            # Bake configuration & temporary bake images
+            bk.use_selected_to_active, bk.margin, bk.target = True, 4, "IMAGE_TEXTURES"
+            bk.cage_extrusion, bk.max_ray_distance = max(1.0, max_span * 1.0), max(4.0, max_span * 2.5)
+            res = atlas_resolution
+            img_diff = bdata_imgs.new(f"__om_diff_{base_name}", width=res, height=res, alpha=True)
+            img_diff.colorspace_settings.name, img_diff.generated_color = "sRGB", (0.0, 0.0, 0.0, 0.0)  # type: ignore[assignment]
+            img_norm = bdata_imgs.new(f"__om_norm_{base_name}", width=res, height=res, alpha=True)
+            img_norm.colorspace_settings.name, img_norm.generated_color = "Non-Color", (0.5, 0.5, 1.0, 0.0)  # type: ignore[assignment]
+            img_rough = bdata_imgs.new(f"__om_rough_{base_name}", width=res, height=res, alpha=True)
+            img_rough.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
+            img_ao = bdata_imgs.new(f"__om_ao_{base_name}", width=res, height=res, alpha=True)
+            img_ao.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
+            temp_images.extend([img_diff, img_norm, img_rough, img_ao])
+
+            imp_data = cast("bpy.types.Mesh | None", target_impostor.data)
+            mat = imp_data.materials[0] if (imp_data and imp_data.materials) else None
+            bdata_mats = bdata.materials if bdata else None
+            if not mat and bdata_mats:
+                mat = bdata_mats.new(name=f"M_{base_name}_Impostor")
+                if imp_data and imp_data.materials is not None:
+                    imp_data.materials.append(mat)
+
+            if not mat:
+                raise ImpostorBakeError(f"Failed creating target impostor material for '{base_name}'.")
+
+            mat.use_nodes = True
+            if not mat.node_tree:
+                raise ImpostorBakeError("Target impostor material has no node tree.")
+            nodes = mat.node_tree.nodes
+            orig_active_node = nodes.active
+            bake_slot = cast("bpy.types.ShaderNodeTexImage", nodes.new("ShaderNodeTexImage"))
+            nodes.active = bake_slot
+
+            for n in nodes:
+                if n != bake_slot and n.type == "TEX_IMAGE" and cast("bpy.types.ShaderNodeTexImage", n).image is None:
+                    muted_unbound_nodes.append((n, bool(n.mute)))
+                    n.mute = True
+
             # 1. Bake BaseColor (Diffuse Color pass)
             bake_slot.image = img_diff
             bk.use_pass_direct, bk.use_pass_indirect, bk.use_pass_color = False, False, True
@@ -605,33 +664,76 @@ class ImpostorAtlasBaker:
             orm_pix[:, :, 3] = base_pix.reshape((res, res, 4))[:, :, 3]
 
             img_orm = bdata_imgs.new(f"__om_orm_{base_name}", width=res, height=res, alpha=True)
+            temp_images.append(img_orm)
             img_orm.colorspace_settings.name = "Non-Color"  # type: ignore[assignment]
             cast(Any, img_orm.pixels).foreach_set(orm_pix.flatten())
             orm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_ORM.png")
             img_orm.filepath_raw, img_orm.file_format = orm_path, "PNG"
             img_orm.save()
             results["ORM"] = orm_path
-
-            bdata_imgs.remove(img_orm, do_unlink=True)
         except (RuntimeError, ValueError, OSError) as b_err:
             raise ImpostorBakeError(f"Selected-to-active impostor bake failed for '{base_name}': {b_err}") from b_err
         finally:
-            for n, orig_mute in muted_unbound_nodes:
-                try:
-                    n.mute = orig_mute
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Restoring node mute state failed: %s", exc)
-            nodes.remove(bake_slot)
-            for temp_img in [img_diff, img_norm, img_rough, img_ao]:
-                try:
-                    bdata_imgs.remove(temp_img, do_unlink=True)
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    logger.debug("Failed removing temp image: %s", exc)
-            for o, vis in orig_vis:
-                o.hide_viewport = vis
-            scene.render.engine = orig_engine
+            _restore_impostor_bake_state(
+                muted_unbound_nodes=muted_unbound_nodes,
+                nodes=nodes,
+                bake_slot=bake_slot,
+                orig_active_node=orig_active_node,
+                temp_images=temp_images,
+                bdata_imgs=bdata_imgs,
+                orig_vis=orig_vis,
+                vl=vl,
+                scene=scene,
+                orig_selected=orig_selected,
+                orig_active_obj=orig_active_obj,
+                restore_render_fn=_restore_render,
+            )
 
         return results
+
+
+def _restore_impostor_bake_state(
+    *,
+    muted_unbound_nodes: list[tuple[bpy.types.Node, bool]],
+    nodes: bpy.types.Nodes | None,
+    bake_slot: bpy.types.Node | None,
+    orig_active_node: bpy.types.Node | None,
+    temp_images: list[bpy.types.Image],
+    bdata_imgs: bpy.types.BlendDataImages,
+    orig_vis: list[tuple[bpy.types.Object, bool]],
+    vl: bpy.types.ViewLayer | None,
+    scene: bpy.types.Scene,
+    orig_selected: list[bpy.types.Object],
+    orig_active_obj: bpy.types.Object | None,
+    restore_render_fn: Callable[[], object],
+) -> None:
+    """Restores scene, view-layer selection, material, and image state after impostor bake."""
+    warnings: list[str] = []
+
+    for n, orig_mute in muted_unbound_nodes:
+        run_cleanup_step(warnings, "node_mute", lambda node=n, val=orig_mute: setattr(node, "mute", val))
+
+    if nodes is not None:
+        if bake_slot is not None:
+            run_cleanup_step(warnings, "bake_slot", lambda: nodes.remove(bake_slot))
+        run_cleanup_step(warnings, "active_node", lambda: setattr(nodes, "active", orig_active_node))
+
+    for temp_img in temp_images:
+        run_cleanup_step(warnings, "temp_image", lambda img=temp_img: bdata_imgs.remove(img, do_unlink=True))
+
+    for o, vis in orig_vis:
+        run_cleanup_step(warnings, "hide_viewport", lambda obj=o, val=vis: setattr(obj, "hide_viewport", val))
+
+    if vl is not None:
+        orig_sel_set = set(orig_selected)
+        for o in scene.objects:
+            run_cleanup_step(warnings, "select", lambda obj=o: obj.select_set(obj in orig_sel_set, view_layer=vl))
+        if vl.objects is not None:
+            run_cleanup_step(warnings, "active_obj", lambda: setattr(vl.objects, "active", orig_active_obj))
+
+    run_cleanup_step(warnings, "render_state", restore_render_fn)
+    if warnings:
+        logger.warning("Impostor bake cleanup warnings (%d): %s", len(warnings), "; ".join(warnings))
 
 
 __all__ = ["EphemeralBakeSceneGuard", "ImpostorCameraRig", "ImpostorShaderHarness", "ImpostorAtlasBaker"]

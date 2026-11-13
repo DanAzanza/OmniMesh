@@ -8,11 +8,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 import core.impostor as imp_mod
 import core.impostor_baker as baker_mod
 import core.impostor_preview as prev_mod
 import core.pbr_importer as pbr_mod
+from core.exceptions import ImpostorBakeError
 from core.impostor import ImpostorManager, ImpostorMeshBuilder, resolve_impostor_export_dir
 from core.impostor_baker import ImpostorAtlasBaker
 from core.impostor_math import Vector
@@ -194,6 +196,18 @@ def test_impostor_atlas_baker_angles_compose_and_cycles_config(tmp_path: Path) -
             return im
 
         bdata.images.new.side_effect = _make_img
+        scene.render.engine = "BLENDER_EEVEE_NEXT"
+        scene.render.film_transparent = False
+        scene.render.bake.use_selected_to_active = False
+        scene.render.bake.margin = 16
+        scene.render.bake.target = "IMAGE_TEXTURES"
+        scene.render.bake.cage_extrusion = 0.2
+        scene.render.bake.max_ray_distance = 0.0
+        scene.render.bake.use_pass_direct = True
+        scene.render.bake.use_pass_indirect = True
+        scene.render.bake.use_pass_color = False
+        scene.render.bake.normal_space = "OBJECT"
+        scene.objects = [mesh_obj, imp_obj]
         ctx.scene = scene
 
         res = ImpostorAtlasBaker.bake_impostor_textures(
@@ -210,6 +224,46 @@ def test_impostor_atlas_baker_angles_compose_and_cycles_config(tmp_path: Path) -
         assert "Normal" in res
         assert "ORM" in res
         assert unbound_tex_node.mute is False
+        assert scene.render.engine == "BLENDER_EEVEE_NEXT"
+        assert scene.render.film_transparent is False
+        assert scene.render.bake.use_selected_to_active is False
+        assert scene.render.bake.margin == 16
+        assert scene.render.bake.normal_space == "OBJECT"
+        assert bdata.images.remove.call_count == 5  # diff, norm, rough, ao, orm all cleaned up
+
+        # Negative branch: img_orm.save raises OSError AND select_set raises RuntimeError during rollback ->
+        # ImpostorBakeError raised, all 5 temp images removed, and render/bake settings still restored
+        bdata.images.remove.reset_mock()
+        created_imgs: list[Any] = []
+
+        def _make_failing_orm_img(name: str, width: int, height: int, alpha: bool = True) -> Any:
+            im = _make_img(name, width, height, alpha)
+            if name.startswith("__om_orm_"):
+                im.save.side_effect = OSError("disk full")
+            created_imgs.append(im)
+            return im
+
+        bdata.images.new.side_effect = _make_failing_orm_img
+        mesh_obj.select_set.side_effect = [None, RuntimeError("ViewLayer excluded")]
+
+        with pytest.raises(ImpostorBakeError, match="disk full"):
+            ImpostorAtlasBaker.bake_impostor_textures(
+                [mesh_obj],
+                "PineFail",
+                str(tmp_path),
+                mode="14_PLANES",
+                atlas_resolution=16,
+                impostor_obj=imp_obj,
+                context=ctx,
+                blend_data=bdata,
+            )
+
+        assert bdata.images.remove.call_count == len(created_imgs) == 5
+        assert scene.render.engine == "BLENDER_EEVEE_NEXT"
+        assert scene.render.film_transparent is False
+        assert scene.render.bake.use_selected_to_active is False
+        assert scene.render.bake.margin == 16
+        assert scene.render.bake.normal_space == "OBJECT"
 
 
 # =========================================================================
