@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import bpy
     from bpy.types import BlendData
-    from .base import EngineExporterBase
+    from .base import EngineExporterBase, scoped_export_visibility
     from .engine_export import AssetMeshResolver
 else:
     try:
@@ -28,7 +28,7 @@ else:
         bpy = None
     BlendData = object
 
-    from .base import EngineExporterBase
+    from .base import EngineExporterBase, scoped_export_visibility
     from .engine_export import AssetMeshResolver
 
 
@@ -82,13 +82,7 @@ class UnityExporter(EngineExporterBase):
         vl = context.view_layer
         orig_active = vl.objects.active if (vl and vl.objects is not None) else None
         orig_selected = list(context.selected_objects or ())
-        orig_hide_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
-        for o in all_export_items:
-            if not o:
-                continue
-            hv = o.hide_viewport
-            hg = o.hide_get(view_layer=vl) if vl else hv
-            orig_hide_states[o] = (hv, hg)
+        visibility_warnings: list[str] = []
 
         orig_collider_names: dict[bpy.types.Object, str] = {}
         fbx_path = os.path.join(export_dir, f"{clean_name}.fbx")
@@ -100,41 +94,34 @@ class UnityExporter(EngineExporterBase):
                 if not (c_obj.name.startswith("UCX_") or "_Collider" in c_obj.name):
                     c_obj.name = f"{clean_name}_Collider_{idx:02d}"
 
-            # Unhide all objects in view layer
-            for obj in all_export_items:
-                try:
-                    obj.hide_set(False, view_layer=context.view_layer)
-                    obj.hide_viewport = False
-                except (RuntimeError, AttributeError) as exc:
-                    logger.debug("Could not unhide object %s in view layer: %s", obj.name, exc)
+            with scoped_export_visibility(context, all_export_items, warnings=visibility_warnings):
+                bpy.ops.object.select_all(action="DESELECT")
+                for obj in export_objects:
+                    obj.select_set(True)
+                for c_obj in collider_objects:
+                    c_obj.select_set(True)
+                if armature_obj:
+                    armature_obj.select_set(True)
 
-            bpy.ops.object.select_all(action="DESELECT")
-            for obj in export_objects:
-                obj.select_set(True)
-            for c_obj in collider_objects:
-                c_obj.select_set(True)
-            if armature_obj:
-                armature_obj.select_set(True)
+                if armature_obj and vl and vl.objects is not None:
+                    vl.objects.active = armature_obj
+                elif export_objects and vl and vl.objects is not None:
+                    vl.objects.active = export_objects[0]
 
-            if armature_obj and vl and vl.objects is not None:
-                vl.objects.active = armature_obj
-            elif export_objects and vl and vl.objects is not None:
-                vl.objects.active = export_objects[0]
-
-            bpy.ops.export_scene.fbx(
-                filepath=fbx_path,
-                use_selection=True,
-                apply_unit_scale=True,
-                apply_scale_options="FBX_SCALE_ALL",
-                bake_space_transform=False if armature_obj else True,
-                add_leaf_bones=False if armature_obj else True,
-                object_types={"MESH", "ARMATURE", "EMPTY"},
-                mesh_smooth_type="FACE",
-                primary_bone_axis="Y",
-                secondary_bone_axis="X",
-                armature_nodetype="NULL",
-            )
-            return True, f"Unity FBX package exported to: {fbx_path}"
+                bpy.ops.export_scene.fbx(
+                    filepath=fbx_path,
+                    use_selection=True,
+                    apply_unit_scale=True,
+                    apply_scale_options="FBX_SCALE_ALL",
+                    bake_space_transform=False if armature_obj else True,
+                    add_leaf_bones=False if armature_obj else True,
+                    object_types={"MESH", "ARMATURE", "EMPTY"},
+                    mesh_smooth_type="FACE",
+                    primary_bone_axis="Y",
+                    secondary_bone_axis="X",
+                    armature_nodetype="NULL",
+                )
+                return True, f"Unity FBX package exported to: {fbx_path}"
         except (
             OmniMeshError,
             RuntimeError,
@@ -152,16 +139,8 @@ class UnityExporter(EngineExporterBase):
                 try:
                     c_obj.name = orig_name
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
+                    visibility_warnings.append(f"collider name {c_obj.name}: {exc}")
                     logger.debug("Could not restore collider name for %s: %s", c_obj.name, exc)
-
-            # Restore original hide states
-            for obj, (hv, hg) in orig_hide_states.items():
-                try:
-                    obj.hide_viewport = hv
-                    if vl:
-                        obj.hide_set(hg, view_layer=vl)
-                except (RuntimeError, AttributeError, ReferenceError) as exc:
-                    logger.debug("Could not restore hide state: %s", exc)
 
             # Restore original selection and active object
             if bpy:
@@ -172,4 +151,11 @@ class UnityExporter(EngineExporterBase):
                     if vl and vl.objects is not None and orig_active:
                         vl.objects.active = orig_active
                 except (RuntimeError, AttributeError, ReferenceError) as exc:
+                    visibility_warnings.append(f"selection: {exc}")
                     logger.debug("Could not restore selection state: %s", exc)
+            if visibility_warnings:
+                logger.warning(
+                    "Unity export visibility/cleanup warnings (%d): %s",
+                    len(visibility_warnings),
+                    "; ".join(visibility_warnings),
+                )

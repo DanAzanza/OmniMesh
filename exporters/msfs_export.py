@@ -45,7 +45,7 @@ class MSFSExportSettingsProtocol(Protocol):
 if TYPE_CHECKING:
     import bpy
     from bpy.types import BlendData
-    from .base import EngineExporterBase
+    from .base import EngineExporterBase, scoped_export_visibility
     from .engine_export import AssetMeshResolver
 else:
     try:
@@ -54,7 +54,7 @@ else:
         bpy = None
     BlendData = object
 
-    from .base import EngineExporterBase
+    from .base import EngineExporterBase, scoped_export_visibility
     from .engine_export import AssetMeshResolver
 
 try:
@@ -182,80 +182,39 @@ class MSFSExporter(EngineExporterBase):
         vl = context.view_layer
         orig_active = vl.objects.active if (vl and vl.objects is not None) else None
         orig_selected = list(context.selected_objects or ())
-        orig_hide_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
+        visibility_targets: list[bpy.types.Object] = []
         for tier_objs in payload.lod_tiers.values():
-            for o in tier_objs:
-                if not o:
-                    continue
-                hv = o.hide_viewport
-                hg = o.hide_get(view_layer=vl) if vl else hv
-                orig_hide_states[o] = (hv, hg)
+            visibility_targets.extend(o for o in tier_objs if o)
+        if payload.attachment_nodes:
+            visibility_targets.extend(n for n in payload.attachment_nodes if n)
 
         tier_data: list[dict[str, Any]] = []
         exported_tiers = 0
 
         try:
-            for i, tier_objs in sorted(payload.lod_tiers.items()):
-                if not tier_objs:
-                    continue
+            with scoped_export_visibility(context, visibility_targets, warnings=prep_warnings):
+                for i, tier_objs in sorted(payload.lod_tiers.items()):
+                    if not tier_objs:
+                        continue
+                    s_pct = 50.0
+                    if props and i < len(props.lods):
+                        s_pct = float(props.lods[i].screen_size_pct)
+                    elif payload.has_impostor_tier and i == max(payload.lod_tiers.keys()):
+                        s_pct = float(props.cull_screen_size_pct) if props else 0.5
 
-                s_pct = 50.0
-                if props and i < len(props.lods):
-                    s_pct = float(props.lods[i].screen_size_pct)
-                elif payload.has_impostor_tier and i == max(payload.lod_tiers.keys()):
-                    s_pct = float(props.cull_screen_size_pct) if props else 0.5
-
-                tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
-
-                # Ensure objects are visible in view layer and select meshes
-                bpy.ops.object.select_all(action="DESELECT")
-                for obj in tier_objs:
-                    try:
-                        obj.hide_set(False, view_layer=context.view_layer)
-                        obj.hide_viewport = False
-                    except (RuntimeError, AttributeError) as exc:
-                        prep_warnings.append(f"unhide {obj.name}: {exc}")
-                        logger.debug("Could not unhide object %s in view layer: %s", obj.name, exc)
-                    obj.select_set(True)
-
-                # For LOD0: include attachment nodes (ATTACH_POINT_, ATTACH_FX_, socket_, eye_)
-                # Crucial so the MSFS runtime engine can resolve effect nodes and sim attachments
-                if i == 0 and payload.attachment_nodes:
-                    for att_node in payload.attachment_nodes:
-                        try:
-                            att_node.hide_set(False, view_layer=context.view_layer)
-                            att_node.hide_viewport = False
-                        except (RuntimeError, AttributeError) as exc:
-                            prep_warnings.append(f"unhide att {att_node.name}: {exc}")
-                            logger.debug("Could not unhide attachment node %s: %s", att_node.name, exc)
-                        att_node.select_set(True)
-
-                context.view_layer.objects.active = tier_objs[0]
-
-                gltf_path = os.path.join(export_dir, f"{clean_name}_LOD{i}.gltf")
-                export_apply_val = not payload.is_skeletal
-                try:
-                    bpy.ops.export_scene.gltf(
-                        filepath=gltf_path,
-                        use_selection=True,
-                        export_format="GLTF_SEPARATE",
-                        export_apply=export_apply_val,
-                        export_tangents=True,
-                        export_animations=True,
+                    tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
+                    err = cls._export_single_lod_tier_gltf(
+                        context=context,
+                        tier_idx=i,
+                        tier_objs=tier_objs,
+                        attachment_nodes=payload.attachment_nodes if i == 0 else (),
+                        export_dir=export_dir,
+                        clean_name=clean_name,
+                        is_skeletal=payload.is_skeletal,
                     )
+                    if err:
+                        return False, err
                     exported_tiers += 1
-                except (
-                    OmniMeshError,
-                    RuntimeError,
-                    ValueError,
-                    TypeError,
-                    AttributeError,
-                    LookupError,
-                    OSError,
-                    ReferenceError,
-                    ZeroDivisionError,
-                ) as e:
-                    return False, f"Failed to export glTF for LOD{i}: {str(e)}"
 
             if exported_tiers == 0:
                 return False, "No valid LOD objects found to export."
@@ -288,16 +247,6 @@ class MSFSExporter(EngineExporterBase):
 
             return True, f"MSFS package ({exported_tiers} LOD tiers) exported to: {export_dir}"
         finally:
-            # Restore original hide states
-            for obj, (hv, hg) in orig_hide_states.items():
-                try:
-                    obj.hide_viewport = hv
-                    if vl:
-                        obj.hide_set(hg, view_layer=vl)
-                except (RuntimeError, AttributeError, ReferenceError) as exc:
-                    cleanup_warnings.append(f"hide state {obj.name}: {exc}")
-                    logger.debug("Could not restore hide state: %s", exc)
-
             # Restore original selection and active object
             if bpy:
                 try:
@@ -310,12 +259,63 @@ class MSFSExporter(EngineExporterBase):
                     cleanup_warnings.append(f"selection: {exc}")
                     logger.debug("Could not restore selection state: %s", exc)
 
+            if prep_warnings:
+                cleanup_warnings.extend(prep_warnings)
             if cleanup_warnings:
                 logger.warning(
                     "MSFS export cleanup finished with %d warning(s): %s",
                     len(cleanup_warnings),
                     "; ".join(cleanup_warnings),
                 )
+
+    @classmethod
+    def _export_single_lod_tier_gltf(
+        cls,
+        *,
+        context: bpy.types.Context,
+        tier_idx: int,
+        tier_objs: Sequence[bpy.types.Object],
+        attachment_nodes: Sequence[bpy.types.Object],
+        export_dir: str,
+        clean_name: str,
+        is_skeletal: bool,
+    ) -> str | None:
+        """Selects visible tier objects (plus LOD0 attachment nodes) and writes one glTF file."""
+        if not bpy:
+            return "Blender bpy module not available."
+        bpy.ops.object.select_all(action="DESELECT")
+        for obj in tier_objs:
+            obj.select_set(True)
+        for att_node in attachment_nodes:
+            att_node.select_set(True)
+
+        vl = context.view_layer
+        if vl and vl.objects is not None:
+            vl.objects.active = tier_objs[0]
+
+        gltf_path = os.path.join(export_dir, f"{clean_name}_LOD{tier_idx}.gltf")
+        try:
+            bpy.ops.export_scene.gltf(
+                filepath=gltf_path,
+                use_selection=True,
+                export_format="GLTF_SEPARATE",
+                export_apply=not is_skeletal,
+                export_tangents=True,
+                export_animations=True,
+            )
+        except (
+            OmniMeshError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            LookupError,
+            OSError,
+            ReferenceError,
+            ZeroDivisionError,
+        ) as e:
+            return f"Failed to export glTF for LOD{tier_idx}: {str(e)}"
+        return None
 
     @classmethod
     def export_project_package(

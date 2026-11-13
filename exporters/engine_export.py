@@ -96,8 +96,17 @@ class AssetMeshResolver:
         armature_obj = None
         has_impostor_tier = False
 
+        scene_objs = context.scene.objects if (context and context.scene) else None
+
+        def is_in_active_scene(obj: bpy.types.Object | None) -> bool:
+            if obj is None:
+                return False
+            if scene_objs is None:
+                return True
+            return obj.name in scene_objs
+
         def is_valid_lod_mesh(obj: bpy.types.Object | None) -> bool:
-            if not obj or obj.type != "MESH":
+            if not obj or obj.type != "MESH" or not is_in_active_scene(obj):
                 return False
             name = obj.name
             if obj.get("_is_collider", False):
@@ -211,7 +220,7 @@ class AssetMeshResolver:
                 imp_col = effective_bdata.collections.get(f"{clean_name}_LOD_Impostor")
             if imp_col:
                 for obj in imp_col.objects:
-                    if obj.type == "MESH":
+                    if obj.type == "MESH" and is_in_active_scene(obj):
                         impostor_object = obj
                         break
             if not impostor_object and effective_bdata:
@@ -222,7 +231,7 @@ class AssetMeshResolver:
                         or o_name.startswith(f"{clean_name}_")
                         or obj.get("_omnimesh_parent") == clean_name
                     )
-                    if obj.get("_is_impostor", False) and matches_asset:
+                    if obj.get("_is_impostor", False) and matches_asset and is_in_active_scene(obj):
                         impostor_object = obj
                         break
             if impostor_object:
@@ -238,7 +247,7 @@ class AssetMeshResolver:
                 coll_col = effective_bdata.collections.get(f"{clean_name}_Colliders")
             if coll_col:
                 for obj in coll_col.objects:
-                    if obj.type == "MESH" and obj not in collider_objects:
+                    if obj.type == "MESH" and is_in_active_scene(obj) and obj not in collider_objects:
                         collider_objects.append(obj)
             elif effective_bdata:
                 for obj in effective_bdata.objects:
@@ -249,7 +258,7 @@ class AssetMeshResolver:
                         or o_name.startswith((f"{clean_name}_", f"UCX_{clean_name}_"))
                         or obj.get("_omnimesh_parent") == clean_name
                     )
-                    if (is_col or o_name.startswith("UCX_")) and matches_asset:
+                    if (is_col or o_name.startswith("UCX_")) and matches_asset and is_in_active_scene(obj):
                         if obj not in collider_objects:
                             collider_objects.append(obj)
 
@@ -258,8 +267,10 @@ class AssetMeshResolver:
             bdata_objects = effective_bdata.objects if effective_bdata else None
             for i, tier in enumerate(props.lods):
                 obj = tier.generated_obj
-                if obj and (
-                    not bpy or bdata_objects is None or (isinstance(obj.name, str) and obj.name in bdata_objects)
+                if (
+                    obj
+                    and is_in_active_scene(obj)
+                    and (not bpy or bdata_objects is None or (isinstance(obj.name, str) and obj.name in bdata_objects))
                 ):
                     lod_tiers[i] = [obj]
 
@@ -331,7 +342,7 @@ class AssetMeshResolver:
                 for obj in col.objects:
                     o_name = obj.name.upper()
                     if o_name.startswith(("ATTACH_", "FX_", "SOCKET_", "EYE_")) or "ATTACH_POINT" in o_name:
-                        if obj.type == "EMPTY" and obj not in attachment_nodes:
+                        if obj.type == "EMPTY" and is_in_active_scene(obj) and obj not in attachment_nodes:
                             attachment_nodes.append(obj)
 
         return AssetExportPayload(
