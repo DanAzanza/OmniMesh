@@ -68,6 +68,8 @@ class _FakeExportObj:
         self.display_type = "TEXTURED"
         self.show_wire = False
         self.modifiers: list[Any] = []
+        self.constraints: list[Any] = []
+        self.rotation_euler: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._idprops: dict[str, Any] = {}
 
     def __setitem__(self, k: str, v: Any) -> None:

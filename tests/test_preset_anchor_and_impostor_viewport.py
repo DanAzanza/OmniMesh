@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -141,6 +142,7 @@ def test_impostor_viewport_sync_missing_collection_or_target() -> None:
     fake_bpy = MagicMock()
     impostor_viewport_ops._ACTIVE_TIMERS["MissingColl"] = lambda: None
     fake_bpy.data.collections.get.return_value = None
+    fake_bpy.data.objects.get.return_value = None
     with patch.object(impostor_viewport_ops, "bpy", fake_bpy):
         assert impostor_viewport_ops.sync_rig_to_viewport("MissingColl") is None
         assert "MissingColl" not in impostor_viewport_ops._ACTIVE_TIMERS
@@ -276,3 +278,80 @@ def test_impostor_viewport_timer_lifecycle_and_operator() -> None:
         assert op.execute(ctx_valid) == {"FINISHED"}
         assert impostor_viewport_ops.is_impostor_viewport_timer_running("OakTree") is False
         assert op.report.call_count == 2
+
+
+def test_octahedral_viewport_billboard_attach_and_sync_without_preview_rig() -> None:
+    """Attaches TRACK_TO helper in GUI mode and syncs billboard target even without a Preview_Rig collection."""
+    from ui import hull_impostor_ops
+
+    class _NamedCollection(dict[str, Any]):
+        def link(self, item: Any) -> None:
+            self[item.name] = item
+
+    _clear_active_timers()
+    helpers_coll = SimpleNamespace(name="Plane_Helpers", objects=_NamedCollection())
+    bdata = SimpleNamespace(
+        collections=SimpleNamespace(get=lambda n: None, new=lambda n: helpers_coll),
+        objects=SimpleNamespace(
+            get=lambda n: None,
+            new=lambda n, _d: SimpleNamespace(
+                name=n,
+                empty_display_type="",
+                empty_display_size=1.0,
+                location=(0.0, 0.0, 0.0),
+                hide_render=False,
+            ),
+        ),
+    )
+
+    class _ConstraintList(list[Any]):
+        def new(self, type: str) -> Any:
+            c = SimpleNamespace(type=type, name="", target=None, track_axis="", up_axis="")
+            self.append(c)
+            return c
+
+    imp_obj = SimpleNamespace(
+        name="Plane_LOD_Impostor",
+        location=Vector((1.0, 2.0, 3.0)),
+        constraints=_ConstraintList(),
+    )
+    sc_children = _NamedCollection()
+    ctx = SimpleNamespace(scene=SimpleNamespace(collection=SimpleNamespace(children=sc_children)))
+
+    fake_bpy = MagicMock()
+    fake_bpy.app.background = False
+    with (
+        patch.object(hull_impostor_ops, "bpy", fake_bpy),
+        patch.object(hull_impostor_ops, "start_impostor_viewport_timer") as start_timer,
+    ):
+        hull_impostor_ops._attach_octahedral_viewport_billboard(imp_obj, "Plane", ctx, bdata)
+        # Second call updates existing constraint rather than duplicating it
+        hull_impostor_ops._attach_octahedral_viewport_billboard(imp_obj, "Plane", ctx, bdata)
+
+    assert len(imp_obj.constraints) == 1
+    assert imp_obj.constraints[0].name == "OmniMesh_Viewport_Billboard"
+    assert imp_obj.constraints[0].track_axis == "TRACK_NEGATIVE_Y"
+    assert start_timer.call_count == 2
+
+    # Verify sync_rig_to_viewport updates Plane_Impostor_ViewTarget when Plane_Preview_Rig is absent
+    billboard_target = SimpleNamespace(location=Vector((0.0, 0.0, 0.0)))
+    sync_bpy = MagicMock()
+    sync_bpy.data.collections.get.return_value = None
+    sync_bpy.data.objects.get.side_effect = lambda n: (
+        imp_obj if n == "Plane_LOD_Impostor" else billboard_target if n == "Plane_Impostor_ViewTarget" else None
+    )
+    inv_view = MagicMock()
+    inv_view.translation = Vector((4.0, -8.0, 5.0))
+    reg3d = SimpleNamespace(view_perspective="PERSP", view_matrix=MagicMock())
+    reg3d.view_matrix.inverted.return_value = inv_view
+    sync_bpy.context.window_manager.windows = [
+        SimpleNamespace(
+            screen=SimpleNamespace(
+                areas=[SimpleNamespace(type="VIEW_3D", spaces=[SimpleNamespace(type="VIEW_3D", region_3d=reg3d)])]
+            )
+        )
+    ]
+    with patch.object(impostor_viewport_ops, "bpy", sync_bpy):
+        ret = impostor_viewport_ops.sync_rig_to_viewport("Plane")
+    assert ret == pytest.approx(1.0 / 30.0)
+    assert tuple(billboard_target.location) == (4.0, -8.0, 5.0)

@@ -431,6 +431,8 @@ def test_ue5_export_writes_valid_import_helper_script(tmp_path):
             self._name = initial_name
             self.hide_viewport = False
             self.users_collection: list[Any] = []
+            self.constraints: list[Any] = []
+            self.rotation_euler: tuple[float, float, float] = (0.0, 0.0, 0.0)
             self._renamed = False
 
         @property
@@ -472,3 +474,45 @@ def test_ue5_export_writes_valid_import_helper_script(tmp_path):
             cast("Any", ctx), str(tmp_path / "unity_dead"), "Plane"
         )
     assert ok_dead is True
+
+
+def test_scoped_export_visibility_mutes_billboard_constraint_and_restores_on_error() -> None:
+    """Mutes OmniMesh_Viewport_Billboard, zeroes rotation_euler for export, and restores on exception."""
+    from types import SimpleNamespace
+    from typing import Any, cast
+    from unittest.mock import MagicMock
+
+    from exporters.base import scoped_export_visibility
+
+    class _HashableImpObj:
+        def __init__(self, constraints: list[Any]) -> None:
+            self.name = "Plane_LOD_Impostor"
+            self.constraints = constraints
+            self.rotation_euler = [0.4, -0.2, 1.1]
+            self.hide_viewport = False
+            self.hide_render = False
+            self.users_collection: list[Any] = []
+
+        def hide_get(self, *, view_layer: Any = None) -> bool:
+            return False
+
+        def hide_set(self, _hide: bool, *, view_layer: Any = None) -> None:
+            pass
+
+        def select_set(self, _state: bool) -> None:
+            pass
+
+    bb_constraint = SimpleNamespace(name="OmniMesh_Viewport_Billboard", mute=False)
+    other_constraint = SimpleNamespace(name="KeepMe", mute=False)
+    imp_obj = _HashableImpObj([bb_constraint, other_constraint])
+    ctx = SimpleNamespace(view_layer=MagicMock(), scene=SimpleNamespace(objects=[]))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with scoped_export_visibility(cast("Any", ctx), [imp_obj]):  # type: ignore[list-item]
+            assert bb_constraint.mute is True
+            assert other_constraint.mute is False
+            assert list(imp_obj.rotation_euler) == [0.0, 0.0, 0.0]
+            raise RuntimeError("boom")
+
+    assert bb_constraint.mute is False
+    assert list(imp_obj.rotation_euler) == [0.4, -0.2, 1.1]

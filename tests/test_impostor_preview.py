@@ -194,3 +194,54 @@ def test_impostor_preview_pure_di_lifecycle_with_mock_blend_data(tmp_path, monke
     assert success is True
     assert "SM_Asset_Preview_Rig" not in mock_bdata.collections
     assert "SM_Asset_Preview_Impostor" not in mock_bdata.objects
+
+
+def test_octahedral_material_viewport_incoming_sphere_and_unity_unbound(monkeypatch):
+    """
+    Verify VIEWPORT_INCOMING mode uses Geometry.Incoming without VectorTransform,
+    supports OCTAHEDRAL_SPHERE math, clamps grid tile indices, and creates muted slots for UNITY_6.
+    """
+    from collections import defaultdict
+    import core.impostor_preview_material as preview_mat_module
+
+    mock_bpy = MagicMock()
+    mock_mat = MagicMock()
+    created_nodes: dict[str, int] = {}
+    created_list = []
+
+    def mock_node_new(type: str | None = None):
+        node = MagicMock()
+        node.type = type
+        node.inputs = defaultdict(MagicMock)
+        node.outputs = defaultdict(MagicMock)
+        key = str(type or "")
+        created_nodes[key] = created_nodes.get(key, 0) + 1
+        created_list.append(node)
+        return node
+
+    mock_mat.node_tree.nodes.new.side_effect = mock_node_new
+    mock_bdata = MagicMock()
+    mock_bdata.materials.get.return_value = None
+    mock_bdata.materials.new.return_value = mock_mat
+    monkeypatch.setattr(preview_mat_module, "bpy", mock_bpy)
+
+    mat = preview_mat_module.create_octahedral_preview_material(
+        mat_name="M_Sphere_Imp",
+        base_color_path="",
+        grid_size=8,
+        target_engine="UNITY_6",
+        mode="OCTAHEDRAL_SPHERE",
+        view_dir_mode="VIEWPORT_INCOMING",
+        allow_unbound_tex_nodes=True,
+        blend_data=mock_bdata,
+    )
+
+    assert mat is mock_mat
+    assert mock_mat.surface_render_method == "BLENDED"
+    assert mock_mat.use_backface_culling is False
+    assert created_nodes.get("ShaderNodeVectorTransform") == 1
+    assert created_nodes.get("ShaderNodeTexImage") == 3
+    assert created_nodes.get("ShaderNodeInvert") == 1
+    # 2 tile-index clamps [0, 7] + 2 sub-UV clamps [0.002, 0.998]
+    assert created_nodes.get("ShaderNodeClamp") == 4
+    assert all(n.mute is True for n in created_list if n.type == "ShaderNodeTexImage")

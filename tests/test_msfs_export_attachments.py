@@ -26,6 +26,8 @@ class MockObject(_MockBase):
         self.users_collection: list[Any] = []
         self.parent = None
         self.modifiers: list[Any] = []
+        self.constraints: list[Any] = []
+        self.rotation_euler: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     def hide_get(self, view_layer=None):
         return self._hidden_layer

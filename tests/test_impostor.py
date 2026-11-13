@@ -252,3 +252,65 @@ def test_create_impostor_material_mutes_unbound_tex_nodes(monkeypatch):
         n = mat.node_tree.nodes.get(node_name)
         assert n is not None
         assert getattr(n, "mute", False) is True
+
+
+def test_create_impostor_material_octahedral_delegates_to_viewport_shader(monkeypatch):
+    """Verify OCTAHEDRAL_HEMI and OCTAHEDRAL_SPHERE materials build live octahedral node trees."""
+    from unittest.mock import MagicMock
+    import core.impostor as imp_mod
+    import core.impostor_preview_material as prev_mat_mod
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(imp_mod, "bpy", mock_bpy)
+    monkeypatch.setattr(prev_mat_mod, "bpy", mock_bpy)
+    bdata = MockBlendData()
+
+    mat = ImpostorManager.create_impostor_material(
+        "OctaPlane",
+        target_engine="UE5",
+        mode="OCTAHEDRAL_HEMI",
+        blend_data=bdata,
+    )
+    assert mat is not None and mat.node_tree is not None
+    node_types = {n.type for n in mat.node_tree.nodes}
+    assert "ShaderNodeVectorTransform" in node_types
+    for node_name in ("Tex_BaseColor", "Tex_Normal", "Tex_ORM"):
+        n = mat.node_tree.nodes.get(node_name)
+        assert n is not None
+        assert n.mute is True
+
+
+def test_bake_impostor_textures_routes_6_face_ortho_mesh_to_ortho_baker(tmp_path, monkeypatch):
+    """Verify ORTHO_3_AXES with a 6-face UV-mapped mesh routes to Cycles multi-view ortho baker."""
+    from unittest.mock import MagicMock, patch
+    from core.impostor_baker import ImpostorAtlasBaker
+    import core.impostor_baker as baker_mod
+
+    mock_bpy = MagicMock()
+    monkeypatch.setattr(baker_mod, "bpy", mock_bpy)
+    bdata = MockBlendData()
+
+    src_mesh = MagicMock()
+    src_mesh.bound_box = [(-1.0, -1.0, 0.0), (1.0, 1.0, 2.0)]
+    src_mesh.matrix_world.__matmul__.side_effect = lambda v: v
+    src_mesh.data = MagicMock()
+
+    imp_obj = MagicMock()
+    imp_obj.name = "Hero_LOD_Impostor"
+    imp_obj.data.polygons = [MagicMock() for _ in range(6)]
+    imp_obj.data.uv_layers = [MagicMock()]
+
+    expected = {"BaseColor": str(tmp_path / "base.png")}
+    with patch("core.impostor_ortho_baker.bake_ortho_quads_atlas", return_value=expected) as ortho_fn:
+        res = ImpostorAtlasBaker.bake_impostor_textures(
+            mesh_objs=[src_mesh],
+            base_name="Hero",
+            output_dir=str(tmp_path),
+            mode="ORTHO_3_AXES",
+            atlas_resolution=512,
+            impostor_obj=imp_obj,
+            blend_data=bdata,
+        )
+
+    assert res == expected
+    ortho_fn.assert_called_once()

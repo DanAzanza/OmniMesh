@@ -32,6 +32,8 @@ class _ObjMock:
         self.selected = False
         self.hidden_vl = False
         self.users_collection: tuple[Any, ...] = ()
+        self.constraints: list[Any] = []
+        self.rotation_euler: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._idprops: dict[str, object] = {}
 
     def __setitem__(self, key: str, value: object) -> None:

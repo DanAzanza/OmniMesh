@@ -76,6 +76,8 @@ class MockObject(_MockBase):
         self.material_slots: list[Any] = []
         self.data = type("MeshData", (), {"polygons": [1, 2, 3]})()
         self.modifiers: list[Any] = []
+        self.constraints: list[Any] = []
+        self.rotation_euler: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self.hide_viewport = False
         self.select = False
         self._custom_props: dict[str, Any] = {}
