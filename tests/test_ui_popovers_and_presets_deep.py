@@ -9,7 +9,10 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+
+from core import png_writer
 
 from core.config_presets import ConfigPresetManager
 from core.lod_presets import LODPresetManager
@@ -172,8 +175,10 @@ class TestPopoversDeep:
             assert res == {"FINISHED"}
             assert gen_mock.call_args.kwargs["mode"] == "OCTAHEDRAL_SPHERE"
             assert gen_mock.call_args.kwargs["grid_size"] == 12
+            assert gen_mock.call_args.kwargs["target_engine"] == "CANONICAL"
             assert bake_mock.call_args.kwargs["mode"] == "OCTAHEDRAL_SPHERE"
             assert bake_mock.call_args.kwargs["grid_size"] == 12
+            assert bake_mock.call_args.kwargs["target_engine"] == "CANONICAL"
             assert sh_mock.call_args.kwargs["mode"] == "OCTAHEDRAL_SPHERE"
             assert sh_mock.call_args.kwargs["grid_size"] == 12
 
@@ -184,6 +189,25 @@ class TestPopoversDeep:
             assert res_ortho == {"FINISHED"}
             assert gen_mock.call_args.kwargs["mode"] == "ORTHO_3_AXES"
             assert not sh_mock.called
+
+    def test_impostor_popover_displays_pbr_export_preset(self) -> None:
+        props = SimpleNamespace(
+            impostor_mode="OCTAHEDRAL_HEMI",
+            impostor_render_underside=False,
+            impostor_grid_size=8,
+            auto_impostor_resolution=True,
+            impostor_resolution="2048",
+            pbr_export_preset="unreal_engine_5",
+        )
+        layout = _make_layout()
+        panel: Any = SimpleNamespace(layout=layout)
+        with (
+            patch.object(popovers, "bpy", MagicMock()),
+            patch.object(popovers, "_get_popover_props", return_value=props),
+        ):
+            popovers.OMNIMESH_PT_popover_impostor.draw(panel, MagicMock())
+        prop_names = [call.args[1] for call in layout.prop.call_args_list if len(call.args) >= 2]
+        assert "pbr_export_preset" in prop_names
 
 
 class TestConfigPresetOpsDeep:
@@ -488,3 +512,91 @@ class TestExportOpsDeep:
             # Register / Unregister
             register_export_ops()
             unregister_export_ops()
+
+    def test_pack_pbr_textures_repacks_canonical_impostor_on_engine_switch(self, tmp_path: Any) -> None:
+        tex_dir = tmp_path / "Textures"
+        tex_dir.mkdir()
+        p_bc = tex_dir / "T_Plane_Impostor_BaseColor.png"
+        p_norm = tex_dir / "T_Plane_Impostor_Normal.png"
+        p_orm = tex_dir / "T_Plane_Impostor_ORM.png"
+        assert png_writer.write_png_direct(str(p_bc), np.full((2, 2, 4), [200, 120, 60, 255], dtype=np.uint8))
+        assert png_writer.write_png_direct(str(p_norm), np.full((2, 2, 4), [128, 200, 255, 80], dtype=np.uint8))
+        assert png_writer.write_png_direct(str(p_orm), np.full((2, 2, 4), [220, 90, 240, 255], dtype=np.uint8))
+
+        imp_mat = MagicMock()
+        imp_mat.name = "M_Plane_Impostor"
+        # Real Blender Materials do not carry _is_impostor (only Impostor Objects do)
+        imp_mat.get.side_effect = lambda _k, d=None: d
+        mesh_mat = MagicMock()
+        mesh_mat.name = "M_Plane_Body"
+        mesh_mat.get.side_effect = lambda _k, d=None: d
+        mesh_obj = SimpleNamespace(
+            type="MESH",
+            name="Plane_LOD0",
+            material_slots=[SimpleNamespace(material=mesh_mat)],
+            get=lambda _k, d=None: d,
+        )
+        imp_props_map = {
+            "_is_impostor": True,
+            "_impostor_base_name": "Plane",
+            "_impostor_mode": "OCTAHEDRAL_SPHERE",
+            "_impostor_grid_size": 10,
+            "_impostor_canonical": True,
+            "_impostor_sphere_radius": 2.5,
+            "_impostor_sphere_center": "0.0,0.0,1.0",
+        }
+        imp_obj = SimpleNamespace(
+            type="MESH",
+            name="Plane_LOD_Impostor",
+            data=SimpleNamespace(materials=[imp_mat]),
+            material_slots=[SimpleNamespace(material=imp_mat)],
+            get=lambda k, d=None: imp_props_map.get(k, d),
+        )
+        props = SimpleNamespace(
+            export_directory=str(tmp_path),
+            texture_max_resolution="512",
+            target_engine="UNITY_6",
+            pbr_export_preset="unity_hdrp_maskmap",
+            pbr_export_texture_strategy="CONVERT_PNG",
+            pbr_export_bit_depth="8",
+            pbr_export_naming_pattern="{asset}_{material}{suffix}{udim}",
+            export_base_name="",
+            impostor_mode="OCTAHEDRAL_HEMI",
+            impostor_render_underside=False,
+            impostor_grid_size=8,
+            lods=[],
+        )
+        fake_bpy = MagicMock()
+        fake_bpy.path.abspath.return_value = str(tmp_path)
+        ctx: Any = SimpleNamespace(
+            scene=SimpleNamespace(lod_tool=props),
+            selected_objects=[mesh_obj, imp_obj],
+            active_object=mesh_obj,
+            blend_data=SimpleNamespace(objects=[mesh_obj, imp_obj], collections={}),
+        )
+
+        pack_op: Any = LOD_OT_pack_pbr_textures.__new__(LOD_OT_pack_pbr_textures)
+        pack_op.report = MagicMock()
+        with (
+            patch.object(export_ops, "bpy", fake_bpy),
+            patch.object(export_ops, "resolve_lod_context", return_value=(props, None, None)),
+            patch.object(export_ops, "get_lod0_mesh_objects", return_value=[mesh_obj, imp_obj]),
+            patch.object(export_ops, "resolve_effective_asset_name", return_value="Plane"),
+            patch.object(export_ops.TextureChannelPacker, "pack_material_preset", return_value=[]) as pack_mat_mock,
+            patch.object(export_ops.TexturePoolManager, "wait_all"),
+        ):
+            assert pack_op.execute(ctx) == {"FINISHED"}
+            packed_mats = [c.kwargs["material"] for c in pack_mat_mock.call_args_list]
+            assert packed_mats == [mesh_mat]
+            assert (tex_dir / "T_Plane_Impostor_MaskMap.png").is_file()
+            assert (tex_dir / "shaders" / "Plane_Octahedral.hlsl").is_file()
+
+            # Switch to Unreal Engine 5 without re-baking Cycles
+            props.target_engine = "UE5"
+            props.pbr_export_preset = "unreal_engine_5"
+            assert pack_op.execute(ctx) == {"FINISHED"}
+            dx_file = tex_dir / "T_Plane_Impostor_Normal_DirectX.png"
+            guide_file = tex_dir / "README_Plane_UE5_SETUP.txt"
+            assert dx_file.is_file()
+            assert png_writer.read_png_direct(str(dx_file))[0, 0, 1] == 55
+            assert "T_Plane_Impostor_Normal_DirectX.png" in guide_file.read_text(encoding="utf-8")

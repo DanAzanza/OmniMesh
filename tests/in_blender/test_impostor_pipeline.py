@@ -143,22 +143,37 @@ class TestImpostorPipeline(unittest.TestCase):
             self.assertEqual(len(imp_data.polygons), 1, "Cutout octagon card must have exactly 1 polygon face.")
 
     def test_impostor_material_engine_routing(self) -> None:
-        """Verify engine-specific shader tree wiring (UE5 vs Unity 6 MaskMap inversion)."""
+        """Verify direct engine shader routing (Unity 6 MaskMap invert) and canonical operator repacking."""
+        import os
+        from core.impostor import ImpostorManager
+
         with in_blender_sandbox() as scene:
             if scene is None or bpy is None:
                 return
+            direct_mat = ImpostorManager.create_impostor_material(
+                "DirectUnityMat", target_engine="UNITY_6", blend_data=bpy.data
+            )
+            self.assertIsNotNone(direct_mat)
+            if direct_mat and direct_mat.node_tree:
+                invert_nodes = [node for node in direct_mat.node_tree.nodes if getattr(node, "type", "") == "INVERT"]
+                self.assertGreater(
+                    len(invert_nodes), 0, "Direct UNITY_6 Impostor material must include Invert node for roughness."
+                )
+
             mesh_objs = create_hierarchy_fixture("SM_ShaderAsset")
             for obj in mesh_objs:
                 obj.select_set(True)
             scene.view_layers[0].objects.active = mesh_objs[0]
 
+            export_dir = self._get_isolated_export_dir()
             props: Any = getattr(scene, "lod_tool", None)
             if props is None:
                 return
             props.export_base_name = "SM_ShaderAsset"
             props.impostor_mode = "ORTHO_3_AXES"
             props.target_engine = "UNITY_6"
-            props.export_directory = self._get_isolated_export_dir()
+            props.pbr_export_preset = "unity_hdrp_maskmap"
+            props.export_directory = export_dir
             props.auto_impostor_resolution = False
             props.impostor_resolution = "512"
 
@@ -166,16 +181,22 @@ class TestImpostorPipeline(unittest.TestCase):
             res = ops.generate_impostor()
             self.assertEqual(res, {"FINISHED"})
 
-            mat = bpy.data.materials.get("M_SM_ShaderAsset_Impostor")
-            self.assertIsNotNone(mat)
-            if mat is None or mat.node_tree is None:
-                return
+            imp_obj = bpy.data.objects.get("SM_ShaderAsset_LOD_Impostor")
+            self.assertIsNotNone(imp_obj)
+            if imp_obj is not None:
+                self.assertTrue(bool(imp_obj.get("_impostor_canonical", False)))
 
-            nodes_any: Any = mat.node_tree.nodes
-            invert_nodes = [node for node in nodes_any if getattr(node, "type", "") == "INVERT"]
-            self.assertGreater(
-                len(invert_nodes), 0, "Unity 6 Impostor material must include Invert node for roughness."
-            )
+            tex_dir = os.path.join(export_dir, "Textures")
+            self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_BaseColor.png")))
+            self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_ORM.png")))
+            self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_MaskMap.png")))
+
+            # Switch target preset to UE5 without re-baking Cycles and repack in headless Blender (no PIL)
+            props.target_engine = "UE5"
+            props.pbr_export_preset = "unreal_engine_5"
+            pack_res = ops.pack_pbr_textures()
+            self.assertEqual(pack_res, {"FINISHED"})
+            self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_Normal_DirectX.png")))
 
     def test_impostor_shader_harness_unlit_override_passes(self) -> None:
         """Verify ImpostorShaderHarness builds emission shaders for BASE_COLOR, NORMAL, DEPTH, and ORM passes."""

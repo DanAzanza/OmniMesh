@@ -6,6 +6,7 @@ Convex Collision Hull Decomposition and Billboard Impostor Operators.
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
@@ -32,11 +33,18 @@ try:
         normalize_impostor_grid_size,
         resolve_effective_impostor_mode,
     )
-    from ..exporters.shaders import export_companion_shaders
+    from ..core.impostor_repacker import CanonicalImpostorSources, ImpostorTextureRepacker
+    from ..exporters.shaders import (
+        export_companion_shaders,
+        export_octahedral_companion_bundle,
+        resolve_shader_engine_for_preset,
+    )
     from .impostor_viewport_ops import start_impostor_viewport_timer
     from .utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
+        parse_sphere_center,
+        resolve_active_pbr_preset,
         resolve_asset_base_name,
         resolve_effective_asset_name,
         resolve_lod_context,
@@ -52,11 +60,18 @@ except (ImportError, ValueError):
         normalize_impostor_grid_size,
         resolve_effective_impostor_mode,
     )
-    from exporters.shaders import export_companion_shaders
+    from core.impostor_repacker import CanonicalImpostorSources, ImpostorTextureRepacker
+    from exporters.shaders import (
+        export_companion_shaders,
+        export_octahedral_companion_bundle,
+        resolve_shader_engine_for_preset,
+    )
     from ui.impostor_viewport_ops import start_impostor_viewport_timer
     from ui.utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
+        parse_sphere_center,
+        resolve_active_pbr_preset,
         resolve_asset_base_name,
         resolve_effective_asset_name,
         resolve_lod_context,
@@ -114,11 +129,14 @@ class LOD_OT_generate_impostor(Operator):
             else 8
         )
 
+        target_engine = getattr(props, "target_engine", "UE5")
+        preset_id, active_preset = resolve_active_pbr_preset(props, target_engine)
+
         res = ImpostorManager.generate_impostor_for_objects(
             mesh_objs,
             base_name,
             mode=effective_mode,
-            target_engine=getattr(props, "target_engine", "UE5"),
+            target_engine="CANONICAL",
             target_collection_name=target_coll_name,
             atlas_resolution=calc_res,
             scene=context.scene,
@@ -134,7 +152,7 @@ class LOD_OT_generate_impostor(Operator):
         # Determine output texture directory
         tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""), blend_data=bdata)
 
-        # Execute Cycles GPU selected-to-active baking pass
+        # Execute Cycles GPU selected-to-active canonical Metalness baking pass
         try:
             baked_maps = ImpostorAtlasBaker.bake_impostor_textures(
                 mesh_objs,
@@ -142,7 +160,7 @@ class LOD_OT_generate_impostor(Operator):
                 output_dir=tex_dir,
                 mode=effective_mode,
                 atlas_resolution=calc_res,
-                target_engine=getattr(props, "target_engine", "UE5"),
+                target_engine="CANONICAL",
                 dilation_iterations=4,
                 impostor_obj=res,
                 context=context,
@@ -152,6 +170,8 @@ class LOD_OT_generate_impostor(Operator):
         except OmniMeshError as bake_err:
             safe_report(self, {"ERROR"}, f"Impostor baking failed: {bake_err}")
             return {"CANCELLED"}
+
+        _store_impostor_metadata(res, base_name, baked_maps)
 
         res_mesh: Any = getattr(res, "data", None)
         if baked_maps and res_mesh and res_mesh.materials:
@@ -164,32 +184,84 @@ class LOD_OT_generate_impostor(Operator):
                 blend_data=bdata,
             )
             props.last_impostor_status = (
-                f"Baked {calc_res}px Impostor Atlas ({len(baked_maps)} maps) in '{target_coll_name}'"
+                f"Baked {calc_res}px Canonical Impostor ({len(baked_maps)} maps) in '{target_coll_name}'"
             )
         else:
             props.last_impostor_status = f"Generated {props.impostor_mode} in '{target_coll_name}'"
 
+        repacked_maps: dict[str, str] = {}
+        base_color_path = baked_maps.get("BaseColor", "") if baked_maps else ""
+        if base_color_path and os.path.isfile(base_color_path):
+            for master_sfx in ("_BaseColor_Master.png", "_Normal_Master.png", "_ORM_Master.png"):
+                stale_master = os.path.join(tex_dir, f"T_{base_name}_Impostor{master_sfx}")
+                if os.path.isfile(stale_master):
+                    os.remove(stale_master)
+            sources = CanonicalImpostorSources(
+                base_name=base_name,
+                base_color_path=base_color_path,
+                normal_path=baked_maps.get("Normal", ""),
+                orm_path=baked_maps.get("ORM", ""),
+                source_convention="CANONICAL",
+            )
+            repacked_maps = ImpostorTextureRepacker.repack_impostor_textures(
+                sources=sources,
+                output_dir=tex_dir,
+                target_engine=target_engine,
+                preset=active_preset,
+                refresh_master_backups=True,
+            )
+            if repacked_maps:
+                props.last_impostor_status += (
+                    f" [Packed {len(repacked_maps)} for {active_preset.get('name', preset_id)}]"
+                )
+
         # Attach live viewport tracking billboard helper and export companion HLSL shaders for Octahedral mode
         if effective_mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             _attach_octahedral_viewport_billboard(res, base_name, context, bdata)
-            if export_companion_shaders:
-                try:
-                    target_eng = getattr(props, "target_engine", "ALL")
-                    shader_res = export_companion_shaders(
-                        base_name=base_name,
-                        output_dir=tex_dir,
-                        target_engine=target_eng,
-                        grid_size=grid_size,
-                        alpha_scissor=0.5,
-                        mode=effective_mode,
-                    )
-                    if shader_res:
-                        props.last_impostor_status += f" (+{len(shader_res)} Shaders)"
-                except Exception as sh_err:
-                    logger.debug("Failed exporting companion shaders: %s", sh_err)
+            try:
+                shader_eng = resolve_shader_engine_for_preset(preset_id, target_engine)
+                raw_rad = baked_maps.get("sphere_radius", "1.0") if baked_maps else "1.0"
+                sphere_rad = float(raw_rad) if str(raw_rad) else 1.0
+                sphere_ctr = parse_sphere_center(baked_maps.get("sphere_center", "") if baked_maps else "")
+                bundle_res = export_octahedral_companion_bundle(
+                    base_name=base_name,
+                    output_dir=tex_dir,
+                    target_engine=shader_eng,
+                    grid_size=grid_size,
+                    sphere_radius=sphere_rad,
+                    sphere_center=sphere_ctr,
+                    mode=effective_mode,
+                    packed_maps=repacked_maps,
+                    alpha_scissor=0.5,
+                    shader_exporter=export_companion_shaders,
+                    write_guide=bool(repacked_maps),
+                )
+                shader_count = len([k for k in bundle_res if k != "UE5_Guide"])
+                if shader_count:
+                    props.last_impostor_status += f" (+{shader_count} Shaders)"
+            except Exception as sh_err:
+                logger.debug("Failed exporting companion shaders: %s", sh_err)
 
         safe_report(self, {"INFO"}, props.last_impostor_status)
         return {"FINISHED"}
+
+
+def _store_impostor_metadata(impostor_obj: Any, base_name: str, baked_maps: dict[str, str] | None) -> None:
+    """Persists canonical base name and bounding sphere metadata onto the generated impostor object."""
+    meta: dict[str, Any] = {"_impostor_base_name": base_name}
+    if baked_maps:
+        if "sphere_radius" in baked_maps:
+            try:
+                meta["_impostor_sphere_radius"] = float(baked_maps["sphere_radius"])
+            except (TypeError, ValueError):
+                pass
+        if "sphere_center" in baked_maps:
+            meta["_impostor_sphere_center"] = str(baked_maps["sphere_center"])
+    for key, val in meta.items():
+        try:
+            impostor_obj[key] = val
+        except TypeError:
+            pass
 
 
 def _attach_octahedral_viewport_billboard(

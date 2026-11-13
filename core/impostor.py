@@ -591,6 +591,8 @@ class ImpostorManager:
             impostor_obj["_is_impostor"] = True
             impostor_obj["_impostor_mode"] = mode
             impostor_obj["_impostor_grid_size"] = norm_grid
+            impostor_obj["_impostor_target_engine"] = target_engine
+            impostor_obj["_impostor_canonical"] = target_engine.upper() == "CANONICAL"
 
             # Assign Impostor PBR Material
             mat = cls.create_impostor_material(

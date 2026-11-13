@@ -107,6 +107,8 @@ def generate_ue5_setup_guide(
     sphere_radius: float = 1.0,
     sphere_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
     mode: str = "OCTAHEDRAL_HEMI",
+    normal_filename: str = "",
+    orm_filename: str = "",
 ) -> str:
     """
     Generates a setup guide (README_UE5_SETUP.txt) for Unreal Engine 5 integration.
@@ -114,6 +116,8 @@ def generate_ue5_setup_guide(
     """
     diameter = sphere_radius * 2.0
     proj_label = "Full Sphere (with Underside)" if mode == "OCTAHEDRAL_SPHERE" else "Upper Hemisphere"
+    norm_fname = normal_filename or f"T_{base_name}_Impostor_Normal.png"
+    orm_fname = orm_filename or f"T_{base_name}_Impostor_ORM.png"
     guide = f"""================================================================================
 OmniMesh Octahedral Impostor - Unreal Engine 5 Setup Guide
 Asset: {base_name}
@@ -129,14 +133,14 @@ Bounding Sphere Center: ({sphere_center[0]:.4f}, {sphere_center[1]:.4f}, {sphere
     * Compression Settings: UserInterface2D (RGBA) or Default (TC_Default)
     * sRGB: ENABLED (Checked)
 
-- T_{base_name}_Impostor_Normal.png:
+- {norm_fname}:
     * IMPORTANT: DO NOT USE "Normalmap (TC_Normalmap / BC5)"!
       Unreal Engine's BC5 compressor automatically discards the Alpha channel.
       OmniMesh stores normalized Depth in the Alpha channel for Pixel Depth Offset.
     * Compression Settings: Default (TC_Default / BC7 / DXT5) or VectorDisplacementmap
     * sRGB: DISABLED (Unchecked)
 
-- T_{base_name}_Impostor_ORM.png:
+- {orm_fname}:
     * Compression Settings: Masks (TC_Masks) or Default (TC_Default)
     * sRGB: DISABLED (Unchecked)
     * Channels: Red = Ambient Occlusion, Green = Roughness, Blue = Metallic
@@ -155,7 +159,7 @@ In your UE5 Material:
 --------------------------------------------------------------------------------
 Option A: Using UE5's Built-in MF_OctahedralImpostor
 - Feed T_{base_name}_Impostor_BaseColor into BaseColorTex input.
-- Feed T_{base_name}_Impostor_Normal into NormalTex input.
+- Feed {norm_fname} into NormalTex input.
 - Set Grid Size parameter to {grid_size}.
 
 Option B: Using OmniMesh Custom HLSL Node

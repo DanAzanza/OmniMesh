@@ -418,26 +418,27 @@ class ImpostorAtlasBaker:
                     results[chan_key] = out_path
 
         # Export companion Unreal Engine 5 setup guide
-        try:
+        if target_engine.upper() in {"UE5", "ALL"}:
             try:
-                from ..exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
-            except (ImportError, ValueError):
-                from exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
+                try:
+                    from ..exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
+                except (ImportError, ValueError):
+                    from exporters.shaders.unreal_octahedral import generate_ue5_setup_guide
 
-            center_tup = (float(center.x), float(center.y), float(center.z))
-            guide_text = generate_ue5_setup_guide(
-                base_name=base_name,
-                grid_size=grid_size,
-                sphere_radius=float(radius),
-                sphere_center=center_tup,
-                mode=mode,
-            )
-            guide_path = os.path.join(output_dir, f"README_{base_name}_UE5_SETUP.txt")
-            with open(guide_path, "w", encoding="utf-8") as gf:
-                gf.write(guide_text)
-            results["UE5_Guide"] = guide_path
-        except (OSError, UnicodeError, ImportError, ValueError) as e:
-            logger.warning("Could not generate UE5 setup guide: %s", e)
+                center_tup = (float(center.x), float(center.y), float(center.z))
+                guide_text = generate_ue5_setup_guide(
+                    base_name=base_name,
+                    grid_size=grid_size,
+                    sphere_radius=float(radius),
+                    sphere_center=center_tup,
+                    mode=mode,
+                )
+                guide_path = os.path.join(output_dir, f"README_{base_name}_UE5_SETUP.txt")
+                with open(guide_path, "w", encoding="utf-8") as gf:
+                    gf.write(guide_text)
+                results["UE5_Guide"] = guide_path
+            except (OSError, UnicodeError, ImportError, ValueError) as e:
+                logger.warning("Could not generate UE5 setup guide: %s", e)
 
         results["sphere_radius"] = str(radius)
         results["sphere_center"] = f"{center.x:.4f},{center.y:.4f},{center.z:.4f}"

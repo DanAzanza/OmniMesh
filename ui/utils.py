@@ -691,7 +691,50 @@ def tag_view3d_redraw(context: Any) -> None:
                         area.tag_redraw()
 
 
+def resolve_active_pbr_preset(
+    props: Any,
+    target_engine: str,
+    preset_manager: Any = None,
+) -> tuple[str, dict[str, Any]]:
+    """Resolves the active PBR export preset ID and dictionary from UI properties with UE5 fallback."""
+    try:
+        from ..core.impostor_repacker import resolve_factory_preset_id_for_engine
+        from ..core.pbr_presets import PBRExportPresetManager
+    except (ImportError, ValueError):
+        from core.impostor_repacker import resolve_factory_preset_id_for_engine
+        from core.pbr_presets import PBRExportPresetManager
+
+    mgr = preset_manager or PBRExportPresetManager
+    preset_id = getattr(props, "pbr_export_preset", "") or getattr(props, "pbr_preset", "")
+    if not preset_id:
+        preset_id = resolve_factory_preset_id_for_engine(target_engine)
+    try:
+        return preset_id, mgr.get_preset(preset_id)
+    except Exception as exc:
+        logger.warning("Could not load export preset '%s', falling back: %s", preset_id, exc)
+        return "unreal_engine_5", mgr.get_preset("unreal_engine_5")
+
+
+def parse_sphere_center(raw: Any) -> tuple[float, float, float]:
+    """Parses a comma-separated 'x,y,z' bounding-sphere center string safely into a 3-tuple."""
+    if isinstance(raw, (tuple, list)) and len(raw) == 3:
+        try:
+            return (float(raw[0]), float(raw[1]), float(raw[2]))
+        except (TypeError, ValueError):
+            return (0.0, 0.0, 0.0)
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.split(",")]
+        if len(parts) == 3:
+            try:
+                return (float(parts[0]), float(parts[1]), float(parts[2]))
+            except ValueError:
+                return (0.0, 0.0, 0.0)
+    return (0.0, 0.0, 0.0)
+
+
 __all__ = [
     "get_or_create_engine_import_collection",
+    "parse_sphere_center",
+    "resolve_active_pbr_preset",
     "tag_view3d_redraw",
 ]
