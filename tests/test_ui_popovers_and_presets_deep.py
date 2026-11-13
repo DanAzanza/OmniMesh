@@ -322,7 +322,7 @@ class TestExportOpsDeep:
             lods=[SimpleNamespace(generated_obj=obj)],
         )
         ctx: Any = SimpleNamespace(
-            scene=SimpleNamespace(lod_tool=props),
+            scene=SimpleNamespace(lod_tool=props, objects={obj.name: obj}),
             selected_objects=[obj],
             active_object=obj,
             blend_data=SimpleNamespace(objects=[], collections={}),

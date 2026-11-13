@@ -99,6 +99,7 @@ def test_asset_mesh_resolver_includes_attachment_nodes():
 
     context = MagicMock()
     context.blend_data = mock_bpy.data
+    context.scene.objects = {o.name: o for o in (mesh0, att_point, fx_point, socket_point, eye_point, random_empty)}
     with patch("exporters.engine_export.bpy", mock_bpy):
         payload = AssetMeshResolver.resolve_payload(context, "C172")
 

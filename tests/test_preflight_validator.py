@@ -80,7 +80,9 @@ class MockLODToolProps(_MockBase):
 
 class MockContext(_MockBase):
     def __init__(self, props=None):
-        self.scene = type("Scene", (), {"lod_tool": props or MockLODToolProps()})()
+        eff_props = props or MockLODToolProps()
+        scene_objs = {t.generated_obj.name: t.generated_obj for t in eff_props.lods if t.generated_obj is not None}
+        self.scene = type("Scene", (), {"lod_tool": eff_props, "objects": scene_objs})()
         self.blend_data = None
 
 

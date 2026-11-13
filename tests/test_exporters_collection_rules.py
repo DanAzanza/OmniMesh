@@ -160,6 +160,7 @@ class MockCollectionObjects(_MockBase):
 class MockCollection(_MockBase):
     def __init__(self, name: str):
         self.name = name
+        self.hide_viewport = False
         self._objects_list: list[MockObject] = []
         self.objects = MockCollectionObjects(self)
         self.children_list: list[MockCollection] = []
@@ -335,6 +336,7 @@ def mock_hierarchy():
         (),
         {
             "collection": root,
+            "objects": mock_data_objs,
             "lod_tool": type(
                 "MockProps",
                 (),
@@ -373,6 +375,11 @@ def mock_hierarchy():
         {
             "objects": type("OB", (), {"active": None})(),
             "active_layer_collection": type("ALC", (), {"collection": root})(),
+            "layer_collection": type(
+                "LC",
+                (),
+                {"collection": root, "name": root.name, "hide_viewport": False, "exclude": False, "children": []},
+            )(),
         },
     )()
     mock_context = MockRuleContext(scene=mock_scene, view_layer=mock_vl)

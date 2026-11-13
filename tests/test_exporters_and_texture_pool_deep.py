@@ -31,6 +31,7 @@ class _ObjMock:
         self.matrix_world.copy.return_value = self.matrix_world
         self.selected = False
         self.hidden_vl = False
+        self.users_collection: tuple[Any, ...] = ()
         self._idprops: dict[str, object] = {}
 
     def __setitem__(self, key: str, value: object) -> None:
@@ -77,8 +78,15 @@ class _SceneObjs(list):
 
 def _make_ue5_context(bdata_objs: _FakeBDataObjs) -> Any:
     scene_objs = _SceneObjs()
-    scene_collection = SimpleNamespace(objects=scene_objs)
-    vl = SimpleNamespace(objects=SimpleNamespace(active=None))
+    scene_collection = SimpleNamespace(name="Scene Collection", objects=scene_objs, hide_viewport=False)
+    layer_col = SimpleNamespace(
+        name="Scene Collection",
+        collection=scene_collection,
+        children=[],
+        hide_viewport=False,
+        exclude=False,
+    )
+    vl = SimpleNamespace(objects=SimpleNamespace(active=None), layer_collection=layer_col)
     scene = SimpleNamespace(collection=scene_collection)
     bdata = SimpleNamespace(objects=bdata_objs)
     return SimpleNamespace(
