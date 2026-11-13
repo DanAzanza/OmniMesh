@@ -176,8 +176,8 @@ def main() -> int:
     if blender_tested:
         merged = merge_dual_runtime_coverage(repo_root)
         if merged:
-            report_cmd = [sys.executable, "-m", "coverage", "report", "--fail-under=70"]
-            if not run_command(report_cmd, "Unified Dual-Runtime Coverage Gate (Target: >= 70%)"):
+            report_cmd = [sys.executable, "-m", "coverage", "report", "--fail-under=80"]
+            if not run_command(report_cmd, "Unified Dual-Runtime Coverage Gate (Target: >= 80%)"):
                 return 1
 
     print("\n" + "=" * 60)
