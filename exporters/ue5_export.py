@@ -194,7 +194,12 @@ if __name__ == "__main__":
         orig_imp_names: dict[bpy.types.Object, str] = {}
         orig_parents: dict[bpy.types.Object, bpy.types.Object | None] = {obj: obj.parent for obj in export_objects}
         orig_collider_parents: dict[bpy.types.Object, bpy.types.Object | None] = {c: c.parent for c in collider_objects}
-        orig_matrices: dict[bpy.types.Object, mathutils.Matrix] = {}
+        is_chunked_asset = any(len(objs) > 1 for objs in payload.lod_tiers.values())
+        orig_matrices: dict[bpy.types.Object, mathutils.Matrix] = (
+            {obj: obj.matrix_world.copy() for obj in export_objects + collider_objects if obj.matrix_world is not None}
+            if (not armature_obj and not is_chunked_asset)
+            else {}
+        )
         created_empty = None
         lod_group_empty = None
 
@@ -214,7 +219,6 @@ if __name__ == "__main__":
 
                 bpy.ops.object.select_all(action="DESELECT")
 
-                is_chunked_asset = any(len(objs) > 1 for objs in payload.lod_tiers.values())
                 if armature_obj:
                     armature_obj.select_set(True)
                     for obj in export_objects:
@@ -260,11 +264,6 @@ if __name__ == "__main__":
                     if mathutils:
                         lod_group_empty.matrix_world = mathutils.Matrix.Identity(4)
 
-                    orig_matrices = {
-                        obj: obj.matrix_world.copy()
-                        for obj in export_objects + collider_objects
-                        if obj.matrix_world is not None
-                    }
                     for obj in export_objects:
                         if obj.parent != lod_group_empty:
                             obj.parent = lod_group_empty
