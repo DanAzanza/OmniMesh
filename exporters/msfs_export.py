@@ -298,6 +298,7 @@ class MSFSExporter(EngineExporterBase):
             bpy.ops.export_scene.gltf(
                 filepath=gltf_path,
                 use_selection=True,
+                use_active_scene=True,
                 export_format="GLTF_SEPARATE",
                 export_apply=not is_skeletal,
                 export_tangents=True,

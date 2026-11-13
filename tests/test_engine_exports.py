@@ -104,3 +104,51 @@ def test_exporter_manager_catches_export_pipeline_error():
         ok, msg = ExporterManager.export_asset(mock_context, "UE5", "/tmp", "TestAsset")
         assert ok is False
         assert "Geometry corrupted" in msg
+
+
+def test_msfs_gltf_export_isolates_active_scene(tmp_path):
+    """Verifies MSFS glTF export passes use_active_scene=True to prevent multi-scene leakage."""
+    from types import SimpleNamespace
+    from typing import Any, cast
+    from unittest.mock import MagicMock, patch
+
+    from exporters import msfs_export
+
+    fake_obj = MagicMock()
+    fake_obj.name = "SM_Test_LOD0"
+    fake_obj.visible_get.return_value = True
+    fake_obj.hide_viewport = False
+    fake_obj.hide_render = False
+    fake_obj.users_collection = []
+
+    fake_scene = SimpleNamespace(objects=[], lod_tool=None)
+    fake_context = SimpleNamespace(
+        scene=fake_scene,
+        view_layer=SimpleNamespace(objects=SimpleNamespace(active=None)),
+        selected_objects=[],
+    )
+    mock_gltf_op = MagicMock()
+    mock_bpy = SimpleNamespace(
+        ops=SimpleNamespace(
+            object=SimpleNamespace(select_all=MagicMock()),
+            export_scene=SimpleNamespace(gltf=mock_gltf_op),
+        )
+    )
+
+    with patch.object(msfs_export, "bpy", mock_bpy):
+        err = MSFSExporter._export_single_lod_tier_gltf(
+            context=cast("Any", fake_context),
+            tier_idx=0,
+            tier_objs=[fake_obj],
+            attachment_nodes=[],
+            export_dir=str(tmp_path),
+            clean_name="SM_Test",
+            is_skeletal=False,
+        )
+
+    assert err is None
+    mock_gltf_op.assert_called_once()
+    call_kwargs = mock_gltf_op.call_args.kwargs
+    assert call_kwargs["use_selection"] is True
+    assert call_kwargs["use_active_scene"] is True
+    assert call_kwargs["export_format"] == "GLTF_SEPARATE"
