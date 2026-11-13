@@ -218,11 +218,9 @@ class HardenedOcclusionCuller:
                         if v not in vert_map:
                             vert_map[v] = temp_bm.verts.new(v.co)
                         new_verts.append(vert_map[v])
-                    try:
+                    if len(set(new_verts)) >= 3 and temp_bm.faces.get(new_verts) is None:
                         temp_bm.faces.new(new_verts)
                         opaque_face_map.append(f.index)
-                    except ValueError:
-                        pass
                 temp_bm.faces.ensure_lookup_table()
                 bvh_opaque = BVHTree.FromBMesh(temp_bm, epsilon=0.0)
             finally:

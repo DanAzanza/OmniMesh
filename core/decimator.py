@@ -429,10 +429,7 @@ class MeshDecimator:
 
             mesh_data = cast("bpy.types.Mesh | None", obj.data)
             if mesh_data is not None:
-                try:
-                    mesh_data.validate()
-                except (AttributeError, TypeError):
-                    pass
+                mesh_data.validate()
         except (RuntimeError, ValueError, AttributeError) as exc:
             obj_name = obj.name or "Unnamed"
             logger.error("QEM Decimate modifier apply failed on '%s' (ratio=%.4f): %s", obj_name, clamped_ratio, exc)

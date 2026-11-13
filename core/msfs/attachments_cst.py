@@ -10,9 +10,9 @@ import datetime
 import logging
 import os
 import shutil
-import tempfile
-import time
 from typing import Optional
+
+from ..io_utils import atomic_write_text
 
 from .camera_cst import detect_file_format
 from .models import (
@@ -23,6 +23,8 @@ from .models import (
 from .transforms import (
     format_coordinate_float,
     msfs_to_blender,
+    parse_float_triple,
+    parse_float_value,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,34 +50,27 @@ def _parse_sim_attachment_key(
     elif k_lower == "alias":
         current_attachment.alias = val_clean
     elif k_lower == "attach_scale":
-        try:
-            current_attachment.attach_scale = float(val_clean)
-        except ValueError as exc:
-            logger.warning("Malformed attach_scale '%s': %s", val_clean, exc)
+        scale = parse_float_value(val_clean, f"{current_attachment.section}.attach_scale")
+        if scale is not None:
+            current_attachment.attach_scale = scale
     elif k_lower == "attach_offset":
         tokens = [t.strip() for t in val_clean.split(",") if t.strip()]
-        if len(tokens) >= 3:
-            try:
-                coords = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
-                current_attachment.attach_offset_ft = coords
-                current_attachment.coords_msfs_rel_ft = coords
-                current_attachment.coords_blender_m = msfs_to_blender(*coords)
-                record.coordinates = coords
-                record.is_spatial = True
-            except ValueError as exc:
-                logger.warning("Malformed attach_offset coordinate '%s': %s", val_clean, exc)
-        else:
+        coords = parse_float_triple(tokens, f"{current_attachment.section}.attach_offset")
+        if coords is not None:
+            current_attachment.attach_offset_ft = coords
+            current_attachment.coords_msfs_rel_ft = coords
+            current_attachment.coords_blender_m = msfs_to_blender(*coords)
+            record.coordinates = coords
+            record.is_spatial = True
+        elif len(tokens) < 3:
             logger.debug("attach_offset has fewer than 3 tokens: %s", val_clean)
     elif k_lower == "attach_pbh":
         tokens = [t.strip() for t in val_clean.split(",") if t.strip()]
-        if len(tokens) >= 3:
-            try:
-                rot = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
-                current_attachment.attach_pbh_deg = rot
-                record.rotation = rot
-            except ValueError as exc:
-                logger.warning("Malformed attach_pbh rotation '%s': %s", val_clean, exc)
-        else:
+        rot = parse_float_triple(tokens, f"{current_attachment.section}.attach_pbh")
+        if rot is not None:
+            current_attachment.attach_pbh_deg = rot
+            record.rotation = rot
+        elif len(tokens) < 3:
             logger.debug("attach_pbh has fewer than 3 tokens: %s", val_clean)
 
 
@@ -444,27 +439,14 @@ class MSFSAttachmentsCST:
                 serialized_lines.append(nl)
 
         # 4. Atomic write
-        temp_fd, temp_file_path = tempfile.mkstemp(dir=dest_dir, prefix="omnimesh_attach_", text=False)
-        try:
-            with open(temp_fd, "w", encoding=config.encoding, newline="") as f:
-                f.writelines(serialized_lines)
-                f.flush()
-                os.fsync(f.fileno())
-
-            for attempt in range(4):
-                try:
-                    os.replace(temp_file_path, dest_file)
-                    break
-                except PermissionError:
-                    if attempt == 3:
-                        raise
-                    time.sleep(0.05 * (2**attempt))
-            logger.info("Successfully serialized attached_objects.cfg to %s", dest_file)
-        finally:
-            if os.path.exists(temp_file_path):
-                try:
-                    os.remove(temp_file_path)
-                except OSError:
-                    pass
+        atomic_write_text(
+            dest_file,
+            serialized_lines,
+            encoding=config.encoding,
+            newline="",
+            prefix="omnimesh_attach_",
+            sync=True,
+        )
+        logger.info("Successfully serialized attached_objects.cfg to %s", dest_file)
 
         return backup_path

@@ -11,12 +11,16 @@ import logging
 import os
 import re
 import shutil
-import tempfile
-import time
 from typing import Optional
 
+from ..io_utils import atomic_write_text
+
 from .models import CameraConfigFile, CameraDefinition
-from .transforms import format_coordinate_float
+from .transforms import (
+    format_coordinate_float,
+    parse_float_triple,
+    parse_float_value,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,35 +81,22 @@ def _parse_camera_property(
     elif k_norm == "subcategoryitem":
         current_cam.subcategory_item = val.strip("\"'")
     elif k_norm == "initialzoom":
-        try:
-            current_cam.initial_zoom = float(val)
-        except ValueError as exc:
-            logger.warning("Malformed initialzoom '%s' in camera %s: %s", val, current_cam.index, exc)
+        zoom = parse_float_value(val, f"camera {current_cam.index} initialzoom")
+        if zoom is not None:
+            current_cam.initial_zoom = zoom
     elif k_norm == "initialxyz":
         tokens = [t.strip() for t in val.split(",") if t.strip()]
-        if len(tokens) >= 3:
-            try:
-                current_cam.initial_xyz_m = (
-                    float(tokens[0]),
-                    float(tokens[1]),
-                    float(tokens[2]),
-                )
-            except ValueError as exc:
-                logger.warning("Malformed initialxyz '%s' in camera %s: %s", val, current_cam.index, exc)
-        else:
+        xyz = parse_float_triple(tokens, f"camera {current_cam.index} initialxyz")
+        if xyz is not None:
+            current_cam.initial_xyz_m = xyz
+        elif len(tokens) < 3:
             logger.debug("initialxyz has fewer than 3 tokens: %s", val)
     elif k_norm == "initialpbh":
         tokens = [t.strip() for t in val.split(",") if t.strip()]
-        if len(tokens) >= 3:
-            try:
-                current_cam.initial_pbh_deg = (
-                    float(tokens[0]),
-                    float(tokens[1]),
-                    float(tokens[2]),
-                )
-            except ValueError as exc:
-                logger.warning("Malformed initialpbh '%s' in camera %s: %s", val, current_cam.index, exc)
-        else:
+        pbh = parse_float_triple(tokens, f"camera {current_cam.index} initialpbh")
+        if pbh is not None:
+            current_cam.initial_pbh_deg = pbh
+        elif len(tokens) < 3:
             logger.debug("initialpbh has fewer than 3 tokens: %s", val)
 
 
@@ -327,27 +318,13 @@ class MSFSCameraCST:
             serialized_lines.append(nl)
 
         # 5. Atomic Write via Temporary File with Windows retry
-        temp_fd, temp_file_path = tempfile.mkstemp(dir=dest_dir, prefix="omnimesh_cam_", text=False)
-        try:
-            with open(temp_fd, "w", encoding=config.encoding, newline="") as f:
-                f.writelines(serialized_lines)
-                f.flush()
-                os.fsync(f.fileno())
-
-            for attempt in range(4):
-                try:
-                    os.replace(temp_file_path, dest_file)
-                    break
-                except PermissionError:
-                    if attempt == 3:
-                        raise
-                    time.sleep(0.05 * (2**attempt))
-
-        finally:
-            if os.path.exists(temp_file_path):
-                try:
-                    os.remove(temp_file_path)
-                except OSError:
-                    pass
+        atomic_write_text(
+            dest_file,
+            serialized_lines,
+            encoding=config.encoding,
+            newline="",
+            prefix="omnimesh_cam_",
+            sync=True,
+        )
 
         return backup_path

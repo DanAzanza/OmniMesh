@@ -16,6 +16,16 @@ import xml.etree.ElementTree as ET
 logger = logging.getLogger(__name__)
 
 
+def _safe_glob(directory: Path, pattern: str, *, recursive: bool = False) -> list[Path]:
+    """Lists matching entries in ``directory``, logging and returning empty on OS errors."""
+    try:
+        iterator = directory.rglob(pattern) if recursive else directory.glob(pattern)
+        return list(iterator)
+    except OSError as exc:
+        logger.warning("Failed scanning '%s' (%s): %s", directory, pattern, exc)
+        return []
+
+
 @dataclass(frozen=True)
 class MSFSLODInfo:
     """Represents a single LOD entry declared in a ModelInfo XML."""
@@ -188,23 +198,21 @@ def find_package_root(start_path: Path | str) -> Optional[Path]:
         return path
 
     # 3. Check child directories recursively up to 4 levels down (e.g. PackageSources/SimObjects/Airplanes/<Asset>)
-    try:
-        candidates = []
-        for candidate in path.rglob("*"):
-            if candidate.is_dir() and is_package_root(candidate):
-                candidates.append(candidate)
-        if candidates:
-            # Score candidates: prefer complete airplane packages over sub-parts (AirplaneParts)
-            def _score_candidate(c: Path) -> tuple[int, int, int]:
-                # Negative priority for AirplaneParts, positive for Airplanes or common/
-                part_penalty = 1 if "airplaneparts" in [p.lower() for p in c.parts] else 0
-                has_common = 0 if resolve_path_ci(c, "common", "model", "model.cfg") else 1
-                return (part_penalty, has_common, len(c.parts))
+    candidates = [
+        candidate
+        for candidate in _safe_glob(path, "*", recursive=True)
+        if candidate.is_dir() and is_package_root(candidate)
+    ]
+    if candidates:
+        # Score candidates: prefer complete airplane packages over sub-parts (AirplaneParts)
+        def _score_candidate(c: Path) -> tuple[int, int, int]:
+            # Negative priority for AirplaneParts, positive for Airplanes or common/
+            part_penalty = 1 if "airplaneparts" in [p.lower() for p in c.parts] else 0
+            has_common = 0 if resolve_path_ci(c, "common", "model", "model.cfg") else 1
+            return (part_penalty, has_common, len(c.parts))
 
-            candidates.sort(key=_score_candidate)
-            return candidates[0]
-    except OSError:
-        pass
+        candidates.sort(key=_score_candidate)
+        return candidates[0]
 
     # 4. Fallback: if direct model.cfg or flight_model.cfg in path
     if (path / "model.cfg").is_file() or (path / "flight_model.cfg").is_file():
@@ -396,13 +404,10 @@ class MSFSProjectScanner:
 
         # If model_cfg_path not found, search first matching model.cfg in subdirectories
         if model_cfg_path is None:
-            try:
-                for candidate in root.rglob("model.cfg"):
-                    if candidate.is_file():
-                        model_cfg_path = candidate
-                        break
-            except OSError:
-                pass
+            for candidate in _safe_glob(root, "model.cfg", recursive=True):
+                if candidate.is_file():
+                    model_cfg_path = candidate
+                    break
 
         # 2. Parse model.cfg targets and options
         models_dict: dict[str, MSFSModelTargetInfo] = {}
@@ -450,14 +455,11 @@ class MSFSProjectScanner:
                     search_roots.append(p_dir)
 
         for sroot in search_roots:
-            try:
-                for entry in sroot.iterdir():
-                    if entry.is_dir() and entry.name.lower().startswith("model."):
-                        v_name = entry.name.split(".", 1)[1].strip()
-                        if v_name and entry not in variant_dirs:
-                            variant_dirs.append(entry)
-            except OSError:
-                pass
+            for entry in _safe_glob(sroot, "*"):
+                if entry.is_dir() and entry.name.lower().startswith("model."):
+                    v_name = entry.name.split(".", 1)[1].strip()
+                    if v_name and entry not in variant_dirs:
+                        variant_dirs.append(entry)
 
         for vdir in variant_dirs:
             variant_key = vdir.name.split(".", 1)[1].strip().lower()
@@ -523,14 +525,11 @@ class MSFSProjectScanner:
             # Check attachments/**/config/attached_objects.cfg or attachments/**/attachment.cfg
             att_root = resolve_path_ci(root, "attachments")
             if att_root and att_root.is_dir():
-                try:
-                    for cand in att_root.rglob("*.cfg"):
-                        c_name = cand.name.lower()
-                        if c_name in ("attached_objects.cfg", "attachment.cfg") and cand.is_file():
-                            attached_objects_cfg = cand
-                            break
-                except OSError:
-                    pass
+                for cand in _safe_glob(att_root, "*.cfg", recursive=True):
+                    c_name = cand.name.lower()
+                    if c_name in ("attached_objects.cfg", "attachment.cfg") and cand.is_file():
+                        attached_objects_cfg = cand
+                        break
 
         return MSFSProjectManifest(
             package_root=root,

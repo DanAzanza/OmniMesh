@@ -28,6 +28,20 @@ else:
 
 logger = logging.getLogger(__name__)
 
+
+def _cleanup_temp_meshes(blend_data: BlendData, temp_meshes: list[bpy.types.Mesh]) -> int:
+    """Removes temporary collision decomposition meshes from ``blend_data``."""
+    removed = 0
+    for temp_m in temp_meshes:
+        try:
+            blend_data.meshes.remove(temp_m)
+            removed += 1
+        except (RuntimeError, ReferenceError, KeyError) as exc:
+            logger.warning("Failed removing temporary collision mesh: %s", exc)
+    temp_meshes.clear()
+    return removed
+
+
 from .exceptions import DependencyInjectionError
 
 # Re-export for backward compatibility
@@ -127,12 +141,7 @@ class CollisionManager:
                     finally:
                         bm_temp.free()
 
-                for temp_m in temp_meshes_to_clean:
-                    try:
-                        blend_data.meshes.remove(temp_m)
-                    except (RuntimeError, ReferenceError, KeyError):
-                        pass
-                temp_meshes_to_clean.clear()
+                _cleanup_temp_meshes(blend_data, temp_meshes_to_clean)
 
                 # Decompose unified geometry
                 hulls = CollisionDecomposer.decompose_mesh_to_hulls(
@@ -143,11 +152,7 @@ class CollisionManager:
                 )
             finally:
                 bm_unified.free()
-                for temp_m in temp_meshes_to_clean:
-                    try:
-                        blend_data.meshes.remove(temp_m)
-                    except (RuntimeError, ReferenceError, KeyError):
-                        pass
+                _cleanup_temp_meshes(blend_data, temp_meshes_to_clean)
 
             try:
                 for bm_hull in hulls:

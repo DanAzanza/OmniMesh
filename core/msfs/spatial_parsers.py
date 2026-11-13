@@ -20,8 +20,22 @@ from .models import (
     PayloadStationPoint,
     SpatialPoint,
 )
+from .transforms import parse_float_triple
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_legacy_light_fields(tokens: list[str], key: str) -> Optional[tuple[int, tuple[float, float, float]]]:
+    """Parses type integer and XYZ coordinates for legacy [LIGHTS] entries."""
+    if len(tokens) < 4:
+        return None
+    try:
+        light_type = int(float(tokens[0]))
+        coords = (float(tokens[1]), float(tokens[2]), float(tokens[3]))
+        return light_type, coords
+    except (ValueError, IndexError) as exc:
+        logger.warning("Skipping malformed legacy light entry '%s' (%r): %s", key, tokens[:4], exc)
+        return None
 
 
 class MSFSSpatialParsers:
@@ -39,17 +53,14 @@ class MSFSSpatialParsers:
         key_upper = key.upper()
         if key_upper in ("REFERENCE_DATUM_POSITION", "EMPTY_WEIGHT_CG_POSITION"):
             tokens = [t.strip() for t in val_part.split(",") if t.strip()]
-            if len(tokens) >= 3:
-                try:
-                    coords = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
-                    record.coordinates = coords
-                    record.is_spatial = True
-                    if key_upper == "REFERENCE_DATUM_POSITION":
-                        config.reference_datum_ft = coords
-                    elif key_upper == "EMPTY_WEIGHT_CG_POSITION":
-                        config.empty_weight_cg_ft = coords
-                except ValueError as e:
-                    logger.warning("Failed parsing coords for %s: %s", key, e)
+            coords = parse_float_triple(tokens, f"WEIGHT_AND_BALANCE:{key}")
+            if coords is not None:
+                record.coordinates = coords
+                record.is_spatial = True
+                if key_upper == "REFERENCE_DATUM_POSITION":
+                    config.reference_datum_ft = coords
+                elif key_upper == "EMPTY_WEIGHT_CG_POSITION":
+                    config.empty_weight_cg_ft = coords
         elif key.lower().startswith("station_load."):
             # Quote-aware CSV split for names with commas/spaces
             tokens = [t.strip() for t in re.split(r",\s*(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", val_part) if t.strip()]
@@ -162,30 +173,24 @@ class MSFSSpatialParsers:
             return
 
         tokens = [t.strip() for t in val_part.split(",") if t.strip()]
-        if len(tokens) >= 3:
-            try:
-                long_ft = float(tokens[0])
-                lat_ft = float(tokens[1])
-                vert_ft = float(tokens[2])
-                suffix = tokens[3:]
+        coords = parse_float_triple(tokens, f"FUEL:{key}")
+        if coords is not None:
+            suffix = tokens[3:]
+            record.coordinates = coords
+            record.suffix_tokens = suffix
+            record.is_spatial = True
 
-                record.coordinates = (long_ft, lat_ft, vert_ft)
-                record.suffix_tokens = suffix
-                record.is_spatial = True
-
-                point = SpatialPoint(
-                    point_id=f"FUEL:{key}",
-                    section="FUEL",
-                    key=key,
-                    point_type="FUEL_TANK",
-                    name_tag=key,
-                    coords_msfs_rel_ft=(long_ft, lat_ft, vert_ft),
-                    raw_properties=suffix,
-                    line_index=line_idx,
-                )
-                config.points.append(point)
-            except (ValueError, IndexError) as e:
-                logger.warning("Failed parsing fuel tank %s: %s", key, e)
+            point = SpatialPoint(
+                point_id=f"FUEL:{key}",
+                section="FUEL",
+                key=key,
+                point_type="FUEL_TANK",
+                name_tag=key,
+                coords_msfs_rel_ft=coords,
+                raw_properties=suffix,
+                line_index=line_idx,
+            )
+            config.points.append(point)
 
     @staticmethod
     def parse_lights_line(
@@ -221,22 +226,16 @@ class MSFSSpatialParsers:
             coords: Optional[tuple[float, float, float]] = None
             if pos_str:
                 pos_tokens = [t.strip() for t in pos_str.split(",") if t.strip()]
-                if len(pos_tokens) >= 3:
-                    try:
-                        coords = (float(pos_tokens[0]), float(pos_tokens[1]), float(pos_tokens[2]))
-                        record.coordinates = coords
-                    except ValueError:
-                        pass
+                coords = parse_float_triple(pos_tokens, f"LIGHTS:{key}.LocalPosition")
+                if coords is not None:
+                    record.coordinates = coords
 
             rotation: Optional[tuple[float, float, float]] = None
             if rot_str:
                 rot_tokens = [t.strip() for t in rot_str.split(",") if t.strip()]
-                if len(rot_tokens) >= 3:
-                    try:
-                        rotation = (float(rot_tokens[0]), float(rot_tokens[1]), float(rot_tokens[2]))
-                        record.rotation = rotation
-                    except ValueError:
-                        pass
+                rotation = parse_float_triple(rot_tokens, f"LIGHTS:{key}.LocalRotation")
+                if rotation is not None:
+                    record.rotation = rotation
 
             if coords is not None:
                 record.is_spatial = True
@@ -268,32 +267,27 @@ class MSFSSpatialParsers:
                 config.lights.append(light)
         else:
             tokens = [t.strip() for t in val_part.split(",") if t.strip()]
-            if len(tokens) >= 4:
-                try:
-                    light_type = int(float(tokens[0]))
-                    long_ft = float(tokens[1])
-                    lat_ft = float(tokens[2])
-                    vert_ft = float(tokens[3])
-                    suffix = tokens[4:]
+            parsed_legacy = _parse_legacy_light_fields(tokens, key)
+            if parsed_legacy is not None:
+                light_type, (long_ft, lat_ft, vert_ft) = parsed_legacy
+                suffix = tokens[4:]
 
-                    record.coordinates = (long_ft, lat_ft, vert_ft)
-                    record.suffix_tokens = [tokens[0]] + suffix
-                    record.is_spatial = True
+                record.coordinates = (long_ft, lat_ft, vert_ft)
+                record.suffix_tokens = [tokens[0]] + suffix
+                record.is_spatial = True
 
-                    light = LightPoint(
-                        point_id=f"LIGHTS:{key}",
-                        section="LIGHTS",
-                        key=key,
-                        point_type="LIGHT",
-                        name_tag=f"Light_{light_type}",
-                        light_type=light_type,
-                        coords_msfs_rel_ft=(long_ft, lat_ft, vert_ft),
-                        raw_properties=suffix,
-                        line_index=line_idx,
-                    )
-                    config.lights.append(light)
-                except (ValueError, IndexError):
-                    pass
+                light = LightPoint(
+                    point_id=f"LIGHTS:{key}",
+                    section="LIGHTS",
+                    key=key,
+                    point_type="LIGHT",
+                    name_tag=f"Light_{light_type}",
+                    light_type=light_type,
+                    coords_msfs_rel_ft=(long_ft, lat_ft, vert_ft),
+                    raw_properties=suffix,
+                    line_index=line_idx,
+                )
+                config.lights.append(light)
 
     @staticmethod
     def parse_exits_line(
@@ -389,21 +383,18 @@ class MSFSSpatialParsers:
         key_upper = key.upper()
         if key_upper in ("WING_APEX_POS", "AERO_CENTER_LIFT"):
             tokens = [t.strip() for t in val_part.split(",") if t.strip()]
-            if len(tokens) >= 3:
-                try:
-                    coords = (float(tokens[0]), float(tokens[1]), float(tokens[2]))
-                    record.coordinates = coords
-                    record.is_spatial = True
+            coords = parse_float_triple(tokens, f"AERODYNAMICS:{key}")
+            if coords is not None:
+                record.coordinates = coords
+                record.is_spatial = True
 
-                    aero_pt = AerodynamicPoint(
-                        point_id=f"AERODYNAMICS:{key}",
-                        section="AERODYNAMICS",
-                        key=key,
-                        point_type="AERO",
-                        name_tag=key,
-                        coords_msfs_rel_ft=coords,
-                        line_index=line_idx,
-                    )
-                    config.points.append(aero_pt)
-                except ValueError as exc:
-                    logger.warning("Failed parsing aerodynamics %s: %s", key, exc)
+                aero_pt = AerodynamicPoint(
+                    point_id=f"AERODYNAMICS:{key}",
+                    section="AERODYNAMICS",
+                    key=key,
+                    point_type="AERO",
+                    name_tag=key,
+                    coords_msfs_rel_ft=coords,
+                    line_index=line_idx,
+                )
+                config.points.append(aero_pt)

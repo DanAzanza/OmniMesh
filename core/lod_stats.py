@@ -5,36 +5,65 @@ Provides O(1) triangle counting and baseline LOD0 statistics.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence, cast
+from collections.abc import Iterable, Sized
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     import bmesh
     import bpy
+else:
+    try:
+        import bmesh
+        import bpy
+    except ImportError:
+        bmesh = None
+        bpy = None
 
+from .compat import count_mesh_triangles
 from .modifiers import ModifierManager
 
 
-def _count_triangles(mesh_data: bpy.types.Mesh | bmesh.types.BMesh | object | None) -> int:
+@runtime_checkable
+class _PolyWithVertices(Protocol):
+    vertices: Sized
+
+
+@runtime_checkable
+class _MeshWithPolygons(Protocol):
+    polygons: object
+
+
+@runtime_checkable
+class _MeshWithLoops(Protocol):
+    loops: object
+
+
+@runtime_checkable
+class _BMeshWithFaces(Protocol):
+    faces: object
+
+
+def _count_triangles(mesh_data: object) -> int:
     """Computes true triangle count in O(1) via loop-poly invariant with safe fallback."""
     if not mesh_data:
         return 0
-    try:
-        loops = mesh_data.loops  # type: ignore[union-attr]
-        polys = mesh_data.polygons  # type: ignore[union-attr]
-        if loops is not None and polys is not None:
+    if bpy is not None and isinstance(mesh_data, bpy.types.Mesh):
+        return count_mesh_triangles(mesh_data)
+    if bmesh is not None and isinstance(mesh_data, bmesh.types.BMesh):
+        return len(mesh_data.faces)
+    if isinstance(mesh_data, _MeshWithPolygons):
+        polys = mesh_data.polygons
+        loops = mesh_data.loops if isinstance(mesh_data, _MeshWithLoops) else None
+        if isinstance(loops, Sized) and isinstance(polys, Sized):
             n_loops = len(loops)
             n_polys = len(polys)
             return max(0, n_loops - 2 * n_polys) if n_polys > 0 else 0
-        if polys is not None:
-            return sum(max(0, len(cast("Sequence[int]", p.vertices)) - 2) for p in polys)
-    except (AttributeError, TypeError):
-        pass
-    try:
-        faces = mesh_data.faces  # type: ignore[union-attr]
-        if faces is not None:
+        if isinstance(polys, Iterable):
+            return sum(max(0, len(p.vertices) - 2) for p in polys if isinstance(p, _PolyWithVertices))
+    if isinstance(mesh_data, _BMeshWithFaces):
+        faces = mesh_data.faces
+        if isinstance(faces, Sized):
             return len(faces)
-    except (AttributeError, TypeError):
-        pass
     return 0
 
 

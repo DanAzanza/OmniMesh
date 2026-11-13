@@ -35,6 +35,11 @@ else:
     BlendData = object
 
 
+def _cfg_flag(cfg_props: object, name: str) -> bool:
+    """Reads an optional boolean category filter toggle from preset spawn config."""
+    return bool(getattr(cfg_props, name, True)) if cfg_props is not None else True
+
+
 class ConfigPresetSpawner:
     """Instantiates preset configuration objects into standardized collections."""
 
@@ -525,12 +530,12 @@ class ConfigPresetSpawner:
         interact_col = col_fn(context, asset_name, "INTERACTIONS")
 
         # Feature toggles
-        inc_spatial = getattr(cfg_props, "include_spatial", True) if cfg_props else True
-        inc_lights = getattr(cfg_props, "include_lights", True) if cfg_props else True
-        inc_cams = getattr(cfg_props, "include_cameras", True) if cfg_props else True
-        inc_exits = getattr(cfg_props, "include_exits", True) if cfg_props else True
-        inc_engines = getattr(cfg_props, "include_engines", True) if cfg_props else True
-        inc_interactions = getattr(cfg_props, "include_interactions", True) if cfg_props else True
+        inc_spatial = _cfg_flag(cfg_props, "include_spatial")
+        inc_lights = _cfg_flag(cfg_props, "include_lights")
+        inc_cams = _cfg_flag(cfg_props, "include_cameras")
+        inc_exits = _cfg_flag(cfg_props, "include_exits")
+        inc_engines = _cfg_flag(cfg_props, "include_engines")
+        inc_interactions = _cfg_flag(cfg_props, "include_interactions")
 
         # SMART REPLACE: Cleanly remove existing objects in enabled categories before spawning
         if spatial_col:

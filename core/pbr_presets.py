@@ -13,10 +13,11 @@ import os
 from pathlib import Path
 import re
 import sys
-import tempfile
 import threading
 import time
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+from .io_utils import atomic_write_text
 
 if TYPE_CHECKING:
     import bpy
@@ -161,10 +162,6 @@ class BasePresetManager:
                 base = Path.home() / ".omnimesh" / "presets"
         else:
             base = Path.home() / ".omnimesh" / "presets"
-        try:
-            base.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass
         return base / "user_state.json"
 
     @classmethod
@@ -189,30 +186,16 @@ class BasePresetManager:
                 return
 
             data[key] = value
-            target_dir = sf.parent
-            target_dir.mkdir(parents=True, exist_ok=True)
-
-            fd, tmp_path = tempfile.mkstemp(dir=str(target_dir), prefix="om_state_", suffix=".tmp")
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-
-                backoff = (0.05, 0.1, 0.2, 0.4, 0.8)
-                for attempt, delay in enumerate(backoff):
-                    try:
-                        os.replace(tmp_path, sf)
-                        break
-                    except OSError:
-                        if attempt == len(backoff) - 1:
-                            raise
-                        time.sleep(delay)
+                atomic_write_text(
+                    sf,
+                    json.dumps(data, indent=2),
+                    prefix="om_state_",
+                    create_parents=True,
+                    retry_delays=(0.05, 0.1, 0.2, 0.4, 0.8),
+                )
             except (OSError, TypeError, ValueError) as exc:
                 logger.debug("Failed saving pipeline setting '%s' to '%s': %s", key, sf, exc)
-                if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except OSError:
-                        pass
 
     @classmethod
     def get_builtin_dir(cls) -> Path:
@@ -315,6 +298,22 @@ class BasePresetManager:
         return validated
 
     @classmethod
+    def _load_preset_entry(cls, filepath: Path, *, is_builtin: bool) -> dict[str, Any] | None:
+        """Reads and validates a single JSON preset file, logging and returning None on failure."""
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            validated = cls.validate_preset_schema(raw)
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
+            kind = "built-in" if is_builtin else "user"
+            logger.warning("Failed loading %s %s preset '%s': %s", kind, cls.CATEGORY, filepath, exc)
+            return None
+        if validated:
+            validated["_is_builtin"] = is_builtin
+            validated["_filepath"] = str(filepath)
+        return validated
+
+    @classmethod
     def load_presets(cls, force_reload: bool = False) -> dict[str, dict[str, Any]]:
         """Loads built-in and user presets with thread-safe caching."""
         with cls._get_category_lock():
@@ -331,17 +330,10 @@ class BasePresetManager:
             if b_dir.is_dir():
                 for p in sorted(b_dir.glob("*.json")):
                     pid = p.stem.lower()
-                    try:
-                        with open(p, "r", encoding="utf-8") as f:
-                            raw = json.load(f)
-                        val = cls.validate_preset_schema(raw)
-                        if val:
-                            val["_is_builtin"] = True
-                            val["_filepath"] = str(p)
-                            loaded[pid] = val
-                            builtin_ids.add(pid)
-                    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
-                        logger.warning("Failed loading built-in %s preset '%s': %s", cls.CATEGORY, p, exc)
+                    val = cls._load_preset_entry(p, is_builtin=True)
+                    if val:
+                        loaded[pid] = val
+                        builtin_ids.add(pid)
 
             # 2. Load user custom presets
             u_dir = cls.get_user_dir()
@@ -350,16 +342,9 @@ class BasePresetManager:
                     pid = p.stem.lower()
                     if pid in builtin_ids:
                         pid = f"user_{pid}"
-                    try:
-                        with open(p, "r", encoding="utf-8") as f:
-                            raw = json.load(f)
-                        val = cls.validate_preset_schema(raw)
-                        if val:
-                            val["_is_builtin"] = False
-                            val["_filepath"] = str(p)
-                            loaded[pid] = val
-                    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
-                        logger.warning("Failed loading user %s preset '%s': %s", cls.CATEGORY, p, exc)
+                    val = cls._load_preset_entry(p, is_builtin=False)
+                    if val:
+                        loaded[pid] = val
 
             cache.clear()
             cache.update(loaded)
@@ -458,26 +443,12 @@ class BasePresetManager:
         target_dir = cls.get_user_dir()
         target_path = target_dir / f"{pid}.json"
 
-        fd, tmp_path = tempfile.mkstemp(dir=str(target_dir), prefix="om_pre_", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(validated, f, indent=2)
-
-            backoff = (0.05, 0.1, 0.2, 0.4, 0.8)
-            for attempt, delay in enumerate(backoff):
-                try:
-                    os.replace(tmp_path, target_path)
-                    break
-                except OSError:
-                    if attempt == len(backoff) - 1:
-                        raise
-                    time.sleep(delay)
-        finally:
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+        atomic_write_text(
+            target_path,
+            json.dumps(validated, indent=2),
+            prefix="om_pre_",
+            retry_delays=(0.05, 0.1, 0.2, 0.4, 0.8),
+        )
 
         cls.load_presets(force_reload=True)
         return pid

@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import sys
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ else:
     except ImportError:
         bpy = None
 
+from .io_utils import atomic_write_text
 from .pbr_presets import BasePresetManager
 
 logger = logging.getLogger(__name__)
@@ -98,11 +100,15 @@ class LODPresetManager(BasePresetManager):
             }
 
             if "target_tris" in t or budget_mode == "ABSOLUTE":
-                try:
-                    target_tris = max(1, int(t.get("target_tris", 1000)))
-                    tier_dict["target_tris"] = target_tris
-                except (ValueError, TypeError):
-                    pass
+                raw_tris = t.get("target_tris", 1000)
+                if isinstance(raw_tris, (int, float)) and not isinstance(raw_tris, bool):
+                    tier_dict["target_tris"] = max(1, int(raw_tris))
+                elif isinstance(raw_tris, str):
+                    stripped_tris = raw_tris.strip()
+                    if stripped_tris.lstrip("+-").isdigit():
+                        tier_dict["target_tris"] = max(1, int(stripped_tris))
+                    else:
+                        logger.warning("Ignoring invalid target_tris=%r on tier '%s'", raw_tris, tier_name)
 
             valid_tiers.append(tier_dict)
 
@@ -223,8 +229,6 @@ class LODPresetManager(BasePresetManager):
     @classmethod
     def load_presets(cls, force_reload: bool = False) -> dict[str, dict[str, Any]]:
         """Loads presets allowing user presets to override or extend shipped factory presets."""
-        import sys
-
         with cls._get_category_lock():
             cache = cls._get_category_cache()
             init_key = f"_init_{cls.CATEGORY}"
@@ -237,33 +241,17 @@ class LODPresetManager(BasePresetManager):
             b_dir = cls.get_builtin_dir()
             if b_dir.is_dir():
                 for p in sorted(b_dir.glob("*.json")):
-                    pid = p.stem.lower()
-                    try:
-                        with open(p, "r", encoding="utf-8") as f:
-                            raw = json.load(f)
-                        val = cls.validate_preset_schema(raw)
-                        if val:
-                            val["_is_builtin"] = True
-                            val["_filepath"] = str(p)
-                            loaded[pid] = val
-                    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
-                        logger.warning("Failed loading built-in LOD preset '%s': %s", p, exc)
+                    val = cls._load_preset_entry(p, is_builtin=True)
+                    if val:
+                        loaded[p.stem.lower()] = val
 
             # 2. User custom presets (can override built-in defaults or declare new templates)
             u_dir = cls.get_user_dir()
             if u_dir.is_dir():
                 for p in sorted(u_dir.glob("*.json")):
-                    pid = p.stem.lower()
-                    try:
-                        with open(p, "r", encoding="utf-8") as f:
-                            raw = json.load(f)
-                        val = cls.validate_preset_schema(raw)
-                        if val:
-                            val["_is_builtin"] = False
-                            val["_filepath"] = str(p)
-                            loaded[pid] = val
-                    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as exc:
-                        logger.warning("Failed loading user LOD preset '%s': %s", p, exc)
+                    val = cls._load_preset_entry(p, is_builtin=False)
+                    if val:
+                        loaded[p.stem.lower()] = val
 
             cache.clear()
             cache.update(loaded)
@@ -273,10 +261,6 @@ class LODPresetManager(BasePresetManager):
     @classmethod
     def save_custom_preset(cls, preset_data: dict[str, Any], custom_id: Optional[str] = None) -> str:
         """Atomically saves a preset to user directory without factory write protection."""
-        import os
-        import tempfile
-        import time
-
         validated = cls.validate_preset_schema(preset_data)
         if not validated:
             raise ValueError("Invalid preset schema.")
@@ -285,26 +269,12 @@ class LODPresetManager(BasePresetManager):
         target_dir = cls.get_user_dir()
         target_path = target_dir / f"{pid}.json"
 
-        fd, tmp_path = tempfile.mkstemp(dir=str(target_dir), prefix="om_lod_", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(validated, f, indent=2)
-
-            backoff = (0.05, 0.1, 0.2, 0.4, 0.8)
-            for attempt, delay in enumerate(backoff):
-                try:
-                    os.replace(tmp_path, target_path)
-                    break
-                except OSError:
-                    if attempt == len(backoff) - 1:
-                        raise
-                    time.sleep(delay)
-        finally:
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+        atomic_write_text(
+            target_path,
+            json.dumps(validated, indent=2),
+            prefix="om_lod_",
+            retry_delays=(0.05, 0.1, 0.2, 0.4, 0.8),
+        )
 
         cls.load_presets(force_reload=True)
         return pid

@@ -11,6 +11,8 @@ import math
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Tuple, cast
 import numpy as np
 
+from .compat import get_socket_default_value
+
 if TYPE_CHECKING:
     import bpy
     from bpy.types import BlendData
@@ -195,7 +197,7 @@ class ShaderTracer:
 
         default_val: Optional[float] = None
         if socket is not None:
-            dv = getattr(socket, "default_value", None)
+            dv = get_socket_default_value(socket, None)
             if isinstance(dv, (float, int)) and math.isfinite(dv):
                 default_val = float(dv)
             elif isinstance(dv, (list, tuple)) and len(dv) > 0:
@@ -244,7 +246,7 @@ class ShaderTracer:
                     channel_index = 0
                 curr = curr.inputs["Color"].links[0].from_node if curr.inputs["Color"].is_linked else None
             elif ntype == "MATH" and cast("bpy.types.ShaderNodeMath", curr).operation == "SUBTRACT":
-                in0_dv = getattr(curr.inputs[0], "default_value", 0.0) if len(curr.inputs) > 0 else 0.0
+                in0_dv = get_socket_default_value(curr.inputs[0], 0.0) if len(curr.inputs) > 0 else 0.0
                 if len(curr.inputs) > 0 and isinstance(in0_dv, (int, float)) and abs(float(in0_dv) - 1.0) < 1e-4:
                     is_inverted = not is_inverted
                     curr = curr.inputs[1].links[0].from_node if curr.inputs[1].is_linked else None
@@ -539,9 +541,8 @@ class ShaderTracer:
             nodes.active = tex_node
 
             cast(Any, scene.render).engine = "CYCLES"
-            cycles = getattr(scene, "cycles", None)
-            if cycles:
-                cycles.samples = 1
+            if cycles_mod:
+                cycles_mod.samples = 1
 
             bpy.ops.object.bake(type="EMIT", margin=0, use_clear=True)
 
@@ -573,9 +574,8 @@ class ShaderTracer:
         finally:
             try:
                 cast(Any, scene.render).engine = old_engine
-                cycles = getattr(scene, "cycles", None)
-                if cycles and old_samples is not None:
-                    cycles.samples = old_samples
+                if cycles_mod and old_samples is not None:
+                    cycles_mod.samples = old_samples
                 if orig_surf_from:
                     links.new(orig_surf_from, surf_sock)
                 for tn in temp_nodes:

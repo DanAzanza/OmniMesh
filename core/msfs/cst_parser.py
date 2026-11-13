@@ -11,9 +11,9 @@ import logging
 import os
 import re
 import shutil
-import tempfile
-import time
 from typing import Optional
+
+from ..io_utils import atomic_write_text
 
 from .models import (
     AircraftSpatialConfig,
@@ -264,7 +264,6 @@ class MSFSCSTParser:
             raise ValueError("Destination file path must be specified.")
 
         dest_file = os.path.abspath(dest_file)
-        dest_dir = os.path.dirname(dest_file)
         rotations = updated_rotations or {}
 
         # 1. Pre-flight Snapshot Backup
@@ -353,30 +352,15 @@ class MSFSCSTParser:
             serialized_lines.append(new_line)
 
         # 3. Atomic Write via Temporary File with Windows retry
-        temp_fd, temp_file_path = tempfile.mkstemp(dir=dest_dir, prefix="omnimesh_cfg_", text=False)
-        try:
-            with open(temp_fd, "w", encoding=config.encoding, newline="") as f:
-                f.writelines(serialized_lines)
-                f.flush()
-                os.fsync(f.fileno())
-
-            # Retry loop for transient Windows file lock contention
-            for attempt in range(4):
-                try:
-                    os.replace(temp_file_path, dest_file)
-                    break
-                except PermissionError:
-                    if attempt == 3:
-                        raise
-                    time.sleep(0.05 * (2**attempt))
-
-            logger.info("Successfully synced spatial coordinates to %s", dest_file)
-        finally:
-            if os.path.exists(temp_file_path):
-                try:
-                    os.remove(temp_file_path)
-                except OSError:
-                    pass
+        atomic_write_text(
+            dest_file,
+            serialized_lines,
+            encoding=config.encoding,
+            newline="",
+            prefix="omnimesh_cfg_",
+            sync=True,
+        )
+        logger.info("Successfully synced spatial coordinates to %s", dest_file)
 
         return backup_path
 
@@ -456,29 +440,15 @@ class MSFSCSTParser:
                     serialized_lines.append(record.raw_line)
 
         # 4. Atomic Write via Temporary File
-        temp_fd, temp_file_path = tempfile.mkstemp(dir=dest_dir, prefix="omnimesh_scalar_", text=False)
-        try:
-            with open(temp_fd, "w", encoding=config.encoding, newline="") as f:
-                f.writelines(serialized_lines)
-                f.flush()
-                os.fsync(f.fileno())
-
-            for attempt in range(4):
-                try:
-                    os.replace(temp_file_path, dest_file)
-                    break
-                except PermissionError:
-                    if attempt == 3:
-                        raise
-                    time.sleep(0.05 * (2**attempt))
-
-            logger.info("Successfully updated scalar param %s.%s = %s in %s", section, key, value_str, dest_file)
-        finally:
-            if os.path.exists(temp_file_path):
-                try:
-                    os.remove(temp_file_path)
-                except OSError:
-                    pass
+        atomic_write_text(
+            dest_file,
+            serialized_lines,
+            encoding=config.encoding,
+            newline="",
+            prefix="omnimesh_scalar_",
+            sync=True,
+        )
+        logger.info("Successfully updated scalar param %s.%s = %s in %s", section, key, value_str, dest_file)
 
         return backup_path
 

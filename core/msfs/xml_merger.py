@@ -15,6 +15,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from ..io_utils import atomic_write_bytes
+
 logger = logging.getLogger(__name__)
 
 
@@ -118,20 +120,18 @@ class ModelXMLMerger:
         merged = cls.merge_lods_into_xml_content(xml_str, tiers)
 
         # Atomic write
-        temp_file = path.with_suffix(".tmp_xml")
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
             encoded = merged.encode("utf-8")
             if has_bom:
                 encoded = b"\xef\xbb\xbf" + encoded
-            temp_file.write_bytes(encoded)
-            temp_file.replace(path)
+            atomic_write_bytes(
+                path,
+                encoded,
+                prefix="omnimesh_xml_",
+                suffix=".tmp_xml",
+                create_parents=True,
+            )
             return True
         except OSError as exc:
             logger.error("Failed atomically writing merged XML '%s': %s", path, exc)
-            if temp_file.is_file():
-                try:
-                    temp_file.unlink()
-                except OSError:
-                    pass
             return False

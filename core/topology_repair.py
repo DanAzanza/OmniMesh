@@ -72,6 +72,63 @@ def _find_connected_face_fans(vert: bmesh.types.BMVert) -> list[list[bmesh.types
     return fans
 
 
+def _replace_face_preserving_uvs(
+    bm: bmesh.types.BMesh,
+    face: bmesh.types.BMFace,
+    face_verts: list[bmesh.types.BMVert],
+    uv_layers: list[bmesh.types.BMLayerItem],
+    orphan_verts: tuple[bmesh.types.BMVert, ...],
+    op_label: str,
+) -> bool:
+    """Rebuilds ``face`` using ``face_verts``, preserving UVs/materials with rollback."""
+    mat_idx = face.material_index
+    smooth = face.smooth
+
+    saved_uvs: dict[tuple[bmesh.types.BMLayerItem, int], object] = {}
+    for lp_i, lp in enumerate(face.loops):
+        for uv_lay in uv_layers:
+            try:
+                saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
+            except BMESH_INSPECTION_ERRORS as exc:
+                logger.debug("Loop UV copy error: %s", exc)
+
+    orig_face_verts = list(face.verts)
+    bm.faces.remove(face)
+    try:
+        new_face = bm.faces.new(face_verts)
+        new_face.material_index = mat_idx
+        new_face.smooth = smooth
+
+        for lp_i, new_lp in enumerate(new_face.loops):
+            for uv_lay in uv_layers:
+                if (uv_lay, lp_i) not in saved_uvs:
+                    continue
+                try:
+                    new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
+                except BMESH_INSPECTION_ERRORS as exc:
+                    logger.error("Loop UV restoration failed in %s: %s", op_label, exc)
+                    raise TopologyError(f"Failed restoring loop UV in {op_label}: {exc}") from exc
+        return True
+    except (ValueError, RuntimeError) as exc:
+        logger.warning("%s face creation failed (%s), attempting rollback", op_label, exc)
+        try:
+            restored_f = bm.faces.new(orig_face_verts)
+            restored_f.material_index = mat_idx
+            restored_f.smooth = smooth
+        except (ValueError, RuntimeError) as rb_exc:
+            raise TopologyError(
+                f"Catastrophic topology corruption in {bm}: face deletion occurred during {op_label}, "
+                f"and rollback restoration of original face failed: {rb_exc}"
+            ) from rb_exc
+        for ov in orphan_verts:
+            if ov.is_valid and len(ov.link_faces) == 0:
+                try:
+                    bm.verts.remove(ov)
+                except BMESH_OP_ERRORS as rm_exc:
+                    logger.debug("Orphan vert removal failed: %s", rm_exc)
+        return False
+
+
 def _remap_fan_to_new_vertex(
     bm: bmesh.types.BMesh,
     fan: list[bmesh.types.BMFace],
@@ -89,52 +146,8 @@ def _remap_fan_to_new_vertex(
             continue
         idx = face_verts.index(vert)
         face_verts[idx] = new_vert
-        mat_idx = face.material_index
-        smooth = face.smooth
-
-        saved_uvs: dict[tuple[bmesh.types.BMLayerItem, int], object] = {}
-        for lp_i, lp in enumerate(face.loops):
-            for uv_lay in uv_layers:
-                try:
-                    saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
-                except BMESH_INSPECTION_ERRORS as exc:
-                    logger.debug("Loop UV copy error: %s", exc)
-
-        orig_face_verts = list(face.verts)
-        bm.faces.remove(face)
-        try:
-            new_face = bm.faces.new(face_verts)
-            new_face.material_index = mat_idx
-            new_face.smooth = smooth
-
-            for lp_i, new_lp in enumerate(new_face.loops):
-                for uv_lay in uv_layers:
-                    if (uv_lay, lp_i) in saved_uvs:
-                        try:
-                            new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
-                        except BMESH_INSPECTION_ERRORS as exc:
-                            logger.error("Reapply UV error in _remap_fan_to_new_vertex: %s", exc)
-                            raise TopologyError(
-                                f"Failed reapplying UV coordinates during fan remapping: {exc}"
-                            ) from exc
+        if _replace_face_preserving_uvs(bm, face, face_verts, uv_layers, (new_vert,), "fan remapping"):
             split_count += 1
-        except (ValueError, RuntimeError) as exc:
-            logger.warning("Fan remapping face creation failed (%s), attempting topological rollback", exc)
-            try:
-                restored_f = bm.faces.new(orig_face_verts)
-                restored_f.material_index = mat_idx
-                restored_f.smooth = smooth
-            except (ValueError, RuntimeError) as rb_exc:
-                raise TopologyError(
-                    f"Catastrophic topology corruption in {bm}: face deletion occurred during fan remapping, "
-                    f"and rollback restoration of original face failed: {rb_exc}"
-                ) from rb_exc
-            if new_vert.is_valid and len(new_vert.link_faces) == 0:
-                try:
-                    bm.verts.remove(new_vert)
-                except BMESH_OP_ERRORS as rm_exc:
-                    logger.debug("Orphan vert removal failed: %s", rm_exc)
-
     return split_count
 
 
@@ -265,52 +278,10 @@ class TopologyRepairEngine:
                         ) from exc
 
                 face_verts = [nv1 if v == v1 else (nv2 if v == v2 else v) for v in face.verts]
-                mat_idx = face.material_index
-                smooth = face.smooth
-
-                saved_uvs: dict[tuple[bmesh.types.BMLayerItem, int], object] = {}
-                for lp_i, lp in enumerate(face.loops):
-                    for uv_lay in uv_layers:
-                        try:
-                            saved_uvs[(uv_lay, lp_i)] = lp[uv_lay].uv.copy()
-                        except BMESH_INSPECTION_ERRORS as exc:
-                            logger.debug("Loop UV copy error: %s", exc)
-
-                orig_face_verts = list(face.verts)
-                bm.faces.remove(face)
-                try:
-                    nf = bm.faces.new(face_verts)
-                    nf.material_index = mat_idx
-                    nf.smooth = smooth
-
-                    for lp_i, new_lp in enumerate(nf.loops):
-                        for uv_lay in uv_layers:
-                            if (uv_lay, lp_i) in saved_uvs:
-                                try:
-                                    new_lp[uv_lay].uv = saved_uvs[(uv_lay, lp_i)]
-                                except BMESH_INSPECTION_ERRORS as exc:
-                                    logger.error("Loop UV restoration failed in split_non_manifold_edges: %s", exc)
-                                    raise TopologyError(
-                                        f"Failed restoring loop UV in split_non_manifold_edges: {exc}"
-                                    ) from exc
+                if _replace_face_preserving_uvs(
+                    bm, face, face_verts, uv_layers, (nv1, nv2), "split_non_manifold_edges"
+                ):
                     split_count += 1
-                except (ValueError, RuntimeError) as exc:
-                    logger.warning("Edge split face creation failed (%s), attempting rollback", exc)
-                    try:
-                        restored_f = bm.faces.new(orig_face_verts)
-                        restored_f.material_index = mat_idx
-                        restored_f.smooth = smooth
-                    except (ValueError, RuntimeError) as rb_exc:
-                        raise TopologyError(
-                            f"Catastrophic topology corruption in {bm}: face deletion occurred during edge split, "
-                            f"and rollback restoration of original face failed: {rb_exc}"
-                        ) from rb_exc
-                    for nv in (nv1, nv2):
-                        if nv.is_valid and len(nv.link_faces) == 0:
-                            try:
-                                bm.verts.remove(nv)
-                            except BMESH_OP_ERRORS as rm_exc:
-                                logger.debug("Orphan vert removal failed: %s", rm_exc)
 
         if split_count > 0:
             try:

@@ -110,18 +110,16 @@ class HLODClusterMerger:
                     # Copy and remap skeletal deform weights by bone name
                     chunk_vg_names = [vg.name for vg in chunk_obj.vertex_groups or ()]
                     temp_dvert = temp_bm.verts.layers.deform.active if temp_bm.verts.layers.deform is not None else None
-                    if temp_dvert and merged_dvert and chunk_vg_names:
+                    if temp_dvert is not None and merged_dvert is not None and chunk_vg_names:
                         for v, new_v in vert_map.items():
-                            try:
-                                w_dict = v[temp_dvert]
-                                for local_vg_idx, weight in w_dict.items():
-                                    if 0 <= local_vg_idx < len(chunk_vg_names):
-                                        bone_name = chunk_vg_names[local_vg_idx]
-                                        if bone_name in master_vg_names:
-                                            target_vg_idx = master_vg_names.index(bone_name)
-                                            new_v[merged_dvert][target_vg_idx] = weight
-                            except (KeyError, IndexError):
-                                pass
+                            w_dict = v[temp_dvert]
+                            for local_vg_idx, weight in w_dict.items():
+                                if not (0 <= local_vg_idx < len(chunk_vg_names)):
+                                    continue
+                                bone_name = chunk_vg_names[local_vg_idx]
+                                if bone_name in master_vg_names:
+                                    target_vg_idx = master_vg_names.index(bone_name)
+                                    new_v[merged_dvert][target_vg_idx] = weight
 
                     # Copy UVs
                     temp_uv_layers = (

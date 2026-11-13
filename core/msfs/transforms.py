@@ -6,7 +6,12 @@ MSFS aircraft body frame and Blender coordinate space without bpy dependencies.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+import logging
 import math
+from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 FEET_TO_METERS: float = 0.3048
 METERS_TO_FEET: float = 1.0 / 0.3048
@@ -298,3 +303,23 @@ def blender_empty_rotation_to_msfs_pbh(
         bank_deg = 0.0
 
     return (pitch_deg, bank_deg, heading_deg)
+
+
+def parse_float_value(raw: str, context: str) -> Optional[float]:
+    """Parses a single scalar float string, logging malformed inputs clearly."""
+    try:
+        return float(raw)
+    except ValueError as exc:
+        logger.warning("Malformed numeric value '%s' in %s: %s", raw, context, exc)
+        return None
+
+
+def parse_float_triple(tokens: Sequence[str], context: str) -> Optional[tuple[float, float, float]]:
+    """Parses three comma-split float tokens, logging malformed values."""
+    if len(tokens) < 3:
+        return None
+    try:
+        return (float(tokens[0]), float(tokens[1]), float(tokens[2]))
+    except ValueError as exc:
+        logger.warning("Skipping malformed 3-tuple in %s (%r): %s", context, list(tokens[:3]), exc)
+        return None

@@ -335,6 +335,23 @@ def setup_impostor_preview_rig(
     }
 
 
+def _remove_orphan_datablock(effective_bdata: BlendData, obj_data: object) -> bool:
+    """Removes an orphaned mesh, camera, or light datablock from ``effective_bdata``."""
+    try:
+        if effective_bdata.meshes is not None and obj_data in effective_bdata.meshes.values():
+            effective_bdata.meshes.remove(cast("bpy.types.Mesh", obj_data))
+            return True
+        if effective_bdata.cameras is not None and obj_data in effective_bdata.cameras.values():
+            effective_bdata.cameras.remove(cast("bpy.types.Camera", obj_data))
+            return True
+        if effective_bdata.lights is not None and obj_data in effective_bdata.lights.values():
+            effective_bdata.lights.remove(cast("bpy.types.Light", obj_data))
+            return True
+    except (TypeError, RuntimeError, ValueError, AttributeError) as exc:
+        logger.warning("Failed removing orphan preview datablock: %s", exc)
+    return False
+
+
 def teardown_impostor_preview_rig(
     context: bpy.types.Context | None,
     base_name: str,
@@ -368,15 +385,7 @@ def teardown_impostor_preview_rig(
         # Deallocate orphaned datablocks
         users = obj_data.users if obj_data else 1
         if obj_data and isinstance(users, (int, float)) and users <= 1:
-            try:
-                if effective_bdata.meshes is not None and obj_data in effective_bdata.meshes.values():
-                    effective_bdata.meshes.remove(cast("bpy.types.Mesh", obj_data))
-                elif effective_bdata.cameras is not None and obj_data in effective_bdata.cameras.values():
-                    effective_bdata.cameras.remove(cast("bpy.types.Camera", obj_data))
-                elif effective_bdata.lights is not None and obj_data in effective_bdata.lights.values():
-                    effective_bdata.lights.remove(cast("bpy.types.Light", obj_data))
-            except (TypeError, RuntimeError, ValueError, AttributeError):
-                pass
+            _remove_orphan_datablock(effective_bdata, obj_data)
 
     # Remove collection
     effective_bdata.collections.remove(rig_coll)

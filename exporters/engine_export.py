@@ -53,6 +53,13 @@ class AssetExportPayload:
     )  # ATTACH_POINT_, fx_, eye_ empties for LOD0 glTF export
 
 
+def _get_lod_tool_props(scene: bpy.types.Scene | None) -> EngineExportSettingsProtocol | None:
+    """Extracts the OmniMesh scene PropertyGroup safely across headless/registered contexts."""
+    if scene is None:
+        return None
+    return cast("EngineExportSettingsProtocol | None", getattr(scene, "lod_tool", None))
+
+
 class AssetMeshResolver:
     """Centralized resolver that extracts pure geometry LOD meshes from scene collections.
 
@@ -72,9 +79,7 @@ class AssetMeshResolver:
         blend_data: BlendData | None = None,
     ) -> AssetExportPayload:
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
-        props: EngineExportSettingsProtocol | None = (
-            getattr(context.scene, "lod_tool", None) if (context and context.scene) else None
-        )
+        props = _get_lod_tool_props(context.scene if context else None)
 
         effective_bdata = blend_data or (context.blend_data if context else None)
         has_collections = bool(effective_bdata)
@@ -346,8 +351,8 @@ class AssetMeshResolver:
 def resolve_export_asset_name(context: bpy.types.Context | None, props: object = None) -> str:
     """Resolves the unified asset name for preflight validation and engine export."""
     props_obj: EngineExportSettingsProtocol | None = cast("EngineExportSettingsProtocol | None", props)
-    if not props_obj and context and context.scene:
-        props_obj = getattr(context.scene, "lod_tool", None)
+    if not props_obj and context:
+        props_obj = _get_lod_tool_props(context.scene)
     active_asset = getattr(props_obj, "active_asset", None) if props_obj else None
     if active_asset and active_asset not in ("AUTO", "NONE"):
         return str(active_asset)
@@ -377,7 +382,7 @@ class PreFlightValidator:
     ) -> list[str]:
         if not context or not context.scene:
             return ["Blender context not available."]
-        props: EngineExportSettingsProtocol | None = getattr(context.scene, "lod_tool", None)
+        props = _get_lod_tool_props(context.scene)
         if not props:
             return ["LOD tool properties not initialized on scene."]
         errors: list[str] = []
@@ -412,17 +417,17 @@ class PreFlightValidator:
 
         # Pivot / origin matching (single-object tiers)
         lod0_objs = payload.lod_tiers.get(0, [])
-        if lod0_objs and lod0_objs[0] is not None:
-            try:
-                lod0_pivot = lod0_objs[0].matrix_world.translation
-                for i in range(len(props.lods)):
-                    tier_objs = payload.lod_tiers.get(i, [])
-                    if len(lod0_objs) == 1 and len(tier_objs) == 1:
-                        obj = tier_objs[0]
-                        if obj is not None and (obj.matrix_world.translation - lod0_pivot).length > 1e-4:
-                            errors.append(f"LOD{i} origin does not match LOD0 pivot.")
-            except (AttributeError, TypeError):
-                pass
+        if len(lod0_objs) == 1 and lod0_objs[0] is not None and lod0_objs[0].matrix_world is not None:
+            lod0_pivot = lod0_objs[0].matrix_world.translation
+            for i in range(len(props.lods)):
+                tier_objs = payload.lod_tiers.get(i, [])
+                if len(tier_objs) != 1:
+                    continue
+                obj = tier_objs[0]
+                if obj is None or obj.matrix_world is None:
+                    continue
+                if (obj.matrix_world.translation - lod0_pivot).length > 1e-4:
+                    errors.append(f"LOD{i} origin does not match LOD0 pivot.")
 
         # Scale application check
         for i in range(len(props.lods)):

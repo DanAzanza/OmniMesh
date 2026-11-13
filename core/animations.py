@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import logging
 import math
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Tuple, cast, runtime_checkable
 
 from .compat import (
     ensure_action_fcurve,
@@ -18,15 +18,16 @@ from .compat import (
     safe_invert_matrix as _safe_invert_matrix,
 )
 
+
+@runtime_checkable
+class QuaternionLike(Protocol):
+    w: float
+    x: float
+    y: float
+    z: float
+
+
 if TYPE_CHECKING:
-    from typing import Protocol
-
-    class QuaternionLike(Protocol):
-        w: float
-        x: float
-        y: float
-        z: float
-
     import bpy
     from bpy.types import BlendData
     from mathutils import Matrix, Quaternion, Vector
@@ -218,11 +219,9 @@ class AnimationRigSanitizer:
         """
         if rot is None or prev_rot is None:
             return rot
-        if hasattr(rot, "w") and hasattr(prev_rot, "w"):
-            rq1 = cast("QuaternionLike", rot)
-            rq2 = cast("QuaternionLike", prev_rot)
-            w1, x1, y1, z1 = float(rq1.w), float(rq1.x), float(rq1.y), float(rq1.z)
-            w2, x2, y2, z2 = float(rq2.w), float(rq2.x), float(rq2.y), float(rq2.z)
+        if isinstance(rot, QuaternionLike) and isinstance(prev_rot, QuaternionLike):
+            w1, x1, y1, z1 = float(rot.w), float(rot.x), float(rot.y), float(rot.z)
+            w2, x2, y2, z2 = float(prev_rot.w), float(prev_rot.x), float(prev_rot.y), float(prev_rot.z)
             dot = w1 * w2 + x1 * x2 + y1 * y2 + z1 * z2
             if dot < 0.0:
                 if Quaternion:

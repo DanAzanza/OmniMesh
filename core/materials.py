@@ -62,7 +62,7 @@ class DeepMaterialHasher:
         # Find active output material node
         output_node = None
         for n in nodes:
-            if n.type == "OUTPUT_MATERIAL" and getattr(n, "is_active_output", True):
+            if n.type == "OUTPUT_MATERIAL" and cast("bpy.types.ShaderNodeOutputMaterial", n).is_active_output:
                 output_node = n
                 break
 
@@ -312,7 +312,7 @@ class SemanticTextureAuditor:
 
         for node in list(nodes):
             if node.type == "TEX_IMAGE":
-                img = cast("bpy.types.Image | None", getattr(node, "image", None))
+                img = cast("bpy.types.ShaderNodeTexImage", node).image
                 if not cls.is_image_valid(img):
                     # Trace downstream connections (including through demux/mix/math nodes)
                     def resolve_downstream_targets(

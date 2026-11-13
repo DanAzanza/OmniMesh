@@ -355,7 +355,6 @@ class GLTFAssemblyEngine:
         # Safely remove redundant armatures and clean orphan datablocks
         bdata_objs = blend_data.objects if blend_data else None
         bdata_armatures = blend_data.armatures if blend_data else None
-        arm_remove_errors = 0
         for arm_obj in redundant_armatures:
             if arm_obj != master_armature and bdata_objs:
                 arm_data = cast("bpy.types.Armature | None", arm_obj.data)
@@ -364,7 +363,6 @@ class GLTFAssemblyEngine:
                     if arm_data and bdata_armatures and arm_data.users == 0:
                         bdata_armatures.remove(arm_data)
                 except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    arm_remove_errors += 1
                     logger.debug("Failed removing redundant armature %s: %s", arm_obj.name, exc)
 
         return retargeted_count

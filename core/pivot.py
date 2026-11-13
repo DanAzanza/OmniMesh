@@ -59,7 +59,7 @@ class PivotPreservationEngine:
         meshes: list[bpy.types.Object] = []
         armatures: list[bpy.types.Object] = []
 
-        all_objs = getattr(collection, "all_objects", getattr(collection, "objects", []))
+        all_objs = collection.all_objects
 
         for obj in all_objs:
             if not obj:

@@ -10,7 +10,7 @@ from collections.abc import Iterable, Sequence
 import logging
 import math
 import os
-from typing import TYPE_CHECKING, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast, runtime_checkable
 
 import numpy as np
 
@@ -114,120 +114,246 @@ class MatrixLike(Protocol):
 M = TypeVar("M", bound=MatrixLike)
 
 
+@runtime_checkable
+class _HasDeterminant(Protocol):
+    def determinant(self) -> float: ...
+
+
+@runtime_checkable
+class _HasInverted(Protocol):
+    def inverted(self) -> object: ...
+
+
+@runtime_checkable
+class _HasCopy(Protocol):
+    def copy(self) -> object: ...
+
+
+@runtime_checkable
+class _HasArr(Protocol):
+    arr: np.ndarray
+
+
+@runtime_checkable
+class _HasLegacyFCurves(Protocol):
+    fcurves: object
+
+
+@runtime_checkable
+class _HasActionLayers(Protocol):
+    layers: object
+
+
+@runtime_checkable
+class _HasActionSlots(Protocol):
+    slots: object
+
+
+@runtime_checkable
+class _HasActionLayerStrips(Protocol):
+    strips: object
+
+
+@runtime_checkable
+class _HasStripChannelbags(Protocol):
+    channelbags: object
+
+
+@runtime_checkable
+class _HasChannelbagForSlot(Protocol):
+    def channelbag_for_slot(self, slot: object) -> object: ...
+
+
+@runtime_checkable
+class _HasChannelbagMethod(Protocol):
+    def channelbag(self, slot: object, ensure: bool = False) -> object: ...
+
+
+def _matrix_fallback(mat: M, identity_fallback: bool) -> M:
+    """Returns an identity matrix matching ``mat`` type or a safe copy on failure."""
+    if identity_fallback:
+        if Matrix is not None and isinstance(mat, Matrix):
+            return cast(M, Matrix.Identity(4))
+        if isinstance(mat, _HasArr) and isinstance(mat.arr, np.ndarray):
+            return cast(M, type(mat)(np.eye(mat.arr.shape[0])))  # type: ignore[call-arg]
+    return cast(M, mat.copy() if isinstance(mat, _HasCopy) else mat)
+
+
 def safe_invert_matrix(mat: M | None, identity_fallback: bool = True) -> M | None:
     """Safely inverts a transform matrix, guarding against singular or zero-determinant matrices."""
-    if mat is None:
-        return None
-    if hasattr(mat, "inverted"):
-        try:
-            if hasattr(mat, "determinant"):
-                det = mat.determinant()
-                if not math.isfinite(det) or abs(det) < 1e-8:
-                    logger.warning("Singular matrix detected in inversion (det=%s). Returning fallback.", det)
-                    if identity_fallback:
-                        if Matrix is not None and isinstance(mat, Matrix):
-                            return cast(M, Matrix.Identity(4))
-                        arr = getattr(mat, "arr", None)
-                        if isinstance(arr, np.ndarray):
-                            return cast(M, type(mat)(np.eye(arr.shape[0])))  # type: ignore[call-arg]
-                    return cast(M, mat.copy() if hasattr(mat, "copy") else mat)
-            return cast(M, mat.inverted())
-        except (ValueError, AttributeError, RuntimeError) as exc:
-            logger.warning("Matrix inversion failed (%s). Returning fallback.", exc)
-            if identity_fallback:
-                if Matrix is not None and isinstance(mat, Matrix):
-                    return cast(M, Matrix.Identity(4))
-                arr = getattr(mat, "arr", None)
-                if isinstance(arr, np.ndarray):
-                    return cast(M, type(mat)(np.eye(arr.shape[0])))  # type: ignore[call-arg]
-            return cast(M, mat.copy() if hasattr(mat, "copy") else mat)
-    return mat
+    if mat is None or not isinstance(mat, _HasInverted):
+        return mat
+    try:
+        if isinstance(mat, _HasDeterminant):
+            det = mat.determinant()
+            if not math.isfinite(det) or abs(det) < 1e-8:
+                logger.warning("Singular matrix detected in inversion (det=%s). Returning fallback.", det)
+                return _matrix_fallback(mat, identity_fallback)
+        return cast(M, mat.inverted())
+    except (ValueError, AttributeError, RuntimeError) as exc:
+        logger.warning("Matrix inversion failed (%s). Returning fallback.", exc)
+        return _matrix_fallback(mat, identity_fallback)
 
 
-def extract_action_fcurves(action: bpy.types.Action | None) -> list[bpy.types.FCurve]:
-    """Extracts all F-Curves from an Action, supporting legacy Actions and Blender 5.2+ Slotted/Layered Actions."""
+def _collect_strip_fcurves(strip: object) -> list[bpy.types.FCurve]:
+    """Collects all F-Curves from a strip's channelbags using Blender RNA attributes directly."""
+    collected: list[bpy.types.FCurve] = []
+    cbags = cast("_HasStripChannelbags", strip).channelbags
+    for cb in cast("Iterable[object]", cbags):
+        fcs = cast("_HasLegacyFCurves", cb).fcurves
+        collected.extend(cast("Iterable[bpy.types.FCurve]", fcs))
+    return collected
+
+
+def _collect_mock_layered_fcurves(layers: Iterable[object]) -> list[bpy.types.FCurve]:
+    """Collects F-Curves from protocol-compatible headless mock action layers."""
+    collected: list[bpy.types.FCurve] = []
+    for layer in layers:
+        if not isinstance(layer, _HasActionLayerStrips) or not isinstance(layer.strips, Iterable):
+            continue
+        for strip in layer.strips:
+            if not isinstance(strip, _HasStripChannelbags) or not isinstance(strip.channelbags, Iterable):
+                continue
+            for cb in strip.channelbags:
+                if isinstance(cb, _HasLegacyFCurves) and isinstance(cb.fcurves, Iterable):
+                    collected.extend(cast("Iterable[bpy.types.FCurve]", cb.fcurves))
+    return collected
+
+
+def _is_blender_action(obj: object) -> bool:
+    """Returns True when running in Blender and ``obj`` is a live ``bpy.types.Action``."""
+    return bpy is not None and isinstance(obj, bpy.types.Action)
+
+
+def extract_action_fcurves(action: object) -> list[bpy.types.FCurve]:
+    """Extracts all F-Curves from an Action, supporting legacy Actions and Blender 5.0+ Slotted/Layered Actions."""
     if not action:
         return []
     raw_fcurves: list[bpy.types.FCurve] = []
-    legacy_fcurves = cast("bpy.types.ActionChannelbagFCurves | None", getattr(action, "fcurves", None))
-    if legacy_fcurves is not None:
+    if not _is_blender_action(action):
+        if isinstance(action, _HasLegacyFCurves) and isinstance(action.fcurves, Iterable):
+            try:
+                raw_fcurves.extend(cast("Iterable[bpy.types.FCurve]", action.fcurves))
+            except (AttributeError, RuntimeError, ReferenceError) as exc:
+                logger.debug("Legacy fcurves extraction skipped: %s", exc)
+
+    if _is_blender_action(action) or (isinstance(action, _HasActionLayers) and isinstance(action.layers, Iterable)):
+        # Blender bpy_struct RNA properties resolve dynamically and fail runtime_checkable attribute checks.
         try:
-            raw_fcurves.extend(list(legacy_fcurves))
-        except (AttributeError, RuntimeError, ReferenceError) as exc:
-            logger.debug("Legacy fcurves extraction skipped: %s", exc)
-    if hasattr(action, "layers"):
-        try:
-            for layer in getattr(action, "layers", []):
-                for strip in getattr(layer, "strips", []):
-                    for cb in getattr(strip, "channelbags", []):
-                        if hasattr(cb, "fcurves") and cb.fcurves is not None:
-                            raw_fcurves.extend(list(cb.fcurves))
-        except (AttributeError, RuntimeError, ReferenceError) as exc:
+            if _is_blender_action(action):
+                for layer in cast("Iterable[object]", cast("_HasActionLayers", action).layers):
+                    for strip in cast("Iterable[object]", cast("_HasActionLayerStrips", layer).strips):
+                        raw_fcurves.extend(_collect_strip_fcurves(strip))
+            else:
+                raw_fcurves.extend(_collect_mock_layered_fcurves(cast("_HasActionLayers", action).layers))  # type: ignore[arg-type]
+        except (AttributeError, RuntimeError, ReferenceError, TypeError) as exc:
             logger.debug("Layered fcurves extraction skipped: %s", exc)
 
     seen: set[tuple[str, int]] = set()
     unique_fcurves: list[bpy.types.FCurve] = []
     for fc in raw_fcurves:
-        fc_key = (getattr(fc, "data_path", ""), getattr(fc, "array_index", 0))
+        fc_key = (fc.data_path, fc.array_index)
         if fc_key not in seen:
             seen.add(fc_key)
             unique_fcurves.append(fc)
     return unique_fcurves
 
 
+def _ensure_action_slot_direct(slot_owner: _HasActionSlots, slot_name: str) -> object:
+    """Retrieves or creates the primary ActionSlot on an object known to expose Action.slots."""
+    slots = cast("Sequence[object]", slot_owner.slots)
+    if slots:
+        return slots[0]
+    try:
+        return slot_owner.slots.new(id_type="OBJECT", name=slot_name)  # type: ignore[attr-defined]
+    except TypeError:
+        try:
+            return slot_owner.slots.new(name=slot_name)  # type: ignore[attr-defined]
+        except TypeError:
+            return slot_owner.slots.new(slot_name)  # type: ignore[attr-defined]
+
+
+def _ensure_action_slot(action: object, slot_name: str) -> object:
+    """Retrieves or creates the primary ActionSlot on a Blender 5.0+ Action."""
+    if not isinstance(action, _HasActionSlots):
+        return None
+    return _ensure_action_slot_direct(action, slot_name)
+
+
+def _get_or_create_blender_channelbag(strip: object, slot: object) -> object:
+    """Retrieves or creates a channelbag on a Blender 5.0+ ActionKeyframeStrip."""
+    if isinstance(strip, _HasChannelbagMethod) and slot is not None:
+        return strip.channelbag(slot, ensure=True)
+    if isinstance(strip, _HasChannelbagForSlot) and slot is not None:
+        cb = strip.channelbag_for_slot(slot)
+        if cb:
+            return cb
+    cbags = cast("_HasStripChannelbags", strip).channelbags
+    return cbags.new(slot=slot) if slot else cbags.new()  # type: ignore[attr-defined]
+
+
+def _create_blender_layered_fcurve(
+    action: bpy.types.Action,
+    data_path: str,
+    index: int,
+    slot_name: str,
+) -> bpy.types.FCurve | None:
+    """Creates an FCurve on a live Blender 5.0+ Action via direct RNA attribute access."""
+    slot = _ensure_action_slot_direct(cast("_HasActionSlots", action), slot_name)
+    layers_col = cast("Sequence[object]", cast("_HasActionLayers", action).layers)
+    layer = layers_col[0] if layers_col else layers_col.new(name="BaseLayer")  # type: ignore[attr-defined]
+    strips_col = cast("Sequence[object]", cast("_HasActionLayerStrips", layer).strips)
+    strip: object = strips_col[0] if strips_col else strips_col.new(type="KEYFRAME")  # type: ignore[attr-defined]
+    cb = _get_or_create_blender_channelbag(strip, slot)
+    fcs = cast("_HasLegacyFCurves", cb).fcurves
+    return cast("bpy.types.FCurve", fcs.new(data_path=data_path, index=index))  # type: ignore[attr-defined]
+
+
 def ensure_action_fcurve(
-    action: bpy.types.Action | None,
+    action: object,
     data_path: str,
     index: int,
     slot_name: str = "ArmatureSlot",
 ) -> bpy.types.FCurve | None:
-    """Creates an FCurve on an Action, supporting both legacy Actions and Blender 5.2+ Slotted/Layered Actions."""
+    """Creates an FCurve on an Action, supporting both legacy Actions and Blender 5.0+ Slotted/Layered Actions."""
     if not action:
         return None
 
-    legacy_fcurves = cast("bpy.types.ActionChannelbagFCurves | None", getattr(action, "fcurves", None))
-    if legacy_fcurves is not None:
+    if isinstance(action, _HasLegacyFCurves) and action.fcurves is not None:
         try:
-            return legacy_fcurves.new(data_path=data_path, index=index)
+            return action.fcurves.new(data_path=data_path, index=index)  # type: ignore[attr-defined]
         except (RuntimeError, TypeError, AttributeError) as exc:
             logger.debug("action.fcurves.new failed, attempting layered fallback: %s", exc)
 
-    if hasattr(action, "layers") or hasattr(action, "slots"):
+    if (bpy is not None and isinstance(action, bpy.types.Action)) or isinstance(
+        action, (_HasActionLayers, _HasActionSlots)
+    ):
         try:
-            slot = None
-            if hasattr(action, "slots"):
-                if not action.slots:
-                    try:
-                        slot = action.slots.new(id_type="OBJECT", name=slot_name)
-                    except TypeError:
-                        try:
-                            slot = action.slots.new(name=slot_name)  # type: ignore[call-arg]
-                        except TypeError:
-                            slot = action.slots.new(slot_name)  # type: ignore[call-arg]
-                else:
-                    slot = action.slots[0]
+            if bpy is not None and isinstance(action, bpy.types.Action):
+                return _create_blender_layered_fcurve(action, data_path, index, slot_name)
 
-            layer = action.layers.new(name="BaseLayer") if not action.layers else action.layers[0]
-            strip = cast(
-                "bpy.types.ActionKeyframeStrip",
-                layer.strips.new(type="KEYFRAME") if not layer.strips else layer.strips[0],
-            )
+            slot = _ensure_action_slot(action, slot_name)
+            layers = cast("Sequence[object]", cast("_HasActionLayers", action).layers)
+            layer = layers.new(name="BaseLayer") if not layers else layers[0]  # type: ignore[attr-defined]
+            layer_strips = cast("Sequence[object]", cast("_HasActionLayerStrips", layer).strips)
+            strip: object = layer_strips.new(type="KEYFRAME") if not layer_strips else layer_strips[0]  # type: ignore[attr-defined]
 
-            cb = None
-            channelbag_fn = getattr(strip, "channelbag_for_slot", None)
-            if callable(channelbag_fn) and slot:
-                cb = cast("bpy.types.ActionChannelbag | None", channelbag_fn(slot))
+            cb: object = None
+            if isinstance(strip, _HasChannelbagForSlot) and slot is not None:
+                cb = strip.channelbag_for_slot(slot)
 
-            if not cb and hasattr(strip, "channelbags"):
-                for c in strip.channelbags:
-                    if getattr(c, "slot", None) == slot or slot is None:
+            if not cb and isinstance(strip, _HasStripChannelbags):
+                channelbags = cast("Iterable[object]", strip.channelbags)
+                for c in channelbags:
+                    c_slot = getattr(c, "slot", None)
+                    if c_slot == slot or slot is None:
                         cb = c
                         break
                 if not cb:
-                    cb = strip.channelbags.new(slot=slot) if slot else strip.channelbags.new()  # type: ignore[call-arg]
+                    cb = strip.channelbags.new(slot=slot) if slot else strip.channelbags.new()  # type: ignore[attr-defined]
 
-            if cb and hasattr(cb, "fcurves"):
-                return cb.fcurves.new(data_path=data_path, index=index)
+            if isinstance(cb, _HasLegacyFCurves) and cb.fcurves is not None:
+                return cb.fcurves.new(data_path=data_path, index=index)  # type: ignore[attr-defined]
         except (RuntimeError, TypeError, AttributeError) as exc:
             logger.error("Failed to create slotted FCurve: %s", exc)
 
@@ -266,8 +392,8 @@ def count_mesh_triangles(mesh_data: bpy.types.Mesh | None) -> int:
     if mesh_data is None:
         return 0
     try:
-        loops = getattr(mesh_data, "loops", None)
-        polys = getattr(mesh_data, "polygons", None)
+        loops = mesh_data.loops
+        polys = mesh_data.polygons
         if loops is not None and polys is not None:
             n_loops = len(loops)
             n_polys = len(polys)
@@ -280,38 +406,20 @@ def count_mesh_triangles(mesh_data: bpy.types.Mesh | None) -> int:
 
 
 def import_scene_asset(filepath: str) -> bool:
-    """Dispatches to the appropriate Blender scene import operator based on file extension.
-
-    Encapsulates Blender 3.x vs 4.x/5.x operator differences (e.g., bpy.ops.wm.obj_import vs
-    legacy bpy.ops.import_scene.obj) and format availability checks.
-    """
+    """Dispatches to the appropriate Blender 5.0+ scene import operator by file extension."""
     if bpy is None:
         return False
 
     ext = os.path.splitext(filepath)[1].lower()
     if ext == ".fbx":
-        import_scene = getattr(bpy.ops, "import_scene", None)
-        fbx_op = getattr(import_scene, "fbx", None) if import_scene else None
-        if callable(fbx_op):
-            fbx_op(filepath=filepath)
-            return True
-    elif ext == ".obj":
-        wm = getattr(bpy.ops, "wm", None)
-        obj_import_op = getattr(wm, "obj_import", None) if wm else None
-        if callable(obj_import_op):
-            obj_import_op(filepath=filepath)
-            return True
-        import_scene = getattr(bpy.ops, "import_scene", None)
-        legacy_obj_op = getattr(import_scene, "obj", None) if import_scene else None
-        if callable(legacy_obj_op):
-            legacy_obj_op(filepath=filepath)
-            return True
-    elif ext in (".gltf", ".glb"):
-        import_scene = getattr(bpy.ops, "import_scene", None)
-        gltf_op = getattr(import_scene, "gltf", None) if import_scene else None
-        if callable(gltf_op):
-            gltf_op(filepath=filepath)
-            return True
+        bpy.ops.import_scene.fbx(filepath=filepath)
+        return True
+    if ext == ".obj":
+        bpy.ops.wm.obj_import(filepath=filepath)
+        return True
+    if ext in (".gltf", ".glb"):
+        bpy.ops.import_scene.gltf(filepath=filepath)
+        return True
     return False
 
 

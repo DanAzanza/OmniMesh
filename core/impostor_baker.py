@@ -47,6 +47,13 @@ from .impostor_rig import EphemeralBakeSceneGuard, ImpostorCameraRig
 from .png_writer import write_png_direct
 
 
+def _set_cycles_device(scene: bpy.types.Scene | None, device: str) -> None:
+    """Sets the Cycles render device ('GPU' or 'CPU') when scene Cycles settings are present."""
+    cycles_settings = getattr(scene, "cycles", None) if scene else None
+    if cycles_settings is not None:
+        cycles_settings.device = device
+
+
 class ImpostorAtlasBaker:
     """
     Orchestrates the Impostor atlas generation pipeline.
@@ -148,9 +155,7 @@ class ImpostorAtlasBaker:
                             if active_devs:
                                 for d in active_devs:
                                     d.use = True
-                                cycles_settings = getattr(scene, "cycles", None) if scene else None
-                                if cycles_settings is not None:
-                                    cycles_settings.device = "GPU"
+                                _set_cycles_device(scene, "GPU")
                                 dev_names = [str(d.name) for d in active_devs]
                                 logger.info("Configured Cycles GPU baking: %s (%s)", backend, ", ".join(dev_names))
                                 return backend, dev_names
@@ -160,9 +165,7 @@ class ImpostorAtlasBaker:
         except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
             logger.debug("Failed configuring Cycles compute device: %s", exc)
 
-        cycles_settings = getattr(scene, "cycles", None) if scene else None
-        if cycles_settings is not None:
-            cycles_settings.device = "CPU"
+        _set_cycles_device(scene, "CPU")
         return "CPU", ["CPU"]
 
     @classmethod

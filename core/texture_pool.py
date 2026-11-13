@@ -111,8 +111,7 @@ class TexturePoolManager:
             try:
                 libc_name = ctypes.util.find_library("c") or "libc.so.6"
                 libc = ctypes.CDLL(libc_name)
-                if hasattr(libc, "malloc_trim"):
-                    libc.malloc_trim(0)
+                libc.malloc_trim(0)
             except (OSError, AttributeError) as exc:
                 logger.debug("Linux malloc_trim skipped: %s", exc)
 

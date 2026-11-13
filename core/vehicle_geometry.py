@@ -338,9 +338,9 @@ def detect_wheel_submeshes(
     candidates: list[tuple[str, tuple[float, float, float]]] = []
 
     for obj in objects:
-        if not obj or getattr(obj, "type", "") != "MESH":
+        if not obj or obj.type != "MESH":
             continue
-        obj_name = getattr(obj, "name", "")
+        obj_name = obj.name
         if not WHEEL_OBJECT_PATTERN.search(obj_name) or WHEEL_EXCLUDED_PATTERN.search(obj_name):
             continue
 

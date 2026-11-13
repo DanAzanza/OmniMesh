@@ -50,6 +50,15 @@ else:
         Vector = None
 
 
+def _mark_lod_metadata(obj: bpy.types.Object, root_obj: bpy.types.Object | None, tier_idx: int) -> None:
+    """Populates OmniMesh LOD object metadata when the PropertyGroup extension is registered."""
+    lod_tool_meta = getattr(obj, "lod_tool", None)
+    if lod_tool_meta is not None:
+        lod_tool_meta.lod_root_object = root_obj
+        lod_tool_meta.is_generated_lod = True
+        lod_tool_meta.lod_index = tier_idx
+
+
 def _process_merged_tier(
     tier_coll: bpy.types.Collection | None,
     tier_in: LODTierProtocol,
@@ -214,11 +223,7 @@ def _process_merged_tier(
     tier_mesh.update()
     actual_tris = _count_triangles(tier_mesh)
     actual_mats = len(tier_obj.material_slots)
-    lod_tool_meta = getattr(tier_obj, "lod_tool", None)
-    if lod_tool_meta is not None:
-        lod_tool_meta.lod_root_object = mesh_objs[0] if mesh_objs else None
-        lod_tool_meta.is_generated_lod = True
-        lod_tool_meta.lod_index = tier_idx
+    _mark_lod_metadata(tier_obj, mesh_objs[0] if mesh_objs else None, tier_idx)
 
     return actual_tris, actual_mats, culled_slender_count, tier_obj
 
@@ -375,11 +380,7 @@ def _process_unmerged_tier(
         lod_mesh.update()
         tier_tris += _count_triangles(lod_mesh)
         tier_mats += len(lod_obj.material_slots)
-        lod_tool_meta = getattr(lod_obj, "lod_tool", None)
-        if lod_tool_meta is not None:
-            lod_tool_meta.lod_root_object = source_obj
-            lod_tool_meta.is_generated_lod = True
-            lod_tool_meta.lod_index = tier_idx
+        _mark_lod_metadata(lod_obj, source_obj, tier_idx)
         if obj_idx == 0:
             first_generated_obj = lod_obj
 

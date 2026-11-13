@@ -69,6 +69,11 @@ except (ImportError, ValueError):
         MSFSModelOptions = None  # type: ignore
 
 
+def _get_msfs_props(scene: bpy.types.Scene | None) -> MSFSExportSettingsProtocol | None:
+    """Extracts OmniMesh scene properties typed for MSFS export."""
+    return cast("MSFSExportSettingsProtocol | None", getattr(scene, "lod_tool", None)) if scene else None
+
+
 class MSFSExporter(EngineExporterBase):
     @staticmethod
     def generate_model_info_xml(
@@ -145,7 +150,7 @@ class MSFSExporter(EngineExporterBase):
     ) -> tuple[bool, str]:
         if not bpy or not context:
             return False, "Blender bpy not available."
-        props: MSFSExportSettingsProtocol | None = getattr(context.scene, "lod_tool", None)
+        props = _get_msfs_props(context.scene)
         clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
 
         try:
@@ -154,7 +159,9 @@ class MSFSExporter(EngineExporterBase):
             return False, f"Failed creating export directory '{export_dir}': {exc}"
 
         bdata_in = kwargs.get("blend_data")
-        bdata: BlendData | None = bdata_in if isinstance(bdata_in, BlendData) else context.blend_data
+        bdata: BlendData | None = (
+            bdata_in if (bdata_in is not None and isinstance(bdata_in, BlendData)) else context.blend_data
+        )
         payload = (
             AssetMeshResolver.resolve_payload(context, clean_name, blend_data=bdata) if AssetMeshResolver else None
         )
@@ -355,7 +362,7 @@ class MSFSExporter(EngineExporterBase):
 
         # 3. Write / Update model/model.cfg
         model_cfg_path = os.path.join(model_dir, "model.cfg")
-        props: MSFSExportSettingsProtocol | None = getattr(context.scene, "lod_tool", None) if context else None
+        props = _get_msfs_props(context.scene if context else None)
         target_version = props.msfs_target_version if props else "2024"
 
         is_scenery = False
