@@ -43,7 +43,7 @@
 * **Fast Intermediate Verification Gate**:
   * Run targeted automated tests and local static type checks restricted to modified files to catch interface mismatches early. Skip test suites for changes confined to documentation, markdown, or static configs.
   * Defer full-repository linting, formatting, and end-to-end regression suites to the Pre-Commit Gate to preserve iteration speed.
-* **Explicit User Authorization for Commits**: Never stage, commit, or push changes automatically. Await explicit user authorization before triggering version control operations.
+* **Autonomous Local Commits & Batched Milestone Push Gate**: Create small, atomic local commits autonomously once the Section 7 Quality Gate and working tree hygiene checks pass. Collect commits locally per task or milestone and do not push (`git push`) automatically—propose a batched push upon task completion and await explicit user authorization.
 
 ---
 
