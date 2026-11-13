@@ -3,7 +3,7 @@
 OmniMesh Central User Operators Coordinator and Registration Hub.
 Modularized into single-responsibility submodules:
 - ui.utils: Context resolvers and object queries
-- ui.cleanup_ops: Preflight inspection, topology repair, and material hygiene
+- ui.cleanup_ops: Topology repair and material hygiene
 - ui.lod_ops: LOD configuration, generation, tier preview, and selection sync
 - ui.hull_impostor_ops: Collision decomposition hulls and billboard impostors
 - ui.pbr_ops: PBR texture set importing and folder auto-matching
@@ -37,7 +37,6 @@ from .cleanup_ops import (
     LOD_OT_clean_and_repair_materials,
     LOD_OT_clean_and_repair_mesh,
     LOD_OT_cull_interior_faces,
-    LOD_OT_inspect_lod0,
 )
 from .hull_impostor_ops import (
     HULL_IMPOSTOR_OPERATOR_CLASSES,
@@ -161,7 +160,6 @@ __all__ = [
     "get_associated_armature",
     "resolve_asset_base_name",
     "resolve_lod_context",
-    "LOD_OT_inspect_lod0",
     "LOD_OT_analyze_and_configure",
     "LOD_OT_generate_all",
     "LOD_OT_generate_impostor",

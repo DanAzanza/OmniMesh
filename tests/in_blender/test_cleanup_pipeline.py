@@ -1,5 +1,5 @@
 """
-In-Blender Integration Tests for LOD0 Preflight Inspection and Mesh/Material Sanitization.
+In-Blender Integration Tests for LOD0 Mesh/Material Sanitization.
 """
 
 from __future__ import annotations
@@ -22,33 +22,11 @@ else:
 
 
 class TestCleanupPipeline(unittest.TestCase):
-    """Verify LOD0 preflight analysis and topology sanitization operators."""
+    """Verify LOD0 topology sanitization and material cleanup operators."""
 
     def setUp(self) -> None:
         if not bpy:
             self.skipTest("Blender bpy runtime not available.")
-
-    def test_preflight_detects_all_synthetic_defects(self) -> None:
-        """Verify inspect_lod0 accurately detects unapplied scale, loose verts, and degenerates."""
-        with in_blender_sandbox() as scene:
-            if scene is None or bpy is None:
-                return
-            obj = create_dirty_mesh("SM_DirtyPreflight")
-            bpy.context.view_layer.objects.active = obj
-            obj.select_set(True)
-
-            ops: Any = cast(Any, bpy.ops).lod_tool
-            res = ops.inspect_lod0()
-            self.assertEqual(res, {"FINISHED"})
-
-            props: Any = getattr(scene, "lod_tool", None)
-            if props is None:
-                return
-            self.assertTrue(props.preflight_unapplied_scale, "Should detect unapplied scale (0.01).")
-            self.assertEqual(props.preflight_loose_verts, 2, "Should detect exactly 2 loose floating vertices.")
-            self.assertEqual(props.preflight_degenerate_tris, 1, "Should detect 1 zero-area degenerate triangle.")
-            self.assertFalse(props.preflight_is_clean, "Mesh must be marked as not clean.")
-            self.assertIn("Issues:", props.preflight_summary_text)
 
     def test_clean_and_repair_mesh_heals_topology(self) -> None:
         """Verify clean_and_repair_mesh purges loose verts, degenerates, and splits bowties."""
@@ -58,6 +36,12 @@ class TestCleanupPipeline(unittest.TestCase):
             obj = create_dirty_mesh("SM_DirtyRepair")
             bpy.context.view_layer.objects.active = obj
             obj.select_set(True)
+
+            import bmesh
+
+            mesh_data: Any = obj.data
+            initial_verts = len(mesh_data.vertices)
+            initial_polys = len(mesh_data.polygons)
 
             props: Any = getattr(scene, "lod_tool", None)
             if props is None:
@@ -69,15 +53,18 @@ class TestCleanupPipeline(unittest.TestCase):
             ops: Any = cast(Any, bpy.ops).lod_tool
             res = ops.clean_and_repair_mesh()
             self.assertEqual(res, {"FINISHED"})
-            self.assertIn("Cleaned:", props.last_cleanup_summary)
-            self.assertIn("loose verts", props.last_cleanup_summary)
-            self.assertIn("degenerate faces", props.last_cleanup_summary)
-            self.assertIn("bowties split", props.last_cleanup_summary)
 
-            # Re-inspect to verify topology defects are fully resolved
-            ops.inspect_lod0()
-            self.assertEqual(props.preflight_loose_verts, 0, "Loose vertices must be 0 after repair.")
-            self.assertEqual(props.preflight_degenerate_tris, 0, "Degenerates must be 0 after repair.")
+            bm = bmesh.new()
+            try:
+                bm.from_mesh(mesh_data)
+                loose_verts = sum(1 for v in bm.verts if len(v.link_edges) == 0)
+                degen_tris = sum(1 for f in bm.faces if f.calc_area() <= 1e-10)
+                self.assertEqual(loose_verts, 0, "Loose vertices must be 0 after repair.")
+                self.assertEqual(degen_tris, 0, "Degenerates must be 0 after repair.")
+                self.assertLess(len(bm.verts), initial_verts)
+                self.assertLess(len(bm.faces), initial_polys)
+            finally:
+                bm.free()
 
     def test_clean_and_repair_materials_purges_unused_slots(self) -> None:
         """Verify clean_and_repair_materials purges empty or unused material slots."""
@@ -104,7 +91,8 @@ class TestCleanupPipeline(unittest.TestCase):
             ops: Any = cast(Any, bpy.ops).lod_tool
             res = ops.clean_and_repair_materials()
             self.assertEqual(res, {"FINISHED"})
-            self.assertIn("Purged", props.last_material_cleanup_summary)
+            self.assertEqual(len(cube_data.materials), 0)
+            self.assertTrue(all(slot.material is None for slot in cube_obj.material_slots))
 
     def test_sanitize_mesh_full_direct_bmesh(self) -> None:
         """Verify MeshSanitizer.sanitize_mesh_full coordinates all 3 tiers directly on live BMesh."""

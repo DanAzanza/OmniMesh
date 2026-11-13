@@ -168,27 +168,17 @@ def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
     box_clean = layout.box()
     box_clean.label(text="Mesh & Material Cleanup", icon="BRUSH_DATA")
 
-    row_insp = box_clean.row(align=True)
-    row_insp.use_property_split = False
-    row_insp.operator("lod_tool.inspect_lod0", text="Inspect Base Mesh", icon="VIEWZOOM")
-
     row_san = box_clean.row(align=True)
     row_san.use_property_split = False
     row_san.scale_y = 1.2
     row_san.operator("lod_tool.clean_and_repair_mesh", text="Clean Mesh", icon="BRUSH_DATA")
     row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
-    cleanup_sum = getattr(props, "last_cleanup_summary", "")
-    if isinstance(cleanup_sum, str) and cleanup_sum:
-        box_clean.label(text=cleanup_sum, icon="CHECKMARK")
 
     row_mat = box_clean.row(align=True)
     row_mat.use_property_split = False
     row_mat.scale_y = 1.2
     row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
     row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
-    mat_sum = getattr(props, "last_material_cleanup_summary", "")
-    if isinstance(mat_sum, str) and mat_sum:
-        box_clean.label(text=mat_sum, icon="CHECKMARK")
 
     # 2. Impostors, Colliders, Vehicle Config & Interaction Features
     _draw_tab_add(layout, context, props)

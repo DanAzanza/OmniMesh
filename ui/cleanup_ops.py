@@ -1,6 +1,6 @@
 # pyright: reportInvalidTypeForm=none
 """
-Mesh Preflight Inspection, Topology Repair, and Material Cleanup Operators.
+Topology Repair and Material Cleanup Operators.
 """
 
 from __future__ import annotations
@@ -50,42 +50,6 @@ except (ImportError, ValueError):
         resolve_lod_context,
         safe_report,
     )
-
-
-def run_preflight_inspection(context: Any, mesh_objs: list[Any]) -> dict[str, Any]:
-    """Inspect mesh objects for unapplied scale/rotation, loose topology, degenerates, and materials."""
-    return MeshSanitizer.run_preflight_inspection(context, mesh_objs)
-
-
-class LOD_OT_inspect_lod0(Operator):
-    """Preflight check: Inspect active mesh geometry for unapplied transforms, loose vertices, and non-manifold topology."""
-
-    bl_idname = "lod_tool.inspect_lod0"
-    bl_label = "Inspect LOD0"
-    bl_options = {"REGISTER"}
-
-    @classmethod
-    def poll(cls, context: Any) -> bool:
-        return bool(context and (get_lod0_mesh_objects(context) or get_selected_mesh_objects(context)))
-
-    def execute(self, context: Any) -> set[Any]:
-        if not bpy or not context:
-            return {"FINISHED"}
-        mesh_objs = get_lod0_mesh_objects(context)
-        if not mesh_objs:
-            mesh_objs = get_selected_mesh_objects(context)
-        if not mesh_objs:
-            safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found.")
-            return {"CANCELLED"}
-
-        res = run_preflight_inspection(context, mesh_objs)
-        summary = res.get("summary", "")
-        if res.get("is_clean", False):
-            safe_report(self, {"INFO"}, summary)
-        else:
-            safe_report(self, {"WARNING"}, summary)
-
-        return {"FINISHED"}
 
 
 class LOD_OT_clean_and_repair_mesh(Operator):
@@ -294,11 +258,6 @@ class LOD_OT_clean_and_repair_mesh(Operator):
         counts["mods_baked"] = total_mods_baked
 
         summary = self._build_cleanup_summary(counts)
-        props.last_cleanup_summary = summary
-
-        # Refresh preflight diagnostic properties so popovers never display stale defects
-        run_preflight_inspection(context, mesh_objs)
-
         safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
 
@@ -365,7 +324,6 @@ class LOD_OT_cull_interior_faces(Operator):
         props.last_culled_faces_count = total_culled_faces
         props.last_culled_islands_count = total_culled_islands
         summary = f"Removed {total_culled_faces} interior polygons ({total_culled_islands} islands) across {len(mesh_objs)} LOD0 mesh(es)."
-        props.last_cleanup_summary = summary
 
         safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
@@ -412,9 +370,8 @@ class LOD_OT_clean_and_repair_materials(Operator):
             if props.mat_cleanup_remove_orphan_nodes:
                 MaterialOptimizer.clean_orphan_shader_nodes(blend_data=bdata)
 
-        props.last_material_cleanup_summary = f"Purged {purged_slots} unused slots, merged {merged_blocks} materials."
-
-        safe_report(self, {"INFO"}, props.last_material_cleanup_summary)
+        summary = f"Purged {purged_slots} unused slots, merged {merged_blocks} materials."
+        safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
 
 
@@ -513,7 +470,6 @@ class LOD_OT_apply_transforms(Operator):
 
 
 CLEANUP_OPERATOR_CLASSES = (
-    LOD_OT_inspect_lod0,
     LOD_OT_clean_and_repair_mesh,
     LOD_OT_cull_interior_faces,
     LOD_OT_clean_and_repair_materials,

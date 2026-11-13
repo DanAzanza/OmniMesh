@@ -273,78 +273,31 @@ def test_merge_doubles_and_tier2_normal_guards() -> None:
         assert t2_off["recalculated_normals"] is False
 
 
-def test_run_preflight_inspection_and_sanitize_mesh_full() -> None:
-    """Verify run_preflight_inspection (clean and dirty meshes) and sanitize_mesh_full."""
+def test_sanitize_mesh_full() -> None:
+    """Verify sanitize_mesh_full coordinates tier1 repair and tier2 normal alignment."""
     v0, v1, v2 = FakeVert(0), FakeVert(1), FakeVert(2)
-    v_loose = FakeVert(3, is_wire=True)
-    e_wire = FakeEdge(v0, v1, is_wire=True)
-    e_nm = FakeEdge(v1, v2)
-    f_degen = FakeFace(0, [v0, v1, v2], area=1e-12)
     f_ok = FakeFace(1, [v0, v1, v2], area=1.0)
-    e_nm.link_faces = [f_degen, f_ok, f_ok]
-    bm = FakeBMesh(verts=[v0, v1, v2, v_loose], edges=[e_wire, e_nm], faces=[f_degen, f_ok])
+    bm = FakeBMesh(verts=[v0, v1, v2], edges=[], faces=[f_ok])
 
-    fake_bmesh_mod = MagicMock()
-    fake_bmesh_mod.new.return_value = bm
-    fake_bpy = MagicMock()
-
-    ctx = MagicMock()
-    obj_dirty = MagicMock()
-    obj_dirty.name = "DirtyMesh"
-    obj_dirty.scale = FakeVec(2.0, 1.0, 1.0)
-    obj_dirty.material_slots = []
-    obj_dirty.data = MagicMock()
-
+    opts = SanitizeOptions(
+        epsilon_merge=0.001,
+        w_crit=0.005,
+        enable_weld=True,
+        enable_cull_micro_islands=True,
+        normal_recalc_policy="FORCE_ALL",
+    )
     with (
-        patch.object(san_mod, "bpy", fake_bpy),
-        patch.object(san_mod, "bmesh", fake_bmesh_mod),
-    ):
-        # Guard check
-        assert MeshSanitizer.run_preflight_inspection(None, []) == {}
-
-        report = MeshSanitizer.run_preflight_inspection(ctx, [obj_dirty])
-        assert report["loose_verts"] == 2
-        assert report["loose_edges"] == 1
-        assert report["non_manifold_edges"] == 1
-        assert report["degenerate_tris"] == 1
-        assert report["unapplied_scale"] is True
-        assert report["missing_materials"] == 1
-        assert report["is_clean"] is False
-        assert "Unapplied Scale" in ctx.scene.lod_tool.preflight_summary_text
-
-        # Clean mesh check
-        bm_clean = FakeBMesh(verts=[v0], edges=[], faces=[f_ok])
-        v0.link_edges = [FakeEdge(v0, v1)]
-        fake_bmesh_mod.new.return_value = bm_clean
-        obj_clean = MagicMock()
-        obj_clean.name = "CleanMesh"
-        obj_clean.scale = FakeVec(1.0, 1.0, 1.0)
-        slot_valid = MagicMock()
-        slot_valid.material = MagicMock()
-        obj_clean.material_slots = [slot_valid]
-        obj_clean.data = MagicMock()
-
-        report_clean = MeshSanitizer.run_preflight_inspection(ctx, [obj_clean])
-        assert report_clean["is_clean"] is True
-        assert "Healthy" in ctx.scene.lod_tool.preflight_summary_text
-
-        # Full sanitize pipeline
-        opts = SanitizeOptions(
-            epsilon_merge=0.001,
-            w_crit=0.005,
-            enable_weld=True,
-            enable_cull_micro_islands=True,
-            normal_recalc_policy="FORCE_ALL",
-        )
-        with patch.object(
+        patch.object(san_mod, "bmesh", MagicMock()),
+        patch.object(
             MeshSanitizer,
             "execute_tier1_topological_repair",
             return_value={"welded_verts": 3, "split_bowties": 1},
-        ):
-            full_stats = MeshSanitizer.sanitize_mesh_full(bm, options=opts)
-            assert full_stats["merged_doubles"] == 3
-            assert full_stats["split_bowties"] == 1
-            assert full_stats["recalculated_normals"] is True
+        ),
+    ):
+        full_stats = MeshSanitizer.sanitize_mesh_full(bm, options=opts)
+        assert full_stats["merged_doubles"] == 3
+        assert full_stats["split_bowties"] == 1
+        assert full_stats["recalculated_normals"] is True
 
 
 # =========================================================================

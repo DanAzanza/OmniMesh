@@ -104,16 +104,7 @@ class LODToolSettings(PropertyGroup):
     base_triangles: IntProperty(name="Base Triangles", default=0, min=0)
     screen_coverage_lod0: FloatProperty(name="LOD0 Screen Coverage %", default=100.0, min=0.0, max=100.0)
 
-    # Preflight Inspection & Base Mesh Hygiene Properties
-    preflight_inspected: BoolProperty(name="Preflight Inspected", default=False)
-    preflight_summary_text: StringProperty(name="Preflight Summary", default="Not Inspected")
-    preflight_loose_verts: IntProperty(name="Loose Vertices", default=0)
-    preflight_loose_edges: IntProperty(name="Loose Edges", default=0)
-    preflight_non_manifold_edges: IntProperty(name="Non-Manifold Edges", default=0)
-    preflight_degenerate_tris: IntProperty(name="Degenerate Triangles", default=0)
-    preflight_unapplied_scale: BoolProperty(name="Unapplied Scale Detected", default=False)
-    preflight_missing_materials: IntProperty(name="Missing Material Slots", default=0)
-    preflight_is_clean: BoolProperty(name="Mesh Clean", default=False)
+    # Base Mesh Hygiene Properties
     sanitize_merge_epsilon: FloatProperty(
         name="Merge Tolerance (m)",
         default=0.0001,
@@ -195,7 +186,6 @@ class LODToolSettings(PropertyGroup):
     cleanup_normal_policy: EnumProperty(
         name="Normal Alignment", items=enums.CLEANUP_NORMAL_POLICY_ITEMS, default="MANIFOLD_ONLY"
     )
-    last_cleanup_summary: StringProperty(name="Cleanup Summary", default="")
 
     # Material Cleanup & Slot Consolidation Settings
     mat_cleanup_purge_unused_slots: BoolProperty(name="Purge Empty & Unused Slots", default=True)
@@ -206,7 +196,6 @@ class LODToolSettings(PropertyGroup):
     mat_cleanup_micro_area_pct: FloatProperty(name="Micro Threshold %", default=0.5, min=0.01, max=5.0, precision=2)
     mat_cleanup_repair_missing_textures: BoolProperty(name="Repair Missing Textures", default=False)
     mat_cleanup_purge_orphans_blendfile: BoolProperty(name="Purge Orphan Materials from .blend", default=False)
-    last_material_cleanup_summary: StringProperty(name="Material Cleanup Summary", default="")
 
     # PBR Texture Set Importer Settings
     pbr_import_preset: EnumProperty(

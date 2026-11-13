@@ -181,11 +181,10 @@ class LOD_OT_generate_impostor(Operator):
             _attach_octahedral_viewport_billboard(res, base_name, context, bdata)
             if export_companion_shaders:
                 try:
-                    target_eng = getattr(props, "target_engine", "ALL")
                     shader_res = export_companion_shaders(
                         base_name=base_name,
                         output_dir=tex_dir,
-                        target_engine=target_eng,
+                        target_engine="ALL",
                         grid_size=grid_size,
                         alpha_scissor=0.5,
                         mode=effective_mode,

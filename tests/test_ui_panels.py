@@ -16,7 +16,6 @@ from ui.operators import (
     LOD_OT_generate_all,
     LOD_OT_generate_collision_hulls,
     LOD_OT_import_pbr_set,
-    LOD_OT_inspect_lod0,
     get_associated_armature,
     get_selected_mesh_objects,
     is_object_valid,
@@ -94,7 +93,7 @@ def test_operator_helpers_mocked():
 
 
 def test_fix_lod0_operators_poll_and_exec_mocked():
-    """Test poll and safe execution for LOD0 preflight and sanitization operators in headless mock."""
+    """Test poll and safe execution for LOD0 sanitization operators in headless mock."""
     mock_context = MagicMock()
     mock_mesh = MagicMock()
     mock_mesh.name = "SM_Test"
@@ -105,21 +104,16 @@ def test_fix_lod0_operators_poll_and_exec_mocked():
     mock_mesh.lod_tool.is_configured = False
 
     # Poll methods
-    assert LOD_OT_inspect_lod0.poll(mock_context) is True
     assert LOD_OT_analyze_and_configure.poll(mock_context) is True
     assert LOD_OT_clean_and_repair_mesh.poll(mock_context) is True
     assert LOD_OT_generate_all.poll(mock_context) is True
 
-    assert LOD_OT_inspect_lod0.poll(None) is False
     assert LOD_OT_analyze_and_configure.poll(None) is False
     assert LOD_OT_clean_and_repair_mesh.poll(None) is False
     assert LOD_OT_generate_collision_hulls.poll(mock_context) is True
     assert LOD_OT_generate_collision_hulls.poll(None) is False
 
     # Execute fallback when bpy is None
-    op_inspect = LOD_OT_inspect_lod0()
-    assert op_inspect.execute(None) == {"FINISHED"}
-
     op_analyze = LOD_OT_analyze_and_configure()
     assert op_analyze.execute(None) == {"FINISHED"}
 
@@ -157,8 +151,10 @@ def test_clean_and_repair_mesh_properties(monkeypatch):
     import ui.cleanup_ops as cleanup_ops
 
     mock_bpy, mock_bmesh = MagicMock(), MagicMock()
+    mock_report = MagicMock()
     monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
     monkeypatch.setattr(cleanup_ops, "bmesh", mock_bmesh)
+    monkeypatch.setattr(cleanup_ops, "safe_report", mock_report)
 
     op = cleanup_ops.LOD_OT_clean_and_repair_mesh()
     mock_context, mock_props = MagicMock(), MagicMock()
@@ -169,7 +165,6 @@ def test_clean_and_repair_mesh_properties(monkeypatch):
     mock_props.cleanup_hole_max_edges = 4
     mock_props.cleanup_enable_triangulate_ngons = False
     mock_props.cleanup_normal_policy = "OFF"
-    mock_props.last_cleanup_summary = ""
 
     mock_mesh = MagicMock(type="MESH")
     mock_mesh.name = "TestMesh"
@@ -180,7 +175,7 @@ def test_clean_and_repair_mesh_properties(monkeypatch):
 
     res = op.execute(mock_context)
     assert res == {"FINISHED"}
-    assert "Cleaned:" in mock_props.last_cleanup_summary
+    assert "Cleaned:" in mock_report.call_args.args[2]
 
 
 def test_clean_and_repair_mesh_with_apply_modifiers_opt_in(monkeypatch):
@@ -188,8 +183,10 @@ def test_clean_and_repair_mesh_with_apply_modifiers_opt_in(monkeypatch):
     import ui.cleanup_ops as cleanup_ops
 
     mock_bpy, mock_bmesh = MagicMock(), MagicMock()
+    mock_report = MagicMock()
     monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
     monkeypatch.setattr(cleanup_ops, "bmesh", mock_bmesh)
+    monkeypatch.setattr(cleanup_ops, "safe_report", mock_report)
 
     mock_mod_mgr = MagicMock()
     mock_mod_mgr.has_unapplied_modifiers.return_value = True
@@ -205,7 +202,6 @@ def test_clean_and_repair_mesh_with_apply_modifiers_opt_in(monkeypatch):
     mock_props.cleanup_enable_fill_holes = False
     mock_props.cleanup_enable_triangulate_ngons = False
     mock_props.cleanup_normal_policy = "OFF"
-    mock_props.last_cleanup_summary = ""
 
     mock_mesh = MagicMock(type="MESH")
     mock_mesh.name = "TestMesh"
@@ -218,7 +214,7 @@ def test_clean_and_repair_mesh_with_apply_modifiers_opt_in(monkeypatch):
     assert res == {"FINISHED"}
     mock_mod_mgr.sync_viewport_to_render_settings.assert_called_once_with(mock_mesh)
     mock_mod_mgr.apply_all_modifiers_in_place.assert_called_once_with(mock_mesh, preserve_armature=True)
-    assert "modifier(s) baked" in mock_props.last_cleanup_summary
+    assert "modifier(s) baked" in mock_report.call_args.args[2]
 
 
 def test_operator_classes_no_duplicates():
@@ -228,7 +224,7 @@ def test_operator_classes_no_duplicates():
     idnames = [getattr(cls, "bl_idname", None) for cls in OPERATOR_CLASSES if hasattr(cls, "bl_idname")]
     assert len(idnames) == len(set(idnames)), f"Duplicate bl_idnames found: {idnames}"
     assert "lod_tool.clean_and_repair_mesh" in idnames
-    assert "lod_tool.inspect_lod0" in idnames
+    assert "lod_tool.inspect_lod0" not in idnames
     assert "lod_tool.generate_all" in idnames
     assert "lod_tool.generate_collision_hulls" in idnames
     assert "lod_tool.import_pbr_set" in idnames
@@ -365,7 +361,6 @@ def test_modify_panel_collision_row_and_popover(monkeypatch):
     mock_context.selected_objects = [mock_mesh]
 
     mock_props.export_base_name = ""
-    mock_props.last_material_cleanup_summary = ""
     mock_props.last_generated_collider_count = 3
     mock_props.collision_decomposition_mode = "PER_OBJECT"
     mock_props.collision_hull_count = 4
@@ -385,7 +380,7 @@ def test_modify_panel_collision_row_and_popover(monkeypatch):
 
 
 def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
-    """Verify OMNIMESH_PT_modify and OMNIMESH_PT_popover_sanitize draw correctly with preflight diagnostics."""
+    """Verify OMNIMESH_PT_modify and OMNIMESH_PT_popover_sanitize draw correctly without removed labels."""
     import ui.panel as panel_mod
     import ui.popovers as popovers_mod
     from ui.panel import OMNIMESH_PT_modify
@@ -404,8 +399,6 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     mock_context.active_object = mock_mesh
     mock_context.selected_objects = [mock_mesh]
     mock_props.export_base_name = ""
-    mock_props.last_cleanup_summary = "Cleaned: 2 loose verts."
-    mock_props.last_material_cleanup_summary = "Cleaned: 1 slot purged."
     mock_props.last_generated_collider_count = 0
 
     mock_layout = MagicMock()
@@ -413,14 +406,6 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     panel_modify.draw(mock_context)
     assert mock_layout.box.called
 
-    mock_props.preflight_inspected = True
-    mock_props.preflight_is_clean = False
-    mock_props.preflight_summary_text = "⚠ Issues: 2 Loose Verts"
-    mock_props.preflight_unapplied_scale = True
-    mock_props.preflight_loose_verts = 2
-    mock_props.preflight_loose_edges = 0
-    mock_props.preflight_non_manifold_edges = 1
-    mock_props.preflight_degenerate_tris = 0
     mock_props.cleanup_enable_weld = True
     mock_props.cleanup_enable_fill_holes = True
 
@@ -429,12 +414,6 @@ def test_popover_sanitize_and_modify_panel_layout(monkeypatch):
     popover_san.draw(mock_context)
     assert mock_san_layout.label.called
     assert mock_san_layout.prop.called
-
-    mock_props.preflight_is_clean = True
-    mock_props.preflight_unapplied_scale = False
-    mock_props.preflight_loose_verts = 0
-    mock_props.preflight_non_manifold_edges = 0
-    popover_san.draw(mock_context)
 
 
 def test_add_panel_draw(monkeypatch):

@@ -13,23 +13,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Dict, List, Protocol, cast
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from .topology_repair import TopologyRepairEngine, TopologyRepairOptions
 
 logger = logging.getLogger(__name__)
-
-
-class PreflightSettingsProtocol(Protocol):
-    preflight_inspected: bool
-    preflight_loose_verts: int
-    preflight_loose_edges: int
-    preflight_non_manifold_edges: int
-    preflight_degenerate_tris: int
-    preflight_unapplied_scale: bool
-    preflight_missing_materials: int
-    preflight_is_clean: bool
-    preflight_summary_text: str
 
 
 @dataclass(slots=True)
@@ -50,18 +38,15 @@ class SanitizeOptions:
 
 if TYPE_CHECKING:
     import bmesh
-    import bpy
     import mathutils
     from mathutils import Matrix
 else:
     try:
         import bmesh
-        import bpy
         import mathutils
         from mathutils import Matrix
     except ImportError:
         Matrix = None
-        bpy = None
         bmesh = None
         mathutils = None
 
@@ -300,115 +285,6 @@ class MeshSanitizer:
     fill_small_boundary_holes = staticmethod(TopologyRepairEngine.fill_small_boundary_holes)
     cull_subpixel_islands = staticmethod(TopologyRepairEngine.cull_subpixel_islands)
     execute_tier1_topological_repair = staticmethod(TopologyRepairEngine.execute_tier1_topological_repair)
-
-    @staticmethod
-    def run_preflight_inspection(
-        context: bpy.types.Context | None, mesh_objs: list[bpy.types.Object]
-    ) -> dict[str, Any]:
-        """Inspect mesh objects for unapplied scale/rotation, loose topology, degenerates, and materials."""
-        if not bpy or not context or not context.scene:
-            return {}
-        props: PreflightSettingsProtocol | None = getattr(context.scene, "lod_tool", None)
-        if not props:
-            return {}
-
-        total_loose_verts = 0
-        total_loose_edges = 0
-        total_non_manifold_edges = 0
-        total_degenerate_tris = 0
-        has_unapplied_scale = False
-        missing_mats = 0
-
-        for obj in mesh_objs:
-            s = obj.scale
-            if s is not None:
-                try:
-                    if abs(s.x - 1.0) > 1e-4 or abs(s.y - 1.0) > 1e-4 or abs(s.z - 1.0) > 1e-4:
-                        has_unapplied_scale = True
-                except (AttributeError, TypeError, ValueError) as e:
-                    has_unapplied_scale = True
-                    logger.warning("Failed checking unapplied scale on %s: %s", obj.name, e)
-
-            slots = obj.material_slots
-            if slots is not None:
-                try:
-                    if len(slots) == 0 or any(slot.material is None for slot in slots):
-                        missing_mats += 1
-                except (TypeError, ValueError, AttributeError) as e:
-                    missing_mats += 1
-                    logger.warning("Failed checking material slots on %s: %s", obj.name, e)
-
-            mesh_data = cast("bpy.types.Mesh | None", obj.data)
-            if not mesh_data or not bmesh:
-                continue
-
-            try:
-                bm = bmesh.new()
-                try:
-                    bm.from_mesh(mesh_data)
-                    for v in bm.verts:
-                        if len(v.link_edges) == 0:
-                            total_loose_verts += 1
-                    for e in bm.edges:
-                        face_count = len(e.link_faces)
-                        if face_count == 0:
-                            total_loose_edges += 1
-                        elif face_count > 2:
-                            total_non_manifold_edges += 1
-                    for f in bm.faces:
-                        if f.calc_area() <= 1e-10:
-                            total_degenerate_tris += 1
-                finally:
-                    bm.free()
-            except (AttributeError, RuntimeError, ReferenceError, ValueError, TypeError) as exc:
-                total_degenerate_tris += 1
-                logger.warning("Failed during mesh inspection: %s", exc)
-
-        props.preflight_inspected = True
-        props.preflight_loose_verts = total_loose_verts
-        props.preflight_loose_edges = total_loose_edges
-        props.preflight_non_manifold_edges = total_non_manifold_edges
-        props.preflight_degenerate_tris = total_degenerate_tris
-        props.preflight_unapplied_scale = has_unapplied_scale
-        props.preflight_missing_materials = missing_mats
-
-        is_clean = (
-            (total_loose_verts == 0)
-            and (total_loose_edges == 0)
-            and (total_non_manifold_edges == 0)
-            and (total_degenerate_tris == 0)
-            and (not has_unapplied_scale)
-            and (missing_mats == 0)
-        )
-        props.preflight_is_clean = is_clean
-
-        if is_clean:
-            props.preflight_summary_text = f"✔ LOD0 Healthy ({len(mesh_objs)} mesh(es), All Transforms Applied)"
-        else:
-            issues = []
-            if has_unapplied_scale:
-                issues.append("Unapplied Scale")
-            if total_loose_verts > 0:
-                issues.append(f"{total_loose_verts} Loose Verts")
-            if total_loose_edges > 0:
-                issues.append(f"{total_loose_edges} Loose Edges")
-            if total_non_manifold_edges > 0:
-                issues.append(f"{total_non_manifold_edges} Non-Manifold Edges")
-            if total_degenerate_tris > 0:
-                issues.append(f"{total_degenerate_tris} Degenerates")
-            if missing_mats > 0:
-                issues.append(f"{missing_mats} Missing Mats")
-            props.preflight_summary_text = f"⚠ Issues: {', '.join(issues)}"
-
-        return {
-            "loose_verts": total_loose_verts,
-            "loose_edges": total_loose_edges,
-            "non_manifold_edges": total_non_manifold_edges,
-            "degenerate_tris": total_degenerate_tris,
-            "unapplied_scale": has_unapplied_scale,
-            "missing_materials": missing_mats,
-            "is_clean": is_clean,
-        }
 
     @classmethod
     def execute_tier2_pipeline_guards(

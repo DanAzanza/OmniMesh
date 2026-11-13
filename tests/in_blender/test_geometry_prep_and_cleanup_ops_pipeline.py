@@ -1,4 +1,4 @@
-"""In-Blender Integration Tests for Geometry Preparation, Preflight Inspection, and Cleanup Ops."""
+"""In-Blender Integration Tests for Geometry Preparation and Cleanup Ops."""
 
 from __future__ import annotations
 
@@ -20,22 +20,20 @@ else:
         in_blender_sandbox = None  # type: ignore
 
 try:
-    from ui.cleanup_ops import run_preflight_inspection
     from ui.properties.callbacks import on_target_engine_updated
 except (ImportError, ValueError):
-    from ui.cleanup_ops import run_preflight_inspection
     from ui.properties.callbacks import on_target_engine_updated
 
 
 class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
-    """Verify preflight inspection, mesh sanitization, material cleaning, and asset initialization."""
+    """Verify mesh sanitization, material cleaning, and asset initialization."""
 
     def setUp(self) -> None:
         if not bpy:
             self.skipTest("Blender bpy runtime not available.")
 
-    def test_preflight_inspection_and_clean_repair_mesh(self) -> None:
-        """Verify run_preflight_inspection and lod_tool.clean_and_repair_mesh on noisy geometry."""
+    def test_clean_repair_mesh(self) -> None:
+        """Verify lod_tool.clean_and_repair_mesh repairs noisy geometry and degenerate faces."""
         with in_blender_sandbox() as scene:
             if scene is None or bpy is None:
                 return
@@ -66,18 +64,10 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
                 o.select_set(o == obj)
             bpy.context.view_layer.objects.active = obj
 
-            # 1. Run preflight inspection
-            inspection = run_preflight_inspection(bpy.context, [obj])
-            self.assertFalse(inspection.get("is_clean", True))
-
             ops_lod: Any = cast(Any, bpy.ops).lod_tool
-            # 2. Execute inspect operator
-            res_inspect = ops_lod.inspect_lod0()
-            self.assertEqual(res_inspect, {"FINISHED"})
-
-            # 3. Execute clean and repair mesh operator
             res_clean = ops_lod.clean_and_repair_mesh()
             self.assertEqual(res_clean, {"FINISHED"})
+            self.assertEqual(len(mesh.polygons), 6)
 
     def test_clean_and_repair_materials(self) -> None:
         """Verify lod_tool.clean_and_repair_materials deduplicates slots and clears empty assignments."""
@@ -222,8 +212,7 @@ class TestGeometryPrepAndCleanupOpsPipeline(unittest.TestCase):
             ops_lod: Any = cast(Any, bpy.ops).lod_tool
             res_clean = ops_lod.clean_and_repair_mesh()
             self.assertEqual(res_clean, {"FINISHED"})
-            if props:
-                self.assertIn("interior faces removed", props.last_cleanup_summary)
+            self.assertLess(len(mesh.polygons), 12)
 
     def test_voxel_scan_cleanup_operator(self) -> None:
         """Verify lod_tool.voxel_scan_cleanup runs on LOD0 meshes in real Blender runtime."""
