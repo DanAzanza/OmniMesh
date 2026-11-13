@@ -470,7 +470,9 @@ def safe_remove_collection_objects(
     objs_to_remove = [o for o in list(col.objects) if o is not None and (predicate is None or predicate(o))]
 
     for obj in objs_to_remove:
+        obj_name = "<unnamed>"
         try:
+            obj_name = obj.name
             # Unparent children safely
             for child in list(obj.children or []):
                 if child:
@@ -511,9 +513,7 @@ def safe_remove_collection_objects(
                     raise CollectionHierarchyError(f"Failed removing orphaned datablock: {exc}") from exc
         except (ReferenceError, AttributeError, RuntimeError) as exc:
             logger.error("Safe object removal exception: %s", exc)
-            raise CollectionHierarchyError(
-                f"Safe object removal failed for '{getattr(obj, 'name', '<unnamed>')}': {exc}"
-            ) from exc
+            raise CollectionHierarchyError(f"Safe object removal failed for '{obj_name}': {exc}") from exc
 
     if deselect_failed_count > 0:
         logger.warning(

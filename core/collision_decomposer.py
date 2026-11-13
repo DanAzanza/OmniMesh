@@ -282,7 +282,7 @@ class CollisionDecomposer:
 
         scale_factor = 1.0
         if source_obj:
-            s = getattr(source_obj, "scale", (1.0, 1.0, 1.0))
+            s = source_obj.scale
             scale_factor = max(1e-4, (abs(s[0]) + abs(s[1]) + abs(s[2])) / 3.0)
 
         eval_obj = None
