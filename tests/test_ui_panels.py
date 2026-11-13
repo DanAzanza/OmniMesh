@@ -584,7 +584,7 @@ def test_main_panel_tab_switching_and_target_asset_visibility(monkeypatch):
         main_panel.draw(mock_ctx)
 
         # Tab navigation prop always requested on grid_flow
-        mock_grid.prop.assert_called_with(mock_props, "ui_active_tab", expand=True, icon_only=False)
+        mock_grid.prop.assert_called_with(mock_props, "ui_active_tab", expand=True, icon_only=True)
 
         # Target Asset selector presence depends on tab
         has_target_asset = any(

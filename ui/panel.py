@@ -469,7 +469,7 @@ class OMNIMESH_PT_main(Panel):
         # Top: Horizontal Segmented Workflow Navigation
         grid = layout.grid_flow(row_major=True, columns=4, even_columns=True, even_rows=True, align=True)
         grid.scale_y = 1.3
-        grid.prop(props, "ui_active_tab", expand=True, icon_only=False)
+        grid.prop(props, "ui_active_tab", expand=True, icon_only=True)
 
         layout.separator(factor=0.3)
         active_tab = getattr(props, "ui_active_tab", "MODIFY")
