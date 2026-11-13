@@ -37,7 +37,7 @@ else:
     BlendData = object  # runtime fallback for type annotations
 
 from .exceptions import ImpostorBakeError
-from .impostor_math import ImpostorMath, Vector
+from .impostor_math import ImpostorMath, Vector, normalize_impostor_grid_size
 from .impostor_preview_material import create_octahedral_preview_material
 from .metrics import compute_bounding_sphere
 
@@ -308,6 +308,7 @@ class ImpostorManager:
         target_engine: str = "UE5",
         is_two_sided: bool = True,
         mode: str = "ORTHO_3_AXES",
+        grid_size: int = 8,
         *,
         blend_data: BlendData,
     ) -> bpy.types.Material | None:
@@ -318,11 +319,12 @@ class ImpostorManager:
         if not bpy or blend_data is None:
             return None
 
+        norm_grid = normalize_impostor_grid_size(grid_size)
         if mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             return create_octahedral_preview_material(
                 mat_name=f"M_{base_name}_Impostor",
                 base_color_path="",
-                grid_size=8,
+                grid_size=norm_grid,
                 target_engine=target_engine,
                 mode=mode,
                 view_dir_mode="VIEWPORT_INCOMING",
@@ -467,6 +469,7 @@ class ImpostorManager:
         atlas_resolution: int = 2048,
         scene: bpy.types.Scene | None = None,
         context: bpy.types.Context | None = None,
+        grid_size: int = 8,
         *,
         blend_data: BlendData,
     ) -> bpy.types.Object | None:
@@ -584,8 +587,10 @@ class ImpostorManager:
                 if is_octahedral
                 else Vector((0.0, 0.0, 0.0))
             )
+            norm_grid = normalize_impostor_grid_size(grid_size)
             impostor_obj["_is_impostor"] = True
             impostor_obj["_impostor_mode"] = mode
+            impostor_obj["_impostor_grid_size"] = norm_grid
 
             # Assign Impostor PBR Material
             mat = cls.create_impostor_material(
@@ -593,6 +598,7 @@ class ImpostorManager:
                 target_engine=target_engine,
                 is_two_sided=True,
                 mode=mode,
+                grid_size=norm_grid,
                 blend_data=effective_bdata,
             )
             if mat:

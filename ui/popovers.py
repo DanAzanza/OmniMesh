@@ -36,6 +36,7 @@ from .popover_presets import (
     OMNIMESH_PT_popover_export_preset,
     OMNIMESH_PT_popover_import_preset,
     OMNIMESH_PT_popover_lod_preset,
+    draw_impostor_configuration_fields,
 )
 
 
@@ -188,6 +189,14 @@ class OMNIMESH_PT_popover_generate(Panel):
         layout.prop(props, "enable_bone_pruning", text="Leaf Bone Pruning")
         layout.prop(props, "purge_shape_keys", text="Purge Distant Shape Keys")
 
+        if getattr(props, "enable_impostor_lod", False) is True:
+            layout.separator()
+            layout.label(text="Billboard Impostor", icon="IMAGE_PLANE")
+            box_imp = layout.box()
+            box_imp.use_property_split = True
+            box_imp.use_property_decorate = False
+            draw_impostor_configuration_fields(box_imp, props)
+
 
 class OMNIMESH_PT_popover_impostor(Panel):
     """Dedicated Quick Configuration Popover for Billboard Impostors."""
@@ -210,9 +219,7 @@ class OMNIMESH_PT_popover_impostor(Panel):
         box = layout.box()
         box.use_property_split = True
         box.use_property_decorate = False
-        box.prop(props, "impostor_mode", text="Mode")
-        box.prop(props, "impostor_resolution", text="Resolution")
-        box.prop(props, "impostor_replace_last_lod", text="Final LOD Tier")
+        draw_impostor_configuration_fields(box, props)
 
 
 WORKFLOW_POPOVER_CLASSES = (

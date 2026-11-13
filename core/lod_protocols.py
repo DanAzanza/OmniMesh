@@ -47,6 +47,9 @@ class LODSettingsProtocol(Protocol):
     consolidate_hierarchy: bool
     merge_start_tier: int
     enable_impostor_lod: bool
+    impostor_mode: str
+    impostor_render_underside: bool
+    impostor_grid_size: int
     lods: Sequence[LODTierProtocol]
     last_culled_slender_count: int
     last_generated_base_tris: int

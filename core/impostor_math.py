@@ -260,4 +260,41 @@ class ImpostorMath:
         return result
 
 
-__all__ = ["ImpostorMath", "Vector"]
+def normalize_impostor_grid_size(grid_size: int) -> int:
+    """Clamps octahedral grid dimension N (NxN frames) to supported [2, 32] bounds."""
+    return max(2, min(32, int(grid_size)))
+
+
+def resolve_effective_impostor_mode(mode: str, render_underside: bool = False) -> str:
+    """Resolves effective impostor projection mode taking underside capture into account."""
+    if mode == "OCTAHEDRAL_SPHERE":
+        return "OCTAHEDRAL_SPHERE"
+    if mode == "OCTAHEDRAL_HEMI" and render_underside:
+        return "OCTAHEDRAL_SPHERE"
+    return mode
+
+
+def compute_impostor_atlas_resolution(
+    auto_resolution: bool,
+    configured_resolution: str | int,
+    final_screen_size_pct: float = 5.0,
+) -> int:
+    """Computes effective power-of-2 impostor atlas resolution in pixels."""
+    if auto_resolution:
+        target_px = max(256, min(4096, int(2048 * (float(final_screen_size_pct) / 10.0))))
+        calc_res = 1 << (target_px - 1).bit_length()
+        return max(256, min(4096, calc_res))
+    try:
+        parsed = int(configured_resolution)
+        return max(256, min(4096, parsed))
+    except (ValueError, TypeError):
+        return 2048
+
+
+__all__ = [
+    "ImpostorMath",
+    "Vector",
+    "compute_impostor_atlas_resolution",
+    "normalize_impostor_grid_size",
+    "resolve_effective_impostor_mode",
+]

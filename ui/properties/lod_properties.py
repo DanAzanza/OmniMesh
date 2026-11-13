@@ -11,11 +11,13 @@ from typing import TYPE_CHECKING, Any
 from .guards import PresetSyncGuard, StateRestorationGuard
 
 try:
+    from ...core.impostor_math import normalize_impostor_grid_size, resolve_effective_impostor_mode
     from ...core.lod_presets import (
         DEFAULT_LOD_PRESET_ID,
         LODPresetManager,
     )
 except (ImportError, ValueError):
+    from core.impostor_math import normalize_impostor_grid_size, resolve_effective_impostor_mode
     from core.lod_presets import (
         DEFAULT_LOD_PRESET_ID,
         LODPresetManager,
@@ -279,11 +281,23 @@ def sync_preset_tiers_from_preset(props: Any, preset: dict[str, Any]) -> None:
         # Hydrate impostor settings
         imp_cfg = preset.get("impostor", {})
         if isinstance(imp_cfg, dict):
+            mode_val = str(imp_cfg.get("mode", "ORTHO_3_AXES"))
             if hasattr(props, "enable_impostor_lod"):
                 props.enable_impostor_lod = bool(imp_cfg.get("enabled", False))
             if hasattr(props, "impostor_mode"):
-                mode_val = str(imp_cfg.get("mode", "ORTHO_3_AXES"))
                 props.impostor_mode = "OCTAHEDRAL_HEMI" if "OCTA" in mode_val else "ORTHO_3_AXES"
+            if hasattr(props, "impostor_render_underside"):
+                raw_under = imp_cfg.get("render_underside")
+                props.impostor_render_underside = (
+                    bool(raw_under) if raw_under is not None else (mode_val == "OCTAHEDRAL_SPHERE")
+                )
+            if hasattr(props, "impostor_grid_size"):
+                raw_grid = imp_cfg.get("grid_size", 8)
+                try:
+                    parsed_grid = 8 if isinstance(raw_grid, bool) else int(raw_grid)
+                except (TypeError, ValueError):
+                    parsed_grid = 8
+                props.impostor_grid_size = max(4, min(32, parsed_grid))
             if hasattr(props, "impostor_resolution"):
                 props.impostor_resolution = str(imp_cfg.get("resolution", "2048"))
             if hasattr(props, "impostor_replace_last_lod"):
@@ -371,9 +385,17 @@ def sync_preset_tiers_to_preset(props: Any, preset_id: str | None = None) -> str
     }
 
     # Serialize impostor block matching LODPresetManager.validate_preset_schema
+    raw_mode = str(getattr(props, "impostor_mode", "ORTHO_3_AXES"))
+    render_underside = bool(getattr(props, "impostor_render_underside", False))
+    raw_grid = getattr(props, "impostor_grid_size", 8)
+    grid_size = (
+        normalize_impostor_grid_size(raw_grid) if isinstance(raw_grid, int) and not isinstance(raw_grid, bool) else 8
+    )
     preset_data["impostor"] = {
         "enabled": bool(getattr(props, "enable_impostor_lod", False)),
-        "mode": str(getattr(props, "impostor_mode", "ORTHO_3_AXES")),
+        "mode": resolve_effective_impostor_mode(raw_mode, render_underside),
+        "render_underside": render_underside,
+        "grid_size": max(4, min(32, grid_size)),
         "resolution": str(getattr(props, "impostor_resolution", "2048")),
         "replace_last_lod": bool(getattr(props, "impostor_replace_last_lod", True)),
     }

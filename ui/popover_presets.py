@@ -41,6 +41,7 @@ try:
         DEFAULT_ENGINE_IMPORT_PRESET_ID,
         EngineImportPresetManager,
     )
+    from ..core.impostor_math import compute_impostor_atlas_resolution, normalize_impostor_grid_size
     from ..core.lod_presets import (
         DEFAULT_LOD_PRESET_ID,
         LODPresetManager,
@@ -61,6 +62,7 @@ except (ImportError, ValueError):
         DEFAULT_ENGINE_IMPORT_PRESET_ID,
         EngineImportPresetManager,
     )
+    from core.impostor_math import compute_impostor_atlas_resolution, normalize_impostor_grid_size
     from core.lod_presets import (
         DEFAULT_LOD_PRESET_ID,
         LODPresetManager,
@@ -433,17 +435,49 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
         box_imp.label(text="Billboard Impostor", icon="IMAGE_PLANE")
         box_imp.prop(props, "enable_impostor_lod", text="Enable Impostor")
         if props.enable_impostor_lod:
-            box_imp.prop(props, "impostor_mode", text="Mode")
-            box_imp.prop(props, "auto_impostor_resolution", text="Auto Resolution")
-            if not getattr(props, "auto_impostor_resolution", True):
-                box_imp.prop(props, "impostor_resolution", text="Resolution")
-            else:
-                s_pct = props.lods[-1].screen_size_pct if len(props.lods) > 0 else 5.0
-                target_px = max(256, min(4096, int(2048 * (s_pct / 10.0))))
-                calc_res = 1 << (target_px - 1).bit_length()
-                calc_res = max(256, min(4096, calc_res))
-                row_calc = box_imp.row()
-                row_calc.label(text=f"Calculated: {calc_res}×{calc_res}", icon="INFO")
+            draw_impostor_configuration_fields(box_imp, props)
+
+
+def draw_impostor_configuration_fields(box: Any, props: Any) -> None:
+    """Draws shared Billboard & Octahedral Impostor configuration controls."""
+    box.prop(props, "impostor_mode", text="Mode")
+
+    lods_val = getattr(props, "lods", [])
+    try:
+        raw_spct = lods_val[-1].screen_size_pct if len(lods_val) > 0 else 5.0
+        s_pct = float(raw_spct) if isinstance(raw_spct, (int, float)) and not isinstance(raw_spct, bool) else 5.0
+    except (TypeError, IndexError, AttributeError):
+        s_pct = 5.0
+
+    auto_res = bool(getattr(props, "auto_impostor_resolution", True))
+    raw_res = getattr(props, "impostor_resolution", "2048")
+    conf_res: str | int = raw_res if isinstance(raw_res, (str, int)) and not isinstance(raw_res, bool) else "2048"
+    calc_res = compute_impostor_atlas_resolution(auto_res, conf_res, s_pct)
+
+    mode_str = str(getattr(props, "impostor_mode", "ORTHO_3_AXES"))
+    if "OCTA" in mode_str:
+        box.prop(props, "impostor_render_underside", text="Render Underside")
+        box.prop(props, "impostor_grid_size", text="Frames (N×N)")
+        raw_grid = getattr(props, "impostor_grid_size", 8)
+        grid_size = (
+            normalize_impostor_grid_size(raw_grid)
+            if isinstance(raw_grid, int) and not isinstance(raw_grid, bool)
+            else 8
+        )
+        tile_px = max(1, calc_res // grid_size)
+        row_grid = box.row()
+        row_grid.label(
+            text=f"Views: {grid_size * grid_size} ({grid_size}×{grid_size})  •  {tile_px}px/tile", icon="GRID"
+        )
+
+    box.prop(props, "auto_impostor_resolution", text="Auto Resolution")
+    if not auto_res:
+        box.prop(props, "impostor_resolution", text="Resolution")
+    else:
+        row_calc = box.row()
+        row_calc.label(text=f"Calculated: {calc_res}×{calc_res}", icon="INFO")
+
+    box.prop(props, "impostor_replace_last_lod", text="Final LOD Tier")
 
 
 # =========================================================================

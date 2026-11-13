@@ -19,29 +19,57 @@ def generate_unity_octahedral_hlsl(
     base_name: str,
     grid_size: int = 8,
     custom_params: Optional[dict[str, Any]] = None,
+    mode: str = "OCTAHEDRAL_HEMI",
 ) -> str:
     """
     Generates an HLSL include file containing the ShaderGraph Custom Function
     for Unity URP and HDRP Octahedral Impostor sampling.
     """
-    hlsl_code = f"""// OmniMesh Generated Octahedral Impostor Include for Unity URP/HDRP
-// Asset: {base_name} | Grid: {grid_size}x{grid_size}
-#ifndef OMNIMESH_OCTAHEDRAL_INCLUDED
-#define OMNIMESH_OCTAHEDRAL_INCLUDED
-
-void DirToHemiOcta_float(float3 dir, out float2 octaUV)
-{{
+    is_full_sphere = mode == "OCTAHEDRAL_SPHERE"
+    proj_label = "Full Sphere" if is_full_sphere else "Upper Hemisphere"
+    if is_full_sphere:
+        dir_fn_name = "DirToFullOcta_float"
+        dir_fn = """void DirToFullOcta_float(float3 dir, out float2 octaUV)
+{
+    float3 d = normalize(dir);
+    // Y-up in Unity: full-sphere octahedral projection
+    float l1 = abs(d.x) + abs(d.z) + abs(d.y);
+    if (l1 < 1e-6)
+    {
+        octaUV = float2(0.5, 0.5);
+        return;
+    }
+    float2 oct = float2(d.x, d.z) / l1;
+    if (d.y < 0.0)
+    {
+        float sx = (oct.x >= 0.0) ? 1.0 : -1.0;
+        float sy = (oct.y >= 0.0) ? 1.0 : -1.0;
+        oct = float2((1.0 - abs(oct.y)) * sx, (1.0 - abs(oct.x)) * sy);
+    }
+    octaUV = oct * 0.5 + float2(0.5, 0.5);
+}"""
+    else:
+        dir_fn_name = "DirToHemiOcta_float"
+        dir_fn = """void DirToHemiOcta_float(float3 dir, out float2 octaUV)
+{
     float3 d = normalize(dir);
     // Y-up in Unity: horizontal plane is XZ, elevation is Y
     float l1 = abs(d.x) + abs(d.z) + max(0.0, d.y);
     if (l1 < 1e-6)
-    {{
+    {
         octaUV = float2(0.5, 0.5);
         return;
-    }}
+    }
     float2 oct = float2(d.x, d.z) / l1;
     octaUV = float2((oct.x + oct.y) * 0.5 + 0.5, (oct.x - oct.y) * 0.5 + 0.5);
-}}
+}"""
+
+    hlsl_code = f"""// OmniMesh Generated Octahedral Impostor Include for Unity URP/HDRP
+// Asset: {base_name} | Grid: {grid_size}x{grid_size} ({proj_label})
+#ifndef OMNIMESH_OCTAHEDRAL_INCLUDED
+#define OMNIMESH_OCTAHEDRAL_INCLUDED
+
+{dir_fn}
 
 void SampleOctahedralImpostor_float(
     UnityTexture2D BaseColorTex,
@@ -54,7 +82,7 @@ void SampleOctahedralImpostor_float(
 )
 {{
     float2 octaUV;
-    DirToHemiOcta_float(LocalViewDir, octaUV);
+    {dir_fn_name}(LocalViewDir, octaUV);
 
     float2 gridPos = octaUV * GridSize - float2(0.5, 0.5);
     float2 cell = floor(gridPos);

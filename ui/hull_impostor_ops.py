@@ -27,6 +27,11 @@ try:
     from ..core.exceptions import OmniMeshError
     from ..core.impostor import ImpostorManager, resolve_impostor_export_dir
     from ..core.impostor_baker import ImpostorAtlasBaker
+    from ..core.impostor_math import (
+        compute_impostor_atlas_resolution,
+        normalize_impostor_grid_size,
+        resolve_effective_impostor_mode,
+    )
     from ..exporters.shaders import export_companion_shaders
     from .impostor_viewport_ops import start_impostor_viewport_timer
     from .utils import (
@@ -42,6 +47,11 @@ except (ImportError, ValueError):
     from core.exceptions import OmniMeshError
     from core.impostor import ImpostorManager, resolve_impostor_export_dir
     from core.impostor_baker import ImpostorAtlasBaker
+    from core.impostor_math import (
+        compute_impostor_atlas_resolution,
+        normalize_impostor_grid_size,
+        resolve_effective_impostor_mode,
+    )
     from exporters.shaders import export_companion_shaders
     from ui.impostor_viewport_ops import start_impostor_viewport_timer
     from ui.utils import (
@@ -86,29 +96,34 @@ class LOD_OT_generate_impostor(Operator):
             safe_report(self, {"ERROR"}, "Missing BlendData context for impostor generation.")
             return {"CANCELLED"}
 
-        # Resolution calculation
-        if getattr(props, "auto_impostor_resolution", True):
-            # Derive resolution from screen size (nominal ~10% screen size -> 1024, clamp 256..4096 next pow 2)
-            s_pct = props.lods[-1].screen_size_pct if props and len(props.lods) > 0 else 5.0
-            target_px = max(256, min(4096, int(2048 * (s_pct / 10.0))))
-            # Next power of 2
-            calc_res = 1 << (target_px - 1).bit_length()
-            calc_res = max(256, min(4096, calc_res))
-        else:
-            try:
-                calc_res = int(getattr(props, "impostor_resolution", "2048"))
-            except (ValueError, TypeError):
-                calc_res = 2048
+        # Resolution & projection settings
+        s_pct = props.lods[-1].screen_size_pct if props and len(props.lods) > 0 else 5.0
+        calc_res = compute_impostor_atlas_resolution(
+            auto_resolution=bool(getattr(props, "auto_impostor_resolution", True)),
+            configured_resolution=getattr(props, "impostor_resolution", "2048"),
+            final_screen_size_pct=s_pct,
+        )
+        effective_mode = resolve_effective_impostor_mode(
+            str(getattr(props, "impostor_mode", "ORTHO_3_AXES")),
+            bool(getattr(props, "impostor_render_underside", False)),
+        )
+        raw_grid = getattr(props, "impostor_grid_size", 8)
+        grid_size = (
+            normalize_impostor_grid_size(raw_grid)
+            if isinstance(raw_grid, int) and not isinstance(raw_grid, bool)
+            else 8
+        )
 
         res = ImpostorManager.generate_impostor_for_objects(
             mesh_objs,
             base_name,
-            mode=props.impostor_mode,
+            mode=effective_mode,
             target_engine=getattr(props, "target_engine", "UE5"),
             target_collection_name=target_coll_name,
             atlas_resolution=calc_res,
             scene=context.scene,
             context=context,
+            grid_size=grid_size,
             blend_data=bdata,
         )
 
@@ -125,12 +140,13 @@ class LOD_OT_generate_impostor(Operator):
                 mesh_objs,
                 base_name,
                 output_dir=tex_dir,
-                mode=props.impostor_mode,
+                mode=effective_mode,
                 atlas_resolution=calc_res,
                 target_engine=getattr(props, "target_engine", "UE5"),
                 dilation_iterations=4,
                 impostor_obj=res,
                 context=context,
+                grid_size=grid_size,
                 blend_data=bdata,
             )
         except OmniMeshError as bake_err:
@@ -153,8 +169,8 @@ class LOD_OT_generate_impostor(Operator):
         else:
             props.last_impostor_status = f"Generated {props.impostor_mode} in '{target_coll_name}'"
 
-        # Automatically export engine companion shaders for octahedral impostors
-        if props.impostor_mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+        # Attach live viewport tracking billboard helper and export companion HLSL shaders for Octahedral mode
+        if effective_mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             _attach_octahedral_viewport_billboard(res, base_name, context, bdata)
             if export_companion_shaders:
                 try:
@@ -163,8 +179,9 @@ class LOD_OT_generate_impostor(Operator):
                         base_name=base_name,
                         output_dir=tex_dir,
                         target_engine=target_eng,
-                        grid_size=8,
+                        grid_size=grid_size,
                         alpha_scissor=0.5,
+                        mode=effective_mode,
                     )
                     if shader_res:
                         props.last_impostor_status += f" (+{len(shader_res)} Shaders)"

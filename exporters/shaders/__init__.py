@@ -22,6 +22,7 @@ def export_companion_shaders(
     grid_size: int = 8,
     alpha_scissor: float = 0.5,
     custom_params: Optional[dict[str, Any]] = None,
+    mode: str = "OCTAHEDRAL_HEMI",
 ) -> dict[str, str]:
     """
     Generates and saves companion shader files for the specified engine(s).
@@ -39,6 +40,7 @@ def export_companion_shaders(
             base_name=base_name,
             grid_size=grid_size,
             custom_params=custom_params,
+            mode=mode,
         )
         unity_path = os.path.join(shader_dir, f"{base_name}_Octahedral.hlsl")
         with open(unity_path, "w", encoding="utf-8") as f:
@@ -51,6 +53,7 @@ def export_companion_shaders(
             base_name=base_name,
             grid_size=grid_size,
             custom_params=custom_params,
+            mode=mode,
         )
         unreal_path = os.path.join(shader_dir, f"{base_name}_Octahedral_UE5.hlsl")
         with open(unreal_path, "w", encoding="utf-8") as f:

@@ -19,28 +19,50 @@ def generate_unreal_octahedral_hlsl(
     base_name: str,
     grid_size: int = 8,
     custom_params: Optional[dict[str, Any]] = None,
+    mode: str = "OCTAHEDRAL_HEMI",
 ) -> str:
     """
     Generates an HLSL Custom Expression block for Unreal Engine 5 Material Editor.
+    Supports both Upper Hemisphere (OCTAHEDRAL_HEMI) and Full Sphere (OCTAHEDRAL_SPHERE).
     """
+    is_full_sphere = mode == "OCTAHEDRAL_SPHERE"
+    proj_label = "Full Sphere" if is_full_sphere else "Upper Hemisphere"
+    if is_full_sphere:
+        proj_block = """// UE5 is Z-up: full-sphere octahedral projection
+float l1 = abs(d.x) + abs(d.y) + abs(d.z);
+float2 octaUV = float2(0.5, 0.5);
+if (l1 > 1e-6)
+{
+    float2 oct = float2(d.x, d.y) / l1;
+    if (d.z < 0.0)
+    {
+        float sx = (oct.x >= 0.0) ? 1.0 : -1.0;
+        float sy = (oct.y >= 0.0) ? 1.0 : -1.0;
+        oct = float2((1.0 - abs(oct.y)) * sx, (1.0 - abs(oct.x)) * sy);
+    }
+    octaUV = oct * 0.5 + float2(0.5, 0.5);
+}"""
+    else:
+        proj_block = """// UE5 is Z-up: horizontal plane is XY, elevation is Z
+float l1 = abs(d.x) + abs(d.y) + max(0.0, d.z);
+float2 octaUV = float2(0.5, 0.5);
+if (l1 > 1e-6)
+{
+    float2 oct = float2(d.x, d.y) / l1;
+    octaUV = float2((oct.x + oct.y) * 0.5 + 0.5, (oct.x - oct.y) * 0.5 + 0.5);
+}"""
+
     hlsl_code = f"""// OmniMesh Generated Octahedral Impostor Custom HLSL for Unreal Engine 5
-// Asset: {base_name} | Grid: {grid_size}x{grid_size}
+// Asset: {base_name} | Grid: {grid_size}x{grid_size} ({proj_label})
 // Inputs to Custom Node:
 //   Texture2D BaseColorTex
 //   SamplerState TexSampler
 //   float2 CardUV
 //   float3 LocalViewDir (Object Space Camera Vector)
-//   float2 GridSize (default 8.0, 8.0)
+//   float2 GridSize (default {float(grid_size):.1f}, {float(grid_size):.1f})
 
 float3 d = normalize(LocalViewDir);
-// UE5 is Z-up: horizontal plane is XY, elevation is Z
-float l1 = abs(d.x) + abs(d.y) + max(0.0, d.z);
-float2 octaUV = float2(0.5, 0.5);
-if (l1 > 1e-6)
-{{
-    float2 oct = float2(d.x, d.y) / l1;
-    octaUV = float2((oct.x + oct.y) * 0.5 + 0.5, (oct.x - oct.y) * 0.5 + 0.5);
-}}
+{proj_block}
 
 float2 gridPos = octaUV * GridSize - float2(0.5, 0.5);
 float2 cell = floor(gridPos);
@@ -84,15 +106,18 @@ def generate_ue5_setup_guide(
     grid_size: int = 8,
     sphere_radius: float = 1.0,
     sphere_center: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    mode: str = "OCTAHEDRAL_HEMI",
 ) -> str:
     """
     Generates a setup guide (README_UE5_SETUP.txt) for Unreal Engine 5 integration.
     Contains exact texture settings, Pixel Depth Offset formula, and wiring instructions.
     """
     diameter = sphere_radius * 2.0
+    proj_label = "Full Sphere (with Underside)" if mode == "OCTAHEDRAL_SPHERE" else "Upper Hemisphere"
     guide = f"""================================================================================
 OmniMesh Octahedral Impostor - Unreal Engine 5 Setup Guide
 Asset: {base_name}
+Projection Mode: {proj_label}
 Grid Size: {grid_size}x{grid_size} ({grid_size * grid_size} Angular Frames)
 Bounding Sphere Radius: {sphere_radius:.4f} Unreal Units (cm) / Blender Units (m)
 Bounding Sphere Center: ({sphere_center[0]:.4f}, {sphere_center[1]:.4f}, {sphere_center[2]:.4f})

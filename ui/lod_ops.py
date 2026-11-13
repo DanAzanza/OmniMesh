@@ -340,6 +340,8 @@ class LOD_OT_sync_selection_settings(Operator):
                 other_props.occlusion_evaluate_alpha = props.occlusion_evaluate_alpha
                 other_props.enable_impostor_lod = props.enable_impostor_lod
                 other_props.impostor_mode = props.impostor_mode
+                other_props.impostor_render_underside = props.impostor_render_underside
+                other_props.impostor_grid_size = props.impostor_grid_size
                 other_props.impostor_resolution = props.impostor_resolution
                 other_props.impostor_replace_last_lod = props.impostor_replace_last_lod
                 other_props.enable_spatial_chunking = props.enable_spatial_chunking

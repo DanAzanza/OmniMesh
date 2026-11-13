@@ -139,11 +139,25 @@ class LODPresetManager(BasePresetManager):
         # Validate optional impostor block
         raw_imp = data.get("impostor")
         imp_dict = raw_imp if isinstance(raw_imp, dict) else {}
+        raw_mode = str(imp_dict.get("mode", "ORTHO_3_AXES"))
+        valid_mode = (
+            raw_mode if raw_mode in {"ORTHO_3_AXES", "OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"} else "ORTHO_3_AXES"
+        )
+        raw_underside = imp_dict.get("render_underside")
+        render_underside = bool(raw_underside) if raw_underside is not None else (valid_mode == "OCTAHEDRAL_SPHERE")
+        raw_grid = imp_dict.get("grid_size", 8)
+        if isinstance(raw_grid, bool):
+            grid_size = 8
+        else:
+            try:
+                grid_size = max(4, min(32, int(raw_grid)))
+            except (TypeError, ValueError):
+                grid_size = 8
         validated_imp = {
             "enabled": bool(imp_dict.get("enabled", False)),
-            "mode": str(imp_dict.get("mode", "ORTHO_3_AXES"))
-            if imp_dict.get("mode") in {"ORTHO_3_AXES", "OCTAHEDRAL_HEMI"}
-            else "ORTHO_3_AXES",
+            "mode": valid_mode,
+            "render_underside": render_underside,
+            "grid_size": grid_size,
             "resolution": str(imp_dict.get("resolution", "2048"))
             if str(imp_dict.get("resolution")) in {"512", "1024", "2048", "4096"}
             else "2048",

@@ -267,6 +267,20 @@ class LODToolSettings(PropertyGroup):
         description="Billboard projection layout",
         update=on_lod_preset_property_modified,
     )
+    impostor_render_underside: BoolProperty(
+        name="Render Underside",
+        default=False,
+        description="Capture full-sphere angles including underside views (uses Full Sphere octahedral projection instead of Upper Hemisphere only)",
+        update=on_lod_preset_property_modified,
+    )
+    impostor_grid_size: IntProperty(
+        name="Frames per Axis (N×N)",
+        default=8,
+        min=4,
+        max=32,
+        description="Octahedral grid views per axis (e.g. 8 = 8×8 = 64 views, 12 = 144 views, 16 = 256 views)",
+        update=on_lod_preset_property_modified,
+    )
     impostor_resolution: EnumProperty(
         name="Atlas Resolution",
         items=enums.IMPOSTOR_RESOLUTION_ITEMS,

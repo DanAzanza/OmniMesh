@@ -48,7 +48,7 @@ else:
 
 from .exceptions import ImpostorBakeError
 from .impostor_harness import ImpostorShaderHarness
-from .impostor_math import ImpostorMath
+from .impostor_math import ImpostorMath, normalize_impostor_grid_size
 from .impostor_ortho_baker import (
     apply_override_materials,
     finalize_orm_tile,
@@ -107,7 +107,7 @@ class ImpostorAtlasBaker:
     """
 
     @classmethod
-    def get_view_angles_for_mode(cls, mode: str) -> list[tuple[float, float, tuple[int, int]]]:
+    def get_view_angles_for_mode(cls, mode: str, grid_size: int = 8) -> list[tuple[float, float, tuple[int, int]]]:
         angles: list[tuple[float, float, tuple[int, int]]] = []
 
         if mode in {"STAR_QUADS", "ORTHO_3_AXES"}:
@@ -115,7 +115,7 @@ class ImpostorAtlasBaker:
         if mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             return [(0.0, 0.0, (0, 0)), (math.radians(90.0), 0.0, (1, 0))]
 
-        grid_n = 8
+        grid_n = normalize_impostor_grid_size(grid_size)
         fn = (
             ImpostorMath.hemi_octahedral_to_vector
             if mode == "OCTAHEDRAL_HEMI"
@@ -130,11 +130,12 @@ class ImpostorAtlasBaker:
         return angles
 
     @classmethod
-    def get_grid_dimensions(cls, mode: str) -> tuple[int, int]:
+    def get_grid_dimensions(cls, mode: str, grid_size: int = 8) -> tuple[int, int]:
         if mode in {"STAR_QUADS", "ORTHO_3_AXES"}:
             return 2, 2
         elif mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
-            return 8, 8
+            grid_n = normalize_impostor_grid_size(grid_size)
+            return grid_n, grid_n
         return 2, 1
 
     @classmethod
@@ -255,6 +256,7 @@ class ImpostorAtlasBaker:
         if not all_coords:
             all_coords = [Vector((-1.0, -1.0, -1.0)), Vector((1.0, 1.0, 1.0))]
 
+        grid_size = normalize_impostor_grid_size(grid_size)
         center, radius, ortho_scale = ImpostorCameraRig.compute_rig_parameters(all_coords)
         tile_res = max(32, atlas_resolution // grid_size)
         total_frames = grid_size * grid_size
@@ -424,7 +426,11 @@ class ImpostorAtlasBaker:
 
             center_tup = (float(center.x), float(center.y), float(center.z))
             guide_text = generate_ue5_setup_guide(
-                base_name=base_name, grid_size=grid_size, sphere_radius=float(radius), sphere_center=center_tup
+                base_name=base_name,
+                grid_size=grid_size,
+                sphere_radius=float(radius),
+                sphere_center=center_tup,
+                mode=mode,
             )
             guide_path = os.path.join(output_dir, f"README_{base_name}_UE5_SETUP.txt")
             with open(guide_path, "w", encoding="utf-8") as gf:
@@ -449,17 +455,19 @@ class ImpostorAtlasBaker:
         dilation_iterations: int = 4,
         impostor_obj: Optional[bpy.types.Object] = None,
         context: bpy.types.Context | None = None,
+        grid_size: int = 8,
         *,
         blend_data: BlendData,
     ) -> dict[str, str]:
         """
         Bakes BaseColor, Tangent Normal, and ORM (AO/Roughness/Metallic) maps using Cycles Selected-to-Active
-        or 64-frame animation timeline rendering for Octahedral Impostors.
+        or NxN animation timeline rendering for Octahedral Impostors.
         """
         if not bpy or not mesh_objs:
             return {}
 
         bdata = blend_data
+        norm_grid = normalize_impostor_grid_size(grid_size)
         if mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
             return cls.bake_octahedral_animation_atlas(
                 mesh_objs=mesh_objs,
@@ -469,7 +477,7 @@ class ImpostorAtlasBaker:
                 atlas_resolution=atlas_resolution,
                 target_engine=target_engine,
                 dilation_iterations=dilation_iterations,
-                grid_size=8,
+                grid_size=norm_grid,
                 context=context,
                 blend_data=bdata,
             )

@@ -14,6 +14,7 @@ import math
 import os
 from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
 
+from .impostor_math import normalize_impostor_grid_size
 from .impostor_preview_material import (
     create_octahedral_preview_material,
     safe_load_image,
@@ -152,6 +153,8 @@ def setup_impostor_preview_rig(
     num_frames: int = 72,
     target_engine: str = "UE5",
     create_turntable: bool = False,
+    grid_size: int = 8,
+    impostor_mode: str = "OCTAHEDRAL_HEMI",
     *,
     blend_data: BlendData,
 ) -> dict[str, Any]:
@@ -258,8 +261,9 @@ def setup_impostor_preview_rig(
         base_color_path=base_color_file,
         normal_path=normal_file if os.path.exists(normal_file) else None,
         orm_path=orm_file if os.path.exists(orm_file) else None,
-        grid_size=8,
+        grid_size=normalize_impostor_grid_size(grid_size),
         target_engine=target_engine,
+        mode=impostor_mode,
         blend_data=effective_bdata,
     )
     if preview_mat:
