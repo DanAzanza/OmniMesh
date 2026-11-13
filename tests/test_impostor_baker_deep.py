@@ -19,6 +19,9 @@ def test_get_grid_dimensions():
     assert ImpostorAtlasBaker.get_grid_dimensions("ORTHO_3_AXES") == (2, 2)
     assert ImpostorAtlasBaker.get_grid_dimensions("OCTAHEDRAL_HEMI") == (8, 8)
     assert ImpostorAtlasBaker.get_grid_dimensions("OCTAHEDRAL_SPHERE") == (8, 8)
+    assert ImpostorAtlasBaker.get_grid_dimensions("OCTAHEDRAL_HEMI", grid_size=12) == (12, 12)
+    assert ImpostorAtlasBaker.get_grid_dimensions("OCTAHEDRAL_SPHERE", grid_size=99) == (32, 32)
+    assert ImpostorAtlasBaker.get_grid_dimensions("OCTAHEDRAL_HEMI", grid_size=1) == (2, 2)
     assert ImpostorAtlasBaker.get_grid_dimensions("UNKNOWN_MODE") == (2, 1)
 
 
@@ -49,6 +52,12 @@ def test_get_view_angles_octahedral_sphere():
     for _yaw, _pitch, (col, row) in angles:
         assert 0 <= col < 8
         assert 0 <= row < 8
+
+    # Custom grid size and negative underside pitch coverage
+    angles_12 = ImpostorAtlasBaker.get_view_angles_for_mode("OCTAHEDRAL_SPHERE", grid_size=12)
+    assert len(angles_12) == 144
+    assert any(pitch < -0.1 for _yaw, pitch, _cell in angles_12)
+    assert any(pitch > 0.1 for _yaw, pitch, _cell in angles_12)
 
 
 def test_compose_atlas_array_no_dilation():

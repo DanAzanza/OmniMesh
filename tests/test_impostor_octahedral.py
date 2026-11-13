@@ -9,6 +9,11 @@ import os
 import tempfile
 
 from core.impostor import ImpostorMath, ImpostorMeshBuilder
+from core.impostor_math import (
+    compute_impostor_atlas_resolution,
+    normalize_impostor_grid_size,
+    resolve_effective_impostor_mode,
+)
 from exporters.shaders import export_companion_shaders
 
 
@@ -107,3 +112,39 @@ def test_companion_shader_generation_and_export():
             ue5_src = f.read()
             assert "Texture2D BaseColorTex" in ue5_src
             assert "LocalViewDir" in ue5_src
+
+
+def test_octahedral_grid_size_underside_and_full_sphere_shaders():
+    """Verify helper bounds, underside resolution, and full-sphere NxN companion shaders."""
+    assert normalize_impostor_grid_size(0) == 2
+    assert normalize_impostor_grid_size(12) == 12
+    assert normalize_impostor_grid_size(99) == 32
+
+    assert resolve_effective_impostor_mode("ORTHO_3_AXES", True) == "ORTHO_3_AXES"
+    assert resolve_effective_impostor_mode("OCTAHEDRAL_HEMI", False) == "OCTAHEDRAL_HEMI"
+    assert resolve_effective_impostor_mode("OCTAHEDRAL_HEMI", True) == "OCTAHEDRAL_SPHERE"
+    assert resolve_effective_impostor_mode("OCTAHEDRAL_SPHERE", False) == "OCTAHEDRAL_SPHERE"
+
+    assert compute_impostor_atlas_resolution(True, "2048", 5.0) == 1024
+    assert compute_impostor_atlas_resolution(False, "4096", 1.0) == 4096
+    assert compute_impostor_atlas_resolution(False, "bad", 1.0) == 2048
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        exported = export_companion_shaders(
+            base_name="FullSpherePlane",
+            output_dir=temp_dir,
+            target_engine="ALL",
+            grid_size=12,
+            alpha_scissor=0.5,
+            mode="OCTAHEDRAL_SPHERE",
+        )
+        with open(exported["UNITY"], "r", encoding="utf-8") as f:
+            unity_src = f.read()
+            assert "Grid: 12x12 (Full Sphere)" in unity_src
+            assert "DirToFullOcta_float" in unity_src
+            assert "if (d.y < 0.0)" in unity_src
+        with open(exported["UE5"], "r", encoding="utf-8") as f:
+            ue5_src = f.read()
+            assert "Grid: 12x12 (Full Sphere)" in ue5_src
+            assert "default 12.0, 12.0" in ue5_src
+            assert "if (d.z < 0.0)" in ue5_src

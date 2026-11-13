@@ -17,7 +17,7 @@ from core.pbr_presets import PBRExportPresetManager
 from core.preset_spawner import ConfigPresetSpawner
 from exporters.engine_export import AssetMeshResolver
 from exporters.manager import ExporterManager
-from ui import config_preset_ops, export_ops, lod_preset_ops, popovers
+from ui import config_preset_ops, export_ops, hull_impostor_ops, lod_preset_ops, popover_presets, popovers
 from ui.export_ops import (
     LOD_OT_bake_rig_animation,
     LOD_OT_export_engine_package,
@@ -81,14 +81,29 @@ class TestPopoversDeep:
             max_bone_influences=4,
             enable_bone_pruning=True,
             purge_shape_keys=True,
-            impostor_mode="OCTAHEDRAL",
-            impostor_resolution=512,
+            impostor_mode="OCTAHEDRAL_HEMI",
+            impostor_render_underside=True,
+            impostor_grid_size=12,
+            auto_impostor_resolution=False,
+            impostor_resolution="2048",
             impostor_replace_last_lod=True,
+            enable_impostor_lod=True,
+            lod_preset="unreal_engine_5",
+            lod_preset_budget_mode="SCREEN_SIZE",
+            lod_preset_active_tiers=[],
+            lod_preset_active_tier_index=0,
+            enable_spatial_chunking=False,
+            enable_hlod=False,
+            pin_uv_seams=True,
+            pin_material_borders=True,
+            enable_occlusion_culling=False,
+            enable_slender_culling=False,
+            lods=[],
         )
         ctx: Any = SimpleNamespace(scene=SimpleNamespace(lod_tool=props), active_object=None)
 
-        with patch.object(popovers, "bpy", MagicMock()):
-            for cls in popovers.WORKFLOW_POPOVER_CLASSES:
+        with patch.object(popovers, "bpy", MagicMock()), patch.object(popover_presets, "bpy", MagicMock()):
+            for cls in (*popovers.WORKFLOW_POPOVER_CLASSES, popovers.OMNIMESH_PT_popover_lod_preset):
                 panel: Any = cls.__new__(cls)
                 panel.layout = None
                 panel.draw(ctx)  # early exit when layout is None
@@ -99,6 +114,76 @@ class TestPopoversDeep:
                 panel.draw(SimpleNamespace(scene=None, active_object=None))  # early exit when props is None
                 panel.draw(ctx)
                 assert layout.prop.call_count > 0 or layout.box.called
+                if cls in (
+                    popovers.OMNIMESH_PT_popover_impostor,
+                    popovers.OMNIMESH_PT_popover_lod_preset,
+                    popovers.OMNIMESH_PT_popover_generate,
+                ):
+                    prop_names = [call.args[1] for call in layout.prop.call_args_list if len(call.args) >= 2]
+                    assert "impostor_render_underside" in prop_names
+                    assert "impostor_grid_size" in prop_names
+                    label_texts = [call.kwargs.get("text", "") for call in layout.label.call_args_list]
+                    assert any("Views: 144 (12×12)" in txt for txt in label_texts)
+
+    def test_generate_impostor_operator_wires_underside_and_grid_size(self) -> None:
+        props = SimpleNamespace(
+            impostor_mode="OCTAHEDRAL_HEMI",
+            impostor_render_underside=True,
+            impostor_grid_size=12,
+            auto_impostor_resolution=False,
+            impostor_resolution="4096",
+            target_engine="UE5",
+            export_directory="",
+            lods=[],
+            last_impostor_status="",
+        )
+        mesh_obj = SimpleNamespace(name="Aircraft", type="MESH")
+        impostor_obj = SimpleNamespace(
+            name="Aircraft_LOD_Impostor",
+            data=SimpleNamespace(materials=[MagicMock()]),
+            location=(0.0, 0.0, 0.0),
+            constraints=[],
+        )
+        ctx: Any = SimpleNamespace(
+            scene=SimpleNamespace(lod_tool=props),
+            blend_data=MagicMock(),
+            active_object=mesh_obj,
+        )
+        op: Any = hull_impostor_ops.LOD_OT_generate_impostor.__new__(hull_impostor_ops.LOD_OT_generate_impostor)
+
+        with (
+            patch.object(hull_impostor_ops, "bpy", SimpleNamespace(app=SimpleNamespace(background=True))),
+            patch.object(hull_impostor_ops, "resolve_lod_context", return_value=(props, None, None)),
+            patch.object(hull_impostor_ops, "get_lod0_mesh_objects", return_value=[mesh_obj]),
+            patch.object(hull_impostor_ops, "resolve_effective_asset_name", return_value="Aircraft"),
+            patch.object(hull_impostor_ops, "resolve_impostor_export_dir", return_value="C:/tmp/tex"),
+            patch.object(
+                hull_impostor_ops.ImpostorManager, "generate_impostor_for_objects", return_value=impostor_obj
+            ) as gen_mock,
+            patch.object(hull_impostor_ops.ImpostorManager, "bind_baked_textures_to_material"),
+            patch.object(
+                hull_impostor_ops.ImpostorAtlasBaker,
+                "bake_impostor_textures",
+                return_value={"BaseColor": "bc.png"},
+            ) as bake_mock,
+            patch.object(hull_impostor_ops, "export_companion_shaders", return_value={"UE5": "sh.hlsl"}) as sh_mock,
+        ):
+            res = op.execute(ctx)
+            assert res == {"FINISHED"}
+            assert gen_mock.call_args.kwargs["mode"] == "OCTAHEDRAL_SPHERE"
+            assert gen_mock.call_args.kwargs["grid_size"] == 12
+            assert bake_mock.call_args.kwargs["mode"] == "OCTAHEDRAL_SPHERE"
+            assert bake_mock.call_args.kwargs["grid_size"] == 12
+            assert sh_mock.call_args.kwargs["mode"] == "OCTAHEDRAL_SPHERE"
+            assert sh_mock.call_args.kwargs["grid_size"] == 12
+
+            # Ortho 3-axes must ignore underside toggle and skip companion shader export
+            props.impostor_mode = "ORTHO_3_AXES"
+            sh_mock.reset_mock()
+            res_ortho = op.execute(ctx)
+            assert res_ortho == {"FINISHED"}
+            assert gen_mock.call_args.kwargs["mode"] == "ORTHO_3_AXES"
+            assert not sh_mock.called
 
 
 class TestConfigPresetOpsDeep:

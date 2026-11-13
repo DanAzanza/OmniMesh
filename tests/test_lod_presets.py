@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +16,7 @@ from core.lod_presets import (
     DEFAULT_LOD_PRESET_ID,
     LODPresetManager,
 )
+from ui.properties.lod_properties import sync_preset_tiers_from_preset, sync_preset_tiers_to_preset
 
 
 def test_builtin_lod_presets_discovery_and_schema():
@@ -270,3 +272,80 @@ def test_lod_preset_create_new_and_rename(tmp_path: Path, monkeypatch: pytest.Mo
     # Negative: empty name rejected
     with pytest.raises(ValueError, match="Preset name cannot be empty"):
         LODPresetManager.create_new_preset("   ")
+
+
+def test_impostor_underside_and_grid_size_preset_schema_and_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Verify preset schema clamping/defaults and UI hydrate/serialize round-trip for underside & grid_size."""
+    monkeypatch.setattr(LODPresetManager, "get_user_dir", classmethod(lambda cls: tmp_path))
+    LODPresetManager.load_presets(force_reload=True)
+
+    data = {
+        "name": "Octahedral Sphere Preset",
+        "tiers": [{"name": "LOD0", "screen_size_pct": 100.0, "target_tris_pct": 100.0}],
+        "impostor": {
+            "enabled": True,
+            "mode": "OCTAHEDRAL_SPHERE",
+            "render_underside": True,
+            "grid_size": 12,
+            "resolution": "4096",
+        },
+    }
+    validated = LODPresetManager.validate_preset_schema(data)
+    assert validated is not None
+    assert validated["impostor"]["mode"] == "OCTAHEDRAL_SPHERE"
+    assert validated["impostor"]["render_underside"] is True
+    assert validated["impostor"]["grid_size"] == 12
+
+    # Boundary clamping & invalid / bool rejection
+    bad_low = LODPresetManager.validate_preset_schema(
+        {"name": "LowGrid", "tiers": data["tiers"], "impostor": {"mode": "OCTAHEDRAL_HEMI", "grid_size": 1}}
+    )
+    bad_high = LODPresetManager.validate_preset_schema(
+        {"name": "HighGrid", "tiers": data["tiers"], "impostor": {"mode": "OCTAHEDRAL_HEMI", "grid_size": 99}}
+    )
+    bad_bool = LODPresetManager.validate_preset_schema(
+        {"name": "BoolGrid", "tiers": data["tiers"], "impostor": {"mode": "OCTAHEDRAL_HEMI", "grid_size": True}}
+    )
+    bad_str = LODPresetManager.validate_preset_schema(
+        {"name": "StrGrid", "tiers": data["tiers"], "impostor": {"mode": "OCTAHEDRAL_HEMI", "grid_size": "abc"}}
+    )
+    assert bad_low is not None and bad_low["impostor"]["grid_size"] == 4
+    assert bad_high is not None and bad_high["impostor"]["grid_size"] == 32
+    assert bad_bool is not None and bad_bool["impostor"]["grid_size"] == 8
+    assert bad_str is not None and bad_str["impostor"]["grid_size"] == 8
+
+    # Hydrate & serialize round-trip via sync_preset_tiers_from_preset / sync_preset_tiers_to_preset
+    class _TierList(list):
+        def add(self):
+            item = SimpleNamespace(name="", screen_size_pct=100.0, target_tris_pct=100.0, target_tris=1000)
+            self.append(item)
+            return item
+
+    custom_id = LODPresetManager.save_custom_preset(validated, custom_id="octahedral_sphere_preset")
+    props = SimpleNamespace(
+        lod_preset=custom_id,
+        lod_preset_active_tiers=_TierList(),
+        lod_preset_active_id="",
+        lod_preset_budget_mode="PERCENTAGE",
+        lod_preset_active_tier_index=0,
+        lod_preset_is_dirty=False,
+        enable_impostor_lod=False,
+        impostor_mode="ORTHO_3_AXES",
+        impostor_render_underside=False,
+        impostor_grid_size=8,
+        impostor_resolution="2048",
+        impostor_replace_last_lod=True,
+        lods=[],
+    )
+    sync_preset_tiers_from_preset(props, validated)
+    assert props.enable_impostor_lod is True
+    assert props.impostor_mode == "OCTAHEDRAL_HEMI"
+    assert props.impostor_render_underside is True
+    assert props.impostor_grid_size == 12
+
+    props.impostor_grid_size = 16
+    saved_id = sync_preset_tiers_to_preset(props, preset_id=custom_id)
+    reloaded = LODPresetManager.get_preset(saved_id)
+    assert reloaded["impostor"]["mode"] == "OCTAHEDRAL_SPHERE"
+    assert reloaded["impostor"]["render_underside"] is True
+    assert reloaded["impostor"]["grid_size"] == 16
