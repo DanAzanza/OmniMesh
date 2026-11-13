@@ -220,8 +220,6 @@ class OMNIMESH_PT_popover_impostor(Panel):
         box.use_property_split = True
         box.use_property_decorate = False
         draw_impostor_configuration_fields(box, props)
-        if hasattr(props, "pbr_export_preset"):
-            box.prop(props, "pbr_export_preset", text="PBR Preset")
 
 
 WORKFLOW_POPOVER_CLASSES = (

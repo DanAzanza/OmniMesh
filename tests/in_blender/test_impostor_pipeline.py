@@ -187,8 +187,15 @@ class TestImpostorPipeline(unittest.TestCase):
                 self.assertTrue(bool(imp_obj.get("_impostor_canonical", False)))
 
             tex_dir = os.path.join(export_dir, "Textures")
+            # Baking creates ONLY canonical engine-independent master textures (no MaskMap until export/pack)
             self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_BaseColor.png")))
+            self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_Normal.png")))
             self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_ORM.png")))
+            self.assertFalse(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_MaskMap.png")))
+
+            # Pack for Unity HDRP -> MaskMap is created from canonical masters
+            pack_unity = ops.pack_pbr_textures()
+            self.assertEqual(pack_unity, {"FINISHED"})
             self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_ShaderAsset_Impostor_MaskMap.png")))
 
             # Switch target preset to UE5 without re-baking Cycles and repack in headless Blender (no PIL)

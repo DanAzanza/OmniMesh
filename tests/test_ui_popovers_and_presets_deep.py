@@ -190,7 +190,7 @@ class TestPopoversDeep:
             assert gen_mock.call_args.kwargs["mode"] == "ORTHO_3_AXES"
             assert not sh_mock.called
 
-    def test_impostor_popover_displays_pbr_export_preset(self) -> None:
+    def test_impostor_popover_keeps_bake_settings_engine_independent(self) -> None:
         props = SimpleNamespace(
             impostor_mode="OCTAHEDRAL_HEMI",
             impostor_render_underside=False,
@@ -207,7 +207,8 @@ class TestPopoversDeep:
         ):
             popovers.OMNIMESH_PT_popover_impostor.draw(panel, MagicMock())
         prop_names = [call.args[1] for call in layout.prop.call_args_list if len(call.args) >= 2]
-        assert "pbr_export_preset" in prop_names
+        assert "impostor_mode" in prop_names
+        assert "pbr_export_preset" not in prop_names
 
 
 class TestConfigPresetOpsDeep:
