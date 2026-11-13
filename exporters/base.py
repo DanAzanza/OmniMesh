@@ -88,14 +88,26 @@ def scoped_export_visibility(
     valid_objs = [o for o in objects if o is not None]
 
     orig_obj_states: dict[bpy.types.Object, tuple[bool, bool]] = {}
+    orig_billboards: list[tuple[bpy.types.Object, bpy.types.Constraint, bool, tuple[float, float, float]]] = []
     for obj in valid_objs:
         hv = obj.hide_viewport
         hg = obj.hide_get(view_layer=vl) if vl else hv
         orig_obj_states[obj] = (hv, hg)
+        for constraint in obj.constraints:
+            if constraint.name == "OmniMesh_Viewport_Billboard":
+                rot = obj.rotation_euler
+                orig_billboards.append((obj, constraint, bool(constraint.mute), (rot[0], rot[1], rot[2])))
 
     orig_cols, orig_lcs = _reveal_collection_hierarchy(vl, valid_objs, local_warnings)
 
     try:
+        for obj, constraint, _mute, _rot in orig_billboards:
+            try:
+                constraint.mute = True
+                obj.rotation_euler = (0.0, 0.0, 0.0)  # type: ignore[assignment]
+            except (RuntimeError, AttributeError, ReferenceError) as exc:
+                local_warnings.append(f"mute billboard {obj.name}: {exc}")
+
         for obj in valid_objs:
             try:
                 if vl is not None:
@@ -105,6 +117,13 @@ def scoped_export_visibility(
                 local_warnings.append(f"unhide {obj.name}: {exc}")
         yield
     finally:
+        for obj, constraint, orig_mute, orig_rot in orig_billboards:
+            try:
+                constraint.mute = orig_mute
+                obj.rotation_euler = orig_rot  # type: ignore[assignment]
+            except (RuntimeError, AttributeError, ReferenceError) as exc:
+                local_warnings.append(f"restore billboard {obj.name}: {exc}")
+
         for obj, (hv, hg) in orig_obj_states.items():
             try:
                 obj.hide_viewport = hv

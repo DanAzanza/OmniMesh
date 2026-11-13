@@ -12,12 +12,11 @@ Provides:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
 import math
 import os
 import tempfile
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
 
 
 class _CyclesSettingsProtocol(Protocol):
@@ -47,11 +46,16 @@ else:
     BlendData = object
 
 
-from .compat import run_cleanup_step
 from .exceptions import ImpostorBakeError
 from .impostor_harness import ImpostorShaderHarness
 from .impostor_math import ImpostorMath
-from .impostor_rig import EphemeralBakeSceneGuard, ImpostorCameraRig
+from .impostor_ortho_baker import (
+    apply_override_materials,
+    finalize_orm_tile,
+    load_rendered_tile_u8,
+    restore_override_materials,
+)
+from .impostor_rig import EphemeralBakeSceneGuard, ImpostorCameraRig, _restore_impostor_bake_state
 from .png_writer import write_png_direct
 
 
@@ -65,6 +69,34 @@ def _set_cycles_device(scene: bpy.types.Scene | None, device: str) -> None:
     cycles_settings = getattr(scene, "cycles", None) if scene else None
     if cycles_settings is not None:
         cycles_settings.device = device
+
+
+def _set_bake_view_transform(bake_scene: bpy.types.Scene, view_transform: str) -> None:
+    """Configures view_transform ('Standard' or 'Raw') on an ephemeral bake scene."""
+    if not bake_scene.view_settings:
+        return
+    try:
+        cast(Any, bake_scene.view_settings).view_transform = view_transform
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.debug("Failed setting view_transform on bake scene: %s", exc)
+
+
+def _render_bake_scene(
+    bake_scene: bpy.types.Scene,
+    ctx: bpy.types.Context | None,
+    *,
+    animation: bool = False,
+) -> None:
+    """Renders an ephemeral bake scene frame or animation cleanly with optional context override."""
+    win = ctx.window if ctx else None
+    if win and ctx:
+        try:
+            with cast(Any, ctx).temp_override(scene=bake_scene, window=win):
+                bpy.ops.render.render(animation=animation, write_still=not animation, scene=bake_scene.name)
+                return
+        except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            logger.debug("Render temp_override fallback: %s", exc)
+    bpy.ops.render.render(animation=animation, write_still=not animation, scene=bake_scene.name)
 
 
 class ImpostorAtlasBaker:
@@ -240,6 +272,8 @@ class ImpostorAtlasBaker:
             if not bake_scene:
                 return {}
 
+            cls.configure_cycles_compute_device(bake_scene, context=context)
+
             for obj in mesh_objs:
                 if obj.name not in bake_scene.collection.objects:
                     bake_scene.collection.objects.link(obj)
@@ -278,28 +312,14 @@ class ImpostorAtlasBaker:
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 for chan_name, harness_layer in passes:
-                    orig_materials: list[tuple[bpy.types.Object, list[bpy.types.Material | None]]] = []
-                    for obj in mesh_objs:
-                        obj_data = cast("bpy.types.Mesh | None", obj.data)
-                        if obj_data and obj_data.materials is not None:
-                            mats = list(obj_data.materials)
-                            orig_materials.append((obj, mats))
-                            bake_mats = mats if mats else [None]
-                            override_mats = [
-                                ImpostorShaderHarness.create_unlit_override_material(
-                                    m,
-                                    channel_layer=harness_layer,
-                                    target_engine=target_engine,
-                                    radius=radius,
-                                    cam_distance=dist,
-                                    blend_data=bdata,
-                                )
-                                for m in bake_mats
-                            ]
-                            obj_data.materials.clear()
-                            for ov_m in override_mats:
-                                if ov_m:
-                                    obj_data.materials.append(ov_m)
+                    saved_materials = apply_override_materials(
+                        mesh_objs,
+                        harness_layer,
+                        target_engine,
+                        radius,
+                        dist,
+                        bdata,
+                    )
 
                     try:
                         chan_prefix = os.path.join(temp_dir, f"{chan_name}_")
@@ -308,52 +328,23 @@ class ImpostorAtlasBaker:
                             "PNG",
                             "RGBA",
                         )
-                        if bake_scene.view_settings:
-                            try:
-                                cast(Any, bake_scene.view_settings).view_transform = (
-                                    "Standard" if chan_name == "BaseColor" else "Raw"
-                                )
-                            except (TypeError, ValueError, AttributeError) as exc:
-                                logger.debug("Failed setting view_transform on bake scene: %s", exc)
-
-                        ctx = context
-                        win = ctx.window if ctx else None
+                        _set_bake_view_transform(bake_scene, "Standard" if chan_name == "BaseColor" else "Raw")
                         try:
-                            if win and ctx:
-                                try:
-                                    with cast(Any, ctx).temp_override(scene=bake_scene, window=win):
-                                        bpy.ops.render.render(animation=True, scene=bake_scene.name)
-                                except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
-                                    logger.debug("Render temp_override fallback: %s", exc)
-                                    bpy.ops.render.render(animation=True, scene=bake_scene.name)
-                            else:
-                                bpy.ops.render.render(animation=True, scene=bake_scene.name)
+                            _render_bake_scene(bake_scene, context, animation=True)
                         except (RuntimeError, ValueError) as render_exc:
                             raise ImpostorBakeError(
                                 f"Octahedral animation render failed for pass '{chan_name}': {render_exc}"
                             ) from render_exc
 
-                        bdata_imgs = bdata.images if bdata else None
+                        bdata_imgs = bdata.images if bdata is not None else None
                         for frame_idx in range(1, total_frames + 1):
                             col, row = (frame_idx - 1) % grid_size, (frame_idx - 1) // grid_size
                             frame_file = f"{chan_prefix}{frame_idx:04d}.png"
-                            if os.path.exists(frame_file) and bdata_imgs:
-                                img = bdata_imgs.load(frame_file)
-                                sz = list(cast("Iterable[int]", img.size))
-                                w, h = int(sz[0]), int(sz[1])
-                                arr = np.empty(w * h * 4, dtype=np.float32)
-                                img.pixels.foreach_get(arr)
-                                bdata_imgs.remove(img, do_unlink=True)
-                                raw_tiles[chan_name][(col, row)] = np.ascontiguousarray(
-                                    (arr.reshape((h, w, 4))[::-1] * 255.0 + 0.5).clip(0, 255).astype(np.uint8)
-                                )
+                            loaded_tile = load_rendered_tile_u8(frame_file, bdata_imgs)
+                            if loaded_tile is not None:
+                                raw_tiles[chan_name][(col, row)] = loaded_tile
                     finally:
-                        for obj, mats in orig_materials:
-                            m_data = cast("bpy.types.Mesh | None", obj.data)
-                            if m_data is not None and m_data.materials is not None:
-                                m_data.materials.clear()
-                                for m in mats:
-                                    m_data.materials.append(m)
+                        restore_override_materials(saved_materials, bdata)
 
                 # Process, merge Depth into Normal.A, dilate using BaseColor opacity mask
                 composed_tiles: dict[str, list[tuple[np.ndarray, tuple[int, int]]]] = {
@@ -376,7 +367,7 @@ class ImpostorAtlasBaker:
                         continue
 
                     # Mask derived strictly from BaseColor cutout alpha
-                    opacity_mask = base_tile[:, :, 3] > 12
+                    opacity_mask = base_tile[:, :, 3] > 2
 
                     # Pack Normal (RGB) + Depth (A)
                     if depth_tile is not None:
@@ -389,16 +380,17 @@ class ImpostorAtlasBaker:
 
                     if dilation_iterations > 0:
                         dilate_fn = ImpostorMath.morphological_dilate_channels
-                        base_proc = dilate_fn(base_tile, opacity_mask, iterations=dilation_iterations)
+                        base_rgb = dilate_fn(base_tile[:, :, :3], opacity_mask, iterations=dilation_iterations)
+                        base_proc = np.dstack([base_rgb, base_tile[:, :, 3]])
                         norm_proc = dilate_fn(norm_depth, opacity_mask, iterations=dilation_iterations)
-                        orm_proc = (
-                            dilate_fn(orm_tile, opacity_mask, iterations=dilation_iterations)
-                            if orm_tile is not None
-                            else np.zeros_like(base_tile)
-                        )
                     else:
                         base_proc, norm_proc = base_tile, norm_depth
-                        orm_proc = orm_tile if orm_tile is not None else np.zeros_like(base_tile)
+
+                    orm_proc = (
+                        finalize_orm_tile(orm_tile, opacity_mask, target_engine, dilation_iterations)
+                        if orm_tile is not None
+                        else np.zeros_like(base_tile)
+                    )
 
                     composed_tiles["BaseColor"].append((base_proc, coord))
                     composed_tiles["Normal"].append((norm_proc, coord))
@@ -503,6 +495,33 @@ class ImpostorAtlasBaker:
                 all_coords.extend([obj.matrix_world @ v.co for v in obj_data.vertices])
 
         max_span = max((max(c[i] for c in all_coords) - min(c[i] for c in all_coords) for i in range(3)), default=4.0)
+
+        imp_data = cast("bpy.types.Mesh | None", target_impostor.data)
+        if (
+            mode in {"ORTHO_3_AXES", "STAR_QUADS", "CROSS_QUADS"}
+            and imp_data is not None
+            and imp_data.polygons is not None
+            and len(imp_data.polygons) == 6
+            and imp_data.uv_layers is not None
+            and len(imp_data.uv_layers) > 0
+        ):
+            from .impostor_ortho_baker import bake_ortho_quads_atlas
+
+            return bake_ortho_quads_atlas(
+                mesh_objs=mesh_objs,
+                target_impostor=target_impostor,
+                base_name=base_name,
+                output_dir=output_dir,
+                res=max(256, int(atlas_resolution)),
+                max_span=max_span,
+                target_engine=target_engine,
+                dilation_iterations=dilation_iterations,
+                configure_cycles_fn=cls.configure_cycles_compute_device,
+                set_view_transform_fn=_set_bake_view_transform,
+                render_still_fn=lambda sc, ctx: _render_bake_scene(sc, ctx, animation=False),
+                context=context,
+                blend_data=bdata,
+            )
 
         ctx = context
         bdata_scenes = bdata.scenes if bdata else None
@@ -690,50 +709,6 @@ class ImpostorAtlasBaker:
             )
 
         return results
-
-
-def _restore_impostor_bake_state(
-    *,
-    muted_unbound_nodes: list[tuple[bpy.types.Node, bool]],
-    nodes: bpy.types.Nodes | None,
-    bake_slot: bpy.types.Node | None,
-    orig_active_node: bpy.types.Node | None,
-    temp_images: list[bpy.types.Image],
-    bdata_imgs: bpy.types.BlendDataImages,
-    orig_vis: list[tuple[bpy.types.Object, bool]],
-    vl: bpy.types.ViewLayer | None,
-    scene: bpy.types.Scene,
-    orig_selected: list[bpy.types.Object],
-    orig_active_obj: bpy.types.Object | None,
-    restore_render_fn: Callable[[], object],
-) -> None:
-    """Restores scene, view-layer selection, material, and image state after impostor bake."""
-    warnings: list[str] = []
-
-    for n, orig_mute in muted_unbound_nodes:
-        run_cleanup_step(warnings, "node_mute", lambda node=n, val=orig_mute: setattr(node, "mute", val))
-
-    if nodes is not None:
-        if bake_slot is not None:
-            run_cleanup_step(warnings, "bake_slot", lambda: nodes.remove(bake_slot))
-        run_cleanup_step(warnings, "active_node", lambda: setattr(nodes, "active", orig_active_node))
-
-    for temp_img in temp_images:
-        run_cleanup_step(warnings, "temp_image", lambda img=temp_img: bdata_imgs.remove(img, do_unlink=True))
-
-    for o, vis in orig_vis:
-        run_cleanup_step(warnings, "hide_viewport", lambda obj=o, val=vis: setattr(obj, "hide_viewport", val))
-
-    if vl is not None:
-        orig_sel_set = set(orig_selected)
-        for o in scene.objects:
-            run_cleanup_step(warnings, "select", lambda obj=o: obj.select_set(obj in orig_sel_set, view_layer=vl))
-        if vl.objects is not None:
-            run_cleanup_step(warnings, "active_obj", lambda: setattr(vl.objects, "active", orig_active_obj))
-
-    run_cleanup_step(warnings, "render_state", restore_render_fn)
-    if warnings:
-        logger.warning("Impostor bake cleanup warnings (%d): %s", len(warnings), "; ".join(warnings))
 
 
 __all__ = ["EphemeralBakeSceneGuard", "ImpostorCameraRig", "ImpostorShaderHarness", "ImpostorAtlasBaker"]

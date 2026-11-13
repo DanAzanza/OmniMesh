@@ -5,9 +5,10 @@ Blender 5.0+ & 5.2 LTS Compatible.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 import logging
 import math
-from typing import TYPE_CHECKING, Optional, Sequence, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,45 @@ else:
         from .impostor_math import Vector
     BlendData = object
 
+from .compat import run_cleanup_step
 from .metrics import compute_bounding_sphere
+
+
+def _configure_bake_render_engine(bake_scene: bpy.types.Scene, is_bg: bool) -> None:
+    """Selects Cycles for accurate multi-layer transparency compositing, falling back to EEVEE only if unavailable."""
+    render = bake_scene.render
+    if not render:
+        return
+    render.film_transparent = True
+    render.dither_intensity = 0.0
+    render.use_persistent_data = True
+    cycles = getattr(bake_scene, "cycles", None)
+    eevee = getattr(bake_scene, "eevee", None)
+    sample_count = 4 if is_bg else 8
+    for eng in ("CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
+        try:
+            render.engine = eng  # type: ignore[assignment]
+            if render.engine != eng:
+                continue
+            if eng == "CYCLES" and cycles is not None:
+                for attr, val in (
+                    ("samples", sample_count),
+                    ("use_adaptive_sampling", False),
+                    ("use_denoising", False),
+                    ("max_bounces", 0),
+                    ("diffuse_bounces", 0),
+                    ("glossy_bounces", 0),
+                    ("transmission_bounces", 0),
+                    ("volume_bounces", 0),
+                    ("transparent_max_bounces", 16),
+                    ("device", "CPU"),
+                ):
+                    setattr(cycles, attr, val)
+            elif eevee is not None:
+                eevee.taa_render_samples = 1
+            return
+        except (TypeError, ValueError, AttributeError) as eng_err:
+            logger.debug("Render engine %s not available: %s", eng, eng_err)
 
 
 class EphemeralBakeSceneGuard:
@@ -74,37 +113,9 @@ class EphemeralBakeSceneGuard:
         if not self.bake_scene:
             return None
 
-        # Configure minimal, fast unlit rendering environment
-        render = self.bake_scene.render
-        if render:
-            render.film_transparent = True
-            render.dither_intensity = 0.0
-            is_bg = bool(bpy.app.background) if bpy else False
-            preferred = (
-                ("CYCLES", "BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")
-                if is_bg
-                else ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "CYCLES")
-            )
-            cycles = getattr(self.bake_scene, "cycles", None)
-            eevee = getattr(self.bake_scene, "eevee", None)
-            for eng in preferred:
-                try:
-                    render.engine = eng  # type: ignore[assignment]
-                    if render.engine == eng:
-                        if eng == "CYCLES" and cycles is not None:
-                            for attr, val in (
-                                ("samples", 1),
-                                ("max_bounces", 0),
-                                ("diffuse_bounces", 0),
-                                ("glossy_bounces", 0),
-                                ("device", "CPU"),
-                            ):
-                                setattr(cycles, attr, val)
-                        elif eevee is not None:
-                            eevee.taa_render_samples = 1
-                        break
-                except (TypeError, ValueError, AttributeError) as eng_err:
-                    logger.debug("Render engine %s not available: %s", eng, eng_err)
+        # Configure minimal, fast unlit Cycles rendering environment
+        is_bg = bool(bpy.app.background) if bpy else False
+        _configure_bake_render_engine(self.bake_scene, is_bg)
 
         # Black unlit world background
         bdata_worlds = bdata.worlds if bdata else None
@@ -229,4 +240,48 @@ class ImpostorCameraRig:
         return cam_obj
 
 
-__all__ = ["EphemeralBakeSceneGuard", "ImpostorCameraRig"]
+def _restore_impostor_bake_state(
+    *,
+    muted_unbound_nodes: list[tuple[bpy.types.Node, bool]],
+    nodes: bpy.types.Nodes | None,
+    bake_slot: bpy.types.Node | None,
+    orig_active_node: bpy.types.Node | None,
+    temp_images: list[bpy.types.Image],
+    bdata_imgs: bpy.types.BlendDataImages,
+    orig_vis: list[tuple[bpy.types.Object, bool]],
+    vl: bpy.types.ViewLayer | None,
+    scene: bpy.types.Scene,
+    orig_selected: list[bpy.types.Object],
+    orig_active_obj: bpy.types.Object | None,
+    restore_render_fn: Callable[[], object],
+) -> None:
+    """Restores scene, view-layer selection, material, and image state after impostor bake."""
+    warnings: list[str] = []
+
+    for n, orig_mute in muted_unbound_nodes:
+        run_cleanup_step(warnings, "node_mute", lambda node=n, val=orig_mute: setattr(node, "mute", val))
+
+    if nodes is not None:
+        if bake_slot is not None:
+            run_cleanup_step(warnings, "bake_slot", lambda: nodes.remove(bake_slot))
+        run_cleanup_step(warnings, "active_node", lambda: setattr(nodes, "active", orig_active_node))
+
+    for temp_img in temp_images:
+        run_cleanup_step(warnings, "temp_image", lambda img=temp_img: bdata_imgs.remove(img, do_unlink=True))
+
+    for o, vis in orig_vis:
+        run_cleanup_step(warnings, "hide_viewport", lambda obj=o, val=vis: setattr(obj, "hide_viewport", val))
+
+    if vl is not None:
+        orig_sel_set = set(orig_selected)
+        for o in scene.objects:
+            run_cleanup_step(warnings, "select", lambda obj=o: obj.select_set(obj in orig_sel_set, view_layer=vl))
+        if vl.objects is not None:
+            run_cleanup_step(warnings, "active_obj", lambda: setattr(vl.objects, "active", orig_active_obj))
+
+    run_cleanup_step(warnings, "render_state", restore_render_fn)
+    if warnings:
+        logger.warning("Impostor bake cleanup warnings (%d): %s", len(warnings), "; ".join(warnings))
+
+
+__all__ = ["EphemeralBakeSceneGuard", "ImpostorCameraRig", "_restore_impostor_bake_state"]

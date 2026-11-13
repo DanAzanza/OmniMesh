@@ -38,6 +38,8 @@ else:
 
 from .exceptions import ImpostorBakeError
 from .impostor_math import ImpostorMath, Vector
+from .impostor_preview_material import create_octahedral_preview_material
+from .metrics import compute_bounding_sphere
 
 __all__ = [
     "ImpostorMath",
@@ -94,7 +96,13 @@ class ImpostorMeshBuilder:
             ]
         )
 
-        for u_dir, v_dir, normal in plane_defs:
+        cell_w = 1.0 / 3.0
+        cell_h = 0.5
+        margin = 0.04
+        avail_w = cell_w * (1.0 - 2.0 * margin)
+        avail_h = cell_h * (1.0 - 2.0 * margin)
+
+        for plane_idx, (u_dir, v_dir, normal) in enumerate(plane_defs):
             u_vals = [p.dot(u_dir) for p in pts]
             v_vals = [p.dot(v_dir) for p in pts]
             n_vals = [p.dot(normal) for p in pts]
@@ -109,6 +117,22 @@ class ImpostorMeshBuilder:
             h = max(0.01, (v_max - v_min) * (1.0 + padding_pct))
             hw, hh = w * 0.5, h * 0.5
 
+            # Fit plane aspect ratio uniformly inside its (1/3 x 1/2) UV atlas cell
+            scale = min(avail_w / w, avail_h / h)
+            uv_w = w * scale
+            uv_h = h * scale
+
+            cell_x0 = plane_idx * cell_w
+            u0_fwd = cell_x0 + (cell_w - uv_w) * 0.5
+            u1_fwd = u0_fwd + uv_w
+            v0_fwd = (cell_h - uv_h) * 0.5
+            v1_fwd = v0_fwd + uv_h
+
+            u0_rev = u0_fwd
+            u1_rev = u1_fwd
+            v0_rev = cell_h + (cell_h - uv_h) * 0.5
+            v1_rev = v0_rev + uv_h
+
             center_pt = u_cen * u_dir + v_cen * v_dir + n_cen * normal
 
             p_bl = center_pt - hw * u_dir - hh * v_dir
@@ -122,10 +146,10 @@ class ImpostorMeshBuilder:
             v3 = bm.verts.new((p_tr.x, p_tr.y, p_tr.z))
             v4 = bm.verts.new((p_tl.x, p_tl.y, p_tl.z))
             f_fwd = bm.faces.new((v1, v2, v3, v4))
-            f_fwd.loops[0][uv_layer].uv = (0.0, 0.0)
-            f_fwd.loops[1][uv_layer].uv = (w, 0.0)
-            f_fwd.loops[2][uv_layer].uv = (w, h)
-            f_fwd.loops[3][uv_layer].uv = (0.0, h)
+            f_fwd.loops[0][uv_layer].uv = (u0_fwd, v0_fwd)
+            f_fwd.loops[1][uv_layer].uv = (u1_fwd, v0_fwd)
+            f_fwd.loops[2][uv_layer].uv = (u1_fwd, v1_fwd)
+            f_fwd.loops[3][uv_layer].uv = (u0_fwd, v1_fwd)
 
             # Reverse Face (-normal)
             v5 = bm.verts.new((p_br.x, p_br.y, p_br.z))
@@ -133,10 +157,10 @@ class ImpostorMeshBuilder:
             v7 = bm.verts.new((p_tl.x, p_tl.y, p_tl.z))
             v8 = bm.verts.new((p_tr.x, p_tr.y, p_tr.z))
             f_rev = bm.faces.new((v5, v6, v7, v8))
-            f_rev.loops[0][uv_layer].uv = (0.0, 0.0)
-            f_rev.loops[1][uv_layer].uv = (w, 0.0)
-            f_rev.loops[2][uv_layer].uv = (w, h)
-            f_rev.loops[3][uv_layer].uv = (0.0, h)
+            f_rev.loops[0][uv_layer].uv = (u0_rev, v0_rev)
+            f_rev.loops[1][uv_layer].uv = (u1_rev, v0_rev)
+            f_rev.loops[2][uv_layer].uv = (u1_rev, v1_rev)
+            f_rev.loops[3][uv_layer].uv = (u0_rev, v1_rev)
 
         bm.normal_update()
         bm.verts.ensure_lookup_table()
@@ -170,10 +194,11 @@ class ImpostorMeshBuilder:
         max_coords: Tuple[float, float, float] = (1.0, 1.0, 1.0),
         padding_pct: float = 0.04,
         bevel_pct: float = 0.25,
+        center_origin: bool = False,
     ) -> bmesh.types.BMesh | None:
         """
-        Constructs an 8-vertex cut-out convex polygon (octagon) facing -Y, centered at bounds.
-        Eliminates 30-40% of transparent pixel fillrate overdraw compared to a square quad.
+        Constructs an 8-vertex cut-out convex polygon (octagon) facing -Y matching the
+        bounding-sphere orthographic projection frustum (square aspect 1:1).
         UV coordinates are strictly mapped into [0, 1]^2.
         """
         if not bmesh:
@@ -182,28 +207,26 @@ class ImpostorMeshBuilder:
         bm = bmesh.new()
         uv_layer = bm.loops.layers.uv.new("UVMap")
 
-        if coords:
-            xs = [c[0] for c in coords]
-            ys = [c[1] for c in coords]
-            zs = [c[2] for c in coords]
-            min_x, max_x = min(xs), max(xs)
-            min_y, max_y = min(ys), max(ys)
-            min_z, max_z = min(zs), max(zs)
-        else:
-            min_x, min_y, min_z = min_coords
-            max_x, max_y, max_z = max_coords
+        pts = (
+            [Vector((c[0], c[1], c[2])) for c in coords]
+            if coords
+            else [
+                Vector((x, y, z))
+                for x in (min_coords[0], max_coords[0])
+                for y in (min_coords[1], max_coords[1])
+                for z in (min_coords[2], max_coords[2])
+            ]
+        )
+        sphere_center, sphere_radius = compute_bounding_sphere(pts)
+        radius = max(0.25, float(sphere_radius))
 
-        dim_x = max_x - min_x
-        dim_y = max_y - min_y
-        dim_z = max_z - min_z
-
-        w = max(0.01, max(dim_x, dim_y) * (1.0 + padding_pct))
-        h = max(0.01, dim_z * (1.0 + padding_pct))
+        # Square billboard matches ImpostorCameraRig ortho_scale = 2 * radius * (1 + padding_pct)
+        size = max(0.5, 2.0 * radius * (1.0 + padding_pct))
+        w = size
+        h = size
         hw, hh = w * 0.5, h * 0.5
 
-        cx = (min_x + max_x) * 0.5
-        cy = (min_y + max_y) * 0.5
-        cz = (min_z + max_z) * 0.5
+        cx, cy, cz = (0.0, 0.0, 0.0) if center_origin else (sphere_center[0], sphere_center[1], sphere_center[2])
 
         if bevel_pct > 0.001:
             bw = hw * bevel_pct
@@ -284,15 +307,28 @@ class ImpostorManager:
         base_name: str,
         target_engine: str = "UE5",
         is_two_sided: bool = True,
+        mode: str = "ORTHO_3_AXES",
         *,
         blend_data: BlendData,
     ) -> bpy.types.Material | None:
         """
         Creates or updates a dedicated PBR Impostor Material in Blender.
-        Configures Alpha Clip transparency, two-sided shading, and texture slot nodes.
+        Routes Octahedral modes to dynamic GPU atlas decoding and multi-plane modes to 1:1 PBR slots.
         """
         if not bpy or blend_data is None:
             return None
+
+        if mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+            return create_octahedral_preview_material(
+                mat_name=f"M_{base_name}_Impostor",
+                base_color_path="",
+                grid_size=8,
+                target_engine=target_engine,
+                mode=mode,
+                view_dir_mode="VIEWPORT_INCOMING",
+                allow_unbound_tex_nodes=True,
+                blend_data=blend_data,
+            )
 
         mat_name = f"M_{base_name}_Impostor"
         mat = blend_data.materials.get(mat_name)
@@ -305,7 +341,7 @@ class ImpostorManager:
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
 
-        # Configure material transparency & two-sided (Blender 5.0+ EEVEE Next)
+        # Dithered alpha preserves proper depth-buffer sorting across intersecting 3D planes
         mat.surface_render_method = "DITHERED"
         mat.use_transparent_shadow = True
         mat.use_backface_culling = True
@@ -356,7 +392,7 @@ class ImpostorManager:
         node_separate.location = (-150, -350)
         links.new(tex_orm.outputs["Color"], node_separate.inputs["Color"])
 
-        if target_engine == "UNITY_6":
+        if target_engine in {"UNITY", "UNITY_6"}:
             # MaskMap: R=Metallic, G=AO, A=Smoothness (1-Roughness)
             if "Metallic" in node_bsdf.inputs:
                 links.new(node_separate.outputs["Red"], node_bsdf.inputs["Metallic"])
@@ -500,13 +536,17 @@ class ImpostorManager:
         dim_y = max(max_y - min_y, 0.5)
         height = max(max_z - min_z, 0.5)
 
-        if mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+        is_octahedral = mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}
+        sphere_center, _sphere_radius = compute_bounding_sphere(all_coords)
+
+        if is_octahedral:
             bm = ImpostorMeshBuilder.build_octahedral_cutout_polygon(
                 coords=all_coords,
                 min_coords=(min_x, min_y, min_z),
                 max_coords=(max_x, max_y, max_z),
                 padding_pct=0.04,
                 bevel_pct=0.25,
+                center_origin=True,
             )
         else:
             bm = ImpostorMeshBuilder.build_intersecting_quads(
@@ -539,7 +579,11 @@ class ImpostorManager:
         impostor_created = False
         try:
             impostor_obj = effective_bdata.objects.new(impostor_name, impostor_mesh)
-            impostor_obj.location = Vector((0.0, 0.0, 0.0))
+            impostor_obj.location = (
+                Vector((sphere_center[0], sphere_center[1], sphere_center[2]))
+                if is_octahedral
+                else Vector((0.0, 0.0, 0.0))
+            )
             impostor_obj["_is_impostor"] = True
             impostor_obj["_impostor_mode"] = mode
 
@@ -548,43 +592,13 @@ class ImpostorManager:
                 base_name,
                 target_engine=target_engine,
                 is_two_sided=True,
+                mode=mode,
                 blend_data=effective_bdata,
             )
             if mat:
                 cast("Any", impostor_obj.data).materials.append(mat)
 
             target_coll.objects.link(impostor_obj)
-
-            # Proportional UV Island Packing (only for intersecting star planes in GUI mode)
-            is_bg = bool(bpy.app.background) if bpy else False
-            vl = ctx.view_layer if ctx else None
-            if mode not in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"} and not is_bg and ctx and ctx.window and vl:
-                try:
-                    vl_objs = vl.objects
-                    prev_active = vl_objs.active if vl_objs else None
-                    scene_objs = sc.objects if sc else ()
-                    for o in scene_objs:
-                        o.select_set(False)
-                    if vl_objs:
-                        vl_objs.active = impostor_obj
-                    impostor_obj.select_set(True)
-                    try:
-                        with cast("Any", ctx).temp_override(
-                            active_object=impostor_obj, object=impostor_obj, selected_objects=[impostor_obj]
-                        ):
-                            bpy.ops.object.mode_set(mode="EDIT")
-                            bpy.ops.mesh.select_all(action="SELECT")
-                            bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)
-                            bpy.ops.object.mode_set(mode="OBJECT")
-                    except AttributeError:
-                        bpy.ops.object.mode_set(mode="EDIT")
-                        bpy.ops.mesh.select_all(action="SELECT")
-                        bpy.ops.uv.pack_islands(scale=True, rotate=False, margin=0.03)
-                        bpy.ops.object.mode_set(mode="OBJECT")
-                    if prev_active and vl_objs:
-                        vl_objs.active = prev_active
-                except (RuntimeError, AttributeError, TypeError) as pack_err:
-                    logger.debug("pack_islands skipped or failed: %s", pack_err)
 
             logger.info(
                 "Generated Impostor '%s' (3 orthogonal planes, Bounds: %.2fm x %.2fm x %.2fm)",

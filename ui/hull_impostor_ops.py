@@ -28,6 +28,7 @@ try:
     from ..core.impostor import ImpostorManager, resolve_impostor_export_dir
     from ..core.impostor_baker import ImpostorAtlasBaker
     from ..exporters.shaders import export_companion_shaders
+    from .impostor_viewport_ops import start_impostor_viewport_timer
     from .utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -42,6 +43,7 @@ except (ImportError, ValueError):
     from core.impostor import ImpostorManager, resolve_impostor_export_dir
     from core.impostor_baker import ImpostorAtlasBaker
     from exporters.shaders import export_companion_shaders
+    from ui.impostor_viewport_ops import start_impostor_viewport_timer
     from ui.utils import (
         get_lod0_mesh_objects,
         get_selected_mesh_objects,
@@ -152,23 +154,67 @@ class LOD_OT_generate_impostor(Operator):
             props.last_impostor_status = f"Generated {props.impostor_mode} in '{target_coll_name}'"
 
         # Automatically export engine companion shaders for octahedral impostors
-        if props.impostor_mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"} and export_companion_shaders:
-            try:
-                target_eng = getattr(props, "target_engine", "ALL")
-                shader_res = export_companion_shaders(
-                    base_name=base_name,
-                    output_dir=tex_dir,
-                    target_engine=target_eng,
-                    grid_size=8,
-                    alpha_scissor=0.5,
-                )
-                if shader_res:
-                    props.last_impostor_status += f" (+{len(shader_res)} Shaders)"
-            except Exception as sh_err:
-                logger.debug("Failed exporting companion shaders: %s", sh_err)
+        if props.impostor_mode in {"OCTAHEDRAL_HEMI", "OCTAHEDRAL_SPHERE"}:
+            _attach_octahedral_viewport_billboard(res, base_name, context, bdata)
+            if export_companion_shaders:
+                try:
+                    target_eng = getattr(props, "target_engine", "ALL")
+                    shader_res = export_companion_shaders(
+                        base_name=base_name,
+                        output_dir=tex_dir,
+                        target_engine=target_eng,
+                        grid_size=8,
+                        alpha_scissor=0.5,
+                    )
+                    if shader_res:
+                        props.last_impostor_status += f" (+{len(shader_res)} Shaders)"
+                except Exception as sh_err:
+                    logger.debug("Failed exporting companion shaders: %s", sh_err)
 
         safe_report(self, {"INFO"}, props.last_impostor_status)
         return {"FINISHED"}
+
+
+def _attach_octahedral_viewport_billboard(
+    impostor_obj: Any,
+    base_name: str,
+    context: Any,
+    bdata: Any,
+) -> None:
+    """Attaches a viewport-facing TRACK_TO helper for live Octahedral viewport preview (muted on export)."""
+    if not bpy or getattr(bpy.app, "background", False) or not bdata or not impostor_obj:
+        return
+
+    helpers_name = f"{base_name}_Helpers"
+    helpers_coll = bdata.collections.get(helpers_name)
+    if not helpers_coll:
+        helpers_coll = bdata.collections.new(helpers_name)
+        sc = getattr(context, "scene", None)
+        if sc and sc.collection and helpers_coll.name not in sc.collection.children:
+            sc.collection.children.link(helpers_coll)
+
+    target_name = f"{base_name}_Impostor_ViewTarget"
+    target_empty = bdata.objects.get(target_name)
+    if not target_empty:
+        target_empty = bdata.objects.new(target_name, None)
+        target_empty.empty_display_type = "PLAIN_AXES"
+        target_empty.empty_display_size = 0.2
+        if helpers_coll and target_empty.name not in helpers_coll.objects:
+            helpers_coll.objects.link(target_empty)
+
+    loc = impostor_obj.location
+    target_empty.location = (float(loc[0]), float(loc[1]) - 10.0, float(loc[2]))
+    target_empty.hide_render = True
+
+    constraints = impostor_obj.constraints
+    track_c = next((c for c in constraints if c.name == "OmniMesh_Viewport_Billboard"), None)
+    if not track_c:
+        track_c = constraints.new(type="TRACK_TO")
+        track_c.name = "OmniMesh_Viewport_Billboard"
+    track_c.target = target_empty
+    track_c.track_axis = "TRACK_NEGATIVE_Y"
+    track_c.up_axis = "UP_Z"
+    start_impostor_viewport_timer(base_name)
 
 
 class LOD_OT_generate_collision_hulls(Operator):

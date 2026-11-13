@@ -34,20 +34,20 @@ _ACTIVE_TIMERS: dict[str, Callable[[], Optional[float]]] = {}
 
 def sync_rig_to_viewport(base_name: str) -> Optional[float]:
     """
-    Syncs the preview rig target empty and camera to the current 3D Viewport eye position.
-    Runs non-blocking via bpy.app.timers at 30 FPS.
+    Syncs the preview rig and/or octahedral impostor billboard target empties to the active
+    3D Viewport eye position. Runs non-blocking via bpy.app.timers at 30 FPS.
     """
     if not bpy:
         return None
 
     rig_coll = bpy.data.collections.get(f"{base_name}_Preview_Rig")
-    if not rig_coll:
-        _ACTIVE_TIMERS.pop(base_name, None)
-        return None
+    rig_target = bpy.data.objects.get(f"{base_name}_Preview_Tracker_Target") if rig_coll else None
 
-    target_name = f"{base_name}_Preview_Tracker_Target"
-    target_empty = bpy.data.objects.get(target_name)
-    if not target_empty:
+    imp_obj = bpy.data.objects.get(f"{base_name}_LOD_Impostor")
+    billboard_target = bpy.data.objects.get(f"{base_name}_Impostor_ViewTarget") if imp_obj else None
+
+    targets = [t for t in (rig_target, billboard_target) if t is not None]
+    if not targets:
         _ACTIVE_TIMERS.pop(base_name, None)
         return None
 
@@ -81,19 +81,18 @@ def sync_rig_to_viewport(base_name: str) -> Optional[float]:
         view_inv = region_3d.view_matrix.inverted()
         eye_pos = view_inv.translation.copy()
 
-    # Epsilon gating prevents depsgraph churn when user is not moving the viewport
-    if (eye_pos - target_empty.location).length_squared < 1e-4:
-        return 1.0 / 30.0
-
-    target_empty.location = eye_pos
+    for target_empty in targets:
+        if (eye_pos - target_empty.location).length_squared >= 1e-4:
+            target_empty.location = eye_pos
 
     # If preview camera is free (no turntable keyframes), sync its matrix as well
-    cam_name = f"{base_name}_Preview_Camera"
-    cam_obj = bpy.data.objects.get(cam_name)
-    if cam_obj and not cam_obj.animation_data:
-        cam_obj.location = eye_pos
-        if hasattr(region_3d.view_matrix.inverted(), "to_euler"):
-            cam_obj.rotation_euler = region_3d.view_matrix.inverted().to_euler()
+    if rig_coll:
+        cam_name = f"{base_name}_Preview_Camera"
+        cam_obj = bpy.data.objects.get(cam_name)
+        if cam_obj and not cam_obj.animation_data:
+            cam_obj.location = eye_pos
+            if hasattr(region_3d.view_matrix.inverted(), "to_euler"):
+                cam_obj.rotation_euler = region_3d.view_matrix.inverted().to_euler()
 
     return 1.0 / 30.0
 
