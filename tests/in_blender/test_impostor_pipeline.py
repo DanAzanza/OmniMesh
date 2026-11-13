@@ -244,3 +244,225 @@ class TestImpostorPipeline(unittest.TestCase):
         self.assertEqual(dilated[0, 1, 0], 1.0)
         # However, its alpha must remain 0.0 so geometry silhouette is uncorrupted
         self.assertEqual(dilated[0, 1, 3], 0.0)
+
+    def test_octahedral_sphere_bake_shaders_and_repack_masters(self) -> None:
+        """Verify OCTAHEDRAL_SPHERE baking, companion HLSL shaders, and master backup preservation on repack."""
+        import os
+
+        from core.impostor_repacker import CanonicalImpostorSources, ImpostorTextureRepacker
+        from core.png_writer import write_png_direct
+
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+            mesh_objs = create_hierarchy_fixture("SM_SphereAsset")
+            for obj in mesh_objs:
+                obj.select_set(True)
+            scene.view_layers[0].objects.active = mesh_objs[0]
+
+            export_dir = self._get_isolated_export_dir()
+            props: Any = getattr(scene, "lod_tool", None)
+            if props is None:
+                return
+            props.export_base_name = "SM_SphereAsset"
+            props.impostor_mode = "OCTAHEDRAL_HEMI"
+            props.impostor_render_underside = True
+            props.impostor_grid_size = 4
+            props.auto_impostor_resolution = False
+            props.impostor_resolution = "512"
+            props.target_engine = "UE5"
+            props.pbr_export_preset = "unreal_engine_5"
+            props.export_directory = export_dir
+
+            ops: Any = cast(Any, bpy.ops).lod_tool
+            res = ops.generate_impostor()
+            self.assertEqual(res, {"FINISHED"})
+
+            imp_obj = bpy.data.objects.get("SM_SphereAsset_LOD_Impostor")
+            self.assertIsNotNone(imp_obj)
+            if imp_obj is None:
+                return
+            self.assertEqual(imp_obj.get("_impostor_mode", ""), "OCTAHEDRAL_SPHERE")
+            self.assertEqual(imp_obj.get("_impostor_grid_size", 0), 4)
+            self.assertTrue(bool(imp_obj.get("_impostor_canonical", False)))
+
+            tex_dir = os.path.join(export_dir, "Textures")
+            bc_path = os.path.join(tex_dir, "T_SM_SphereAsset_Impostor_BaseColor.png")
+            norm_path = os.path.join(tex_dir, "T_SM_SphereAsset_Impostor_Normal.png")
+            orm_path = os.path.join(tex_dir, "T_SM_SphereAsset_Impostor_ORM.png")
+            self.assertTrue(os.path.isfile(bc_path))
+            self.assertTrue(os.path.isfile(norm_path))
+            self.assertTrue(os.path.isfile(orm_path))
+
+            # Companion HLSL shaders emitted alongside octahedral bake (UE5 setup guide is written on repack/export)
+            shader_dir = os.path.join(tex_dir, "shaders")
+            self.assertTrue(os.path.isfile(os.path.join(shader_dir, "SM_SphereAsset_Octahedral.hlsl")))
+            self.assertTrue(os.path.isfile(os.path.join(shader_dir, "SM_SphereAsset_Octahedral_UE5.hlsl")))
+            self.assertFalse(os.path.isfile(os.path.join(tex_dir, "README_SM_SphereAsset_UE5_SETUP.txt")))
+
+            # Verify bound octahedral preview material graph
+            imp_mesh: Any = imp_obj.data
+            imp_mat = imp_mesh.materials[0] if imp_mesh and imp_mesh.materials else None
+            self.assertIsNotNone(imp_mat)
+            if imp_mat and imp_mat.node_tree:
+                tex_base = imp_mat.node_tree.nodes.get("Tex_BaseColor")
+                self.assertIsNotNone(tex_base)
+                self.assertIsNotNone(getattr(tex_base, "image", None))
+
+            # Repack in-place and confirm *_Master.png backups & UE5 setup guide are emitted
+            pack_res = ops.pack_pbr_textures()
+            self.assertEqual(pack_res, {"FINISHED"})
+            self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_SphereAsset_Impostor_BaseColor_Master.png")))
+            self.assertTrue(os.path.isfile(os.path.join(tex_dir, "T_SM_SphereAsset_Impostor_Normal_DirectX.png")))
+            self.assertTrue(os.path.isfile(os.path.join(tex_dir, "README_SM_SphereAsset_UE5_SETUP.txt")))
+
+            # Negative boundary: mismatched Normal dimensions must raise ValueError
+            bad_norm = os.path.join(tex_dir, "bad_norm.png")
+            write_png_direct(bad_norm, np.zeros((16, 16, 4), dtype=np.uint8))
+            bad_src = CanonicalImpostorSources(
+                base_name="SM_SphereAsset",
+                base_color_path=bc_path,
+                normal_path=bad_norm,
+                orm_path=orm_path,
+            )
+            with self.assertRaises(ValueError):
+                ImpostorTextureRepacker.repack_impostor_textures(bad_src, tex_dir, target_engine="UE5")
+
+    def test_impostor_selected_to_active_bake_and_restore_state(self) -> None:
+        """Verify Cycles selected-to-active impostor bake writes PBR maps and restores scene render state."""
+        import os
+
+        import bmesh
+        from core.impostor_baker import ImpostorAtlasBaker
+
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+
+            mesh_objs = create_hierarchy_fixture("SM_S2A")
+            cast(Any, scene.render).engine = "BLENDER_WORKBENCH"
+            scene.render.film_transparent = False
+
+            # Build UV-mapped quad target overlapping source fixture
+            quad_mesh = bpy.data.meshes.new("SM_S2A_Quad_Mesh")
+            bm = bmesh.new()
+            uv_layer = bm.loops.layers.uv.new("UVMap")
+            v0 = bm.verts.new((-1.5, 0.0, -1.5))
+            v1 = bm.verts.new((1.5, 0.0, -1.5))
+            v2 = bm.verts.new((1.5, 0.0, 2.5))
+            v3 = bm.verts.new((-1.5, 0.0, 2.5))
+            face = bm.faces.new((v0, v1, v2, v3))
+            uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+            for loop, uv in zip(face.loops, uvs, strict=True):
+                loop[uv_layer].uv = uv
+            bm.to_mesh(quad_mesh)
+            bm.free()
+
+            imp_obj = bpy.data.objects.new("SM_S2A_LOD_Impostor", quad_mesh)
+            scene.collection.objects.link(imp_obj)
+
+            out_dir = self._get_isolated_export_dir()
+            baked = ImpostorAtlasBaker.bake_impostor_textures(
+                mesh_objs=mesh_objs,
+                base_name="SM_S2A",
+                output_dir=out_dir,
+                mode="14_PLANES",
+                atlas_resolution=64,
+                target_engine="UE5",
+                impostor_obj=imp_obj,
+                context=bpy.context,
+                blend_data=bpy.data,
+            )
+
+            self.assertIn("BaseColor", baked)
+            self.assertIn("Normal", baked)
+            self.assertIn("ORM", baked)
+            for p in baked.values():
+                self.assertTrue(os.path.isfile(p), f"Expected baked file at {p}")
+
+            # Verify render engine and transparency state restored
+            self.assertEqual(scene.render.engine, "BLENDER_WORKBENCH")
+            self.assertFalse(scene.render.film_transparent)
+
+            # Empty mesh list negative boundary returns {}
+            self.assertEqual(
+                ImpostorAtlasBaker.bake_impostor_textures(
+                    mesh_objs=[],
+                    base_name="SM_Empty",
+                    output_dir=out_dir,
+                    context=bpy.context,
+                    blend_data=bpy.data,
+                ),
+                {},
+            )
+
+    def test_impostor_preview_rig_turntable_and_teardown(self) -> None:
+        """Verify setup_impostor_preview_rig creates isolated tracking/turntable and teardown cleans up."""
+        import os
+
+        from core.impostor_baker import ImpostorAtlasBaker
+        from core.impostor_preview import setup_impostor_preview_rig, teardown_impostor_preview_rig
+
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+
+            mesh_objs = create_hierarchy_fixture("SM_PrevRig")
+            orig_loc = mesh_objs[0].location.copy()
+            out_dir = self._get_isolated_export_dir()
+
+            baked = ImpostorAtlasBaker.bake_octahedral_animation_atlas(
+                mesh_objs=mesh_objs,
+                base_name="SM_PrevRig",
+                output_dir=out_dir,
+                mode="OCTAHEDRAL_HEMI",
+                atlas_resolution=128,
+                target_engine="UE5",
+                grid_size=4,
+                context=bpy.context,
+                blend_data=bpy.data,
+            )
+            self.assertIn("BaseColor", baked)
+            tex_dir = os.path.dirname(baked["BaseColor"])
+
+            rig_info = setup_impostor_preview_rig(
+                context=bpy.context,
+                mesh_objs=mesh_objs,
+                base_name="SM_PrevRig",
+                texture_dir=tex_dir,
+                mode="SIDE_BY_SIDE",
+                num_frames=8,
+                target_engine="UE5",
+                create_turntable=True,
+                grid_size=4,
+                impostor_mode="OCTAHEDRAL_HEMI",
+                blend_data=bpy.data,
+            )
+            self.assertEqual(rig_info.get("collection"), "SM_PrevRig_Preview_Rig")
+            self.assertIsNotNone(bpy.data.collections.get("SM_PrevRig_Preview_Rig"))
+
+            proxy_obj = bpy.data.objects.get("SM_PrevRig_Preview_Impostor")
+            cam_obj = bpy.data.objects.get("SM_PrevRig_Preview_Camera")
+            self.assertIsNotNone(proxy_obj)
+            self.assertIsNotNone(cam_obj)
+            if proxy_obj is not None:
+                track_con = proxy_obj.constraints.get("OmniMesh_Preview_Track")
+                self.assertIsNotNone(track_con)
+            if cam_obj is not None:
+                self.assertIsNotNone(cam_obj.animation_data)
+                self.assertEqual(scene.frame_end, 8)
+            self.assertEqual(scene.camera, cam_obj)
+
+            # Production mesh transforms and animation remain untouched
+            self.assertIsNone(mesh_objs[0].animation_data)
+            cur_loc = mesh_objs[0].location
+            self.assertEqual(
+                (float(cur_loc.x), float(cur_loc.y), float(cur_loc.z)),
+                (float(orig_loc.x), float(orig_loc.y), float(orig_loc.z)),
+            )
+
+            # Teardown removes collection, material, and restores active camera
+            self.assertTrue(teardown_impostor_preview_rig(bpy.context, "SM_PrevRig", blend_data=bpy.data))
+            self.assertIsNone(bpy.data.collections.get("SM_PrevRig_Preview_Rig"))
+            self.assertIsNone(bpy.data.materials.get("M_SM_PrevRig_Octahedral_Preview"))
+            self.assertFalse(teardown_impostor_preview_rig(bpy.context, "MissingRig", blend_data=bpy.data))
