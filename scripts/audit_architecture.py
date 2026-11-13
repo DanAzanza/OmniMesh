@@ -25,7 +25,7 @@ BPY_DATA_RATCHET_BASELINE = 0
 
 # Monotonic ratchet baseline for defensive hasattr and getattr calls in core/ and exporters/
 HASATTR_RATCHET_BASELINE = 0
-GETATTR_RATCHET_BASELINE = 32
+GETATTR_RATCHET_BASELINE = 29
 
 # Monotonic ratchet baseline for log-only exception handlers in core/ and exporters/
 LOG_ONLY_EXCEPT_RATCHET_BASELINE = 99

@@ -17,7 +17,7 @@ python scripts/verify_ci.py
 * **Dual-Runtime Test Architecture & Coverage Ratchets**:
   1. *Host Unit Tests (`tests/`)*: Fast pytest suite against `fake-bpy-module` stubs (`tests/conftest.py` provides canonical `MockVector`, `MockQuaternion`, `MockMeshObject`, and `MockAction` test doubles). Host coverage threshold is enforced via `[tool.coverage.report] fail_under` in `pyproject.toml`.
   2. *In-Blender Integration Tests (`tests/in_blender/`)*: Headless integration tests running inside a live Blender C-runtime via `scripts/run_blender_tests.py`.
-  3. *Unified Coverage Gate*: `scripts/verify_ci.py` merges both coverage databases and enforces the unified coverage floor (`--fail-under=70`).
+  3. *Unified Coverage Gate*: `scripts/verify_ci.py` merges both coverage databases and enforces the configured unified coverage floor (`--fail-under` in `scripts/verify_ci.py`).
 * **Large 3D Binary Asset Limit**: Model files (`.blend`, `.fbx`, `.gltf`, `.bin`, `.dds`) and raw textures must not exceed **50 MB** in Git tracking. Temporary bake scratch files and `.coverage*` artifacts must remain `.gitignore`d.
 
 ### 0.2 Git Commit Scope Mapping
