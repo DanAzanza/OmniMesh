@@ -209,7 +209,12 @@ def on_lod_preset_property_modified(self: Any, context: Any) -> None:
 class LODPresetTierItem(PropertyGroup):
     """Data model representing a template tier within a configurable LOD preset."""
 
-    name: StringProperty(name="Tier Name", default="LOD0", update=on_preset_tier_item_updated)
+    name: StringProperty(
+        name="Tier Name",
+        default="LOD0",
+        description="Display label for this LOD preset tier (e.g. LOD0, LOD1)",
+        update=on_preset_tier_item_updated,
+    )
     screen_size_pct: FloatProperty(
         name="Screen Size %",
         default=100.0,
@@ -217,6 +222,7 @@ class LODPresetTierItem(PropertyGroup):
         max=100.0,
         subtype="PERCENTAGE",
         precision=1,
+        description="Minimum screen-height coverage percentage at which this LOD tier remains active",
         update=on_preset_tier_item_updated,
     )
     target_tris_pct: FloatProperty(
@@ -226,12 +232,14 @@ class LODPresetTierItem(PropertyGroup):
         max=100.0,
         subtype="PERCENTAGE",
         precision=2,
+        description="Target triangle count as a percentage of LOD0 when Budget Mode is set to Percentage",
         update=on_preset_tier_item_updated,
     )
     target_tris: IntProperty(
         name="Target Tris",
         default=100000,
         min=1,
+        description="Explicit maximum triangle count for this tier when Budget Mode is set to Absolute",
         update=on_preset_tier_item_updated,
     )
 

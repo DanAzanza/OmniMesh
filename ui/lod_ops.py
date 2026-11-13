@@ -105,6 +105,7 @@ class LOD_OT_analyze_and_configure(Operator):
 
     bl_idname = "lod_tool.analyze_and_configure"
     bl_label = "Auto-Configure LOD Tiers"
+    bl_description = "Analyze LOD0 bounding volume and compute default LOD tier budgets and switch distances"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -139,6 +140,7 @@ class LOD_OT_generate_all(Operator):
 
     bl_idname = "lod_tool.generate_all"
     bl_label = "Generate All LODs"
+    bl_description = "Generate all configured LOD tier collections with QEM simplification and normal reprojection"
     bl_options = {"REGISTER", "UNDO"}
 
     only_out_of_sync: (
@@ -313,6 +315,7 @@ class LOD_OT_sync_selection_settings(Operator):
 
     bl_idname = "lod_tool.sync_selection_settings"
     bl_label = "Copy Settings to Selection"
+    bl_description = "Copy LOD settings from the active master object to all other selected mesh objects"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context: Any) -> set[Any]:
@@ -377,6 +380,7 @@ class LOD_OT_select_master_asset(Operator):
 
     bl_idname = "lod_tool.select_master_asset"
     bl_label = "Select Master Asset"
+    bl_description = "Select and focus the active master asset or LOD0 objects in the 3D Viewport"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context: Any) -> set[Any]:

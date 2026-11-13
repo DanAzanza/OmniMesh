@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 from . import (
     animation_properties,
     callbacks,
+    cleanup_settings,
     config_properties,
+    engine_settings,
     enums,
     guards,
     interaction_properties,
@@ -108,7 +110,9 @@ if "_OMNIMESH_PROPERTIES_LOADED" in locals():
         interaction_properties,
         animation_properties,
         msfs_cfg_properties,
+        cleanup_settings,
         callbacks,
+        engine_settings,
         settings,
     ):
         importlib.reload(mod)

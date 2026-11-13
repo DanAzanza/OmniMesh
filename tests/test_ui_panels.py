@@ -644,3 +644,63 @@ def test_lods_ui_reordering_materials_and_side_by_side(monkeypatch):
         "lod_tool.toggle_side_by_side" in str(c) and c.kwargs.get("text") == "Reset Alignment"
         for c in mock_test_row.operator.call_args_list
     )
+
+
+def test_clean_and_repair_materials_forwards_all_options_and_cancels_when_empty(monkeypatch):
+    """Verify LOD_OT_clean_and_repair_materials forwards all 8 mat_cleanup_* flags and rejects empty meshes."""
+    import ui.cleanup_ops as cleanup_ops
+
+    mock_bpy = MagicMock()
+    mock_report = MagicMock()
+    monkeypatch.setattr(cleanup_ops, "bpy", mock_bpy)
+    monkeypatch.setattr(cleanup_ops, "safe_report", mock_report)
+    monkeypatch.setattr(cleanup_ops, "get_lod0_mesh_objects", lambda ctx: [])
+    monkeypatch.setattr(cleanup_ops, "get_selected_mesh_objects", lambda ctx: [])
+
+    op = cleanup_ops.LOD_OT_clean_and_repair_materials()
+    mock_ctx = MagicMock()
+    assert op.execute(mock_ctx) == {"CANCELLED"}
+
+    mock_mesh = MagicMock(type="MESH")
+    monkeypatch.setattr(cleanup_ops, "get_lod0_mesh_objects", lambda ctx: [mock_mesh])
+
+    captured = {}
+
+    def _fake_clean(mesh_objs, options=None, *, blend_data):
+        captured["mesh_objs"] = mesh_objs
+        captured["options"] = options
+        captured["blend_data"] = blend_data
+        return {
+            "slots_removed": 2,
+            "merged_datablocks": 1,
+            "consolidated_slots": 1,
+            "repaired_textures": 1,
+            "orphan_nodes_removed": 1,
+            "purged_orphans": 1,
+        }
+
+    monkeypatch.setattr(cleanup_ops.MaterialOptimizer, "clean_materials_full", _fake_clean)
+
+    props = mock_ctx.scene.lod_tool
+    props.mat_cleanup_purge_unused_slots = False
+    props.mat_cleanup_deduplicate_slots = True
+    props.mat_cleanup_merge_duplicate_datablocks = False
+    props.mat_cleanup_remove_orphan_nodes = False
+    props.mat_cleanup_enable_micro_consolidation = True
+    props.mat_cleanup_micro_area_pct = 2.5
+    props.mat_cleanup_repair_missing_textures = True
+    props.mat_cleanup_purge_orphans_blendfile = True
+    monkeypatch.setattr(cleanup_ops, "resolve_lod_context", lambda ctx: (props, None, None))
+
+    assert op.execute(mock_ctx) == {"FINISHED"}
+    opts = captured["options"]
+    assert opts.purge_unused_slots is False
+    assert opts.deduplicate_slots is True
+    assert opts.merge_duplicate_datablocks is False
+    assert opts.remove_orphan_nodes is False
+    assert opts.enable_micro_consolidation is True
+    assert opts.micro_area_pct == 2.5
+    assert opts.repair_missing_textures is True
+    assert opts.purge_orphans_blendfile is True
+    assert "consolidated 1 micro-slots" in mock_report.call_args.args[2]
+    assert "purged 1 .blend orphans" in mock_report.call_args.args[2]

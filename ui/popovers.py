@@ -50,6 +50,7 @@ class OMNIMESH_PT_popover_sanitize(Panel):
 
     bl_idname = "OMNIMESH_PT_popover_sanitize"
     bl_label = "Sanitization Settings"
+    bl_description = "Configure mesh cleanup, transform baking, welding, hole filling, and normal repair options"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 16
@@ -99,6 +100,7 @@ class OMNIMESH_PT_popover_materials(Panel):
 
     bl_idname = "OMNIMESH_PT_popover_materials"
     bl_label = "Material Cleanup Settings"
+    bl_description = "Configure material slot purging, scene datablock merging, and shader node cleanup options"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 16
@@ -131,6 +133,7 @@ class OMNIMESH_PT_popover_collision(Panel):
 
     bl_idname = "OMNIMESH_PT_popover_collision"
     bl_label = "Collision Hull Settings"
+    bl_description = "Configure convex collision decomposition mode, hull count, vertex limits, and concavity tolerance"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 16
@@ -165,6 +168,7 @@ class OMNIMESH_PT_popover_generate(Panel):
 
     bl_idname = "OMNIMESH_PT_popover_generate"
     bl_label = "Generation & Optimization Settings"
+    bl_description = "Configure rigging optimization, hierarchy draw-call merging, and spatial chunking triggers"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 16
@@ -203,6 +207,7 @@ class OMNIMESH_PT_popover_impostor(Panel):
 
     bl_label = "Billboard Impostor Settings"
     bl_idname = "OMNIMESH_PT_popover_impostor"
+    bl_description = "Configure billboard impostor projection mode, atlas resolution, and octahedral capture grid"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 18

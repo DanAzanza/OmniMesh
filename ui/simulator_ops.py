@@ -33,6 +33,7 @@ class LOD_OT_toggle_simulator(Operator):
 
     bl_idname = "lod_tool.toggle_simulator"
     bl_label = "Toggle LOD Simulator"
+    bl_description = "Start or stop live distance-based LOD visibility switching in the 3D Viewport"
     bl_options = {"REGISTER"}  # Omit UNDO for modal execution
 
     _timer: Any = None
@@ -193,6 +194,7 @@ class LOD_OT_reset_virtual_distance(Operator):
 
     bl_idname = "lod_tool.reset_virtual_distance"
     bl_label = "Reset Distance"
+    bl_description = "Reset virtual inspection distance to 0m and restore LOD0 viewport visibility"
     bl_options = {"REGISTER"}
 
     @classmethod
@@ -227,6 +229,7 @@ class LOD_OT_toggle_live_simulator(Operator):
 
     bl_idname = "lod_tool.toggle_live_simulator"
     bl_label = "Toggle LOD Simulator"
+    bl_description = "Toggle real-time distance-based LOD visibility switching in the 3D Viewport"
     bl_options = {"INTERNAL"}
 
     def execute(self, context: Any) -> set[Any]:

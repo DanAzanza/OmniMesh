@@ -102,6 +102,7 @@ class LOD_OT_import_pbr_set(Operator):
 
     bl_idname = "lod_tool.import_pbr_set"
     bl_label = "Import PBR Textures"
+    bl_description = "Choose a texture folder and wire matching PBR maps into LOD0 materials using the active preset"
     bl_options = {"REGISTER", "UNDO"}
 
     directory: StringProperty(subtype="DIR_PATH")
@@ -275,6 +276,7 @@ class LOD_OT_auto_match_pbr_folder(Operator):
 
     bl_idname = "lod_tool.auto_match_pbr_folder"
     bl_label = "Auto-Match PBR Folder"
+    bl_description = "Scan a folder and automatically assign matching PBR texture sets to LOD0 materials"
     bl_options = {"REGISTER", "UNDO"}
 
     directory: StringProperty(subtype="DIR_PATH")
@@ -379,6 +381,7 @@ class LOD_OT_relink_project_textures(Operator):
 
     bl_idname = "lod_tool.relink_project_textures"
     bl_label = "Auto-Relink Missing Textures"
+    bl_description = "Locate a folder to relink and re-import PBR textures onto LOD0 materials"
     bl_options = {"REGISTER", "UNDO"}
 
     directory: StringProperty(subtype="DIR_PATH")

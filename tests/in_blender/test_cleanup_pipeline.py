@@ -176,6 +176,82 @@ class TestCleanupPipeline(unittest.TestCase):
             self.assertFalse(any(e.is_boundary for e in bm.edges), "Mesh must be fully watertight.")
             bm.free()
 
+    def test_clean_and_repair_materials_wires_all_cleanup_options(self) -> None:
+        """Verify clean_and_repair_materials executes micro-consolidation, deduplication, texture repair, and orphan purge."""
+        import bmesh
+
+        with in_blender_sandbox() as scene:
+            if scene is None or bpy is None:
+                return
+            mesh = bpy.data.meshes.new("SM_FullMatClean_Mesh")
+            obj = bpy.data.objects.new("SM_FullMatClean", mesh)
+            scene.collection.objects.link(obj)
+
+            bm = bmesh.new()
+            # Large quad (area = 4.0) -> dominant material M_Dom
+            lv = [bm.verts.new(c) for c in ((0, 0, 0), (2, 0, 0), (2, 2, 0), (0, 2, 0))]
+            f_dom = bm.faces.new(lv)
+            f_dom.material_index = 0
+            # Micro quad (area = 0.01 -> ~0.25% < 1.0%) -> micro material M_Micro
+            mv = [bm.verts.new(c) for c in ((10, 0, 0), (10.1, 0, 0), (10.1, 0.1, 0), (10, 0.1, 0))]
+            f_micro = bm.faces.new(mv)
+            f_micro.material_index = 1
+            bm.to_mesh(mesh)
+            bm.free()
+
+            mat_dom = bpy.data.materials.new("M_Dom")
+            mat_dom.use_nodes = True
+            assert mat_dom.node_tree is not None
+            bsdf = next(n for n in mat_dom.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+            img_broken = bpy.data.images.new("MissingImg", width=8, height=8)
+            img_broken.source = "FILE"
+            img_broken.filepath = "/nonexistent/path/missing_tex.png"
+            tex_node = mat_dom.node_tree.nodes.new("ShaderNodeTexImage")
+            cast(Any, tex_node).image = img_broken
+            mat_dom.node_tree.links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
+
+            mat_micro = bpy.data.materials.new("M_Micro")
+            mat_orphan = bpy.data.materials.new("M_ZeroUserOrphan")
+
+            mesh.materials.append(mat_dom)  # slot 0
+            mesh.materials.append(mat_micro)  # slot 1
+            mesh.materials.append(mat_dom)  # slot 2 duplicate
+
+            bpy.context.view_layer.objects.active = obj
+            obj.select_set(True)
+
+            props: Any = getattr(scene, "lod_tool", None)
+            if props is None:
+                return
+            ops: Any = cast(Any, bpy.ops).lod_tool
+
+            # Negative boundary: all 8 cleanup flags False -> nothing modified
+            props.mat_cleanup_purge_unused_slots = False
+            props.mat_cleanup_deduplicate_slots = False
+            props.mat_cleanup_merge_duplicate_datablocks = False
+            props.mat_cleanup_remove_orphan_nodes = False
+            props.mat_cleanup_enable_micro_consolidation = False
+            props.mat_cleanup_repair_missing_textures = False
+            props.mat_cleanup_purge_orphans_blendfile = False
+            self.assertEqual(ops.clean_and_repair_materials(), {"FINISHED"})
+            self.assertEqual(len(mesh.materials), 3)
+            self.assertIn("M_ZeroUserOrphan", bpy.data.materials)
+
+            # Positive: enable remaining 5 flags + purge
+            props.mat_cleanup_purge_unused_slots = True
+            props.mat_cleanup_deduplicate_slots = True
+            props.mat_cleanup_enable_micro_consolidation = True
+            props.mat_cleanup_micro_area_pct = 1.0
+            props.mat_cleanup_repair_missing_textures = True
+            props.mat_cleanup_purge_orphans_blendfile = True
+            self.assertEqual(ops.clean_and_repair_materials(), {"FINISHED"})
+
+            self.assertEqual(len(mesh.materials), 1)
+            self.assertEqual(mesh.materials[0], mat_dom)
+            self.assertFalse(any(n.type == "TEX_IMAGE" for n in mat_dom.node_tree.nodes))
+            self.assertNotIn("M_ZeroUserOrphan", bpy.data.materials)
+            _ = mat_orphan
+
 
 if __name__ == "__main__":
     unittest.main()

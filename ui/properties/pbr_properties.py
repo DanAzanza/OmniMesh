@@ -336,9 +336,25 @@ def sync_export_maps_to_preset(props: Any) -> None:
 class PBRMapItem(PropertyGroup):
     """Data model representing a single texture map in the active preset."""
 
-    map_id: StringProperty(name="Map ID", default="custom_map")
-    name: StringProperty(name="Display Name", default="New Map", update=on_map_item_updated)
-    priority: IntProperty(name="Priority", default=10, min=1, max=1000, update=on_map_item_updated)
+    map_id: StringProperty(
+        name="Map ID",
+        default="custom_map",
+        description="Internal unique identifier for this texture map rule",
+    )
+    name: StringProperty(
+        name="Display Name",
+        default="New Map",
+        description="Human-readable label for this texture map rule in the preset list",
+        update=on_map_item_updated,
+    )
+    priority: IntProperty(
+        name="Priority",
+        default=10,
+        min=1,
+        max=1000,
+        description="Matching evaluation order; higher-priority rules are tested before lower-priority suffixes",
+        update=on_map_item_updated,
+    )
     suffixes_str: StringProperty(
         name="Suffixes",
         description="Comma-separated file suffixes (e.g. _BaseColor, _BC, _Albedo)",
@@ -349,9 +365,15 @@ class PBRMapItem(PropertyGroup):
         name="Color Space",
         items=[("sRGB", "sRGB", "Color data"), ("Non-Color", "Non-Color", "Linear scalar/data mask")],
         default="Non-Color",
+        description="Color space assigned to the Blender Image datablock upon import",
         update=on_map_item_updated,
     )
-    is_normal_map: BoolProperty(name="Is Normal Map", default=False, update=on_map_item_updated)
+    is_normal_map: BoolProperty(
+        name="Is Normal Map",
+        default=False,
+        description="Route texture through a Normal Map shader node instead of direct value wiring",
+        update=on_map_item_updated,
+    )
     normal_format: EnumProperty(
         name="Normal Format",
         items=[
@@ -359,40 +381,100 @@ class PBRMapItem(PropertyGroup):
             ("DIRECTX", "DirectX (-Y)", "Invert Green channel for Unreal/DirectX"),
         ],
         default="OPENGL",
+        description="Normal map green-channel orientation; DirectX maps automatically flip Y for Blender",
         update=on_map_item_updated,
     )
-    is_packed: BoolProperty(name="Channel Packed", default=False, update=on_map_item_updated)
+    is_packed: BoolProperty(
+        name="Channel Packed",
+        default=False,
+        description="Split R, G, and B channels into separate Principled BSDF sockets instead of a single RGB input",
+        update=on_map_item_updated,
+    )
 
     # Single RGB Routing
     target_rgb: EnumProperty(
-        name="RGB Target", items=PRINCIPLED_TARGET_ITEMS, default="Base Color", update=on_map_item_updated
+        name="RGB Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="Base Color",
+        description="Principled BSDF socket driven by the RGB output of this texture",
+        update=on_map_item_updated,
     )
-    invert_rgb: BoolProperty(name="Invert RGB", default=False, update=on_map_item_updated)
+    invert_rgb: BoolProperty(
+        name="Invert RGB",
+        default=False,
+        description="Insert an Invert node on the RGB output (e.g. to convert Glossiness into Roughness)",
+        update=on_map_item_updated,
+    )
     target_a: EnumProperty(
-        name="Alpha Target", items=PRINCIPLED_TARGET_ITEMS, default="NONE", update=on_map_item_updated
+        name="Alpha Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="NONE",
+        description="Optional Principled BSDF socket driven by the texture's Alpha channel",
+        update=on_map_item_updated,
     )
-    invert_a: BoolProperty(name="Invert Alpha", default=False, update=on_map_item_updated)
+    invert_a: BoolProperty(
+        name="Invert Alpha",
+        default=False,
+        description="Invert the texture's Alpha channel before connecting it to Alpha Target",
+        update=on_map_item_updated,
+    )
 
     # Packed R, G, B, A Routing
     target_r: EnumProperty(
-        name="R Target", items=PRINCIPLED_TARGET_ITEMS, default="Ambient Occlusion", update=on_map_item_updated
+        name="R Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="Ambient Occlusion",
+        description="Principled BSDF socket driven by the Red channel of a packed texture",
+        update=on_map_item_updated,
     )
-    invert_r: BoolProperty(name="Invert R", default=False, update=on_map_item_updated)
+    invert_r: BoolProperty(
+        name="Invert R",
+        default=False,
+        description="Invert the Red channel before connecting it to R Target",
+        update=on_map_item_updated,
+    )
     target_g: EnumProperty(
-        name="G Target", items=PRINCIPLED_TARGET_ITEMS, default="Roughness", update=on_map_item_updated
+        name="G Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="Roughness",
+        description="Principled BSDF socket driven by the Green channel of a packed texture",
+        update=on_map_item_updated,
     )
-    invert_g: BoolProperty(name="Invert G", default=False, update=on_map_item_updated)
+    invert_g: BoolProperty(
+        name="Invert G",
+        default=False,
+        description="Invert the Green channel before connecting it to G Target",
+        update=on_map_item_updated,
+    )
     target_b: EnumProperty(
-        name="B Target", items=PRINCIPLED_TARGET_ITEMS, default="Metallic", update=on_map_item_updated
+        name="B Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="Metallic",
+        description="Principled BSDF socket driven by the Blue channel of a packed texture",
+        update=on_map_item_updated,
     )
-    invert_b: BoolProperty(name="Invert B", default=False, update=on_map_item_updated)
+    invert_b: BoolProperty(
+        name="Invert B",
+        default=False,
+        description="Invert the Blue channel before connecting it to B Target",
+        update=on_map_item_updated,
+    )
 
 
 class PBRExportMapItem(PropertyGroup):
     """Data model representing a single texture map in the active export preset."""
 
-    map_id: StringProperty(name="Map ID", default="custom_map")
-    name: StringProperty(name="Display Name", default="New Map", update=on_export_map_item_updated)
+    map_id: StringProperty(
+        name="Map ID",
+        default="custom_map",
+        description="Internal unique identifier for this export map rule",
+    )
+    name: StringProperty(
+        name="Display Name",
+        default="New Map",
+        description="Human-readable label for this texture map in the export preset list",
+        update=on_export_map_item_updated,
+    )
     export: BoolProperty(
         name="Export", default=True, description="Enable export for this map", update=on_export_map_item_updated
     )
@@ -406,9 +488,15 @@ class PBRExportMapItem(PropertyGroup):
         name="Color Space",
         items=[("sRGB", "sRGB", "Color data"), ("Non-Color", "Non-Color", "Linear scalar/data mask")],
         default="Non-Color",
+        description="Target color encoding applied when writing the exported texture file",
         update=on_export_map_item_updated,
     )
-    is_normal_map: BoolProperty(name="Is Normal Map", default=False, update=on_export_map_item_updated)
+    is_normal_map: BoolProperty(
+        name="Is Normal Map",
+        default=False,
+        description="Treat exported map as a tangent-space normal map so OpenGL/DirectX orientation can be converted",
+        update=on_export_map_item_updated,
+    )
     normal_format: EnumProperty(
         name="Normal Format",
         items=[
@@ -416,33 +504,84 @@ class PBRExportMapItem(PropertyGroup):
             ("DIRECTX", "DirectX (-Y)", "Invert Green channel for Unreal/DirectX"),
         ],
         default="OPENGL",
+        description="Target normal map green-channel handedness for the exported file",
         update=on_export_map_item_updated,
     )
-    is_packed: BoolProperty(name="Channel Packed", default=False, update=on_export_map_item_updated)
+    is_packed: BoolProperty(
+        name="Channel Packed",
+        default=False,
+        description="Pack separate material inputs into the exported texture's R, G, and B channels",
+        update=on_export_map_item_updated,
+    )
 
     # Single RGB Routing
     target_rgb: EnumProperty(
-        name="RGB Target", items=PRINCIPLED_TARGET_ITEMS, default="Base Color", update=on_export_map_item_updated
+        name="RGB Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="Base Color",
+        description="Source material socket sampled to fill the exported RGB channels",
+        update=on_export_map_item_updated,
     )
-    invert_rgb: BoolProperty(name="Invert RGB", default=False, update=on_export_map_item_updated)
+    invert_rgb: BoolProperty(
+        name="Invert RGB",
+        default=False,
+        description="Invert the sampled RGB values before writing the exported texture",
+        update=on_export_map_item_updated,
+    )
     target_a: EnumProperty(
-        name="Alpha Target", items=PRINCIPLED_TARGET_ITEMS, default="NONE", update=on_export_map_item_updated
+        name="Alpha Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="NONE",
+        description="Optional source material socket packed into the exported texture's Alpha channel",
+        update=on_export_map_item_updated,
     )
-    invert_a: BoolProperty(name="Invert Alpha", default=False, update=on_export_map_item_updated)
+    invert_a: BoolProperty(
+        name="Invert Alpha",
+        default=False,
+        description="Invert the sampled Alpha values before writing the exported texture",
+        update=on_export_map_item_updated,
+    )
 
     # Packed R, G, B, A Routing
     target_r: EnumProperty(
-        name="R Target", items=PRINCIPLED_TARGET_ITEMS, default="Ambient Occlusion", update=on_export_map_item_updated
+        name="R Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="Ambient Occlusion",
+        description="Source material socket packed into the Red channel",
+        update=on_export_map_item_updated,
     )
-    invert_r: BoolProperty(name="Invert R", default=False, update=on_export_map_item_updated)
+    invert_r: BoolProperty(
+        name="Invert R",
+        default=False,
+        description="Invert the Red channel value before packing",
+        update=on_export_map_item_updated,
+    )
     target_g: EnumProperty(
-        name="G Target", items=PRINCIPLED_TARGET_ITEMS, default="Roughness", update=on_export_map_item_updated
+        name="G Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="Roughness",
+        description="Source material socket packed into the Green channel",
+        update=on_export_map_item_updated,
     )
-    invert_g: BoolProperty(name="Invert G", default=False, update=on_export_map_item_updated)
+    invert_g: BoolProperty(
+        name="Invert G",
+        default=False,
+        description="Invert the Green channel value before packing",
+        update=on_export_map_item_updated,
+    )
     target_b: EnumProperty(
-        name="B Target", items=PRINCIPLED_TARGET_ITEMS, default="Metallic", update=on_export_map_item_updated
+        name="B Target",
+        items=PRINCIPLED_TARGET_ITEMS,
+        default="Metallic",
+        description="Source material socket packed into the Blue channel",
+        update=on_export_map_item_updated,
     )
-    invert_b: BoolProperty(name="Invert B", default=False, update=on_export_map_item_updated)
+    invert_b: BoolProperty(
+        name="Invert B",
+        default=False,
+        description="Invert the Blue channel value before packing",
+        update=on_export_map_item_updated,
+    )
 
 
 __all__ = [

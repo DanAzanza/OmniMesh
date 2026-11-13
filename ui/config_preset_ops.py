@@ -88,13 +88,13 @@ except (ImportError, ValueError):
 
 
 class OMNIMESH_OT_add_config_preset(Operator):
-    """Adds missing vehicle configuration objects (spatial, lights, cameras, engines, exits) from preset."""
+    """Adds missing configuration objects (spatial, lights, cameras, exits, engines, interactions) from preset."""
 
     bl_idname = "omnimesh.add_config_preset"
     bl_label = "Add Config Objects"
     bl_description = (
-        "Adds missing vehicle configuration markers (Spatial, Lights, Cameras) to the active asset. "
-        "Positions are automatically scaled and anchored to the active model geometry without overwriting existing objects."
+        "Spawn missing configuration objects (Spatial, Lights, Cameras, Exits, Engines, Interactions) "
+        "from the active preset without overwriting existing objects"
     )
     bl_options = {"REGISTER", "UNDO"}
 
@@ -145,11 +145,11 @@ class OMNIMESH_OT_add_config_preset(Operator):
 
 
 class OMNIMESH_OT_create_config_preset(Operator):
-    """Create a new custom MSFS configuration preset from a starter template."""
+    """Create a new custom configuration preset from a starter template."""
 
     bl_idname = "omnimesh.create_config_preset"
     bl_label = "New Config Preset"
-    bl_description = "Creates a new custom MSFS configuration preset profile"
+    bl_description = "Creates a new custom configuration preset profile from a starter template"
     bl_options = {"REGISTER", "UNDO"}
 
     preset_name: StringProperty(
@@ -269,6 +269,7 @@ class OMNIMESH_OT_duplicate_config_preset(Operator):
 
     bl_idname = "omnimesh.duplicate_config_preset"
     bl_label = "Duplicate Config Preset"
+    bl_description = "Duplicate the active configuration preset into an editable user copy"
     bl_options = {"REGISTER", "UNDO"}
 
     new_name: StringProperty(
@@ -317,6 +318,7 @@ class OMNIMESH_OT_delete_config_preset(Operator):
 
     bl_idname = "omnimesh.delete_config_preset"
     bl_label = "Delete Config Preset"
+    bl_description = "Delete the active custom configuration preset from user storage"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod

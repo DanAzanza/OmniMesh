@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 from . import callbacks, enums
 from .animation_properties import OMNIMESH_AnimationSettings
+from .cleanup_settings import LODToolCleanupSettingsMixin
 from .config_properties import OMNIMESH_ConfigPresetSettings
+from .engine_settings import LODToolEngineSettingsMixin
 from .interaction_properties import OMNIMESH_InteractionSettings
 from .lod_properties import (
     LODLevelItem,
@@ -60,7 +62,7 @@ else:
         ) = StringProperty = _mock_prop
 
 
-class LODToolSettings(PropertyGroup):
+class LODToolSettings(LODToolCleanupSettingsMixin, LODToolEngineSettingsMixin, PropertyGroup):
     """Central PropertyGroup holding OmniMesh configuration and state."""
 
     # Source Scope Architecture (Selection vs Collection Mode)
@@ -148,9 +150,14 @@ class LODToolSettings(PropertyGroup):
         max=10.0,
         precision=2,
         subtype="PERCENTAGE",
+        description="Minimum screen-size percentage below which the final LOD tier is culled",
         update=on_lod_preset_property_modified,
     )
-    preserve_slot_indexing: BoolProperty(name="Preserve Slot Indices", default=True)
+    preserve_slot_indexing: BoolProperty(
+        name="Preserve Slot Indices",
+        default=True,
+        description="Retain existing material slot order during LOD generation instead of compacting slots",
+    )
 
     # Error Metrics and Screen Parameters
     tau_sse: FloatProperty(
@@ -163,39 +170,23 @@ class LODToolSettings(PropertyGroup):
         description="Screen-Space Error bound in percentage of screen height",
         update=on_lod_preset_property_modified,
     )
-    preserve_silhouette: BoolProperty(name="Preserve Silhouettes", default=True)
-    pin_uv_seams: BoolProperty(name="Pin UV Seams", default=True, update=on_lod_preset_property_modified)
+    preserve_silhouette: BoolProperty(
+        name="Preserve Silhouettes",
+        default=True,
+        description="Protect silhouette boundary edges during LOD simplification",
+    )
+    pin_uv_seams: BoolProperty(
+        name="Pin UV Seams",
+        default=True,
+        description="Pin vertices along UV seam edges during decimation to prevent texture tearing",
+        update=on_lod_preset_property_modified,
+    )
     pin_material_borders: BoolProperty(
-        name="Pin Material Borders", default=True, update=on_lod_preset_property_modified
+        name="Pin Material Borders",
+        default=True,
+        description="Pin vertices on boundaries between different material slots during decimation",
+        update=on_lod_preset_property_modified,
     )
-
-    # Mesh Cleanup & Topology Repair Settings
-    auto_sanitize_before_lod: BoolProperty(name="Auto-Sanitize Before LOD", default=True)
-    cleanup_auto_apply_transforms: BoolProperty(name="Auto-Apply Scale & Rotation", default=False)
-    cleanup_apply_modifiers: BoolProperty(name="Apply Modifiers (Bake Viewport)", default=False)
-    cleanup_sync_viewport_settings: BoolProperty(name="Sync Viewport to Render Settings", default=True)
-    cleanup_enable_weld: BoolProperty(name="Merge Close Vertices", default=False)
-    cleanup_weld_distance: FloatProperty(
-        name="Weld Distance", default=0.0005, min=0.00001, max=0.05, precision=5, unit="LENGTH"
-    )
-    cleanup_enable_split_non_manifold: BoolProperty(name="Repair Non-Manifold & Bowties", default=True)
-    cleanup_enable_fill_holes: BoolProperty(name="Fill Small Holes", default=False)
-    cleanup_hole_max_edges: IntProperty(name="Max Hole Edges", default=4, min=3, max=16)
-    cleanup_enable_triangulate_ngons: BoolProperty(name="Triangulate N-Gons", default=False)
-    cleanup_cull_interior_faces: BoolProperty(name="Remove Interior Polygons", default=False)
-    cleanup_normal_policy: EnumProperty(
-        name="Normal Alignment", items=enums.CLEANUP_NORMAL_POLICY_ITEMS, default="MANIFOLD_ONLY"
-    )
-
-    # Material Cleanup & Slot Consolidation Settings
-    mat_cleanup_purge_unused_slots: BoolProperty(name="Purge Empty & Unused Slots", default=True)
-    mat_cleanup_deduplicate_slots: BoolProperty(name="Deduplicate Repeated Slots", default=True)
-    mat_cleanup_merge_duplicate_datablocks: BoolProperty(name="Merge Duplicate Materials (AST Hash)", default=True)
-    mat_cleanup_remove_orphan_nodes: BoolProperty(name="Remove Dead Shader Nodes", default=True)
-    mat_cleanup_enable_micro_consolidation: BoolProperty(name="Consolidate Micro-Materials", default=False)
-    mat_cleanup_micro_area_pct: FloatProperty(name="Micro Threshold %", default=0.5, min=0.01, max=5.0, precision=2)
-    mat_cleanup_repair_missing_textures: BoolProperty(name="Repair Missing Textures", default=False)
-    mat_cleanup_purge_orphans_blendfile: BoolProperty(name="Purge Orphan Materials from .blend", default=False)
 
     # PBR Texture Set Importer Settings
     pbr_import_preset: EnumProperty(
@@ -246,7 +237,7 @@ class LODToolSettings(PropertyGroup):
     enable_impostor_lod: BoolProperty(
         name="Enable Impostor LOD",
         default=False,
-        description="Generate billboard impostor",
+        description="Automatically generate a billboard impostor after generating LODs",
         update=on_lod_preset_property_modified,
     )
     impostor_mode: EnumProperty(
@@ -274,19 +265,19 @@ class LODToolSettings(PropertyGroup):
         name="Atlas Resolution",
         items=enums.IMPOSTOR_RESOLUTION_ITEMS,
         default="2048",
-        description="Atlas resolution",
+        description="Impostor texture atlas width and height in pixels when Auto Resolution is disabled",
         update=on_lod_preset_property_modified,
     )
     auto_impostor_resolution: BoolProperty(
         name="Auto-Calculate Resolution",
         default=True,
-        description="Derive resolution from screen size",
+        description="Automatically calculate a power-of-2 atlas resolution (256-4096 px) from the final LOD tier's screen size",
         update=on_lod_preset_property_modified,
     )
     impostor_replace_last_lod: BoolProperty(
         name="Use as Final LOD Tier",
         default=True,
-        description="Assign Impostor as final tier",
+        description="Mark preset preference for the impostor to act as the final LOD tier (saved in presets; not yet enforced during generation)",
         update=on_lod_preset_property_modified,
     )
     last_impostor_status: StringProperty(name="Last Impostor Status", default="")
@@ -346,7 +337,12 @@ class LODToolSettings(PropertyGroup):
         name="Max Verts / Hull", default=32, min=8, max=64, description="Clamps max vertices per convex hull"
     )
     collision_concavity_threshold: FloatProperty(
-        name="Concavity Tolerance (m)", default=0.05, min=0.001, max=1.0, precision=3
+        name="Concavity Tolerance (m)",
+        default=0.05,
+        min=0.001,
+        max=1.0,
+        precision=3,
+        description="Maximum allowed concavity error in meters before splitting a cluster into smaller convex hulls",
     )
     last_generated_collider_count: IntProperty(name="Last Collider Count", default=0)
 
@@ -372,7 +368,10 @@ class LODToolSettings(PropertyGroup):
 
     # Spatial Chunking & HLOD Settings
     enable_spatial_chunking: BoolProperty(
-        name="Enable Spatial Chunking (Tiling)", default=False, update=on_lod_preset_property_modified
+        name="Enable Spatial Chunking (Tiling)",
+        default=False,
+        description="Split large environments into spatial grid chunks before generating LODs and HLOD clusters",
+        update=on_lod_preset_property_modified,
     )
     chunk_cell_size: FloatProperty(
         name="Chunk Cell Size (m)",
@@ -380,16 +379,29 @@ class LODToolSettings(PropertyGroup):
         min=1.0,
         max=1000.0,
         unit="LENGTH",
+        description="Horizontal grid cell width and depth in meters used for spatial chunk partitioning",
         update=on_lod_preset_property_modified,
     )
-    chunk_split_z: BoolProperty(name="Split Vertical Z-Axis", default=False, update=on_lod_preset_property_modified)
+    chunk_split_z: BoolProperty(
+        name="Split Vertical Z-Axis",
+        default=False,
+        description="Also partition tall geometry vertically along the Z axis using Z Cell Size",
+        update=on_lod_preset_property_modified,
+    )
     chunk_cell_size_z: FloatProperty(
-        name="Z Cell Size (m)", default=32.0, min=1.0, max=1000.0, unit="LENGTH", update=on_lod_preset_property_modified
+        name="Z Cell Size (m)",
+        default=32.0,
+        min=1.0,
+        max=1000.0,
+        unit="LENGTH",
+        description="Vertical grid cell height in meters when Split Vertical Z-Axis is enabled",
+        update=on_lod_preset_property_modified,
     )
     chunk_partitioning_mode: EnumProperty(
         name="Partitioning Mode",
         items=enums.CHUNK_PARTITIONING_MODE_ITEMS,
         default="UNIFORM_GRID",
+        description="Spatial partitioning strategy used to subdivide large meshes into chunks",
         update=on_lod_preset_property_modified,
     )
     adaptive_cluster_target_polys: IntProperty(
@@ -397,17 +409,34 @@ class LODToolSettings(PropertyGroup):
         default=50000,
         min=1000,
         max=5000000,
+        description="Maximum polygon budget per combined chunk when using Adaptive Cell Clustering",
         update=on_lod_preset_property_modified,
     )
-    enable_hlod: BoolProperty(name="Enable HLOD Merging", default=True, update=on_lod_preset_property_modified)
+    enable_hlod: BoolProperty(
+        name="Enable HLOD Merging",
+        default=True,
+        description="Merge adjacent spatial chunks into Hierarchical LOD (HLOD) clusters at distant tiers",
+        update=on_lod_preset_property_modified,
+    )
     enable_hierarchical_hlod: BoolProperty(
-        name="Hierarchical HLOD (Quadtree)", default=True, update=on_lod_preset_property_modified
+        name="Hierarchical HLOD (Quadtree)",
+        default=True,
+        description="Build recursive 2x2 / 2x2x2 quadtree or octree HLOD clusters across distant tiers",
+        update=on_lod_preset_property_modified,
     )
     hlod_start_tier: IntProperty(
-        name="HLOD Start Tier", default=2, min=1, max=6, update=on_lod_preset_property_modified
+        name="HLOD Start Tier",
+        default=2,
+        min=1,
+        max=6,
+        description="LOD tier index at which spatial chunks begin merging into HLOD clusters",
+        update=on_lod_preset_property_modified,
     )
     hlod_proxy_remesh: BoolProperty(
-        name="Terminal HLOD Voxel Wrap", default=False, update=on_lod_preset_property_modified
+        name="Terminal HLOD Voxel Wrap",
+        default=False,
+        description="Wrap the terminal HLOD tier in a watertight voxel shell to reduce overdraw and gaps",
+        update=on_lod_preset_property_modified,
     )
     hlod_proxy_voxel_size: FloatProperty(
         name="Voxel Shell Size (m)",
@@ -416,13 +445,20 @@ class LODToolSettings(PropertyGroup):
         max=5.0,
         precision=2,
         unit="LENGTH",
+        description="Voxel size in meters used when building the terminal HLOD watertight shell wrap",
         update=on_lod_preset_property_modified,
     )
     enable_scan_pre_remesh: BoolProperty(
         name="Pre-Process: Voxel Remesh", default=False, description="Voxel remesh cleanup for photogrammetry scans"
     )
     scan_remesh_voxel_size: FloatProperty(
-        name="Remesh Voxel Size (m)", default=0.05, min=0.005, max=1.0, precision=3, unit="LENGTH"
+        name="Remesh Voxel Size (m)",
+        default=0.05,
+        min=0.005,
+        max=1.0,
+        precision=3,
+        unit="LENGTH",
+        description="Voxel size in meters used by Voxel Remesh Scan Cleanup",
     )
 
     # Skeletal Rigging & Bone Pruning Settings
@@ -435,6 +471,7 @@ class LODToolSettings(PropertyGroup):
         name="Max GPU Bone Influences",
         items=enums.MAX_BONE_INFLUENCES_ITEMS,
         default="4",
+        description="Maximum number of skinning bone weights retained per vertex on generated LODs",
     )
     enable_bone_pruning: BoolProperty(
         name="Prune Sub-Pixel Bones",
@@ -538,6 +575,7 @@ class LODToolSettings(PropertyGroup):
         min=0.0,
         max=5000.0,
         precision=2,
+        description="Simulated camera distance in meters for manual LOD inspection and tier scrubbing",
         update=lambda self, context: callbacks.on_virtual_distance_updated(self, context),
     )
     last_scrub_status: StringProperty(name="Scrub Status", default="")
@@ -590,81 +628,6 @@ class LODToolSettings(PropertyGroup):
         default=False,
         description="Place all LOD tiers side-by-side along the X-axis for visual inspection",
     )
-
-    # MSFS Package & Export Settings
-    msfs_export_full_package: BoolProperty(name="Export Full Package", default=True)
-    msfs_target_version: EnumProperty(name="MSFS Target Version", items=enums.MSFS_TARGET_VERSION_ITEMS, default="2024")
-    msfs_with_exterior_show_interior: BoolProperty(
-        name="Show Interior with Exterior", default=True, description="Render interior when viewing exterior model"
-    )
-    msfs_with_exterior_show_interior_hide_first_lod: BoolProperty(
-        name="Hide First LOD of Interior", default=False, description="Hide LOD0 interior when viewing exterior"
-    )
-    msfs_with_interior_force_first_lod: BoolProperty(
-        name="Force First LOD Interior", default=False, description="Render interior at LOD0 in cockpit"
-    )
-    msfs_with_interior_show_exterior: BoolProperty(
-        name="Show Exterior with Interior", default=True, description="Render exterior when inside cockpit"
-    )
-    msfs_preserve_decals: BoolProperty(
-        name="Preserve Decals", default=True, description="Constrain decimation on decal meshes"
-    )
-
-    # Legacy MSFS properties preserved for API compatibility
-    msfs_spatial_cfg_path: StringProperty(name="MSFS Flight Model File", subtype="FILE_PATH", default="")
-    msfs_systems_cfg_path: StringProperty(name="MSFS Systems File", subtype="FILE_PATH", default="")
-    msfs_cameras_cfg_path: StringProperty(name="MSFS Cameras File", subtype="FILE_PATH", default="")
-    msfs_spatial_status: StringProperty(name="MSFS Spatial Status", default="Ready")
-    msfs_scrape_margin_m: FloatProperty(name="Scrape Margin (m)", default=0.0, min=-0.5, max=0.5)
-    msfs_gear_state: EnumProperty(name="Gear State", items=enums.MSFS_GEAR_STATE_ITEMS, default="STATIC_COMPRESSED")
-    msfs_gear_compression_m: FloatProperty(name="Strut Compression (m)", default=0.12, min=0.0, max=1.0)
-    msfs_calculated_cg_height_ft: FloatProperty(name="Static CG Height (ft)", default=0.0, precision=3)
-
-    # Engine / Project Importer Properties
-    engine_import_preset: EnumProperty(
-        name="Engine Import Preset",
-        items=callbacks.get_engine_import_preset_items,
-        description="Active import template",
-        update=callbacks.on_engine_import_preset_updated,
-    )
-    engine_import_directory: StringProperty(
-        name="Engine Project Path",
-        subtype="DIR_PATH",
-        default="",
-        description="Root folder of project to ingest",
-        update=callbacks.on_engine_import_directory_updated,
-    )
-    engine_import_geometry: BoolProperty(
-        name="Import Geometry & LODs", default=True, update=callbacks.on_engine_import_setting_updated
-    )
-    engine_import_spatial: BoolProperty(
-        name="Import Spatial Markers", default=True, update=callbacks.on_engine_import_setting_updated
-    )
-    engine_import_lights: BoolProperty(
-        name="Import Lights", default=True, update=callbacks.on_engine_import_setting_updated
-    )
-    engine_import_cameras: BoolProperty(
-        name="Import Cameras", default=True, update=callbacks.on_engine_import_setting_updated
-    )
-    engine_import_model_target: EnumProperty(
-        name="Model Target",
-        items=enums.ENGINE_IMPORT_MODEL_TARGET_ITEMS,
-        default="EXTERIOR_ONLY",
-        update=callbacks.on_engine_import_setting_updated,
-    )
-    engine_import_use_lod0_suffix: BoolProperty(
-        name="Use LOD0 Suffix", default=True, update=callbacks.on_engine_import_setting_updated
-    )
-    engine_import_auto_assign_screen_pct: BoolProperty(
-        name="Auto-Assign Screen %", default=True, update=callbacks.on_engine_import_setting_updated
-    )
-    engine_import_deduplicate_materials: BoolProperty(
-        name="Deduplicate Materials", default=True, update=callbacks.on_engine_import_setting_updated
-    )
-    engine_import_reuse_master_rig: BoolProperty(
-        name="Reuse Master Armature", default=True, update=callbacks.on_engine_import_setting_updated
-    )
-    last_engine_import_summary: StringProperty(name="Last Import Summary", default="")
 
     # Config Preset Subsystem (Panel 2 Modify)
     config_presets: PointerProperty(type=OMNIMESH_ConfigPresetSettings)

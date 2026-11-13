@@ -341,31 +341,23 @@ class SemanticTextureAuditor:
                         return resolved
 
                     downstream = resolve_downstream_targets(node, {id(node)})
+                    removed_link_ids: set[int] = set()
                     for link, target_sock, target_node in downstream:
                         sock_name = str(target_sock.name if target_sock else "").lower()
                         node_type = target_node.type if target_node else ""
 
-                        if "normal" in sock_name or node_type == "NORMAL_MAP":
-                            if link in links:
-                                links.remove(link)
-                        elif "roughness" in sock_name:
-                            if target_sock is not None:
+                        if "normal" not in sock_name and node_type != "NORMAL_MAP" and target_sock is not None:
+                            if "roughness" in sock_name:
                                 set_socket_default_value(target_sock, 0.5)
-                            if link in links:
-                                links.remove(link)
-                        elif "metallic" in sock_name:
-                            if target_sock is not None:
+                            elif "metallic" in sock_name:
                                 set_socket_default_value(target_sock, 0.0)
-                            if link in links:
-                                links.remove(link)
-                        elif "base color" in sock_name or "color" in sock_name:
-                            if target_sock is not None:
+                            elif "base color" in sock_name or "color" in sock_name:
                                 set_socket_default_value(target_sock, (0.8, 0.8, 0.8, 1.0))
-                            if link in links:
-                                links.remove(link)
-                        else:
-                            if link in links:
-                                links.remove(link)
+
+                        link_id = id(link)
+                        if link_id not in removed_link_ids and any(existing == link for existing in links):
+                            links.remove(link)
+                            removed_link_ids.add(link_id)
 
                     nodes.remove(node)
                     repaired_nodes += 1

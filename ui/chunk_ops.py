@@ -64,6 +64,7 @@ class LOD_OT_spatial_chunk_and_generate(Operator):
 
     bl_idname = "lod_tool.spatial_chunk_and_generate"
     bl_label = "Partition & Generate Chunked LODs"
+    bl_description = "Split large assets into spatial grid chunks and generate seam-locked LODs and HLOD clusters"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -422,6 +423,7 @@ class LOD_OT_voxel_scan_cleanup(Operator):
 
     bl_idname = "lod_tool.voxel_scan_cleanup"
     bl_label = "Voxel Reconstruct Scan"
+    bl_description = "Voxel-remesh non-manifold photogrammetry scans into a watertight shell across LOD0 meshes"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod

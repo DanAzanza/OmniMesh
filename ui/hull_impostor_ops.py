@@ -70,6 +70,7 @@ class LOD_OT_generate_impostor(Operator):
 
     bl_idname = "lod_tool.generate_impostor"
     bl_label = "Generate Impostor"
+    bl_description = "Bake textures and generate an orthogonal or octahedral billboard impostor mesh"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -263,6 +264,7 @@ class LOD_OT_generate_collision_hulls(Operator):
 
     bl_idname = "lod_tool.generate_collision_hulls"
     bl_label = "Generate Collision Hulls"
+    bl_description = "Decompose LOD0 meshes into convex collision hulls in {BaseName}_Colliders"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod

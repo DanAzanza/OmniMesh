@@ -27,7 +27,7 @@ else:
 try:
     from ..core.exceptions import OmniMeshError
     from ..core.hierarchy import LayerCollectionGuard
-    from ..core.materials import MaterialOptimizer
+    from ..core.materials import MaterialCleanOptions, MaterialOptimizer
     from ..core.modifiers import ModifierManager
     from ..core.occlusion import HardenedOcclusionCuller
     from ..core.sanitizer import MeshSanitizer, SanitizeOptions
@@ -40,7 +40,7 @@ try:
 except (ImportError, ValueError):
     from core.exceptions import OmniMeshError
     from core.hierarchy import LayerCollectionGuard
-    from core.materials import MaterialOptimizer
+    from core.materials import MaterialCleanOptions, MaterialOptimizer
     from core.modifiers import ModifierManager
     from core.occlusion import HardenedOcclusionCuller
     from core.sanitizer import MeshSanitizer, SanitizeOptions
@@ -57,6 +57,7 @@ class LOD_OT_clean_and_repair_mesh(Operator):
 
     bl_idname = "lod_tool.clean_and_repair_mesh"
     bl_label = "Clean & Repair Mesh"
+    bl_description = "Clean and repair LOD0 mesh topology, normals, holes, and optional interior faces"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -267,6 +268,7 @@ class LOD_OT_cull_interior_faces(Operator):
 
     bl_idname = "lod_tool.cull_interior_faces"
     bl_label = "Remove Interior Polygons"
+    bl_description = "Detect and remove enclosed interior polygons across all LOD0 meshes"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -330,10 +332,14 @@ class LOD_OT_cull_interior_faces(Operator):
 
 
 class LOD_OT_clean_and_repair_materials(Operator):
-    """Execute material slot deduplication, orphan purge, and shader node cleanup on LOD0."""
+    """Execute unified material cleanup, slot compaction, AST deduplication, and repair on LOD0."""
 
     bl_idname = "lod_tool.clean_and_repair_materials"
     bl_label = "Clean Materials & Slots"
+    bl_description = (
+        "Purge unused or duplicate material slots, merge identical materials, clean dead nodes, "
+        "optionally consolidate micro-materials, repair missing textures, and purge .blend orphans"
+    )
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -354,23 +360,36 @@ class LOD_OT_clean_and_repair_materials(Operator):
             safe_report(self, {"WARNING"}, "No valid LOD0 mesh objects found for material cleanup.")
             return {"CANCELLED"}
 
-        purged_slots = 0
-        merged_blocks = 0
-
-        for obj in mesh_objs:
-            if props.mat_cleanup_purge_unused_slots:
-                res_purge = MaterialOptimizer.purge_unused_materials(obj)
-                purged_slots += res_purge.get("slots_removed", 0)
-
         bdata = getattr(context, "blend_data", None) or (bpy.data if bpy and hasattr(bpy, "data") else None)
-        if bdata is not None:
-            if props.mat_cleanup_merge_duplicate_datablocks:
-                merged_blocks += MaterialOptimizer.merge_duplicate_materials_scene(blend_data=bdata)
+        if bdata is None:
+            safe_report(self, {"WARNING"}, "BlendData is not available for material cleanup.")
+            return {"CANCELLED"}
+        options = MaterialCleanOptions(
+            purge_unused_slots=bool(props.mat_cleanup_purge_unused_slots),
+            deduplicate_slots=bool(props.mat_cleanup_deduplicate_slots),
+            merge_duplicate_datablocks=bool(props.mat_cleanup_merge_duplicate_datablocks),
+            remove_orphan_nodes=bool(props.mat_cleanup_remove_orphan_nodes),
+            enable_micro_consolidation=bool(props.mat_cleanup_enable_micro_consolidation),
+            micro_area_pct=float(props.mat_cleanup_micro_area_pct),
+            repair_missing_textures=bool(props.mat_cleanup_repair_missing_textures),
+            purge_orphans_blendfile=bool(props.mat_cleanup_purge_orphans_blendfile),
+        )
+        res = MaterialOptimizer.clean_materials_full(mesh_objs, options=options, blend_data=bdata)
 
-            if props.mat_cleanup_remove_orphan_nodes:
-                MaterialOptimizer.clean_orphan_shader_nodes(blend_data=bdata)
+        details = [
+            f"Purged {res.get('slots_removed', 0)} slots",
+            f"merged {res.get('merged_datablocks', 0)} materials",
+        ]
+        if res.get("consolidated_slots", 0):
+            details.append(f"consolidated {res['consolidated_slots']} micro-slots")
+        if res.get("repaired_textures", 0):
+            details.append(f"repaired {res['repaired_textures']} missing textures")
+        if res.get("orphan_nodes_removed", 0):
+            details.append(f"removed {res['orphan_nodes_removed']} dead nodes")
+        if res.get("purged_orphans", 0):
+            details.append(f"purged {res['purged_orphans']} .blend orphans")
 
-        summary = f"Purged {purged_slots} unused slots, merged {merged_blocks} materials."
+        summary = f"{details[0]}, {', '.join(details[1:])}."
         safe_report(self, {"INFO"}, summary)
         return {"FINISHED"}
 
@@ -380,6 +399,7 @@ class LOD_OT_apply_all_modifiers(Operator):
 
     bl_idname = "lod_tool.apply_all_modifiers"
     bl_label = "Apply All Modifiers"
+    bl_description = "Bake and apply non-armature modifiers in-place on LOD0 meshes"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -414,6 +434,7 @@ class LOD_OT_apply_transforms(Operator):
 
     bl_idname = "lod_tool.apply_transforms"
     bl_label = "Apply Scale & Rotation"
+    bl_description = "Apply object rotation and scale transforms on LOD0 meshes"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod

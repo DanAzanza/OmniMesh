@@ -86,6 +86,7 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
 
     bl_idname = "OMNIMESH_PT_popover_engine_import_preset"
     bl_label = "Engine Import Settings"
+    bl_description = "Configure engine package components, model target, and material/rig import behavior"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 20
@@ -143,6 +144,7 @@ class OMNIMESH_PT_popover_import_preset(Panel):
 
     bl_idname = "OMNIMESH_PT_popover_import_preset"
     bl_label = "Import Preset Settings"
+    bl_description = "Configure PBR texture import preset rules, suffix matching, and Principled BSDF channel routing"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 22
@@ -274,6 +276,7 @@ class OMNIMESH_PT_popover_config_preset(Panel):
 
     bl_label = "Config Preset Settings"
     bl_idname = "OMNIMESH_PT_popover_config_preset"
+    bl_description = "Filter which configuration categories (Spatial, Lights, Cameras, Exits, Engines) are spawned"
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 18
@@ -322,6 +325,9 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
 
     bl_idname = "OMNIMESH_PT_popover_lod_preset"
     bl_label = "LOD Profile Settings"
+    bl_description = (
+        "Configure LOD tier budgets, culling, pinning, spatial chunking/HLOD, and impostor profile settings"
+    )
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 22
@@ -490,6 +496,9 @@ class OMNIMESH_PT_popover_export_preset(Panel):
 
     bl_idname = "OMNIMESH_PT_popover_export_preset"
     bl_label = "Export Profile Settings"
+    bl_description = (
+        "Configure engine export profile options, texture packing strategy, bit depth, naming, and channel maps"
+    )
     bl_space_type = "VIEW_3D"
     bl_region_type = "HEADER"
     bl_ui_units_x = 22
