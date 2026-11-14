@@ -10,9 +10,18 @@ Generates native HLSL Custom Material Function code for UE5 with:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+_SAFE_SHADER_TEXT_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f\r\n]+')
+
+
+def _sanitize_shader_label(value: str, fallback: str = "Asset") -> str:
+    """Strips control characters, newlines, and filesystem-unsafe symbols for HLSL/setup docs."""
+    cleaned = _SAFE_SHADER_TEXT_RE.sub("_", str(value or "")).strip(" ._")
+    return cleaned or fallback
 
 
 def generate_unreal_octahedral_hlsl(
@@ -25,6 +34,9 @@ def generate_unreal_octahedral_hlsl(
     Generates an HLSL Custom Expression block for Unreal Engine 5 Material Editor.
     Supports both Upper Hemisphere (OCTAHEDRAL_HEMI) and Full Sphere (OCTAHEDRAL_SPHERE).
     """
+    _ = custom_params  # Reserved for future material parameter bindings
+    safe_base = _sanitize_shader_label(base_name, fallback="Impostor")
+    safe_grid = max(1, int(grid_size))
     is_full_sphere = mode == "OCTAHEDRAL_SPHERE"
     proj_label = "Full Sphere" if is_full_sphere else "Upper Hemisphere"
     if is_full_sphere:
@@ -53,13 +65,13 @@ if (l1 > 1e-6)
 }"""
 
     hlsl_code = f"""// OmniMesh Generated Octahedral Impostor Custom HLSL for Unreal Engine 5
-// Asset: {base_name} | Grid: {grid_size}x{grid_size} ({proj_label})
+// Asset: {safe_base} | Grid: {safe_grid}x{safe_grid} ({proj_label})
 // Inputs to Custom Node:
 //   Texture2D BaseColorTex
 //   SamplerState TexSampler
 //   float2 CardUV
 //   float3 LocalViewDir (Object Space Camera Vector)
-//   float2 GridSize (default {float(grid_size):.1f}, {float(grid_size):.1f})
+//   float2 GridSize (default {float(safe_grid):.1f}, {float(safe_grid):.1f})
 
 float3 d = normalize(LocalViewDir);
 {proj_block}
@@ -114,22 +126,28 @@ def generate_ue5_setup_guide(
     Generates a setup guide (README_UE5_SETUP.txt) for Unreal Engine 5 integration.
     Contains exact texture settings, Pixel Depth Offset formula, and wiring instructions.
     """
+    safe_base = _sanitize_shader_label(base_name, fallback="Impostor")
+    safe_grid = max(1, int(grid_size))
     diameter = sphere_radius * 2.0
     proj_label = "Full Sphere (with Underside)" if mode == "OCTAHEDRAL_SPHERE" else "Upper Hemisphere"
-    norm_fname = normal_filename or f"T_{base_name}_Impostor_Normal.png"
-    orm_fname = orm_filename or f"T_{base_name}_Impostor_ORM.png"
+    norm_fname = (
+        _sanitize_shader_label(normal_filename, fallback="")
+        if normal_filename
+        else f"T_{safe_base}_Impostor_Normal.png"
+    )
+    orm_fname = _sanitize_shader_label(orm_filename, fallback="") if orm_filename else f"T_{safe_base}_Impostor_ORM.png"
     guide = f"""================================================================================
 OmniMesh Octahedral Impostor - Unreal Engine 5 Setup Guide
-Asset: {base_name}
+Asset: {safe_base}
 Projection Mode: {proj_label}
-Grid Size: {grid_size}x{grid_size} ({grid_size * grid_size} Angular Frames)
+Grid Size: {safe_grid}x{safe_grid} ({safe_grid * safe_grid} Angular Frames)
 Bounding Sphere Radius: {sphere_radius:.4f} Unreal Units (cm) / Blender Units (m)
 Bounding Sphere Center: ({sphere_center[0]:.4f}, {sphere_center[1]:.4f}, {sphere_center[2]:.4f})
 ================================================================================
 
 1. TEXTURE IMPORT & COMPRESSION SETTINGS (CRITICAL!):
 --------------------------------------------------------------------------------
-- T_{base_name}_Impostor_BaseColor.png:
+- T_{safe_base}_Impostor_BaseColor.png:
     * Compression Settings: UserInterface2D (RGBA) or Default (TC_Default)
     * sRGB: ENABLED (Checked)
 
@@ -158,9 +176,9 @@ In your UE5 Material:
 3. MATERIAL GRAPH WIRING:
 --------------------------------------------------------------------------------
 Option A: Using UE5's Built-in MF_OctahedralImpostor
-- Feed T_{base_name}_Impostor_BaseColor into BaseColorTex input.
+- Feed T_{safe_base}_Impostor_BaseColor into BaseColorTex input.
 - Feed {norm_fname} into NormalTex input.
-- Set Grid Size parameter to {grid_size}.
+- Set Grid Size parameter to {safe_grid}.
 
 Option B: Using OmniMesh Custom HLSL Node
 - Create a "Custom" node in the Material Editor.

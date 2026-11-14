@@ -42,6 +42,15 @@ class _ObjMock:
     def __getitem__(self, key: str) -> object:
         return self._idprops[key]
 
+    def __delitem__(self, key: str) -> None:
+        del self._idprops[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._idprops
+
+    def get(self, key: str, default: object = None) -> object:
+        return self._idprops.get(key, default)
+
     def hide_set(self, val: bool, view_layer: object = None) -> None:
         self.hidden_vl = val
 

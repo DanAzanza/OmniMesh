@@ -11,6 +11,7 @@ Tier 2: Live engine integration tests (skipped if engine executables are missing
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -516,3 +517,170 @@ def test_scoped_export_visibility_mutes_billboard_constraint_and_restores_on_err
 
     assert bb_constraint.mute is False
     assert list(imp_obj.rotation_euler) == [0.4, -0.2, 1.1]
+
+
+def test_unity_export_renames_midstring_collider_to_match_csharp_regex(tmp_path: Path) -> None:
+    """Collider named 'Hero_Collider_Part' fails C# '$' regex unless normalized to '_Collider_01'."""
+    from types import SimpleNamespace
+    from typing import Any, cast
+    from unittest.mock import MagicMock, patch
+
+    from exporters import unity_export
+    from exporters.engine_export import AssetMeshResolver
+
+    observed_names: list[str] = []
+
+    class _ColObj:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            self.hide_viewport = False
+            self.constraints: list[Any] = []
+            self.users_collection: list[Any] = []
+
+        def hide_get(self, *, view_layer: Any = None) -> bool:
+            return False
+
+        def hide_set(self, _h: bool, *, view_layer: Any = None) -> None:
+            pass
+
+        def select_set(self, _s: bool) -> None:
+            pass
+
+    lod0 = _ColObj("Hero_LOD0")
+    col = _ColObj("Hero_Collider_Part")
+    payload = SimpleNamespace(lod_tiers={0: [lod0]}, collider_objects=[col], armature_obj=None, has_impostor_tier=False)
+    ctx = SimpleNamespace(
+        mode="OBJECT",
+        view_layer=SimpleNamespace(objects=SimpleNamespace(active=None)),
+        selected_objects=[],
+        blend_data=None,
+    )
+
+    def _capture_fbx(**_kwargs: Any) -> None:
+        observed_names.append(col.name)
+
+    fake_bpy = SimpleNamespace(
+        ops=SimpleNamespace(
+            object=SimpleNamespace(select_all=MagicMock()),
+            export_scene=SimpleNamespace(fbx=_capture_fbx),
+        )
+    )
+    with (
+        patch.object(unity_export, "bpy", fake_bpy),
+        patch.object(AssetMeshResolver, "resolve_payload", return_value=payload),
+    ):
+        ok, _ = unity_export.UnityExporter.export_asset(cast("Any", ctx), str(tmp_path), "Hero")
+
+    assert ok is True
+    assert observed_names == ["Hero_Collider_01"]
+    assert col.name == "Hero_Collider_Part"
+
+
+def test_ue5_export_restores_preexisting_lodgroup_empty_on_failure(tmp_path: Path) -> None:
+    """Reused LODGroup_<name> empty restores hide_viewport, fbx_type, and matrix_world after export error."""
+    from types import SimpleNamespace
+    from typing import Any, cast
+    from unittest.mock import MagicMock, patch
+
+    from exporters import ue5_export
+    from exporters.engine_export import AssetMeshResolver
+
+    class _Mat:
+        def __init__(self, tag: str) -> None:
+            self.tag = tag
+
+        def copy(self) -> "_Mat":
+            return _Mat(self.tag)
+
+    class _Obj:
+        def __init__(self, name: str, mat_tag: str = "orig") -> None:
+            self.name = name
+            self.parent: Any = None
+            self.hide_viewport = True
+            self.constraints: list[Any] = []
+            self.users_collection: list[Any] = []
+            self.matrix_world = _Mat(mat_tag)
+            self._props: dict[str, Any] = {}
+
+        def __contains__(self, k: object) -> bool:
+            return k in self._props
+
+        def __getitem__(self, k: str) -> Any:
+            return self._props[k]
+
+        def __setitem__(self, k: str, v: Any) -> None:
+            self._props[k] = v
+
+        def __delitem__(self, k: str) -> None:
+            del self._props[k]
+
+        def get(self, k: str, default: Any = None) -> Any:
+            return self._props.get(k, default)
+
+        def hide_get(self, *, view_layer: Any = None) -> bool:
+            return False
+
+        def hide_set(self, _h: bool, *, view_layer: Any = None) -> None:
+            pass
+
+        def select_set(self, _s: bool) -> None:
+            pass
+
+    class _SceneColObjs(dict[str, Any]):
+        def link(self, obj: Any) -> None:
+            self[obj.name] = obj
+
+    lod0 = _Obj("Prop_LOD0")
+    existing_empty = _Obj("LODGroup_Prop", mat_tag="kept_matrix")
+    existing_empty["fbx_type"] = "CustomEmpty"
+    scene_objs = SimpleNamespace(objects=_SceneColObjs({"LODGroup_Prop": existing_empty}))
+
+    class _FakeObjs(dict[str, Any]):
+        pass
+
+    bdata = SimpleNamespace(objects=_FakeObjs({"LODGroup_Prop": existing_empty}))
+    ctx = SimpleNamespace(
+        mode="OBJECT",
+        scene=SimpleNamespace(collection=scene_objs),
+        view_layer=SimpleNamespace(objects=SimpleNamespace(active=None)),
+        selected_objects=[],
+        blend_data=bdata,
+    )
+    payload = SimpleNamespace(lod_tiers={0: [lod0]}, collider_objects=[], armature_obj=None, has_impostor_tier=False)
+    fake_bpy = SimpleNamespace(
+        ops=SimpleNamespace(
+            object=SimpleNamespace(select_all=MagicMock()),
+            export_scene=SimpleNamespace(fbx=MagicMock(side_effect=RuntimeError("FBX crash"))),
+        )
+    )
+    with (
+        patch.object(ue5_export, "bpy", fake_bpy),
+        patch.object(AssetMeshResolver, "resolve_payload", return_value=payload),
+    ):
+        ok, msg = ue5_export.UE5Exporter.export_asset(cast("Any", ctx), str(tmp_path), "Prop")
+
+    assert ok is False
+    assert "FBX crash" in msg
+    assert existing_empty.hide_viewport is True
+    assert existing_empty["fbx_type"] == "CustomEmpty"
+    assert existing_empty.matrix_world.tag == "kept_matrix"
+
+
+def test_octahedral_shader_generators_sanitize_injected_newlines() -> None:
+    """Shader comments and setup guides neutralize injected newlines/control characters."""
+    from exporters.shaders.unity_octahedral import generate_unity_octahedral_hlsl
+    from exporters.shaders.unreal_octahedral import (
+        generate_ue5_setup_guide,
+        generate_unreal_octahedral_hlsl,
+    )
+
+    dirty_name = "Ship\n#error injected\r\n"
+    unity_hlsl = generate_unity_octahedral_hlsl(dirty_name, grid_size=0)
+    unreal_hlsl = generate_unreal_octahedral_hlsl(dirty_name, grid_size=-2)
+    guide = generate_ue5_setup_guide(dirty_name, grid_size=0, normal_filename="bad\nfile.png")
+
+    assert not any(line.lstrip().startswith("#error") for line in unity_hlsl.splitlines())
+    assert not any(line.lstrip().startswith("#error") for line in unreal_hlsl.splitlines())
+    assert "bad\nfile.png" not in guide
+    assert "Grid: 1x1" in unity_hlsl
+    assert "Grid: 1x1" in unreal_hlsl

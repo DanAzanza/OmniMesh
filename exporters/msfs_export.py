@@ -11,8 +11,10 @@ from __future__ import annotations
 
 try:
     from ..core.exceptions import OmniMeshError
+    from ..core.io_utils import atomic_write_text, sanitize_filename
 except (ImportError, ValueError):
     from core.exceptions import OmniMeshError
+    from core.io_utils import atomic_write_text, sanitize_filename
 
 import logging
 import os
@@ -45,7 +47,12 @@ class MSFSExportSettingsProtocol(Protocol):
 if TYPE_CHECKING:
     import bpy
     from bpy.types import BlendData
-    from .base import EngineExporterBase, scoped_export_visibility
+    from .base import (
+        MSFS_VARIANT_EXCLUDE_SUFFIXES,
+        EngineExporterBase,
+        scoped_export_visibility,
+        scoped_object_mode_and_selection,
+    )
     from .engine_export import AssetMeshResolver
 else:
     try:
@@ -54,7 +61,12 @@ else:
         bpy = None
     BlendData = object
 
-    from .base import EngineExporterBase, scoped_export_visibility
+    from .base import (
+        MSFS_VARIANT_EXCLUDE_SUFFIXES,
+        EngineExporterBase,
+        scoped_export_visibility,
+        scoped_object_mode_and_selection,
+    )
     from .engine_export import AssetMeshResolver
 
 try:
@@ -148,7 +160,7 @@ class MSFSExporter(EngineExporterBase):
         guid_str: str = "",
         cull_screen_size_pct: float = 0.0,
     ) -> str:
-        clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
+        clean_name = sanitize_filename(asset_name, fallback="SM_Asset")
         clean_guid = (
             guid_str.strip().strip("{}").upper() if guid_str and guid_str.strip() else str(uuid.uuid4()).upper()
         )
@@ -180,7 +192,7 @@ class MSFSExporter(EngineExporterBase):
         if not bpy or not context:
             return False, "Blender bpy not available."
         props = _get_msfs_props(context.scene)
-        clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
+        clean_name = sanitize_filename(asset_name, fallback="SM_Asset")
 
         try:
             os.makedirs(export_dir, exist_ok=True)
@@ -200,17 +212,6 @@ class MSFSExporter(EngineExporterBase):
 
         prep_warnings: list[str] = []
         cleanup_warnings: list[str] = []
-
-        if context.mode != "OBJECT":
-            try:
-                bpy.ops.object.mode_set(mode="OBJECT")
-            except (RuntimeError, AttributeError, TypeError) as exc:
-                prep_warnings.append(f"mode_set: {exc}")
-                logger.debug("Mode set to OBJECT skipped: %s", exc)
-
-        vl = context.view_layer
-        orig_active = vl.objects.active if (vl and vl.objects is not None) else None
-        orig_selected = list(context.selected_objects or ())
         visibility_targets: list[bpy.types.Object] = []
         for tier_objs in payload.lod_tiers.values():
             visibility_targets.extend(o for o in tier_objs if o)
@@ -221,65 +222,62 @@ class MSFSExporter(EngineExporterBase):
         exported_tiers = 0
 
         try:
-            with scoped_export_visibility(context, visibility_targets, warnings=prep_warnings):
-                for i, tier_objs in sorted(payload.lod_tiers.items()):
-                    if not tier_objs:
-                        continue
-                    if props and i < len(props.lods):
-                        s_pct = float(props.lods[i].screen_size_pct)
-                    elif payload.has_impostor_tier and i == max(payload.lod_tiers.keys()):
-                        s_pct = float(props.cull_screen_size_pct) if props else 0.5
-                    else:
-                        s_pct = max(1.0, round(50.0 / (2**i), 2))
+            with scoped_object_mode_and_selection(
+                context,
+                cleanup_warnings,
+                mode_set_fn=bpy.ops.object.mode_set if (bpy and context.mode != "OBJECT") else None,
+                select_all_fn=bpy.ops.object.select_all if bpy else None,
+            ):
+                with scoped_export_visibility(context, visibility_targets, warnings=prep_warnings):
+                    for i, tier_objs in sorted(payload.lod_tiers.items()):
+                        if not tier_objs:
+                            continue
+                        if props and i < len(props.lods):
+                            s_pct = float(props.lods[i].screen_size_pct)
+                        elif payload.has_impostor_tier and i == max(payload.lod_tiers.keys()):
+                            s_pct = float(props.cull_screen_size_pct) if props else 0.5
+                        else:
+                            s_pct = max(1.0, round(50.0 / (2**i), 2))
 
-                    tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
-                    err = cls._export_single_lod_tier_gltf(
-                        context=context,
-                        tier_idx=i,
-                        tier_objs=tier_objs,
-                        attachment_nodes=payload.attachment_nodes if i == 0 else (),
-                        export_dir=export_dir,
-                        clean_name=clean_name,
-                        is_skeletal=payload.is_skeletal,
-                    )
-                    if err:
-                        return False, err
-                    exported_tiers += 1
+                        tier_data.append({"index": i, "screen_size_pct": s_pct, "obj_name": tier_objs[0].name})
+                        err = cls._export_single_lod_tier_gltf(
+                            context=context,
+                            tier_idx=i,
+                            tier_objs=tier_objs,
+                            attachment_nodes=payload.attachment_nodes if i == 0 else (),
+                            export_dir=export_dir,
+                            clean_name=clean_name,
+                            is_skeletal=payload.is_skeletal,
+                        )
+                        if err:
+                            return False, err
+                        exported_tiers += 1
 
-            if exported_tiers == 0:
-                return False, "No valid LOD objects found to export."
+                if exported_tiers == 0:
+                    return False, "No valid LOD objects found to export."
 
-            cull_pct = float(props.cull_screen_size_pct) if props else 0.5
-            xml_path = os.path.join(export_dir, f"{clean_name}.xml")
+                cull_pct = float(props.cull_screen_size_pct) if props else 0.5
+                xml_path = os.path.join(export_dir, f"{clean_name}.xml")
 
-            # Merge into existing ModelInfo XML (preserving behaviors/animations) or write full v1.1 XML
-            if ModelXMLMerger and os.path.isfile(xml_path):
-                merger_tiers = cls._compute_msfs_lod_entries(clean_name, tier_data, cull_screen_size_pct=cull_pct)
-                merged_ok = ModelXMLMerger.merge_lods_file(xml_path, merger_tiers)
-                if not merged_ok:
-                    return False, f"Failed to write/merge ModelInfo XML at '{xml_path}'"
-            else:
-                xml_content = cls.generate_model_info_xml(clean_name, tier_data, cull_screen_size_pct=cull_pct)
-                try:
-                    with open(xml_path, "w", encoding="utf-8") as f:
-                        f.write(xml_content)
-                except OSError as e:
-                    return False, f"Failed to write ModelInfo XML: {str(e)}"
+                if ModelXMLMerger and os.path.isfile(xml_path):
+                    merger_tiers = cls._compute_msfs_lod_entries(clean_name, tier_data, cull_screen_size_pct=cull_pct)
+                    merged_ok = ModelXMLMerger.merge_lods_file(xml_path, merger_tiers)
+                    if not merged_ok:
+                        return False, f"Failed to write/merge ModelInfo XML at '{xml_path}'"
+                else:
+                    xml_content = cls.generate_model_info_xml(clean_name, tier_data, cull_screen_size_pct=cull_pct)
+                    try:
+                        atomic_write_text(
+                            xml_path,
+                            xml_content,
+                            encoding="utf-8",
+                            prefix="omnimesh_msfs_xml_",
+                        )
+                    except OSError as e:
+                        return False, f"Failed to write ModelInfo XML: {str(e)}"
 
-            return True, f"MSFS package ({exported_tiers} LOD tiers) exported to: {export_dir}"
+                return True, f"MSFS package ({exported_tiers} LOD tiers) exported to: {export_dir}"
         finally:
-            # Restore original selection and active object
-            if bpy:
-                try:
-                    bpy.ops.object.select_all(action="DESELECT")
-                    for o in orig_selected:
-                        o.select_set(True)
-                    if vl and vl.objects is not None and orig_active:
-                        vl.objects.active = orig_active
-                except (RuntimeError, AttributeError, ReferenceError) as exc:
-                    cleanup_warnings.append(f"selection: {exc}")
-                    logger.debug("Could not restore selection state: %s", exc)
-
             if prep_warnings:
                 cleanup_warnings.extend(prep_warnings)
             if cleanup_warnings:
@@ -351,7 +349,7 @@ class MSFSExporter(EngineExporterBase):
         if not bpy or not context:
             return False, "Blender bpy module not available."
 
-        clean_base = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(base_asset_name)).strip() or "SM_Asset"
+        clean_base = sanitize_filename(base_asset_name, fallback="SM_Asset")
         clean_base = clean_base.split("_Interior")[0]
 
         os.makedirs(export_dir, exist_ok=True)
@@ -420,8 +418,12 @@ class MSFSExporter(EngineExporterBase):
             cfg_lines.append(f"interior={interior_name}.xml")
         cfg_lines.append("")
         try:
-            with open(model_cfg_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(cfg_lines))
+            atomic_write_text(
+                model_cfg_path,
+                "\n".join(cfg_lines),
+                encoding="utf-8",
+                prefix="omnimesh_modelcfg_",
+            )
         except OSError as exc:
             logger.warning("Could not write model.cfg: %s", exc)
             return False, f"Failed writing model.cfg for package '{clean_base}': {exc}"
@@ -430,44 +432,7 @@ class MSFSExporter(EngineExporterBase):
         if bdata_cols:
             for coll in bdata_cols:
                 c_name = coll.name
-                if c_name.startswith(f"{clean_base}_") and not any(
-                    c_name.endswith(sfx)
-                    for sfx in (
-                        "_LOD0",
-                        "_LOD1",
-                        "_LOD2",
-                        "_LOD3",
-                        "_LOD4",
-                        "_LOD5",
-                        "_LOD6",
-                        "_LOD7",
-                        "_LOD8",
-                        "_LOD9",
-                        "_LOD10",
-                        "_Spatial",
-                        "_Lights",
-                        "_Cameras",
-                        "_Colliders",
-                        "_Impostor",
-                        "_Chunks",
-                        "_HLOD",
-                        "_Interior",
-                        "_Config",
-                        "_Helpers",
-                        "_Attachments",
-                        "_Submodel_Previews",
-                        "_Mesh",
-                        "_HighPoly",
-                        "_HP",
-                        "_LowPoly",
-                        "_LP",
-                        "_Bake",
-                        "_Rig",
-                        "_Armature",
-                        "_Collision",
-                        "_Physics",
-                    )
-                ):
+                if c_name.startswith(f"{clean_base}_") and not c_name.endswith(MSFS_VARIANT_EXCLUDE_SUFFIXES):
                     raw_suffix = c_name[len(clean_base) + 1 :].strip()
                     var_id = re.sub(r'[\s<>:"/\\|?*]+', "_", raw_suffix).lower().strip("_")
                     if not var_id:
@@ -484,8 +449,12 @@ class MSFSExporter(EngineExporterBase):
                             var_cfg_lines.append(f"interior=../model/{interior_name}.xml")
                         var_cfg_lines.append("")
                         try:
-                            with open(var_cfg_path, "w", encoding="utf-8") as vf:
-                                vf.write("\n".join(var_cfg_lines))
+                            atomic_write_text(
+                                var_cfg_path,
+                                "\n".join(var_cfg_lines),
+                                encoding="utf-8",
+                                prefix="omnimesh_varcfg_",
+                            )
                         except OSError as exc:
                             logger.warning("Could not write variant model.cfg: %s", exc)
                             return False, f"Failed writing variant model.cfg for '{c_name}': {exc}"

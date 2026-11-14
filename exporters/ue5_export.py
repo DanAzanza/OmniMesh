@@ -6,12 +6,14 @@ from __future__ import annotations
 
 try:
     from ..core.exceptions import OmniMeshError
+    from ..core.io_utils import atomic_write_text, sanitize_filename
 except (ImportError, ValueError):
     from core.exceptions import OmniMeshError
+    from core.io_utils import atomic_write_text, sanitize_filename
 
+from dataclasses import dataclass
 import logging
 import os
-import re
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
     import bpy
     from bpy.types import BlendData
     import mathutils
-    from .base import EngineExporterBase, scoped_export_visibility
+    from .base import EngineExporterBase, scoped_export_visibility, scoped_object_mode_and_selection
     from .engine_export import AssetMeshResolver
 else:
     try:
@@ -31,15 +33,24 @@ else:
         mathutils = None
     BlendData = object
 
-    from .base import EngineExporterBase, scoped_export_visibility
+    from .base import EngineExporterBase, scoped_export_visibility, scoped_object_mode_and_selection
     from .engine_export import AssetMeshResolver
+
+
+@dataclass(frozen=True)
+class _ReusedEmptyState:
+    empty_obj: bpy.types.Object
+    hide_viewport: bool
+    had_fbx_type: bool
+    orig_fbx_type: object
+    matrix_world: mathutils.Matrix | None
 
 
 class UE5Exporter(EngineExporterBase):
     @staticmethod
     def generate_import_script_py(asset_name: str, is_skeletal: bool = False) -> str:
         """Generates an Unreal Engine 5 Editor Python script to import FBX and packed PBR textures."""
-        safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f\r\n]', "_", str(asset_name)).strip() or "SM_Asset"
+        safe_name = sanitize_filename(asset_name, fallback="SM_Asset")
         return f"""# OmniMesh Unreal Engine 5 Import Helper
 import os
 import unreal
@@ -127,11 +138,53 @@ if __name__ == "__main__":
         """Writes {clean_name}_ue5_import.py alongside the exported FBX."""
         script_path = os.path.join(export_dir, f"{clean_name}_ue5_import.py")
         try:
-            with open(script_path, "w", encoding="utf-8") as f:
-                f.write(cls.generate_import_script_py(clean_name, is_skeletal=is_skeletal))
+            atomic_write_text(
+                script_path,
+                cls.generate_import_script_py(clean_name, is_skeletal=is_skeletal),
+                encoding="utf-8",
+                prefix="omnimesh_ue5_",
+            )
         except OSError as exc:
             warnings.append(f"ue5_import_script: {exc}")
             logger.warning("Could not write UE5 import script '%s': %s", script_path, exc)
+
+    @classmethod
+    def _acquire_lod_group_empty(
+        cls,
+        context: bpy.types.Context,
+        bdata: BlendData | None,
+        clean_name: str,
+        prep_warnings: list[str],
+    ) -> tuple[bpy.types.Object | None, bpy.types.Object | None, _ReusedEmptyState | None]:
+        """Retrieves or creates ``LODGroup_<name>`` empty, capturing rollback state if pre-existing."""
+        empty_name = f"LODGroup_{clean_name}"
+        scene_col = context.scene.collection if context.scene else None
+        bdata_objs = bdata.objects if bdata else None
+        lod_group_empty = bdata_objs.get(empty_name) if bdata_objs else None
+        created_empty = None
+        reused_state: _ReusedEmptyState | None = None
+
+        if not lod_group_empty and bdata_objs and scene_col is not None:
+            lod_group_empty = bdata_objs.new(empty_name, None)
+            lod_group_empty.empty_display_type = "PLAIN_AXES"
+            scene_col.objects.link(lod_group_empty)
+            created_empty = lod_group_empty
+        elif lod_group_empty is not None:
+            reused_state = _ReusedEmptyState(
+                empty_obj=lod_group_empty,
+                hide_viewport=lod_group_empty.hide_viewport,
+                had_fbx_type="fbx_type" in lod_group_empty,
+                orig_fbx_type=lod_group_empty.get("fbx_type"),
+                matrix_world=lod_group_empty.matrix_world.copy() if lod_group_empty.matrix_world is not None else None,
+            )
+            if scene_col is not None and lod_group_empty.name not in scene_col.objects:
+                try:
+                    scene_col.objects.link(lod_group_empty)
+                except RuntimeError as exc:
+                    prep_warnings.append(f"link empty: {exc}")
+                    logger.debug("LODGroup empty already linked: %s", exc)
+
+        return lod_group_empty, created_empty, reused_state
 
     @classmethod
     def export_asset(
@@ -143,7 +196,7 @@ if __name__ == "__main__":
     ) -> tuple[bool, str]:
         if not bpy or not context:
             return False, "Blender bpy not available."
-        clean_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(asset_name)).strip() or "SM_Asset"
+        clean_name = sanitize_filename(asset_name, fallback="SM_Asset")
 
         try:
             os.makedirs(export_dir, exist_ok=True)
@@ -163,15 +216,6 @@ if __name__ == "__main__":
 
         prep_warnings: list[str] = []
         cleanup_warnings: list[str] = []
-
-        if context.mode != "OBJECT":
-            try:
-                bpy.ops.object.mode_set(mode="OBJECT")
-            except (RuntimeError, AttributeError, TypeError) as exc:
-                prep_warnings.append(f"mode_set: {exc}")
-                logger.debug("Mode set to OBJECT skipped: %s", exc)
-
-        # Collect ordered export objects (LOD0..N)
         export_objects: list[bpy.types.Object] = []
         for tier_idx in sorted(payload.lod_tiers.keys()):
             for obj in payload.lod_tiers[tier_idx]:
@@ -183,11 +227,6 @@ if __name__ == "__main__":
 
         collider_objects = list(payload.collider_objects)
         armature_obj = payload.armature_obj
-
-        # Save transactional state for rollback
-        vl = context.view_layer
-        orig_active = vl.objects.active if (vl and vl.objects is not None) else None
-        orig_selected = list(context.selected_objects or ())
         all_export_items = export_objects + collider_objects + ([armature_obj] if armature_obj else [])
 
         orig_collider_names: dict[bpy.types.Object, str] = {}
@@ -202,172 +241,161 @@ if __name__ == "__main__":
         )
         created_empty = None
         lod_group_empty = None
+        reused_empty_state: _ReusedEmptyState | None = None
+        vl = context.view_layer
 
         try:
-            with scoped_export_visibility(context, all_export_items, warnings=prep_warnings):
-                # Handle impostor naming convention for UE5
-                if payload.has_impostor_tier:
-                    imp_tier_idx = max(payload.lod_tiers.keys())
-                    for obj in payload.lod_tiers[imp_tier_idx]:
-                        orig_imp_names[obj] = obj.name
-                        obj.name = f"{clean_name}_LOD{imp_tier_idx}"
+            with scoped_object_mode_and_selection(
+                context,
+                prep_warnings,
+                mode_set_fn=bpy.ops.object.mode_set if (bpy and context.mode != "OBJECT") else None,
+                select_all_fn=bpy.ops.object.select_all if bpy else None,
+            ):
+                try:
+                    with scoped_export_visibility(context, all_export_items, warnings=prep_warnings):
+                        if payload.has_impostor_tier:
+                            imp_tier_idx = max(payload.lod_tiers.keys())
+                            for obj in payload.lod_tiers[imp_tier_idx]:
+                                orig_imp_names[obj] = obj.name
+                                obj.name = f"{clean_name}_LOD{imp_tier_idx}"
 
-                # Rename colliders to UCX_{asset_name}_{idx:02d}
-                for idx, c_obj in enumerate(collider_objects, start=1):
-                    orig_collider_names[c_obj] = c_obj.name
-                    c_obj.name = f"UCX_{clean_name}_{idx:02d}"
+                        for idx, c_obj in enumerate(collider_objects, start=1):
+                            orig_collider_names[c_obj] = c_obj.name
+                            c_obj.name = f"UCX_{clean_name}_{idx:02d}"
 
-                bpy.ops.object.select_all(action="DESELECT")
+                        bpy.ops.object.select_all(action="DESELECT")
 
-                if armature_obj:
-                    armature_obj.select_set(True)
-                    for obj in export_objects:
-                        obj.select_set(True)
-                    for c_obj in collider_objects:
-                        c_obj.select_set(True)
-                    context.view_layer.objects.active = armature_obj
-                elif is_chunked_asset:
-                    # For chunked / HLOD assets with multiple objects per tier, bypass single LodGroup empty
-                    # to avoid UE5 importing each individual chunk as a distinct sequential LOD tier.
-                    for obj in export_objects:
-                        obj.select_set(True)
-                    for c_obj in collider_objects:
-                        c_obj.select_set(True)
-                    context.view_layer.objects.active = export_objects[0]
-                else:
-                    empty_name = f"LODGroup_{clean_name}"
-                    lod_group_empty = bdata_objs.get(empty_name) if bdata_objs else None
-                    if not lod_group_empty and bdata_objs:
-                        lod_group_empty = bdata_objs.new(empty_name, None)
-                        lod_group_empty.empty_display_type = "PLAIN_AXES"
-                        context.scene.collection.objects.link(lod_group_empty)
-                        created_empty = lod_group_empty
-                    elif lod_group_empty is not None:
-                        if lod_group_empty.name not in context.scene.collection.objects:
+                        if armature_obj:
+                            armature_obj.select_set(True)
+                            for obj in export_objects + collider_objects:
+                                obj.select_set(True)
+                            if vl and vl.objects is not None:
+                                vl.objects.active = armature_obj
+                        elif is_chunked_asset:
+                            for obj in export_objects + collider_objects:
+                                obj.select_set(True)
+                            if vl and vl.objects is not None:
+                                vl.objects.active = export_objects[0]
+                        else:
+                            lod_group_empty, created_empty, reused_empty_state = cls._acquire_lod_group_empty(
+                                context, bdata, clean_name, prep_warnings
+                            )
+                            if lod_group_empty is None:
+                                return False, f"Could not create or retrieve LODGroup empty for '{clean_name}'."
+
                             try:
-                                context.scene.collection.objects.link(lod_group_empty)
-                            except RuntimeError as exc:
-                                prep_warnings.append(f"link empty: {exc}")
-                                logger.debug("LODGroup empty already linked: %s", exc)
+                                if vl is not None:
+                                    lod_group_empty.hide_set(False, view_layer=vl)
+                                lod_group_empty.hide_viewport = False
+                            except (RuntimeError, AttributeError) as exc:
+                                prep_warnings.append(f"unhide empty: {exc}")
+                                logger.debug("Could not unhide lod_group_empty: %s", exc)
 
-                    if lod_group_empty is None:
-                        return False, f"Could not create or retrieve LODGroup empty for '{clean_name}'."
+                            lod_group_empty["fbx_type"] = "LodGroup"
+                            if mathutils:
+                                lod_group_empty.matrix_world = mathutils.Matrix.Identity(4)
 
-                    try:
-                        lod_group_empty.hide_set(False, view_layer=context.view_layer)
-                        lod_group_empty.hide_viewport = False
-                    except (RuntimeError, AttributeError) as exc:
-                        prep_warnings.append(f"unhide empty: {exc}")
-                        logger.debug("Could not unhide lod_group_empty: %s", exc)
+                            for obj in export_objects:
+                                if obj.parent != lod_group_empty:
+                                    obj.parent = lod_group_empty
+                                    if obj in orig_matrices:
+                                        obj.matrix_world = orig_matrices[obj]
 
-                    lod_group_empty["fbx_type"] = "LodGroup"
-                    if mathutils:
-                        lod_group_empty.matrix_world = mathutils.Matrix.Identity(4)
+                            for c_obj in collider_objects:
+                                if c_obj.parent == lod_group_empty or c_obj.parent is not None:
+                                    c_obj.parent = None
+                                    if c_obj in orig_matrices:
+                                        c_obj.matrix_world = orig_matrices[c_obj]
 
-                    for obj in export_objects:
-                        if obj.parent != lod_group_empty:
-                            obj.parent = lod_group_empty
+                            lod_group_empty.select_set(True)
+                            for obj in export_objects + collider_objects:
+                                obj.select_set(True)
+                            if vl and vl.objects is not None:
+                                vl.objects.active = lod_group_empty
+
+                        fbx_path = os.path.join(export_dir, f"{clean_name}.fbx")
+                        bpy.ops.export_scene.fbx(
+                            filepath=fbx_path,
+                            use_selection=True,
+                            apply_unit_scale=True,
+                            apply_scale_options="FBX_SCALE_ALL",
+                            bake_space_transform=False if (armature_obj or lod_group_empty) else True,
+                            object_types={"ARMATURE", "MESH", "EMPTY"} if armature_obj else {"MESH", "EMPTY"},
+                            mesh_smooth_type="FACE",
+                            add_leaf_bones=False if armature_obj else True,
+                            primary_bone_axis="Y",
+                            secondary_bone_axis="X",
+                            armature_nodetype="NULL",
+                        )
+                        cls._write_ue5_import_script(
+                            export_dir, clean_name, is_skeletal=bool(armature_obj), warnings=cleanup_warnings
+                        )
+                        return True, f"UE5 FBX package exported to: {fbx_path}"
+                except (
+                    OmniMeshError,
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    AttributeError,
+                    LookupError,
+                    OSError,
+                    ReferenceError,
+                    ZeroDivisionError,
+                ) as e:
+                    return False, f"Failed to export UE5 FBX: {str(e)}"
+                finally:
+                    for obj, orig_parent in orig_parents.items():
+                        try:
+                            obj.parent = orig_parent
                             if obj in orig_matrices:
                                 obj.matrix_world = orig_matrices[obj]
-
-                    for c_obj in collider_objects:
-                        if c_obj.parent == lod_group_empty or c_obj.parent is not None:
-                            c_obj.parent = None
+                        except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                            cleanup_warnings.append(f"parent restore: {exc}")
+                            logger.debug("Restoring object parent failed: %s", exc)
+                    for c_obj, orig_parent in orig_collider_parents.items():
+                        try:
+                            c_obj.parent = orig_parent
                             if c_obj in orig_matrices:
                                 c_obj.matrix_world = orig_matrices[c_obj]
+                        except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                            cleanup_warnings.append(f"collider parent restore: {exc}")
+                            logger.debug("Restoring collider parent failed: %s", exc)
 
-                    lod_group_empty.select_set(True)
-                    for obj in export_objects:
-                        obj.select_set(True)
-                    for c_obj in collider_objects:
-                        c_obj.select_set(True)
-                    context.view_layer.objects.active = lod_group_empty
+                    if created_empty and bdata_objs and created_empty.name in bdata_objs:
+                        try:
+                            bdata_objs.remove(created_empty, do_unlink=True)
+                        except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                            cleanup_warnings.append(f"remove empty: {exc}")
+                            logger.debug("Removing temporary LODGroup empty failed: %s", exc)
+                    elif reused_empty_state is not None:
+                        r_empty = reused_empty_state.empty_obj
+                        try:
+                            r_empty.hide_viewport = reused_empty_state.hide_viewport
+                            if reused_empty_state.had_fbx_type:
+                                r_empty["fbx_type"] = reused_empty_state.orig_fbx_type
+                            elif "fbx_type" in r_empty:
+                                del r_empty["fbx_type"]
+                            if reused_empty_state.matrix_world is not None:
+                                r_empty.matrix_world = reused_empty_state.matrix_world
+                        except (RuntimeError, AttributeError, ReferenceError, TypeError, KeyError) as exc:
+                            cleanup_warnings.append(f"restore reused empty: {exc}")
 
-                fbx_path = os.path.join(export_dir, f"{clean_name}.fbx")
-                bpy.ops.export_scene.fbx(
-                    filepath=fbx_path,
-                    use_selection=True,
-                    apply_unit_scale=True,
-                    apply_scale_options="FBX_SCALE_ALL",
-                    bake_space_transform=False if (armature_obj or lod_group_empty) else True,
-                    object_types={"ARMATURE", "MESH", "EMPTY"} if armature_obj else {"MESH", "EMPTY"},
-                    mesh_smooth_type="FACE",
-                    add_leaf_bones=False if armature_obj else True,
-                    primary_bone_axis="Y",
-                    secondary_bone_axis="X",
-                    armature_nodetype="NULL",
-                )
-                cls._write_ue5_import_script(
-                    export_dir, clean_name, is_skeletal=bool(armature_obj), warnings=cleanup_warnings
-                )
-                return True, f"UE5 FBX package exported to: {fbx_path}"
-        except (
-            OmniMeshError,
-            RuntimeError,
-            ValueError,
-            TypeError,
-            AttributeError,
-            LookupError,
-            OSError,
-            ReferenceError,
-            ZeroDivisionError,
-        ) as e:
-            return False, f"Failed to export UE5 FBX: {str(e)}"
+                    for c_obj, orig_name in orig_collider_names.items():
+                        try:
+                            c_obj.name = orig_name
+                        except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                            cleanup_warnings.append(f"collider name restore: {exc}")
+                            logger.debug("Restoring collider name failed: %s", exc)
+
+                    for imp_obj, orig_name in orig_imp_names.items():
+                        try:
+                            imp_obj.name = orig_name
+                        except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
+                            cleanup_warnings.append(f"impostor name restore: {exc}")
+                            logger.debug("Restoring impostor name failed: %s", exc)
         finally:
-            # Transactional rollback: restore parents and world matrices
-            for obj, orig_parent in orig_parents.items():
-                try:
-                    obj.parent = orig_parent
-                    if obj in orig_matrices:
-                        obj.matrix_world = orig_matrices[obj]
-                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
-                    cleanup_warnings.append(f"parent restore: {exc}")
-                    logger.debug("Restoring object parent failed: %s", exc)
-            for c_obj, orig_parent in orig_collider_parents.items():
-                try:
-                    c_obj.parent = orig_parent
-                    if c_obj in orig_matrices:
-                        c_obj.matrix_world = orig_matrices[c_obj]
-                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
-                    cleanup_warnings.append(f"collider parent restore: {exc}")
-                    logger.debug("Restoring collider parent failed: %s", exc)
-
-            # Transactional rollback: remove temporary LODGroup empty if created
-            if created_empty and bdata_objs and created_empty.name in bdata_objs:
-                try:
-                    bdata_objs.remove(created_empty, do_unlink=True)
-                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
-                    cleanup_warnings.append(f"remove empty: {exc}")
-                    logger.debug("Removing temporary LODGroup empty failed: %s", exc)
-
-            # Restore original collider names in Blender
-            for c_obj, orig_name in orig_collider_names.items():
-                try:
-                    c_obj.name = orig_name
-                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
-                    cleanup_warnings.append(f"collider name restore: {exc}")
-                    logger.debug("Restoring collider name failed: %s", exc)
-
-            # Restore original impostor names in Blender
-            for imp_obj, orig_name in orig_imp_names.items():
-                try:
-                    imp_obj.name = orig_name
-                except (RuntimeError, AttributeError, ReferenceError, TypeError) as exc:
-                    cleanup_warnings.append(f"impostor name restore: {exc}")
-                    logger.debug("Restoring impostor name failed: %s", exc)
-
-            # Restore original selection and active object
-            if bpy:
-                try:
-                    bpy.ops.object.select_all(action="DESELECT")
-                    for o in orig_selected:
-                        o.select_set(True)
-                    if vl and vl.objects is not None and orig_active:
-                        vl.objects.active = orig_active
-                except (RuntimeError, AttributeError, ReferenceError) as exc:
-                    cleanup_warnings.append(f"selection restore: {exc}")
-                    logger.debug("Could not restore selection state: %s", exc)
-
+            if prep_warnings:
+                cleanup_warnings.extend(prep_warnings)
             if cleanup_warnings:
                 logger.warning(
                     "UE5 export cleanup finished with %d warning(s): %s",

@@ -10,9 +10,18 @@ Generates native HLSL include files for Unity URP and HDRP ShaderGraph with:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+_SAFE_SHADER_TEXT_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f\r\n]+')
+
+
+def _sanitize_shader_label(value: str, fallback: str = "Asset") -> str:
+    """Strips control characters, newlines, and filesystem-unsafe symbols for HLSL comments."""
+    cleaned = _SAFE_SHADER_TEXT_RE.sub("_", str(value or "")).strip(" ._")
+    return cleaned or fallback
 
 
 def generate_unity_octahedral_hlsl(
@@ -25,6 +34,9 @@ def generate_unity_octahedral_hlsl(
     Generates an HLSL include file containing the ShaderGraph Custom Function
     for Unity URP and HDRP Octahedral Impostor sampling.
     """
+    _ = custom_params  # Reserved for future material parameter bindings
+    safe_base = _sanitize_shader_label(base_name, fallback="Impostor")
+    safe_grid = max(1, int(grid_size))
     is_full_sphere = mode == "OCTAHEDRAL_SPHERE"
     proj_label = "Full Sphere" if is_full_sphere else "Upper Hemisphere"
     if is_full_sphere:
@@ -65,7 +77,7 @@ def generate_unity_octahedral_hlsl(
 }"""
 
     hlsl_code = f"""// OmniMesh Generated Octahedral Impostor Include for Unity URP/HDRP
-// Asset: {base_name} | Grid: {grid_size}x{grid_size} ({proj_label})
+// Asset: {safe_base} | Grid: {safe_grid}x{safe_grid} ({proj_label})
 #ifndef OMNIMESH_OCTAHEDRAL_INCLUDED
 #define OMNIMESH_OCTAHEDRAL_INCLUDED
 

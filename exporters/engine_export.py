@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, Protocol, cast
 
+from .base import TECHNICAL_COLLECTION_SUFFIXES
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
     import bpy
@@ -134,20 +136,7 @@ class AssetMeshResolver:
                     "PREVIEW",
                 ):
                     return False
-                if any(
-                    c_name.endswith(sfx)
-                    for sfx in (
-                        "_Spatial",
-                        "_Lights",
-                        "_Cameras",
-                        "_Colliders",
-                        "_Config",
-                        "_Helpers",
-                        "_Interactions",
-                        "_Attachments",
-                        "_Submodel_Previews",
-                    )
-                ):
+                if c_name.endswith(TECHNICAL_COLLECTION_SUFFIXES):
                     return False
             return True
 

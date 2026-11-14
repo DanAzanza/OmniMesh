@@ -13,7 +13,7 @@ from exporters.msfs_export import MSFSExporter
 
 
 def test_msfs_export_package_model_cfg_write_failure(tmp_path: Path):
-    """Negative boundary: OSError during base model.cfg write returns False and error message."""
+    """Negative boundary: OSError during base model.cfg atomic write returns False and error message."""
     mock_context = MagicMock()
     mock_blend_data = MagicMock()
     mock_blend_data.collections = []
@@ -24,7 +24,7 @@ def test_msfs_export_package_model_cfg_write_failure(tmp_path: Path):
     with (
         patch("exporters.msfs_export.bpy", mock_bpy),
         patch.object(MSFSExporter, "export_asset", return_value=(True, "Exported geometry")),
-        patch("builtins.open", side_effect=OSError("Disk full / permission denied")),
+        patch("exporters.msfs_export.atomic_write_text", side_effect=OSError("Disk full / permission denied")),
     ):
         ok, msg = MSFSExporter.export_project_package(
             mock_context,
@@ -39,7 +39,9 @@ def test_msfs_export_package_model_cfg_write_failure(tmp_path: Path):
 
 
 def test_msfs_export_package_variant_model_cfg_write_failure(tmp_path: Path):
-    """Negative boundary: OSError during variant model.cfg write returns False and error message."""
+    """Negative boundary: OSError during variant model.cfg atomic write returns False and error message."""
+    from core.io_utils import atomic_write_text
+
     mock_context = MagicMock()
     variant_coll = MagicMock()
     variant_coll.name = "Airframe_Floats"
@@ -50,18 +52,15 @@ def test_msfs_export_package_variant_model_cfg_write_failure(tmp_path: Path):
 
     export_dir = str(tmp_path / "Package")
 
-    # Base export succeeds and writes base model.cfg cleanly, but variant model.cfg write fails
-    real_open = open
-
-    def selective_open(file, *args, **kwargs):
-        if "model.floats" in str(file) and "model.cfg" in str(file):
+    def selective_atomic_write(target_path, content, **kwargs):
+        if "model.floats" in str(target_path) and "model.cfg" in str(target_path):
             raise OSError("Variant disk write failed")
-        return real_open(file, *args, **kwargs)
+        return atomic_write_text(target_path, content, **kwargs)
 
     with (
         patch("exporters.msfs_export.bpy", mock_bpy),
         patch.object(MSFSExporter, "export_asset", return_value=(True, "Exported geometry")),
-        patch("builtins.open", side_effect=selective_open),
+        patch("exporters.msfs_export.atomic_write_text", side_effect=selective_atomic_write),
     ):
         ok, msg = MSFSExporter.export_project_package(
             mock_context,
@@ -108,3 +107,30 @@ def test_msfs_export_package_happy_path(tmp_path: Path):
     var_cfg = Path(export_dir) / "model.skis" / "model.cfg"
     assert var_cfg.exists()
     assert "normal=Airframe_Skis.xml" in var_cfg.read_text(encoding="utf-8")
+
+
+def test_msfs_export_package_excludes_interactions_collection(tmp_path: Path):
+    """Negative boundary: '_Interactions' technical collection is never exported as a livery/model variant."""
+    mock_context = MagicMock()
+    interactions_coll = MagicMock()
+    interactions_coll.name = "Airframe_Interactions"
+    mock_blend_data = MagicMock()
+    mock_blend_data.collections.get.return_value = None
+    mock_blend_data.collections.__iter__.return_value = iter([interactions_coll])
+    mock_bpy = MagicMock()
+
+    export_dir = str(tmp_path / "Package_NoInter")
+    with (
+        patch("exporters.msfs_export.bpy", mock_bpy),
+        patch.object(MSFSExporter, "export_asset", return_value=(True, "Exported geometry")) as mock_export,
+    ):
+        ok, _ = MSFSExporter.export_project_package(
+            mock_context,
+            export_dir=export_dir,
+            base_asset_name="Airframe",
+            blend_data=mock_blend_data,
+        )
+
+    assert ok is True
+    assert mock_export.call_count == 1
+    assert not (Path(export_dir) / "model.interactions").exists()

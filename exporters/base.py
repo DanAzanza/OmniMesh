@@ -5,7 +5,7 @@ OmniMesh Base Engine Exporter Interface and Shared Export Transaction Helpers.
 from __future__ import annotations
 
 import abc
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 import logging
 from typing import TYPE_CHECKING, Optional
@@ -144,6 +144,76 @@ def scoped_export_visibility(
                 col.hide_viewport = col_hv
             except (RuntimeError, AttributeError, ReferenceError) as exc:
                 local_warnings.append(f"restore collection: {exc}")
+
+
+TECHNICAL_COLLECTION_SUFFIXES: tuple[str, ...] = (
+    "_Spatial",
+    "_Lights",
+    "_Cameras",
+    "_Colliders",
+    "_Config",
+    "_Helpers",
+    "_Interactions",
+    "_Attachments",
+    "_Submodel_Previews",
+)
+
+MSFS_VARIANT_EXCLUDE_SUFFIXES: tuple[str, ...] = (
+    TECHNICAL_COLLECTION_SUFFIXES
+    + tuple(f"_LOD{i}" for i in range(11))
+    + (
+        "_Impostor",
+        "_Chunks",
+        "_HLOD",
+        "_Interior",
+        "_Mesh",
+        "_HighPoly",
+        "_HP",
+        "_LowPoly",
+        "_LP",
+        "_Bake",
+        "_Rig",
+        "_Armature",
+        "_Collision",
+        "_Physics",
+    )
+)
+
+
+@contextmanager
+def scoped_object_mode_and_selection(
+    context: bpy.types.Context,
+    warnings: list[str] | None = None,
+    *,
+    mode_set_fn: Callable[..., object] | None = None,
+    select_all_fn: Callable[..., object] | None = None,
+) -> Iterator[None]:
+    """Switches to OBJECT mode if needed and restores selection/active object on exit."""
+    if mode_set_fn is not None and context.mode != "OBJECT":
+        try:
+            mode_set_fn(mode="OBJECT")
+        except (RuntimeError, AttributeError, TypeError) as exc:
+            if warnings is not None:
+                warnings.append(f"mode_set: {exc}")
+            logger.debug("Mode set to OBJECT skipped: %s", exc)
+
+    vl = context.view_layer
+    orig_active = vl.objects.active if (vl and vl.objects is not None) else None
+    orig_selected = list(context.selected_objects or ())
+    try:
+        yield
+    finally:
+        if select_all_fn is not None:
+            try:
+                select_all_fn(action="DESELECT")
+                for obj in orig_selected:
+                    obj.select_set(True)
+                if vl and vl.objects is not None and orig_active:
+                    vl.objects.active = orig_active
+            except (RuntimeError, AttributeError, ReferenceError) as exc:
+                if warnings is not None:
+                    warnings.append(f"selection restore: {exc}")
+                logger.debug("Could not restore selection state: %s", exc)
 
 
 class EngineExporterBase(abc.ABC):
