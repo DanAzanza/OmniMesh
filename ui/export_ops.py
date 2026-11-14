@@ -33,6 +33,7 @@ try:
     from ..exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
     from ..exporters.manager import ExporterManager
     from ..exporters.shaders import export_octahedral_companion_bundle, resolve_shader_engine_for_preset
+    from .rna_helpers import register_classes, unregister_classes
     from .utils import (
         get_lod0_mesh_objects,
         parse_sphere_center,
@@ -50,6 +51,7 @@ except (ImportError, ValueError):
     from exporters.engine_export import AssetMeshResolver, PreFlightValidator, resolve_export_asset_name
     from exporters.manager import ExporterManager
     from exporters.shaders import export_octahedral_companion_bundle, resolve_shader_engine_for_preset
+    from ui.rna_helpers import register_classes, unregister_classes
     from ui.utils import (
         get_lod0_mesh_objects,
         parse_sphere_center,
@@ -466,25 +468,8 @@ EXPORT_OPS_CLASSES = (
 
 
 def register_export_ops() -> None:
-    if not bpy:
-        return
-    for cls in EXPORT_OPS_CLASSES:
-        existing = getattr(bpy.types, cls.__name__, None)
-        if existing is not None:
-            try:
-                bpy.utils.unregister_class(existing)
-            except Exception as exc:
-                logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
-        bpy.utils.register_class(cls)
+    register_classes(bpy, EXPORT_OPS_CLASSES, logger_inst=logger)
 
 
 def unregister_export_ops() -> None:
-    if not bpy:
-        return
-    for cls in reversed(EXPORT_OPS_CLASSES):
-        existing = getattr(bpy.types, cls.__name__, None)
-        if existing is not None:
-            try:
-                bpy.utils.unregister_class(existing)
-            except Exception as exc:
-                logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
+    unregister_classes(bpy, EXPORT_OPS_CLASSES, logger_inst=logger)

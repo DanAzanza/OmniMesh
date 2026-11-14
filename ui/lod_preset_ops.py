@@ -5,8 +5,6 @@ Handles adding, removing, saving, applying, capturing, and deleting
 LOD tier templates and custom presets.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
@@ -20,6 +18,7 @@ try:
         sync_preset_tiers_from_preset,
         sync_preset_tiers_to_preset,
     )
+    from .rna_helpers import mock_prop
     from .utils import resolve_lod_context, safe_report
 except (ImportError, ValueError):
     from core.lod_presets import (
@@ -31,6 +30,7 @@ except (ImportError, ValueError):
         sync_preset_tiers_from_preset,
         sync_preset_tiers_to_preset,
     )
+    from ui.rna_helpers import mock_prop
     from ui.utils import resolve_lod_context, safe_report
 
 if TYPE_CHECKING:
@@ -45,12 +45,8 @@ else:
     except ImportError:
         bpy = None
         Operator = object
-
-        def EnumProperty(**kwargs: Any) -> Any:
-            return Any
-
-        def StringProperty(**kwargs: Any) -> Any:
-            return Any
+        EnumProperty = mock_prop
+        StringProperty = mock_prop
 
 
 logger = logging.getLogger(__name__)

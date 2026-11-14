@@ -74,25 +74,30 @@ def sync_rig_to_viewport(base_name: str) -> Optional[float]:
     if not region_3d or not hasattr(region_3d, "view_matrix"):
         return 1.0 / 30.0
 
-    scene = getattr(bpy.context, "scene", None)
-    if view_persp == "CAMERA" and scene and scene.camera:
-        eye_pos = scene.camera.matrix_world.translation.copy()
-    else:
-        view_inv = region_3d.view_matrix.inverted()
-        eye_pos = view_inv.translation.copy()
+    try:
+        scene = getattr(bpy.context, "scene", None)
+        if view_persp == "CAMERA" and scene and scene.camera:
+            eye_pos = scene.camera.matrix_world.translation.copy()
+        else:
+            view_inv = region_3d.view_matrix.inverted()
+            eye_pos = view_inv.translation.copy()
 
-    for target_empty in targets:
-        if (eye_pos - target_empty.location).length_squared >= 1e-4:
-            target_empty.location = eye_pos
+        for target_empty in targets:
+            if (eye_pos - target_empty.location).length_squared >= 1e-4:
+                target_empty.location = eye_pos
 
-    # If preview camera is free (no turntable keyframes), sync its matrix as well
-    if rig_coll:
-        cam_name = f"{base_name}_Preview_Camera"
-        cam_obj = bpy.data.objects.get(cam_name)
-        if cam_obj and not cam_obj.animation_data:
-            cam_obj.location = eye_pos
-            if hasattr(region_3d.view_matrix.inverted(), "to_euler"):
-                cam_obj.rotation_euler = region_3d.view_matrix.inverted().to_euler()
+        # If preview camera is free (no turntable keyframes), sync its matrix as well
+        if rig_coll:
+            cam_name = f"{base_name}_Preview_Camera"
+            cam_obj = bpy.data.objects.get(cam_name)
+            if cam_obj and not cam_obj.animation_data:
+                cam_obj.location = eye_pos
+                if hasattr(region_3d.view_matrix.inverted(), "to_euler"):
+                    cam_obj.rotation_euler = region_3d.view_matrix.inverted().to_euler()
+    except (ReferenceError, AttributeError) as exc:
+        logger.debug("Impostor viewport sync skipped invalidated RNA ref: %s", exc)
+        _ACTIVE_TIMERS.pop(base_name, None)
+        return None
 
     return 1.0 / 30.0
 
@@ -161,11 +166,21 @@ class LOD_OT_impostor_viewport_tracker(Operator):
         if not bpy or not context:
             return {"CANCELLED"}
 
-        # Resolve asset base name
-        base_name = ""
+        from .utils import resolve_effective_asset_name
+
         scene = context.scene
-        if hasattr(scene, "lod_tool"):
-            base_name = getattr(scene.lod_tool, "asset_name", "")
+        props = getattr(scene, "lod_tool", None)
+        base_name = ""
+        if props:
+            for attr in ("active_asset", "export_base_name"):
+                cand = getattr(props, attr, "")
+                if isinstance(cand, str) and cand and cand not in {"AUTO", "ALL", "NONE"}:
+                    base_name = cand
+                    break
+            if not base_name:
+                resolved = resolve_effective_asset_name(context, props)
+                if resolved not in {"AUTO", "ALL", "NONE", "Asset"}:
+                    base_name = resolved
 
         if not base_name:
             for coll in bpy.data.collections:

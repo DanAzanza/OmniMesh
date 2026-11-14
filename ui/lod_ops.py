@@ -4,8 +4,7 @@ Core LOD Generation, Configuration, Tier Preview, and Selection Synchronization 
 Generation engine logic is modularized in core.lod_generator; preset operators in ui.lod_preset_ops.
 """
 
-from __future__ import annotations
-
+# Blender RNA classes with bpy.props fields must evaluate annotations eagerly.
 import logging
 import math
 from typing import TYPE_CHECKING, Any, cast

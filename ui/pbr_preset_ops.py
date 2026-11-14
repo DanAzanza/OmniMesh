@@ -6,13 +6,11 @@ for PBR import presets and unified engine export presets.
 Map-level rule operators are modularized in ui.pbr_map_ops.
 """
 
-from __future__ import annotations
-
-from contextlib import nullcontext
-import copy
 import logging
 import os
 import sys
+from contextlib import nullcontext
+import copy
 from typing import TYPE_CHECKING, Any, cast
 
 try:
@@ -40,6 +38,7 @@ try:
         sync_maps_to_preset,
         sync_preset_tiers_from_preset,
     )
+    from .rna_helpers import assign_or_defer_enum, mock_prop
     from .utils import resolve_lod_context, safe_report
 except (ImportError, ValueError):
     from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
@@ -66,6 +65,7 @@ except (ImportError, ValueError):
         sync_maps_to_preset,
         sync_preset_tiers_from_preset,
     )
+    from ui.rna_helpers import assign_or_defer_enum, mock_prop
     from ui.utils import resolve_lod_context, safe_report
 
 if TYPE_CHECKING:
@@ -80,12 +80,8 @@ else:
     except ImportError:
         bpy = None
         Operator = object
-
-        def EnumProperty(**kwargs: Any) -> Any:
-            return Any
-
-        def StringProperty(**kwargs: Any) -> Any:
-            return Any
+        EnumProperty = mock_prop
+        StringProperty = mock_prop
 
 
 logger = logging.getLogger(__name__)
@@ -171,17 +167,20 @@ class LOD_OT_create_import_preset(Operator):
         try:
             new_id = PBRImportPresetManager.create_new_preset(name=self.preset_name, template_id=self.template_type)
             if props and hasattr(props, "pbr_import_preset"):
+                from .rna_helpers import assign_or_defer_enum
 
-                def _apply_new_pre(p_obj: Any, nid: str) -> None:
+                def _apply_new_pre(p_obj: Any = props, nid: str = new_id) -> None:
                     p_obj.pbr_import_preset = nid
                     sync_maps_from_preset(p_obj, PBRImportPresetManager.get_preset(nid))
 
                 with PresetSyncGuard(), MapSyncGuard():
-                    try:
-                        _apply_new_pre(props, new_id)
-                    except (TypeError, ValueError):
-                        if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
-                            bpy.app.timers.register(lambda: _apply_new_pre(props, new_id), first_interval=0.005)
+                    assign_or_defer_enum(
+                        bpy,
+                        _apply_new_pre,
+                        first_interval=0.005,
+                        label="pbr_import_preset assignment",
+                        logger_inst=logger,
+                    )
             PBRImportPresetManager.set_last_active_preset(new_id)
             safe_report(self, {"INFO"}, f"Created import preset '{self.preset_name}'.")
             return {"FINISHED"}
@@ -458,25 +457,19 @@ class LOD_OT_duplicate_preset(Operator):
                         target_prop.pbr_preset = target_nid
                     sync_export_maps_from_preset(target_prop, preset_data)
 
-            with guard_ctx, map_ctx:
-                for p in targets:
-                    try:
-                        apply_target_preset(p, new_id)
-                    except (TypeError, ValueError) as val_err:
-                        logger.debug("Immediate preset assignment deferred: %s", val_err)
-                        if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+            for p in targets:
 
-                            def make_deferred(prop_obj: Any, nid: str):
-                                def _deferred_apply() -> None:
-                                    with guard_ctx, map_ctx:
-                                        try:
-                                            apply_target_preset(prop_obj, nid)
-                                        except Exception as exc:
-                                            logger.debug("Deferred preset assignment exception: %s", exc)
+                def _apply_guarded(prop_obj: Any = p, nid: str = new_id) -> None:
+                    with guard_ctx, map_ctx:
+                        apply_target_preset(prop_obj, nid)
 
-                                return _deferred_apply
-
-                            bpy.app.timers.register(make_deferred(p, new_id), first_interval=0.005)
+                assign_or_defer_enum(
+                    bpy,
+                    _apply_guarded,
+                    first_interval=0.005,
+                    label="duplicate preset assignment",
+                    logger_inst=logger,
+                )
             mgr.set_last_active_preset(new_id)
             safe_report(self, {"INFO"}, f"Created custom preset '{self.new_name}'.")
             return {"FINISHED"}

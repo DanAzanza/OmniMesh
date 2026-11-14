@@ -3,7 +3,7 @@
 OmniMesh MSFS & Engine Import PropertyGroup Mixin.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from . import callbacks, enums
 
@@ -13,11 +13,9 @@ else:
     try:
         from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
     except ImportError:
+        from ..rna_helpers import mock_prop
 
-        def _mock_prop(**kwargs: Any) -> Any:
-            return None
-
-        BoolProperty = EnumProperty = FloatProperty = StringProperty = _mock_prop
+        BoolProperty = EnumProperty = FloatProperty = StringProperty = mock_prop
 
 
 class LODToolEngineSettingsMixin:
@@ -52,9 +50,24 @@ class LODToolEngineSettingsMixin:
     )
 
     # Legacy MSFS properties preserved for API compatibility
-    msfs_spatial_cfg_path: StringProperty(name="MSFS Flight Model File", subtype="FILE_PATH", default="")
-    msfs_systems_cfg_path: StringProperty(name="MSFS Systems File", subtype="FILE_PATH", default="")
-    msfs_cameras_cfg_path: StringProperty(name="MSFS Cameras File", subtype="FILE_PATH", default="")
+    msfs_spatial_cfg_path: StringProperty(
+        name="MSFS Flight Model File",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
+    msfs_systems_cfg_path: StringProperty(
+        name="MSFS Systems File",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
+    msfs_cameras_cfg_path: StringProperty(
+        name="MSFS Cameras File",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
     msfs_spatial_status: StringProperty(name="MSFS Spatial Status", default="Ready")
     msfs_scrape_margin_m: FloatProperty(name="Scrape Margin (m)", default=0.0, min=-0.5, max=0.5)
     msfs_gear_state: EnumProperty(name="Gear State", items=enums.MSFS_GEAR_STATE_ITEMS, default="STATIC_COMPRESSED")
@@ -72,6 +85,7 @@ class LODToolEngineSettingsMixin:
         name="Engine Project Path",
         subtype="DIR_PATH",
         default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
         description="Root folder of project to ingest",
         update=callbacks.on_engine_import_directory_updated,
     )

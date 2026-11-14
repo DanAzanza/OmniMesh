@@ -4,9 +4,7 @@ OmniMesh Multi-Engine Material Preset Properties.
 Kept in a dedicated submodule to strictly enforce AGENTS.md < 800 LOC limit on settings.py.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import bpy
@@ -18,13 +16,11 @@ else:
         from bpy.props import BoolProperty, EnumProperty, FloatProperty, FloatVectorProperty, StringProperty
         from bpy.types import PropertyGroup
     except ImportError:
+        from ..rna_helpers import mock_prop
+
         bpy = None
         PropertyGroup = object
-
-        def _mock_prop(**kwargs: Any) -> Any:
-            return None
-
-        BoolProperty = EnumProperty = FloatProperty = FloatVectorProperty = StringProperty = _mock_prop
+        BoolProperty = EnumProperty = FloatProperty = FloatVectorProperty = StringProperty = mock_prop
 
 
 MATERIAL_PRESET_ITEMS = [

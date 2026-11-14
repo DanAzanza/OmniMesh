@@ -4,8 +4,6 @@ PBR Texture Set Importer and Slot Auto-Matcher Operators.
 Preset CRUD operations are modularized in ui.pbr_preset_ops and ui.preset_ops.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from typing import TYPE_CHECKING, Any
@@ -22,16 +20,14 @@ else:
         from bpy.props import BoolProperty, CollectionProperty, StringProperty
         from bpy.types import Operator, OperatorFileListElement
     except ImportError:
+        from .rna_helpers import mock_prop
+
         bpy = None
         Operator = object
         OperatorFileListElement = object  # type: ignore
-
-        def _mock_prop(*args: Any, **kwargs: Any) -> Any:
-            return None
-
-        BoolProperty = _mock_prop  # type: ignore
-        StringProperty = _mock_prop  # type: ignore
-        CollectionProperty = _mock_prop  # type: ignore
+        BoolProperty = mock_prop  # type: ignore
+        StringProperty = mock_prop  # type: ignore
+        CollectionProperty = mock_prop  # type: ignore
 
 try:
     from ..core.pbr_importer import (
@@ -105,7 +101,11 @@ class LOD_OT_import_pbr_set(Operator):
     bl_description = "Choose a texture folder and wire matching PBR maps into LOD0 materials using the active preset"
     bl_options = {"REGISTER", "UNDO"}
 
-    directory: StringProperty(subtype="DIR_PATH")
+    directory: StringProperty(
+        subtype="DIR_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
     filter_folder: BoolProperty(default=True, options={"HIDDEN"})
     files: CollectionProperty(type=OperatorFileListElement)
 
@@ -279,7 +279,11 @@ class LOD_OT_auto_match_pbr_folder(Operator):
     bl_description = "Scan a folder and automatically assign matching PBR texture sets to LOD0 materials"
     bl_options = {"REGISTER", "UNDO"}
 
-    directory: StringProperty(subtype="DIR_PATH")
+    directory: StringProperty(
+        subtype="DIR_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
 
     def execute(self, context: Any) -> set[Any]:
         if not bpy:
@@ -384,7 +388,11 @@ class LOD_OT_relink_project_textures(Operator):
     bl_description = "Locate a folder to relink and re-import PBR textures onto LOD0 materials"
     bl_options = {"REGISTER", "UNDO"}
 
-    directory: StringProperty(subtype="DIR_PATH")
+    directory: StringProperty(
+        subtype="DIR_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
 
     def execute(self, context: Any) -> set[Any]:
         if not bpy or not context:

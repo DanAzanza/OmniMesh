@@ -4,8 +4,9 @@ OmniMesh Central Settings PropertyGroup.
 Attached to Scene (for project-wide pipeline globals) and Object (for per-asset geometry persistence).
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from ..utils import get_asset_enum_items
 from . import callbacks, enums
 from .animation_properties import OMNIMESH_AnimationSettings
 from .cleanup_settings import LODToolCleanupSettingsMixin
@@ -20,8 +21,6 @@ from .lod_properties import (
 from .material_properties import OMNIMESH_MaterialPresetSettings
 from .msfs_cfg_properties import OMNIMESH_MSFSConfigSettings
 from .pbr_properties import PBRExportMapItem, PBRMapItem
-
-from ..utils import get_asset_enum_items
 
 if TYPE_CHECKING:
     import bpy
@@ -51,15 +50,13 @@ else:
         )
         from bpy.types import PropertyGroup
     except ImportError:
+        from ..rna_helpers import mock_prop
+
         bpy = None
         PropertyGroup = object
-
-        def _mock_prop(**kwargs: Any) -> Any:
-            return None
-
         BoolProperty = CollectionProperty = EnumProperty = FloatProperty = FloatVectorProperty = IntProperty = (
             PointerProperty
-        ) = StringProperty = _mock_prop
+        ) = StringProperty = mock_prop
 
 
 class LODToolSettings(LODToolCleanupSettingsMixin, LODToolEngineSettingsMixin, PropertyGroup):
@@ -202,6 +199,7 @@ class LODToolSettings(LODToolCleanupSettingsMixin, LODToolEngineSettingsMixin, P
         name="Import Directory",
         subtype="DIR_PATH",
         default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
         description="Source directory containing PBR textures to import",
         update=callbacks.on_import_directory_updated,
     )
@@ -617,6 +615,7 @@ class LODToolSettings(LODToolCleanupSettingsMixin, LODToolEngineSettingsMixin, P
         name="Export Directory",
         subtype="DIR_PATH",
         default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
         description="Destination folder for exported engine packages",
         update=callbacks.on_export_directory_updated,
     )

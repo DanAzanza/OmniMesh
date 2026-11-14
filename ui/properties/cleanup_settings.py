@@ -3,7 +3,7 @@
 OmniMesh Mesh & Material Cleanup PropertyGroup Mixin.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from . import enums
 
@@ -13,11 +13,9 @@ else:
     try:
         from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty
     except ImportError:
+        from ..rna_helpers import mock_prop
 
-        def _mock_prop(**kwargs: Any) -> Any:
-            return None
-
-        BoolProperty = EnumProperty = FloatProperty = IntProperty = _mock_prop
+        BoolProperty = EnumProperty = FloatProperty = IntProperty = mock_prop
 
 
 class LODToolCleanupSettingsMixin:

@@ -5,8 +5,6 @@ Provides operators for importing, representing, and synchronizing
 MSFS 2024 attached_objects.cfg attachment hotspots and submodels.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from typing import TYPE_CHECKING, Any, Optional
@@ -21,15 +19,13 @@ else:
         from bpy.props import FloatProperty, FloatVectorProperty, StringProperty
         from bpy.types import Collection, Object, Operator
     except ImportError:
+        from .rna_helpers import mock_prop
+
         bpy = None
         Collection = object
         Object = object
         Operator = object
-
-        def _mock_prop(**kwargs: Any) -> Any:
-            return None
-
-        FloatProperty = FloatVectorProperty = StringProperty = _mock_prop
+        FloatProperty = FloatVectorProperty = StringProperty = mock_prop
 
 try:
     from ..core.msfs.attachments_cst import MSFSAttachmentsCST
@@ -130,6 +126,90 @@ def find_mounting_socket_node(
     return None, None
 
 
+def import_msfs_attachments_file(context: Any, cfg_path: str) -> int:
+    """Parse ``attached_objects.cfg`` and create/update Blender attachment hotspot empties."""
+    if not bpy or not context or not cfg_path or not os.path.isfile(cfg_path):
+        return 0
+
+    props = getattr(context.scene, "lod_tool", None)
+    msfs_cfg = getattr(props, "msfs_configs", None) if props else None
+    config = MSFSAttachmentsCST.parse_attachments_file(cfg_path)
+
+    asset_name = resolve_effective_asset_name(context, props)
+    ext_col = get_or_create_attachments_collection(context, asset_name, is_interior=False)
+    inte_col = get_or_create_attachments_collection(context, asset_name, is_interior=True)
+
+    imported_count = 0
+    auto_parent = getattr(msfs_cfg, "auto_parent_to_socket", True)
+
+    for att in config.attachments:
+        is_interior = att.attach_to_model.lower() == "interior"
+        target_col = inte_col if (is_interior and inte_col) else ext_col
+        if not target_col:
+            continue
+
+        node_name = att.attach_to_node or att.alias or f"Attachment_{imported_count}"
+        empty_name = f"ATT_{node_name}"
+
+        existing = None
+        for o in target_col.objects:
+            if o.get("msfs_id") == att.point_id or o.name == empty_name:
+                existing = o
+                break
+
+        if existing:
+            empty = existing
+            empty.name = empty_name
+        else:
+            empty = bpy.data.objects.new(empty_name, None)
+            target_col.objects.link(empty)
+
+        empty.empty_display_type = "ARROWS"
+        empty.empty_display_size = 0.15
+
+        off_ft = att.attach_offset_ft
+        local_pos_m = (
+            off_ft[1] * FEET_TO_METERS,
+            off_ft[0] * FEET_TO_METERS,
+            off_ft[2] * FEET_TO_METERS,
+        )
+        pbh = att.attach_pbh_deg
+        local_rot_rad = msfs_pbh_to_blender_empty_rotation(pbh[0], pbh[1], pbh[2])
+
+        parent_obj, parent_bone = (None, None)
+        if auto_parent and att.attach_to_node:
+            parent_obj, parent_bone = find_mounting_socket_node(context, att.attach_to_node, asset_name)
+
+        if parent_obj and empty != parent_obj:
+            empty.parent = parent_obj
+            if parent_bone:
+                empty.parent_type = "BONE"
+                empty.parent_bone = parent_bone
+
+        empty.location = local_pos_m
+        empty.rotation_euler = local_rot_rad
+        if abs(att.attach_scale - 1.0) > 1e-4:
+            empty.scale = (att.attach_scale, att.attach_scale, att.attach_scale)
+
+        empty["msfs_id"] = att.point_id
+        empty["msfs_type"] = "ATTACHMENT"
+        empty["msfs_section"] = att.section
+        empty["msfs_attachment_root"] = att.attachment_root
+        empty["msfs_attachment_path"] = att.attachment_path
+        empty["msfs_attach_to_model"] = att.attach_to_model
+        empty["msfs_attach_to_node"] = att.attach_to_node
+        empty["msfs_alias"] = att.alias
+        empty["msfs_attach_scale"] = att.attach_scale
+
+        imported_count += 1
+
+    if msfs_cfg:
+        msfs_cfg.attached_objects_cfg_path = cfg_path
+        msfs_cfg.attachment_status = f"Imported {imported_count} attachments"
+
+    return imported_count
+
+
 class OMNIMESH_OT_import_msfs_attachments(Operator):
     """Parses attached_objects.cfg and creates visual empties for MSFS modular attachment hotspots."""
 
@@ -138,7 +218,12 @@ class OMNIMESH_OT_import_msfs_attachments(Operator):
     bl_description = "Parse attached_objects.cfg and spawn attachment hotspot empties parented to mounting sockets"
     bl_options = {"REGISTER", "UNDO"}
 
-    filepath: StringProperty(name="attached_objects.cfg Path", subtype="FILE_PATH", default="")
+    filepath: StringProperty(
+        name="attached_objects.cfg Path",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
 
     @classmethod
     def poll(cls, context: Any) -> bool:
@@ -162,86 +247,10 @@ class OMNIMESH_OT_import_msfs_attachments(Operator):
             return {"CANCELLED"}
 
         try:
-            config = MSFSAttachmentsCST.parse_attachments_file(cfg_path)
+            imported_count = import_msfs_attachments_file(context, cfg_path)
         except Exception as exc:
             self.report({"ERROR"}, f"Failed to parse attached_objects.cfg: {exc}")
             return {"CANCELLED"}
-
-        asset_name = resolve_effective_asset_name(context, props)
-        ext_col = get_or_create_attachments_collection(context, asset_name, is_interior=False)
-        inte_col = get_or_create_attachments_collection(context, asset_name, is_interior=True)
-
-        imported_count = 0
-        auto_parent = getattr(msfs_cfg, "auto_parent_to_socket", True)
-
-        for att in config.attachments:
-            is_interior = att.attach_to_model.lower() == "interior"
-            target_col = inte_col if (is_interior and inte_col) else ext_col
-            if not target_col:
-                continue
-
-            node_name = att.attach_to_node or att.alias or f"Attachment_{imported_count}"
-            empty_name = f"ATT_{node_name}"
-
-            # Check existing empty by msfs_id or name
-            existing = None
-            for o in target_col.objects:
-                if o.get("msfs_id") == att.point_id or o.name == empty_name:
-                    existing = o
-                    break
-
-            if existing:
-                empty = existing
-                empty.name = empty_name
-            else:
-                empty = bpy.data.objects.new(empty_name, None)
-                target_col.objects.link(empty)
-
-            empty.empty_display_type = "ARROWS"
-            empty.empty_display_size = 0.15
-
-            # Local transform relative to socket node
-            # attach_offset: (long, lat, vert in feet) -> local Blender (X=lat*0.3048, Y=long*0.3048, Z=vert*0.3048)
-            off_ft = att.attach_offset_ft
-            local_pos_m = (
-                off_ft[1] * FEET_TO_METERS,
-                off_ft[0] * FEET_TO_METERS,
-                off_ft[2] * FEET_TO_METERS,
-            )
-            pbh = att.attach_pbh_deg
-            local_rot_rad = msfs_pbh_to_blender_empty_rotation(pbh[0], pbh[1], pbh[2])
-
-            parent_obj, parent_bone = (None, None)
-            if auto_parent and att.attach_to_node:
-                parent_obj, parent_bone = find_mounting_socket_node(context, att.attach_to_node, asset_name)
-
-            if parent_obj and empty != parent_obj:
-                empty.parent = parent_obj
-                if parent_bone:
-                    empty.parent_type = "BONE"
-                    empty.parent_bone = parent_bone
-
-            empty.location = local_pos_m
-            empty.rotation_euler = local_rot_rad
-            if abs(att.attach_scale - 1.0) > 1e-4:
-                empty.scale = (att.attach_scale, att.attach_scale, att.attach_scale)
-
-            # Metadata custom properties
-            empty["msfs_id"] = att.point_id
-            empty["msfs_type"] = "ATTACHMENT"
-            empty["msfs_section"] = att.section
-            empty["msfs_attachment_root"] = att.attachment_root
-            empty["msfs_attachment_path"] = att.attachment_path
-            empty["msfs_attach_to_model"] = att.attach_to_model
-            empty["msfs_attach_to_node"] = att.attach_to_node
-            empty["msfs_alias"] = att.alias
-            empty["msfs_attach_scale"] = att.attach_scale
-
-            imported_count += 1
-
-        if msfs_cfg:
-            msfs_cfg.attached_objects_cfg_path = cfg_path
-            msfs_cfg.attachment_status = f"Imported {imported_count} attachments"
 
         self.report(
             {"INFO"}, f"Successfully imported {imported_count} modular attachments from {os.path.basename(cfg_path)}"
@@ -257,7 +266,12 @@ class OMNIMESH_OT_export_msfs_attachments(Operator):
     bl_description = "Sync modified Blender attachment transforms back into attached_objects.cfg with automatic backup"
     bl_options = {"REGISTER"}
 
-    filepath: StringProperty(name="Destination CFG Path", subtype="FILE_PATH", default="")
+    filepath: StringProperty(
+        name="Destination CFG Path",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
 
     @classmethod
     def poll(cls, context: Any) -> bool:
@@ -498,27 +512,15 @@ classes = (
 
 
 def register():
-    if not bpy:
-        return
-    for cls in classes:
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Previous class unregister skipped for %s: %s", cls, exc)
-        try:
-            bpy.utils.register_class(cls)
-        except Exception as exc:
-            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import register_classes
+
+    register_classes(bpy, classes, logger_inst=logger)
 
 
 def unregister():
-    if not bpy:
-        return
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Unregister skipped for %s: %s", cls, exc)
+    from .rna_helpers import unregister_classes
+
+    unregister_classes(bpy, classes, logger_inst=logger)
 
 
 __all__ = [
@@ -527,6 +529,7 @@ __all__ = [
     "OMNIMESH_OT_add_vehicle_attachment",
     "find_attachments_collection",
     "get_or_create_attachments_collection",
+    "import_msfs_attachments_file",
     "register",
     "unregister",
 ]

@@ -112,6 +112,7 @@ _SUBMODULE_NAMES: tuple[str, ...] = (
     "exporters",
     # 8. UI properties (leaves before ui.properties package)
     "ui.properties.guards",
+    "ui.rna_helpers",
     "ui.properties.enums",
     "ui.properties.callbacks",
     "ui.properties.settings",

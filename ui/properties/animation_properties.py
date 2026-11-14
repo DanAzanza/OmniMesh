@@ -4,9 +4,7 @@ OmniMesh Multi-Engine Animation & Action Tagging Properties.
 Kept in a dedicated submodule to strictly enforce AGENTS.md < 800 LOC limit on settings.py.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import bpy
@@ -18,13 +16,11 @@ else:
         from bpy.props import BoolProperty, EnumProperty, StringProperty
         from bpy.types import PropertyGroup
     except ImportError:
+        from ..rna_helpers import mock_prop
+
         bpy = None
         PropertyGroup = object
-
-        def _mock_prop(**kwargs: Any) -> Any:
-            return None
-
-        BoolProperty = EnumProperty = StringProperty = _mock_prop
+        BoolProperty = EnumProperty = StringProperty = mock_prop
 
 
 ANIMATION_CATEGORY_ITEMS = [

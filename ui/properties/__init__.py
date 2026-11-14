@@ -135,15 +135,9 @@ CLASSES = (
 def register_properties() -> None:
     if not bpy:
         return
-    for cls in CLASSES:
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        try:
-            bpy.utils.register_class(cls)
-        except Exception as exc:
-            logger.debug("Safe register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from ..rna_helpers import register_classes
+
+    register_classes(bpy, CLASSES, logger_inst=logger)
     try:
         if PointerProperty:
             setattr(bpy.types.Scene, "lod_tool", PointerProperty(type=LODToolSettings))  # noqa: B010
@@ -177,6 +171,8 @@ def register_properties() -> None:
 def unregister_properties() -> None:
     if not bpy:
         return
+    from ..rna_helpers import unregister_classes
+
     if restore_preset_state_on_load and hasattr(bpy, "app") and hasattr(bpy.app, "handlers"):
         if hasattr(bpy.app.handlers, "load_post") and restore_preset_state_on_load in bpy.app.handlers.load_post:
             try:
@@ -187,8 +183,7 @@ def unregister_properties() -> None:
         delattr(bpy.types.Scene, "lod_tool")
     if hasattr(bpy.types.Object, "lod_tool"):
         delattr(bpy.types.Object, "lod_tool")
-    for cls in reversed(CLASSES):
-        bpy.utils.unregister_class(cls)
+    unregister_classes(bpy, CLASSES, logger_inst=logger)
 
 
 __all__ = [

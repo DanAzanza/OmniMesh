@@ -61,76 +61,35 @@ DATUM_POINT_ID = "WEIGHT_AND_BALANCE:reference_datum_position"
 
 def find_cameras_collection(context: Any, asset_name: str = "") -> Optional[Collection]:
     """Finds existing cameras collection scoped by asset name, role tag, or legacy name."""
-    if not bpy:
-        return None
-    props = getattr(getattr(context, "scene", None), "lod_tool", None)
-    target_asset = asset_name or (getattr(props, "export_base_name", "") if props else "")
-    if not target_asset and props and hasattr(props, "active_asset") and props.active_asset not in ("AUTO", "NONE"):
-        target_asset = props.active_asset
+    from .rna_helpers import find_config_role_collection
 
-    if target_asset:
-        # Check inside {target_asset}_Config
-        cfg_col = bpy.data.collections.get(f"{target_asset}_Config")
-        if cfg_col and hasattr(cfg_col, "children"):
-            cam = cfg_col.children.get(f"{target_asset}_Cameras")
-            if cam:
-                return cam
-        if f"{target_asset}_Cameras" in bpy.data.collections:
-            return bpy.data.collections[f"{target_asset}_Cameras"]
-
-    for col in bpy.data.collections:
-        if col.get("_omnimesh_role") == "CAMERAS":
-            if not target_asset or col.name == f"{target_asset}_Cameras" or col.get("_omnimesh_parent") == target_asset:
-                return col
-
-    for name in ("Cameras", "MSFS_Spatial_Cameras"):
-        if name in bpy.data.collections:
-            return bpy.data.collections[name]
-    return None
+    return find_config_role_collection(
+        bpy,
+        context,
+        role="CAMERAS",
+        suffix="Cameras",
+        legacy_names=("Cameras", "MSFS_Spatial_Cameras"),
+        asset_name=asset_name,
+    )
 
 
 def get_or_create_cameras_collection(
     context: Any, asset_name: str = "", is_interior: bool = False
 ) -> Optional[Collection]:
     """Finds or creates the dedicated cameras collection in the active scene."""
-    if not bpy or not context:
-        return None
+    from .rna_helpers import get_or_create_config_role_collection, resolve_config_target_asset
 
-    props = getattr(context.scene, "lod_tool", None)
-    base_asset = asset_name or (getattr(props, "export_base_name", "") if props else "") or "Asset"
+    base_asset = asset_name or resolve_config_target_asset(context) or "Asset"
     target_asset = f"{base_asset}_Interior" if is_interior and not base_asset.endswith("_Interior") else base_asset
-
-    try:
-        from .utils import get_or_create_engine_import_collection
-
-        return get_or_create_engine_import_collection(context, target_asset, "CAMERAS")
-    except Exception as exc:
-        logger.error("Failed creating cameras collection via hierarchy: %s", exc, exc_info=True)
-        # Fallback enforcing Variante A: {target_asset} -> {target_asset}_Config -> {target_asset}_Cameras
-        root_col = bpy.data.collections.get(target_asset)
-        if not root_col:
-            root_col = bpy.data.collections.new(target_asset)
-            context.scene.collection.children.link(root_col)
-
-        cfg_col = bpy.data.collections.get(f"{target_asset}_Config")
-        if not cfg_col:
-            cfg_col = bpy.data.collections.new(f"{target_asset}_Config")
-            cfg_col["_omnimesh_role"] = "CONFIG"
-            root_col.children.link(cfg_col)
-
-        cam_col = bpy.data.collections.get(f"{target_asset}_Cameras")
-        if not cam_col:
-            cam_col = bpy.data.collections.new(f"{target_asset}_Cameras")
-            cfg_col.children.link(cam_col)
-        elif cam_col.name not in cfg_col.children:
-            try:
-                cfg_col.children.link(cam_col)
-            except RuntimeError as exc:
-                logger.debug("Cameras collection already linked to cfg_col: %s", exc)
-
-        cam_col["_omnimesh_role"] = "CAMERAS"
-        cam_col["_omnimesh_parent"] = target_asset
-        return cam_col
+    return get_or_create_config_role_collection(
+        bpy,
+        context,
+        role="CAMERAS",
+        suffix="Cameras",
+        legacy_names=("Cameras", "MSFS_Spatial_Cameras"),
+        asset_name=target_asset,
+        logger_inst=logger,
+    )
 
 
 class OMNIMESH_OT_import_msfs_cameras(Operator):
@@ -146,6 +105,7 @@ class OMNIMESH_OT_import_msfs_cameras(Operator):
         description="Path to cameras.cfg",
         subtype="FILE_PATH",
         default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
     )
 
     @classmethod
@@ -600,24 +560,12 @@ classes = (
 
 
 def register():
-    if not bpy:
-        return
-    for cls in classes:
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        try:
-            bpy.utils.register_class(cls)
-        except ValueError as exc:
-            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import register_classes
+
+    register_classes(bpy, classes, logger_inst=logger)
 
 
 def unregister():
-    if not bpy:
-        return
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except ValueError as exc:
-            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import unregister_classes
+
+    unregister_classes(bpy, classes, logger_inst=logger)

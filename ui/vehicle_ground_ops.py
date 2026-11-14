@@ -11,8 +11,6 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any, Optional
 
-import numpy as np
-
 if TYPE_CHECKING:
     import bpy
     from bpy.types import Collection, Object, Operator
@@ -34,8 +32,10 @@ try:
     from ..core.msfs.transforms import METERS_TO_FEET
     from ..core.vehicle_geometry import (
         collect_airframe_vertices,
+        compute_static_cg_height_ft,
         detect_airframe_extrema,
         extract_world_vertices_numpy,
+        find_wheel_contact_z,
         format_class_2_scrape_tokens,
     )
     from .vehicle_spatial_ops import (
@@ -49,8 +49,10 @@ except (ImportError, ValueError):
     from core.msfs.transforms import METERS_TO_FEET
     from core.vehicle_geometry import (
         collect_airframe_vertices,
+        compute_static_cg_height_ft,
         detect_airframe_extrema,
         extract_world_vertices_numpy,
+        find_wheel_contact_z,
         format_class_2_scrape_tokens,
     )
 
@@ -260,18 +262,8 @@ class OMNIMESH_OT_align_gear_ground_level(Operator):
 
             if best_mesh:
                 verts = extract_world_vertices_numpy(best_mesh, depsgraph=depsgraph)
-                if verts.shape[0] > 0:
-                    # Filter vertices in close lateral/longitudinal radius of the wheel (within 0.6m)
-                    dx = verts[:, 0] - empty_world.x
-                    dy = verts[:, 1] - empty_world.y
-                    r_sq = dx**2 + dy**2
-                    local_tire_verts = verts[r_sq <= 0.6**2]
-
-                    if local_tire_verts.shape[0] > 0:
-                        lowest_z = float(np.min(local_tire_verts[:, 2]))
-                    else:
-                        lowest_z = float(np.min(verts[:, 2]))
-
+                lowest_z = find_wheel_contact_z(verts, (empty_world.x, empty_world.y))
+                if lowest_z is not None:
                     # Snap empty Z to contact patch
                     if empty.parent:
                         parent_inv = empty.parent.matrix_world.inverted()
@@ -292,17 +284,10 @@ class OMNIMESH_OT_align_gear_ground_level(Operator):
                 break
 
         if lowest_contact_z_world and cg_empty:
-            ground_plane_z = float(np.mean(lowest_contact_z_world))
             cg_world_z = cg_empty.matrix_world.translation.z
-
-            # Ground height in static equilibrium
-            if gear_state == "UNCOMPRESSED_EXTENDED":
-                effective_ground_z = ground_plane_z + compression_m
-            else:
-                effective_ground_z = ground_plane_z
-
-            cg_height_m = max(0.0, cg_world_z - effective_ground_z)
-            cg_height_ft = cg_height_m * METERS_TO_FEET
+            cg_height_ft = compute_static_cg_height_ft(
+                lowest_contact_z_world, cg_world_z, gear_state, compression_m, METERS_TO_FEET
+            )
 
             if props:
                 props.msfs_calculated_cg_height_ft = cg_height_ft
@@ -340,24 +325,12 @@ classes = (
 
 
 def register():
-    if not bpy:
-        return
-    for cls in classes:
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        try:
-            bpy.utils.register_class(cls)
-        except ValueError as exc:
-            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import register_classes
+
+    register_classes(bpy, classes, logger_inst=logger)
 
 
 def unregister():
-    if not bpy:
-        return
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except ValueError as exc:
-            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import unregister_classes
+
+    unregister_classes(bpy, classes, logger_inst=logger)

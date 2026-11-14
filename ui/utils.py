@@ -656,14 +656,7 @@ def get_or_create_engine_import_collection(
     except ImportError:
         from core.hierarchy import get_or_create_engine_import_collection as _impl
 
-    bdata = None
-    if context is not None:
-        ctx_bdata = getattr(context, "blend_data", None)
-        # Guard against unconfigured MagicMock context in unit tests
-        if ctx_bdata is not None:
-            type_name = type(ctx_bdata).__name__
-            if "MagicMock" not in type_name or "collections" in getattr(ctx_bdata, "__dict__", {}):
-                bdata = ctx_bdata
+    bdata = getattr(context, "blend_data", None) if context is not None else None
     if bdata is None and bpy is not None:
         bdata = getattr(bpy, "data", None)
     if bdata is None:

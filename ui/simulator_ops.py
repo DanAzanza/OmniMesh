@@ -6,7 +6,6 @@ Modal Operators and Live Handlers for Viewport LOD Simulator.
 from __future__ import annotations
 
 import logging
-import math
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
@@ -23,9 +22,11 @@ else:
         Operator = object
 
 try:
-    from ..core.simulator import LODSimulatorEngine, extract_viewport_camera_params
+    from ..core.simulator import LODSimulatorEngine, compute_virtual_screen_override_pct, extract_viewport_camera_params
+    from .rna_helpers import register_classes, unregister_classes
 except (ImportError, ValueError):
-    from core.simulator import LODSimulatorEngine, extract_viewport_camera_params
+    from core.simulator import LODSimulatorEngine, compute_virtual_screen_override_pct, extract_viewport_camera_params
+    from ui.rna_helpers import register_classes, unregister_classes
 
 
 class LOD_OT_toggle_simulator(Operator):
@@ -103,12 +104,7 @@ class LOD_OT_toggle_simulator(Operator):
             if tracked:
                 first_record = next(iter(tracked.values()))
                 radius = getattr(first_record, "radius", 1.0)
-            s_frac = (
-                radius / max(0.001, virtual_dist * math.tan(fov_v / 2.0))
-                if is_persp
-                else (2.0 * radius) / max(0.01, fov_v)
-            )
-            virtual_override = min(100.0, max(0.01, s_frac * 100.0))
+            virtual_override = compute_virtual_screen_override_pct(radius, virtual_dist, fov_v, is_persp)
         elif getattr(props, "simulator_camera_mode", "VIEWPORT") == "ACTIVE_SCENE" and context.scene.camera:
             cam_pos = context.scene.camera.matrix_world.translation.copy()
 
@@ -239,20 +235,16 @@ class LOD_OT_toggle_live_simulator(Operator):
         return {"CANCELLED"}
 
 
+SIMULATOR_CLASSES = (
+    LOD_OT_toggle_simulator,
+    LOD_OT_toggle_live_simulator,
+    LOD_OT_reset_virtual_distance,
+)
+
+
 def register_simulator_ops() -> None:
-    if not bpy:
-        return
-    for cls in (LOD_OT_toggle_simulator, LOD_OT_toggle_live_simulator, LOD_OT_reset_virtual_distance):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        bpy.utils.register_class(cls)
+    register_classes(bpy, SIMULATOR_CLASSES, logger_inst=logger)
 
 
 def unregister_simulator_ops() -> None:
-    if not bpy:
-        return
-    bpy.utils.unregister_class(LOD_OT_reset_virtual_distance)
-    bpy.utils.unregister_class(LOD_OT_toggle_live_simulator)
-    bpy.utils.unregister_class(LOD_OT_toggle_simulator)
+    unregister_classes(bpy, SIMULATOR_CLASSES, logger_inst=logger)

@@ -103,20 +103,12 @@ INTERACTION_OPERATOR_CLASSES = (OMNIMESH_OT_add_interaction_volume,)
 
 
 def register():
-    if not bpy:
-        return
-    for cls in INTERACTION_OPERATOR_CLASSES:
-        try:
-            bpy.utils.register_class(cls)
-        except Exception as exc:
-            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import register_classes
+
+    register_classes(bpy, INTERACTION_OPERATOR_CLASSES, logger_inst=logger)
 
 
 def unregister():
-    if not bpy:
-        return
-    for cls in reversed(INTERACTION_OPERATOR_CLASSES):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import unregister_classes
+
+    unregister_classes(bpy, INTERACTION_OPERATOR_CLASSES, logger_inst=logger)

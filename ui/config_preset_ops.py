@@ -362,20 +362,12 @@ CONFIG_PRESET_OPERATOR_CLASSES = (
 
 
 def register():
-    if not bpy:
-        return
-    for cls in CONFIG_PRESET_OPERATOR_CLASSES:
-        try:
-            bpy.utils.register_class(cls)
-        except Exception as exc:
-            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import register_classes
+
+    register_classes(bpy, CONFIG_PRESET_OPERATOR_CLASSES, logger_inst=logger)
 
 
 def unregister():
-    if not bpy:
-        return
-    for cls in reversed(CONFIG_PRESET_OPERATOR_CLASSES):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import unregister_classes
+
+    unregister_classes(bpy, CONFIG_PRESET_OPERATOR_CLASSES, logger_inst=logger)

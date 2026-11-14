@@ -6,7 +6,6 @@ Convex Collision Hull Decomposition and Billboard Impostor Operators.
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
@@ -26,7 +25,7 @@ else:
 try:
     from ..core.collision import CollisionManager
     from ..core.exceptions import OmniMeshError
-    from ..core.impostor import ImpostorManager, resolve_impostor_export_dir
+    from ..core.impostor import ImpostorManager, clear_stale_impostor_masters, resolve_impostor_export_dir
     from ..core.impostor_baker import ImpostorAtlasBaker
     from ..core.impostor_math import (
         compute_impostor_atlas_resolution,
@@ -46,7 +45,7 @@ try:
 except (ImportError, ValueError):
     from core.collision import CollisionManager
     from core.exceptions import OmniMeshError
-    from core.impostor import ImpostorManager, resolve_impostor_export_dir
+    from core.impostor import ImpostorManager, clear_stale_impostor_masters, resolve_impostor_export_dir
     from core.impostor_baker import ImpostorAtlasBaker
     from core.impostor_math import (
         compute_impostor_atlas_resolution,
@@ -135,10 +134,11 @@ class LOD_OT_generate_impostor(Operator):
 
         # Determine output texture directory and clear any stale *_Master backups before fresh Cycles bake
         tex_dir = resolve_impostor_export_dir(getattr(props, "export_directory", ""), blend_data=bdata)
-        for master_sfx in ("_BaseColor_Master.png", "_Normal_Master.png", "_ORM_Master.png"):
-            stale_master = os.path.join(tex_dir, f"T_{base_name}_Impostor{master_sfx}")
-            if os.path.isfile(stale_master):
-                os.remove(stale_master)
+        try:
+            clear_stale_impostor_masters(tex_dir, base_name)
+        except OmniMeshError as clean_err:
+            safe_report(self, {"ERROR"}, f"Impostor preparation failed: {clean_err}")
+            return {"CANCELLED"}
 
         # Execute Cycles GPU selected-to-active canonical Metalness baking pass
         try:
@@ -295,18 +295,22 @@ class LOD_OT_generate_collision_hulls(Operator):
         if bdata is None:
             safe_report(self, {"ERROR"}, "Missing BlendData context for collision generation.")
             return {"CANCELLED"}
-        created_hulls = CollisionManager.generate_colliders_for_objects(
-            mesh_objs,
-            base_name,
-            mode=props.collision_decomposition_mode,
-            hull_count=props.collision_hull_count,
-            max_verts_per_hull=props.collision_max_verts_per_hull,
-            concavity_threshold=props.collision_concavity_threshold,
-            target_collection_name=f"{base_name}_Colliders",
-            target_engine=getattr(props, "target_engine", "GENERIC"),
-            scene=context.scene,
-            blend_data=bdata,
-        )
+        try:
+            created_hulls = CollisionManager.generate_colliders_for_objects(
+                mesh_objs,
+                base_name,
+                mode=props.collision_decomposition_mode,
+                hull_count=props.collision_hull_count,
+                max_verts_per_hull=props.collision_max_verts_per_hull,
+                concavity_threshold=props.collision_concavity_threshold,
+                target_collection_name=f"{base_name}_Colliders",
+                target_engine=getattr(props, "target_engine", "GENERIC"),
+                scene=context.scene,
+                blend_data=bdata,
+            )
+        except OmniMeshError as exc:
+            safe_report(self, {"ERROR"}, f"Collision hull generation failed: {exc}")
+            return {"CANCELLED"}
 
         props.last_generated_collider_count = len(created_hulls)
         safe_report(self, {"INFO"}, f"Generated {len(created_hulls)} collision hulls in '{base_name}_Colliders'")

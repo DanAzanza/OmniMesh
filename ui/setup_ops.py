@@ -249,20 +249,16 @@ class OMNIMESH_OT_initialize_asset(Operator):
             except Exception as exc:
                 logger.debug("Could not set export_base_name: %s", exc)
 
-            try:
-                props.active_asset = clean_name
-            except Exception as exc:
-                logger.debug("Immediate active_asset enum set deferred: %s", exc)
+            from .rna_helpers import assign_enum_property
 
-                def _deferred_set_active_asset() -> None:
-                    try:
-                        props.active_asset = clean_name
-                    except Exception as defer_exc:
-                        logger.debug("Deferred active_asset set failed: %s", defer_exc)
-                    return None
-
-                if hasattr(bpy.app, "timers"):
-                    bpy.app.timers.register(_deferred_set_active_asset, first_interval=0.01)
+            assign_enum_property(
+                bpy,
+                props,
+                "active_asset",
+                clean_name,
+                first_interval=0.01,
+                logger_inst=logger,
+            )
 
             if project_preset_tiers:
                 try:
@@ -287,20 +283,12 @@ OPERATOR_CLASSES = (OMNIMESH_OT_initialize_asset,)
 
 
 def register() -> None:
-    if not bpy:
-        return
-    for cls in OPERATOR_CLASSES:
-        try:
-            bpy.utils.register_class(cls)
-        except Exception as exc:
-            logger.warning("Could not register %s: %s", cls.__name__, exc)
+    from .rna_helpers import register_classes
+
+    register_classes(bpy, OPERATOR_CLASSES, logger_inst=logger)
 
 
 def unregister() -> None:
-    if not bpy:
-        return
-    for cls in reversed(OPERATOR_CLASSES):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Could not unregister %s: %s", cls.__name__, exc)
+    from .rna_helpers import unregister_classes
+
+    unregister_classes(bpy, OPERATOR_CLASSES, logger_inst=logger)

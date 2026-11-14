@@ -27,6 +27,7 @@ else:
         Panel = object
 
 try:
+    from ..core.compat import count_mesh_triangles
     from ..core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
     from ..core.engine_import_presets import DEFAULT_ENGINE_IMPORT_PRESET_ID, EngineImportPresetManager
     from ..core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
@@ -36,6 +37,7 @@ try:
     from .popovers import POPOVER_CLASSES
     from .utils import get_asset_base_meshes, get_available_asset_names, is_object_valid, resolve_effective_asset_name
 except (ImportError, ValueError):
+    from core.compat import count_mesh_triangles
     from core.config_presets import DEFAULT_CONFIG_PRESET_ID, ConfigPresetManager
     from core.engine_import_presets import DEFAULT_ENGINE_IMPORT_PRESET_ID, EngineImportPresetManager
     from core.lod_presets import DEFAULT_LOD_PRESET_ID, LODPresetManager
@@ -92,7 +94,6 @@ def _draw_tab_import(layout: Any, context: Any, props: Any) -> None:
 
     row_btn = box_pbr.row(align=True)
     row_btn.use_property_split = False
-    row_btn.scale_y = 1.2
     row_btn.operator("lod_tool.import_pbr_set", text="Import PBR Textures", icon="IMPORT")
 
     if getattr(props, "last_pbr_import_summary", ""):
@@ -109,13 +110,11 @@ def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
 
     row_imp = box_gen.row(align=True)
     row_imp.use_property_split = False
-    row_imp.scale_y = 1.2
     row_imp.operator("lod_tool.generate_impostor", text="Impostor", icon="IMAGE_PLANE")
     row_imp.popover(panel="OMNIMESH_PT_popover_impostor", icon="PREFERENCES", text="")
 
     row_col = box_gen.row(align=True)
     row_col.use_property_split = False
-    row_col.scale_y = 1.2
     row_col.operator("lod_tool.generate_collision_hulls", text="Colliders", icon="MOD_PHYSICS")
     row_col.popover(panel="OMNIMESH_PT_popover_collision", icon="PREFERENCES", text="")
 
@@ -158,7 +157,6 @@ def _draw_tab_add(layout: Any, context: Any, props: Any) -> None:
         row_shape.prop(int_props, "shape", text="Shape")
         row_int_act = box_int.row(align=True)
         row_int_act.use_property_split = False
-        row_int_act.scale_y = 1.2
         row_int_act.operator("omnimesh.add_interaction_volume", text="Add Clickspot / Trigger", icon="ADD")
 
 
@@ -170,13 +168,11 @@ def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
 
     row_san = box_clean.row(align=True)
     row_san.use_property_split = False
-    row_san.scale_y = 1.2
     row_san.operator("lod_tool.clean_and_repair_mesh", text="Clean Mesh", icon="BRUSH_DATA")
     row_san.popover(panel="OMNIMESH_PT_popover_sanitize", icon="PREFERENCES", text="")
 
     row_mat = box_clean.row(align=True)
     row_mat.use_property_split = False
-    row_mat.scale_y = 1.2
     row_mat.operator("lod_tool.clean_and_repair_materials", text="Clean Materials", icon="MATERIAL_DATA")
     row_mat.popover(panel="OMNIMESH_PT_popover_materials", icon="PREFERENCES", text="")
 
@@ -194,7 +190,6 @@ def _draw_tab_modify(layout: Any, context: Any, props: Any) -> None:
     row_chk_mode.prop(props, "chunk_partitioning_mode", text="Mode")
     row_chk_act = box_chunk.row(align=True)
     row_chk_act.use_property_split = False
-    row_chk_act.scale_y = 1.2
     row_chk_act.operator("lod_tool.spatial_chunk_and_generate", text="Partition & Chunk LOD0", icon="MESH_GRID")
 
 
@@ -238,7 +233,7 @@ def _calculate_base_tris(context: Any, props: Any, active_obj: Any) -> int:
         if not mesh_data or not hasattr(mesh_data, "polygons"):
             continue
         if hasattr(mesh_data, "loops"):
-            total_tris += max(0, len(mesh_data.loops) - 2 * len(mesh_data.polygons))
+            total_tris += count_mesh_triangles(mesh_data)
         else:
             total_tris += sum(len(p.vertices) - 2 for p in mesh_data.polygons)
     return total_tris

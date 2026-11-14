@@ -5,10 +5,8 @@ Maintains MSFS 2020 & 2024 flight model, lighting, cameras, options, and attache
 Kept in a dedicated submodule to enforce AGENTS.md < 750 LOC limit on settings.py.
 """
 
-from __future__ import annotations
-
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +20,13 @@ else:
         from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
         from bpy.types import PropertyGroup
     except ImportError:
+        from ..rna_helpers import mock_prop
+
         bpy = None
         PropertyGroup = object
+        BoolProperty = EnumProperty = FloatProperty = StringProperty = mock_prop
 
-        def _mock_prop(**kwargs: Any) -> Any:
-            return None
-
-        BoolProperty = EnumProperty = FloatProperty = StringProperty = _mock_prop
-
+from ..rna_helpers import register_classes, unregister_classes
 from .enums import MSFS_GEAR_STATE_ITEMS, MSFS_TARGET_VERSION_ITEMS
 
 
@@ -46,9 +43,24 @@ class OMNIMESH_MSFSConfigSettings(PropertyGroup):
     preserve_decals: BoolProperty(name="Preserve Decals", default=True)
 
     # Spatial & Flight Model
-    spatial_cfg_path: StringProperty(name="Flight Model", subtype="FILE_PATH", default="")
-    systems_cfg_path: StringProperty(name="Systems / Lights", subtype="FILE_PATH", default="")
-    cameras_cfg_path: StringProperty(name="Cameras", subtype="FILE_PATH", default="")
+    spatial_cfg_path: StringProperty(
+        name="Flight Model",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
+    systems_cfg_path: StringProperty(
+        name="Systems / Lights",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
+    cameras_cfg_path: StringProperty(
+        name="Cameras",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
     spatial_status: StringProperty(name="Status", default="Ready")
     scrape_margin_m: FloatProperty(name="Scrape Margin (m)", default=0.0, min=-0.5, max=0.5)
     gear_state: EnumProperty(name="Gear State", items=MSFS_GEAR_STATE_ITEMS, default="STATIC_COMPRESSED")
@@ -56,26 +68,23 @@ class OMNIMESH_MSFSConfigSettings(PropertyGroup):
     calculated_cg_height_ft: FloatProperty(name="Static CG Height (ft)", default=0.0, precision=3)
 
     # Modular Attachments & Submodels (MSFS 2024 attached_objects.cfg)
-    attached_objects_cfg_path: StringProperty(name="attached_objects.cfg", subtype="FILE_PATH", default="")
+    attached_objects_cfg_path: StringProperty(
+        name="attached_objects.cfg",
+        subtype="FILE_PATH",
+        default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
     auto_parent_to_socket: BoolProperty(name="Auto-Parent Sockets", default=True)
     show_submodel_previews: BoolProperty(name="Show Previews", default=False)
     attachment_status: StringProperty(name="Attachment Status", default="Ready")
 
 
 def register():
-    if bpy and hasattr(bpy.utils, "register_class"):
-        try:
-            bpy.utils.register_class(OMNIMESH_MSFSConfigSettings)
-        except Exception as exc:
-            logger.debug("Register skipped OMNIMESH_MSFSConfigSettings: %s", exc)
+    register_classes(bpy, (OMNIMESH_MSFSConfigSettings,), logger_inst=logger)
 
 
 def unregister():
-    if bpy and hasattr(bpy.utils, "unregister_class"):
-        try:
-            bpy.utils.unregister_class(OMNIMESH_MSFSConfigSettings)
-        except Exception as exc:
-            logger.debug("Unregister skipped OMNIMESH_MSFSConfigSettings: %s", exc)
+    unregister_classes(bpy, (OMNIMESH_MSFSConfigSettings,), logger_inst=logger)
 
 
 __all__ = ["OMNIMESH_MSFSConfigSettings", "register", "unregister"]

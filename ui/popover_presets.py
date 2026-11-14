@@ -51,7 +51,6 @@ try:
         PBRExportPresetManager,
         PBRImportPresetManager,
     )
-    from .properties import sync_maps_from_preset
     from .utils import _get_popover_props
 except (ImportError, ValueError):
     from core.config_presets import (
@@ -72,7 +71,6 @@ except (ImportError, ValueError):
         PBRExportPresetManager,
         PBRImportPresetManager,
     )
-    from ui.properties import sync_maps_from_preset
     from ui.utils import _get_popover_props
 
 
@@ -105,8 +103,6 @@ class OMNIMESH_PT_popover_engine_import_preset(Panel):
 
         row_title = layout.row(align=True)
         row_title.label(text=preset.get("name", preset_id), icon="PRESET")
-        if not is_builtin:
-            row_title.operator("omnimesh.rename_engine_import_preset", text="", icon="GREASEPENCIL")
 
         if is_builtin:
             box_badge = layout.box()
@@ -161,11 +157,9 @@ class OMNIMESH_PT_popover_import_preset(Panel):
         preset = PBRImportPresetManager.get_preset(preset_id)
         is_builtin = PBRImportPresetManager.is_builtin(preset_id)
 
-        # Header: Name and small pencil rename icon for custom presets
+        # Header: Preset name
         row_title = layout.row(align=True)
         row_title.label(text=preset.get("name", preset_id), icon="PRESET")
-        if not is_builtin:
-            row_title.operator("lod_tool.rename_import_preset", text="", icon="GREASEPENCIL")
 
         if is_builtin:
             box_badge = layout.box()
@@ -179,23 +173,7 @@ class OMNIMESH_PT_popover_import_preset(Panel):
 
         if len(props.pbr_active_maps) == 0:
             box_empty = layout.box()
-            box_empty.label(text="Preset maps not initialized.", icon="INFO")
-            box_empty.operator("lod_tool.init_preset_maps", text="Initialize Maps", icon="FILE_REFRESH")
-            if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
-                scene_name = getattr(context.scene, "name", "")
-
-                def _deferred_init():
-                    try:
-                        sc = bpy.data.scenes.get(scene_name) if scene_name and hasattr(bpy, "data") else None
-                        p_obj = getattr(sc, "lod_tool", None) if sc else None
-                        if p_obj and len(getattr(p_obj, "pbr_active_maps", [])) == 0:
-                            p_id = getattr(p_obj, "pbr_import_preset", "") or DEFAULT_PRESET_ID
-                            p_data = PBRImportPresetManager.get_preset(p_id)
-                            sync_maps_from_preset(p_obj, p_data)
-                    except Exception as exc:
-                        logger.debug("Deferred preset map hydration skipped: %s", exc)
-
-                bpy.app.timers.register(_deferred_init, first_interval=0.001)
+            box_empty.label(text="No texture map rules loaded for this preset.", icon="INFO")
             return
 
         row = layout.row()
@@ -211,27 +189,6 @@ class OMNIMESH_PT_popover_import_preset(Panel):
             rows=list_rows,
             maxrows=8,
         )
-        col_btn = row.column(align=True)
-        sub_add_tpl = col_btn.column(align=True)
-        sub_add_tpl.enabled = not is_builtin
-        sub_add_tpl.operator("lod_tool.add_map_template", icon="PRESET_NEW", text="")
-        sub_add = col_btn.column(align=True)
-        sub_add.enabled = not is_builtin
-        sub_add.operator("lod_tool.add_preset_map", icon="ADD", text="")
-        sub_rem = col_btn.column(align=True)
-        sub_rem.enabled = len(props.pbr_active_maps) > 1 and not is_builtin
-        sub_rem.operator("lod_tool.delete_preset_map", icon="REMOVE", text="")
-        col_btn.separator()
-        sub_up = col_btn.column(align=True)
-        sub_up.enabled = not is_builtin
-        op_up = sub_up.operator("lod_tool.move_preset_map", icon="TRIA_UP", text="")
-        if op_up is not None:
-            op_up.direction = "UP"
-        sub_down = col_btn.column(align=True)
-        sub_down.enabled = not is_builtin
-        op_down = sub_down.operator("lod_tool.move_preset_map", icon="TRIA_DOWN", text="")
-        if op_down is not None:
-            op_down.direction = "DOWN"
 
         maps = props.pbr_active_maps
         idx = props.pbr_active_map_index
@@ -296,8 +253,6 @@ class OMNIMESH_PT_popover_config_preset(Panel):
 
         row_title = layout.row(align=True)
         row_title.label(text=preset.get("name", preset_id), icon="PRESET")
-        if not is_builtin:
-            row_title.operator("omnimesh.rename_config_preset", text="", icon="GREASEPENCIL")
 
         if is_builtin:
             box_badge = layout.box()
@@ -347,8 +302,6 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
         # 1. Header & Preset Management
         row_title = layout.row(align=True)
         row_title.label(text=preset.get("name", preset_id), icon="PRESET")
-        if not is_builtin:
-            row_title.operator("lod_tool.rename_lod_preset", text="", icon="GREASEPENCIL")
 
         if is_builtin:
             box_badge = layout.box()
@@ -377,11 +330,6 @@ class OMNIMESH_PT_popover_lod_preset(Panel):
             rows=list_rows,
             maxrows=5,
         )
-        col_btn = row.column(align=True)
-        col_btn.operator("lod_tool.add_preset_tier", icon="ADD", text="")
-        sub_rem = col_btn.column(align=True)
-        sub_rem.enabled = len(props.lod_preset_active_tiers) > 1 and not is_builtin
-        sub_rem.operator("lod_tool.remove_preset_tier", icon="REMOVE", text="")
 
         # Cull Screen Size threshold immediately beneath the tiers
         row_cull = layout.row(align=True)
@@ -517,8 +465,6 @@ class OMNIMESH_PT_popover_export_preset(Panel):
 
         row_title = layout.row(align=True)
         row_title.label(text=preset.get("name", preset_id), icon="PRESET")
-        if not is_builtin:
-            row_title.operator("lod_tool.rename_export_preset", text="", icon="GREASEPENCIL")
 
         if is_builtin:
             box_badge = layout.box()
@@ -562,8 +508,7 @@ class OMNIMESH_PT_popover_export_preset(Panel):
 
         if len(props.pbr_export_active_maps) == 0:
             box_empty = layout.box()
-            box_empty.label(text="Export maps not initialized.", icon="INFO")
-            box_empty.operator("lod_tool.init_preset_maps", text="Initialize Maps", icon="FILE_REFRESH")
+            box_empty.label(text="No export map rules loaded for this preset.", icon="INFO")
             return
 
         row = layout.row()
@@ -576,27 +521,6 @@ class OMNIMESH_PT_popover_export_preset(Panel):
             "pbr_export_active_map_index",
             rows=min(max(len(props.pbr_export_active_maps), 4), 7),
         )
-        col_btn = row.column(align=True)
-        sub_add_tpl = col_btn.column(align=True)
-        sub_add_tpl.enabled = not is_builtin
-        sub_add_tpl.operator("lod_tool.add_export_map_template", icon="PRESET_NEW", text="")
-        sub_add = col_btn.column(align=True)
-        sub_add.enabled = not is_builtin
-        sub_add.operator("lod_tool.add_export_preset_map", icon="ADD", text="")
-        sub_rem = col_btn.column(align=True)
-        sub_rem.enabled = len(props.pbr_export_active_maps) > 1 and not is_builtin
-        sub_rem.operator("lod_tool.delete_export_preset_map", icon="REMOVE", text="")
-        col_btn.separator()
-        sub_up = col_btn.column(align=True)
-        sub_up.enabled = not is_builtin
-        op_up = sub_up.operator("lod_tool.move_export_preset_map", icon="TRIA_UP", text="")
-        if op_up is not None:
-            op_up.direction = "UP"
-        sub_down = col_btn.column(align=True)
-        sub_down.enabled = not is_builtin
-        op_down = sub_down.operator("lod_tool.move_export_preset_map", icon="TRIA_DOWN", text="")
-        if op_down is not None:
-            op_down.direction = "DOWN"
 
         # Detail box for selected map
         idx = props.pbr_export_active_map_index

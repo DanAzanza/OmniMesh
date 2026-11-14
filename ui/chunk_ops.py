@@ -497,24 +497,12 @@ CLASSES = (
 
 
 def register_chunk_operators() -> None:
-    if not bpy:
-        return
-    for cls in CLASSES:
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        try:
-            bpy.utils.register_class(cls)
-        except Exception as exc:
-            logger.debug("Failed registering %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import register_classes
+
+    register_classes(bpy, CLASSES, logger_inst=logger)
 
 
 def unregister_chunk_operators() -> None:
-    if not bpy:
-        return
-    for cls in reversed(CLASSES):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import unregister_classes
+
+    unregister_classes(bpy, CLASSES, logger_inst=logger)

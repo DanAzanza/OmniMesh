@@ -20,6 +20,11 @@ else:
         bpy = None
         UIList = object
 
+try:
+    from .rna_helpers import register_classes, unregister_classes
+except (ImportError, ValueError):
+    from ui.rna_helpers import register_classes, unregister_classes
+
 
 class OMNIMESH_UL_preset_maps(UIList):
     """Interactive list displaying PBR map definitions in the active preset."""
@@ -156,23 +161,8 @@ classes = (
 
 
 def register_lists() -> None:
-    if not bpy:
-        return
-    for cls in classes:
-        existing = getattr(bpy.types, cls.__name__, None)
-        if existing is not None:
-            try:
-                bpy.utils.unregister_class(existing)
-            except Exception as exc:
-                logger.debug("Safe unregister skipped %s: %s", cls.__name__, exc)
-        try:
-            bpy.utils.register_class(cls)
-        except Exception as exc:
-            logger.warning("Could not register %s: %s", cls.__name__, exc)
+    register_classes(bpy, classes, logger_inst=logger)
 
 
 def unregister_lists() -> None:
-    if not bpy:
-        return
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    unregister_classes(bpy, classes, logger_inst=logger)

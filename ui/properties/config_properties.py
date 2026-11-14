@@ -4,8 +4,6 @@ OmniMesh Config Preset Properties.
 Kept in a dedicated submodule to strictly enforce AGENTS.md < 800 LOC limit on settings.py.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -21,13 +19,11 @@ else:
         from bpy.props import BoolProperty, EnumProperty, StringProperty
         from bpy.types import PropertyGroup
     except ImportError:
+        from ..rna_helpers import mock_prop
+
         bpy = None
         PropertyGroup = object
-
-        def _mock_prop(**kwargs: Any) -> Any:
-            return None
-
-        BoolProperty = EnumProperty = StringProperty = _mock_prop
+        BoolProperty = EnumProperty = StringProperty = mock_prop
 
 from .guards import PresetSyncGuard, StateRestorationGuard
 
@@ -144,16 +140,12 @@ class OMNIMESH_ConfigPresetSettings(PropertyGroup):
 
 
 def register():
-    if bpy and hasattr(bpy.utils, "register_class"):
-        try:
-            bpy.utils.register_class(OMNIMESH_ConfigPresetSettings)
-        except Exception as exc:
-            logger.debug("Register skipped OMNIMESH_ConfigPresetSettings: %s", exc)
+    from ..rna_helpers import register_classes
+
+    register_classes(bpy, (OMNIMESH_ConfigPresetSettings,), logger_inst=logger)
 
 
 def unregister():
-    if bpy and hasattr(bpy.utils, "unregister_class"):
-        try:
-            bpy.utils.unregister_class(OMNIMESH_ConfigPresetSettings)
-        except Exception as exc:
-            logger.debug("Unregister skipped OMNIMESH_ConfigPresetSettings: %s", exc)
+    from ..rna_helpers import unregister_classes
+
+    unregister_classes(bpy, (OMNIMESH_ConfigPresetSettings,), logger_inst=logger)

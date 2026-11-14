@@ -321,17 +321,12 @@ def import_cameras(
 
 def import_attachments(context: Any, manifest: Any) -> int:
     """Parses and imports attached objects configuration."""
-    attachments_count = 0
     if not manifest.attached_objects_cfg_path or not os.path.isfile(manifest.attached_objects_cfg_path):
         return 0
     try:
-        from .vehicle_attachment_ops import OMNIMESH_OT_import_msfs_attachments
+        from .vehicle_attachment_ops import import_msfs_attachments_file
 
-        att_op = OMNIMESH_OT_import_msfs_attachments()
-        att_op.filepath = manifest.attached_objects_cfg_path
-        res = att_op.execute(context)
-        if "FINISHED" in res:
-            attachments_count = getattr(att_op, "imported_count", 1)
+        return import_msfs_attachments_file(context, manifest.attached_objects_cfg_path)
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
         logger.warning("Error ingesting attachments: %s", exc)
-    return attachments_count
+    return 0

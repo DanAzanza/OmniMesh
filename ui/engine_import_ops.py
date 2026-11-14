@@ -96,6 +96,7 @@ class OMNIMESH_OT_import_engine_project(Operator):
         description="Path to engine project package or aircraft root folder",
         subtype="DIR_PATH",
         default="",
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
     )
 
     filter_folder: BoolProperty(
@@ -455,18 +456,16 @@ class OMNIMESH_OT_create_engine_import_preset(Operator):
                 template_id=DEFAULT_ENGINE_IMPORT_PRESET_ID,
             )
             if props and hasattr(props, "engine_import_preset"):
-                try:
-                    props.engine_import_preset = new_id
-                except (TypeError, ValueError):
-                    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+                from .rna_helpers import assign_enum_property
 
-                        def _deferred() -> None:
-                            try:
-                                props.engine_import_preset = new_id
-                            except Exception as exc:
-                                logger.debug("Deferred engine import preset assignment skipped: %s", exc)
-
-                        bpy.app.timers.register(_deferred, first_interval=0.005)
+                assign_enum_property(
+                    bpy,
+                    props,
+                    "engine_import_preset",
+                    new_id,
+                    first_interval=0.005,
+                    logger_inst=logger,
+                )
             self.report({"INFO"}, f"Created engine import preset '{self.preset_name}'")
             return {"FINISHED"}
         except Exception as exc:
@@ -520,18 +519,16 @@ class OMNIMESH_OT_rename_engine_import_preset(Operator):
         try:
             new_id = EngineImportPresetManager.rename_custom_preset(old_id, clean_name)
             if props and hasattr(props, "engine_import_preset"):
-                try:
-                    props.engine_import_preset = new_id
-                except (TypeError, ValueError):
-                    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+                from .rna_helpers import assign_enum_property
 
-                        def _deferred() -> None:
-                            try:
-                                props.engine_import_preset = new_id
-                            except Exception as exc:
-                                logger.debug("Deferred engine import preset rename assignment skipped: %s", exc)
-
-                        bpy.app.timers.register(_deferred, first_interval=0.005)
+                assign_enum_property(
+                    bpy,
+                    props,
+                    "engine_import_preset",
+                    new_id,
+                    first_interval=0.005,
+                    logger_inst=logger,
+                )
             self.report({"INFO"}, f"Renamed preset to '{clean_name}'")
             return {"FINISHED"}
         except Exception as exc:
@@ -575,18 +572,16 @@ class OMNIMESH_OT_duplicate_engine_import_preset(Operator):
         try:
             new_id = duplicate_engine_import_preset(active_id, new_name=self.new_name)
             if props:
-                try:
-                    props.engine_import_preset = new_id
-                except (TypeError, ValueError):
-                    if bpy and hasattr(bpy, "app") and hasattr(bpy.app, "timers"):
+                from .rna_helpers import assign_enum_property
 
-                        def _deferred() -> None:
-                            try:
-                                props.engine_import_preset = new_id
-                            except Exception as exc:
-                                logger.debug("Deferred engine import preset duplicate assignment skipped: %s", exc)
-
-                        bpy.app.timers.register(_deferred, first_interval=0.005)
+                assign_enum_property(
+                    bpy,
+                    props,
+                    "engine_import_preset",
+                    new_id,
+                    first_interval=0.005,
+                    logger_inst=logger,
+                )
             self.report({"INFO"}, f"Created custom preset '{self.new_name}'")
             return {"FINISHED"}
         except Exception as exc:
@@ -649,24 +644,12 @@ classes = (
 
 
 def register():
-    if not bpy:
-        return
-    for cls in classes:
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as exc:
-            logger.debug("Safe unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
-        try:
-            bpy.utils.register_class(cls)
-        except ValueError as exc:
-            logger.debug("Register skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import register_classes
+
+    register_classes(bpy, classes, logger_inst=logger)
 
 
 def unregister():
-    if not bpy:
-        return
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except ValueError as exc:
-            logger.debug("Unregister skipped %s: %s", getattr(cls, "__name__", "cls"), exc)
+    from .rna_helpers import unregister_classes
+
+    unregister_classes(bpy, classes, logger_inst=logger)
