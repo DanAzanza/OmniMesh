@@ -30,5 +30,6 @@ Before opening this PR, confirm you have completed the following steps:
 - [ ] `python -m ruff check .` passes with **0 errors**.
 - [ ] `python -m ruff format --check .` passes with **0 errors**.
 - [ ] `python -m pyright .` passes with **0 errors / 0 warnings**.
+- [ ] `python scripts/audit_architecture.py --strict` passes with **0 errors**.
 - [ ] `python -m pytest -v` passes **100% of test suites**.
-- [ ] Tested manually inside Blender 4.2+ / 5.2 LTS (if UI or operators were modified).
+- [ ] Tested manually inside Blender 5.0+ (if UI or operators were modified).

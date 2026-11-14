@@ -30,14 +30,19 @@ This project and everyone participating in it is governed by the [Contributor Co
 3. **Install Development & Quality Tools:**
    ```bash
    python -m pip install --upgrade pip
-   pip install ruff pyright fake-bpy-module-latest pytest
+   python -m pip install -e ".[dev]"
    ```
 
 ---
 
 ## 🚦 Local Quality Gates & CI Pre-Flight Checks
 
-Before submitting a pull request, ensure all local verification checks pass with **0 errors and 0 warnings**:
+Before submitting a pull request, run the central CI parity gate (`python scripts/verify_ci.py`), or verify the individual checks with **0 errors and 0 warnings**:
+
+0. **Unified CI Gate (Recommended):**
+   ```bash
+   python scripts/verify_ci.py
+   ```
 
 1. **Linting & Code Style:**
    ```bash
@@ -50,8 +55,9 @@ Before submitting a pull request, ensure all local verification checks pass with
    python -m pyright .
    ```
 
-3. **Automated Unit Tests:**
+3. **Architecture Audit & Automated Tests:**
    ```bash
+   python scripts/audit_architecture.py --strict
    python -m pytest -v
    ```
 

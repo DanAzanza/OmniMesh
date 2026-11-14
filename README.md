@@ -170,12 +170,12 @@ $$\mathbf{M}_{S \to M_{\text{rest}}} = \mathbf{M}_{M_{\text{rest\_world}}}^{-1} 
 
 OmniMesh provides a reproducible headless benchmark harness (`scripts/run_benchmarks.py`) profiling decimation, planar dissolve, bone weight clamping, and normal reprojection across multi-feature procedural meshes in headless Blender:
 
-### Reproducible Performance Metrics (Blender 5.2 LTS, Windows x64)
+### Reproducible Performance Metrics (Blender 5.3.0, Windows x64)
 
 | Poly Tier | Input Triangles | Planar Dissolve | Bone Weight Clamping | QEM LOD1 (50%) | QEM LOD3 (10%) | Split Normal Reprojection |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **10k** | 10,200 | 13.3 ms | 91.9 ms | 59.2 ms | 68.5 ms | 93.6 ms |
-| **100k** | 101,108 | 369.0 ms | 990.1 ms | 716.8 ms | 1,012.4 ms | 1,211.8 ms |
+| **10k** | 10,200 | 11.1 ms | 90.6 ms | 57.7 ms | 67.8 ms | 97.0 ms |
+| **100k** | 101,108 | 404.1 ms | 884.3 ms | 706.2 ms | 981.8 ms | 1,191.3 ms |
 
 > *Reproducible via `python scripts/run_benchmarks.py --quick` (or `--full` for 500k poly tier), which generates local raw JSON metrics in `benchmark_results.json`.*
 

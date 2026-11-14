@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ast
 from collections import Counter
+import re
 import sys
 from pathlib import Path
 
@@ -25,13 +26,15 @@ BPY_DATA_RATCHET_BASELINE = 0
 
 # Monotonic ratchet baseline for defensive hasattr and getattr calls in core/ and exporters/
 HASATTR_RATCHET_BASELINE = 0
-GETATTR_RATCHET_BASELINE = 29
+GETATTR_RATCHET_BASELINE = 26
 
 # Monotonic ratchet baseline for log-only exception handlers in core/ and exporters/
 LOG_ONLY_EXCEPT_RATCHET_BASELINE = 99
 
 # Monotonic ratchet baseline for except-pass exception handlers in core/ and exporters/
 EXCEPT_PASS_RATCHET_BASELINE = 0
+
+_PYRIGHT_DIRECTIVE_RE = re.compile(r"#\s*pyright\s*:")
 
 # Strictly scoped allowlist for cast(Any, ...) justified exclusively by verified Blender stub defects:
 # Key: relative file path -> { target_expr: (max_allowed_occurrences, documented_defect_rationale) }
@@ -41,7 +44,6 @@ ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
     },
     "core/impostor.py": {
         "impostor_obj.data": (1, "Blender stub defect: ID base class lacks materials attribute"),
-        "ctx": (1, "Blender stub defect: Context.temp_override callable return type"),
     },
     "core/impostor_baker.py": {
         "cycles_addon.preferences": (1, "Blender stub defect: AddonPreferences subclass lacks Cycles device methods"),
@@ -58,7 +60,7 @@ ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
         "orm_img.colorspace_settings": (1, "Blender stub defect: ColorManagedInputColorspaceSettings name setter"),
     },
     "core/material_presets.py": {
-        "mat": (4, "Dynamic RNA property: msfs_material_type injected by MSFS exporter"),
+        "mat": (1, "Dynamic RNA property: msfs_material_type injected by MSFS exporter"),
     },
     "core/materials.py": {
         "out.links": (1, "Blender stub defect: NodeSocket.links sequence typing"),
@@ -88,41 +90,57 @@ ALLOWED_CAST_ANY: dict[str, dict[str, tuple[int, str]]] = {
 }
 
 
+def _is_simple_any(node: ast.AST) -> bool:
+    """Return True if ``node`` represents a bare ``Any`` annotation expression."""
+    return (
+        (isinstance(node, ast.Name) and node.id == "Any")
+        or (isinstance(node, ast.Attribute) and node.attr == "Any")
+        or (isinstance(node, ast.Constant) and node.value == "Any")
+    )
+
+
 def _has_non_dict_any(annotation: ast.AST | None) -> bool:
     """Returns True if an AST annotation contains Any outside of dict/Mapping value parameters."""
     if annotation is None:
         return False
-    if isinstance(annotation, ast.Name) and annotation.id == "Any":
+    if _is_simple_any(annotation):
         return True
-    if isinstance(annotation, ast.Attribute) and annotation.attr == "Any":
-        return True
-    if isinstance(annotation, ast.Constant) and annotation.value == "Any":
-        return True
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str) and "Any" in annotation.value:
+        try:
+            parsed = ast.parse(annotation.value, mode="eval").body
+        except SyntaxError:
+            return True
+        return _has_non_dict_any(parsed)
     if isinstance(annotation, ast.Subscript):
-        base_str = ast.unparse(annotation.value)
-        if base_str in ("dict", "Dict", "Mapping"):
+        base_name = ast.unparse(annotation.value).rsplit(".", 1)[-1]
+        if base_name in ("dict", "Dict", "Mapping"):
             if isinstance(annotation.slice, ast.Tuple) and len(annotation.slice.elts) == 2:
-                return _has_non_dict_any(annotation.slice.elts[0])
+                key_ann, val_ann = annotation.slice.elts
+                if _has_non_dict_any(key_ann):
+                    return True
+                return False if _is_simple_any(val_ann) else _has_non_dict_any(val_ann)
             return False
     return any(_has_non_dict_any(child) for child in ast.iter_child_nodes(annotation))
 
 
-def _is_bpy_data_access(node: ast.AST) -> bool:
+def _is_bpy_data_access(node: ast.AST, bpy_names: set[str] | None = None) -> bool:
     """Detects direct or indirect access to Blender global datablock pool (bpy.data)."""
-    # 1. Direct attribute: bpy.data or _bpy.data
+    names = bpy_names or {"bpy", "_bpy"}
+
+    # 1. Direct attribute: bpy.data or alias.data
     if isinstance(node, ast.Attribute) and node.attr == "data":
-        if isinstance(node.value, ast.Name) and node.value.id in ("bpy", "_bpy"):
+        if isinstance(node.value, ast.Name) and node.value.id in names:
             return True
 
-    # 2. Indirect getattr: getattr(bpy, "data"), getattr(_bpy, "data"), or getattr(_bpy_in if ... else bpy, "data")
+    # 2. Indirect getattr: getattr(bpy, "data"), getattr(alias, "data"), or getattr(_bpy_in if ... else bpy, "data")
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr":
         if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant) and node.args[1].value == "data":
             first_arg = node.args[0]
-            if isinstance(first_arg, ast.Name) and first_arg.id in ("bpy", "_bpy"):
+            if isinstance(first_arg, ast.Name) and first_arg.id in names:
                 return True
             if isinstance(first_arg, ast.IfExp):
                 target_names = {n.id for n in ast.walk(first_arg) if isinstance(n, ast.Name)}
-                if any(n in target_names for n in ("bpy", "_bpy", "_bpy_in")):
+                if any(n in target_names for n in names | {"_bpy_in"}):
                     return True
 
     # 3. Import: from bpy import data
@@ -144,6 +162,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         "broad_except_in_core_exporters": [],
         "any_in_core_exporter_signatures": [],
         "unallowed_cast_any_in_core_exporters": [],
+        "pyright_suppression_in_core_exporters": [],
         "bpy_data_ratchet_in_core_exporters": [],
         "hasattr_ratchet_in_core_exporters": [],
         "getattr_ratchet_in_core_exporters": [],
@@ -216,6 +235,19 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
         is_core = rel_path.startswith("core/")
         is_core_or_exporter = is_core or rel_path.startswith("exporters/")
 
+        if is_core_or_exporter:
+            for idx, line in enumerate(lines, 1):
+                if _PYRIGHT_DIRECTIVE_RE.search(line):
+                    violations["pyright_suppression_in_core_exporters"].append((rel_path, idx, line.strip()))
+
+        bpy_names = {"bpy", "_bpy"}
+        if is_core_or_exporter:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name in ("bpy", "_bpy") and alias.asname:
+                            bpy_names.add(alias.asname)
+
         for node in ast.walk(tree):
             # Check for hasattr duck typing in core/ and exporters/
             if (
@@ -269,9 +301,9 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
             if is_core_or_exporter and isinstance(node, ast.Import):
                 if any(alias.name == "ui" or alias.name.startswith("ui.") for alias in node.names):
                     violations["layer_violation_ui_in_core_exporters"].append((rel_path, node.lineno, "import ui"))
-            # Check for direct bpy.context, from bpy import context, or getattr(..., "context") in core/ and exporters/
+            # Check for direct bpy.context, aliased bpy.context, from bpy import context, or getattr(..., "context") in core/ and exporters/
             if is_core_or_exporter and isinstance(node, ast.Attribute):
-                if isinstance(node.value, ast.Name) and node.value.id in ("bpy", "_bpy") and node.attr == "context":
+                if isinstance(node.value, ast.Name) and node.value.id in bpy_names and node.attr == "context":
                     violations["context_leak_in_core_exporters"].append(
                         (rel_path, node.lineno, f"{node.value.id}.context")
                     )
@@ -293,7 +325,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
                             )
 
             # Check for global bpy.data references in core/ and exporters/
-            if is_core_or_exporter and _is_bpy_data_access(node):
+            if is_core_or_exporter and _is_bpy_data_access(node, bpy_names):
                 total_bpy_data_count += 1
 
             # Check for cast(Any, ...) escape hatches in core/ and exporters/
@@ -304,12 +336,7 @@ def scan_repository(repo_root: Path | None = None) -> dict[str, list[tuple[objec
                 )
                 if is_cast and len(node.args) >= 2:
                     arg0 = node.args[0]
-                    is_any_type = (
-                        (isinstance(arg0, ast.Name) and arg0.id == "Any")
-                        or (isinstance(arg0, ast.Attribute) and arg0.attr == "Any")
-                        or (isinstance(arg0, ast.Constant) and arg0.value == "Any")
-                        or _has_non_dict_any(arg0)
-                    )
+                    is_any_type = _is_simple_any(arg0) or _has_non_dict_any(arg0)
                     if is_any_type:
                         target_str = ast.unparse(node.args[1])
                         cast_any_occurrences.setdefault(rel_path, []).append((node.lineno, target_str))
@@ -508,6 +535,7 @@ def main() -> int:
         "broad_except_in_core_exporters",
         "any_in_core_exporter_signatures",
         "unallowed_cast_any_in_core_exporters",
+        "pyright_suppression_in_core_exporters",
         "bpy_data_ratchet_in_core_exporters",
         "hasattr_ratchet_in_core_exporters",
         "getattr_ratchet_in_core_exporters",
