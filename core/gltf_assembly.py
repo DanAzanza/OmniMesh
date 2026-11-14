@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Optional, Protocol, cast
 
 logger = logging.getLogger(__name__)
 
@@ -374,7 +374,7 @@ def count_mesh_triangles(mesh_obj: bpy.types.Object | None) -> int:
 def bind_manifest_to_omnimesh(
     context: bpy.types.Context | None,
     manifest: MSFSProjectManifest,
-    lod_mesh_map: dict[int, list[Any]],
+    lod_mesh_map: dict[int, list[bpy.types.Object]],
 ) -> None:
     """Binds imported LOD meshes and screen sizes to OmniMesh's scene LOD properties."""
     if not bpy or not context or not context.scene:

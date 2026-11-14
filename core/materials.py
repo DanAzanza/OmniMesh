@@ -565,7 +565,7 @@ class MaterialOptimizer:
         if not bdata_mats:
             return 0
 
-        hash_to_materials: dict[str, list[Any]] = {}
+        hash_to_materials: dict[str, list[bpy.types.Material]] = {}
         for mat in bdata_mats:
             h = DeepMaterialHasher.hash_material(mat)
             hash_to_materials.setdefault(h, []).append(mat)
