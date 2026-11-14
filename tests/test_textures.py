@@ -357,8 +357,11 @@ def test_texture_pool_manager_worker_exception_handling():
     assert results[1] is True
 
 
-def test_memory_compaction():
+def test_memory_compaction(monkeypatch):
+    calls: list[int] = []
+    monkeypatch.setattr("core.textures.TexturePoolManager.compact_memory", lambda: calls.append(1))
     TextureChannelPacker.compact_memory()
+    assert calls == [1]
 
 
 def test_texture_pool_manager_submit_and_wait_all():
@@ -717,10 +720,7 @@ def test_pure_numpy_bilinear_resampler_accuracy():
 
 
 def test_shader_tracer_pillow_absent_fallback_parity():
-    """
-    Verify that _extract_from_image executes the high-precision pure-NumPy bilinear resampler
-    directly with zero external Pillow dependency.
-    """
+    """Verify _extract_from_image runs the pure-NumPy bilinear resampler without Pillow."""
     from unittest.mock import MagicMock
 
     img_mock = MagicMock()

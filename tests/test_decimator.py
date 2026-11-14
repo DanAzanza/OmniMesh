@@ -87,12 +87,15 @@ def test_tag_boundaries_uv_discontinuity():
     assert 1 in pinned
 
 
-def test_apply_planar_limited_dissolve_null_or_zero():
-    MeshDecimator.apply_planar_limited_dissolve(None, 0.0)
-    MeshDecimator.apply_planar_limited_dissolve(None, 0.5)
+def test_apply_planar_limited_dissolve_null_or_zero(monkeypatch):
+    mock_bmesh = MagicMock()
+    monkeypatch.setattr("core.decimator.bmesh", mock_bmesh)
+    assert MeshDecimator.apply_planar_limited_dissolve(None, 0.0) is None
+    assert MeshDecimator.apply_planar_limited_dissolve(None, 0.5) is None
     mock_bm = MagicMock()
     mock_bm.faces = []
-    MeshDecimator.apply_planar_limited_dissolve(mock_bm, 0.5)
+    assert MeshDecimator.apply_planar_limited_dissolve(mock_bm, 0.5) is None
+    mock_bmesh.ops.dissolve_limit.assert_not_called()
 
 
 def test_apply_planar_limited_dissolve_failure_raises(monkeypatch):

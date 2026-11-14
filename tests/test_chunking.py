@@ -126,11 +126,15 @@ def test_spatial_grid_spec_split_z():
 
 
 def test_recenter_pivot_stationary_guard():
-    # Null or invalid object
-    MeshChunkSlicer._recenter_pivot_stationary(None)
+    # Null or invalid object must be a safe no-op without mutating state
+    assert MeshChunkSlicer._recenter_pivot_stationary(None) is None
     mock_obj = MagicMock()
     mock_obj.type = "CAMERA"
-    MeshChunkSlicer._recenter_pivot_stationary(mock_obj)
+    sentinel_loc = (1.0, 2.0, 3.0)
+    mock_obj.location = sentinel_loc
+    assert MeshChunkSlicer._recenter_pivot_stationary(mock_obj) is None
+    assert mock_obj.location == sentinel_loc
+    mock_obj.data.vertices.__iter__.assert_not_called()
 
 
 def test_recenter_pivot_stationary_logic():

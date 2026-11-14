@@ -45,11 +45,25 @@ def _read_manifest_version() -> str:
     raise AssertionError(f"Version not found in {manifest_path}")
 
 
+def _read_pyproject_version() -> str:
+    pyproject_path = REPO_ROOT / "pyproject.toml"
+    if tomllib is not None:
+        with pyproject_path.open("rb") as pyproject_file:
+            pyproject = tomllib.load(pyproject_file)
+        return str(pyproject["project"]["version"])
+    content = pyproject_path.read_text(encoding="utf-8")
+    match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+    if match:
+        return match.group(1)
+    raise AssertionError(f"Version not found in {pyproject_path}")
+
+
 def test_extension_versions_are_consistent() -> None:
     manifest_version = _read_manifest_version()
     expected_bl_info = tuple(int(part) for part in manifest_version.split("."))
 
     assert get_version(REPO_ROOT) == manifest_version
+    assert _read_pyproject_version() == manifest_version
     assert _read_bl_info_version() == expected_bl_info
 
 

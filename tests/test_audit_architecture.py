@@ -360,3 +360,28 @@ def test_audit_catches_compound_log_and_pass_except_handler(tmp_path: Path, monk
     ratchet = violations["log_only_except_ratchet_in_core_exporters"]
     assert len(ratchet) == 1
     assert "log-only exception handlers (2) exceed ratchet baseline (0)" in str(ratchet[0][2])
+
+
+def test_audit_catches_pyright_suppression_bpy_alias_and_nested_any(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import scripts.audit_architecture as audit_mod
+
+    monkeypatch.setattr(audit_mod, "BPY_DATA_RATCHET_BASELINE", 0)
+
+    core_dir = tmp_path / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "evasion.py").write_text(
+        "# pyright: reportAttributeAccessIssue=none\n"
+        "import bpy as b\n"
+        "from typing import Any\n"
+        "def sneak(payload: 'list[Any]', nested: dict[str, list[Any]]) -> object:\n"
+        "    return (b.context.scene, b.data.objects)\n",
+        encoding="utf-8",
+    )
+
+    violations = scan_repository(tmp_path)
+    assert len(violations["pyright_suppression_in_core_exporters"]) == 1
+    assert violations["context_leak_in_core_exporters"][0][2] == "b.context"
+    assert len(violations["bpy_data_ratchet_in_core_exporters"]) == 1
+    assert len(violations["any_in_core_exporter_signatures"]) == 2

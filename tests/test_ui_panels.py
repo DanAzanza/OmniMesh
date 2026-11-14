@@ -136,14 +136,44 @@ def test_fix_lod0_operators_poll_and_exec_mocked():
     assert op_col_gen.execute(None) == {"FINISHED"}
 
 
-def test_registration_lifecycle_safety():
-    """Verify register/unregister functions run cleanly when bpy is None/mocked."""
+def test_registration_lifecycle_safety(monkeypatch):
+    """Verify register/unregister helpers handle bpy=None and register/unregister all classes."""
+    import ui.lists as lists_mod
+    import ui.panel as panel_mod
+    import ui.properties as props_mod
+
+    for mod in (props_mod, lists_mod, panel_mod):
+        monkeypatch.setattr(mod, "bpy", None)
+    assert register_properties() is None
+    assert unregister_properties() is None
+    assert register_lists() is None
+    assert unregister_lists() is None
+    assert register_panel() is None
+    assert unregister_panel() is None
+
+    mock_bpy = MagicMock()
+    mock_bpy.app.handlers.load_post = []
+    mock_bpy.types.Scene = type("MockScene", (), {})
+    mock_bpy.types.Object = type("MockObject", (), {})
+    for mod in (props_mod, lists_mod, panel_mod):
+        monkeypatch.setattr(mod, "bpy", mock_bpy)
+    monkeypatch.setattr(props_mod, "PointerProperty", lambda **kw: ("PointerProperty", kw))
+
     register_properties()
-    unregister_properties()
     register_lists()
-    unregister_lists()
     register_panel()
+    expected_count = len(props_mod.CLASSES) + len(lists_mod.classes) + len(PANEL_CLASSES)
+    assert mock_bpy.utils.register_class.call_count == expected_count
+    assert hasattr(mock_bpy.types.Scene, "lod_tool")
+    assert hasattr(mock_bpy.types.Object, "lod_tool")
+
+    mock_bpy.utils.unregister_class.reset_mock()
     unregister_panel()
+    unregister_lists()
+    unregister_properties()
+    assert mock_bpy.utils.unregister_class.call_count == expected_count
+    assert not hasattr(mock_bpy.types.Scene, "lod_tool")
+    assert not hasattr(mock_bpy.types.Object, "lod_tool")
 
 
 def test_clean_and_repair_mesh_properties(monkeypatch):
