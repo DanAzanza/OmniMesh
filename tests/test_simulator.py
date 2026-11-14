@@ -163,3 +163,30 @@ def test_simulator_and_scanner_explicit_di_without_bpy_data(monkeypatch):
     # Simulator index with explicit blend_data
     count = LODSimulatorEngine.index_scene_assets(mock_scene, blend_data=bdata)
     assert count >= 0
+
+
+def test_compute_virtual_screen_override_pct_modes_and_clamping() -> None:
+    """Verify virtual simulator distance-to-screen-percentage math for perspective, ortho, and bounds."""
+    import math
+
+    from core.simulator import compute_virtual_screen_override_pct
+
+    persp = compute_virtual_screen_override_pct(
+        radius=2.0,
+        virtual_distance_m=10.0,
+        fov_v_rad=math.pi / 3.0,
+        is_perspective=True,
+    )
+    assert 0.01 <= persp <= 100.0
+
+    ortho = compute_virtual_screen_override_pct(
+        radius=2.0,
+        virtual_distance_m=10.0,
+        fov_v_rad=8.0,
+        is_perspective=False,
+    )
+    assert ortho == pytest.approx(50.0)
+
+    # Zero/tiny distance clamps to 100%, huge distance clamps to 0.01%
+    assert compute_virtual_screen_override_pct(5.0, 0.0, 1.0, True) == pytest.approx(100.0)
+    assert compute_virtual_screen_override_pct(0.1, 1e7, 1.0, True) == pytest.approx(0.01)

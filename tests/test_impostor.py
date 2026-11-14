@@ -314,3 +314,42 @@ def test_bake_impostor_textures_routes_6_face_ortho_mesh_to_ortho_baker(tmp_path
 
     assert res == expected
     ortho_fn.assert_called_once()
+
+
+def test_clear_stale_impostor_masters_removes_and_guards(tmp_path, monkeypatch):
+    """Verify clear_stale_impostor_masters deletes matching *_Master.png files and enforces safety guards."""
+    from pathlib import Path
+
+    import pytest
+
+    from core.exceptions import ImpostorBakeError
+    from core.impostor import clear_stale_impostor_masters
+
+    stale_bc = tmp_path / "T_Hero_Impostor_BaseColor_Master.png"
+    stale_nrm = tmp_path / "T_Hero_Impostor_Normal_Master.png"
+    keep_atlas = tmp_path / "T_Hero_Impostor_BaseColor.png"
+    for fp in (stale_bc, stale_nrm, keep_atlas):
+        fp.write_bytes(b"PNG")
+
+    removed = clear_stale_impostor_masters(str(tmp_path), "Hero")
+    assert removed == 2
+    assert not stale_bc.exists()
+    assert not stale_nrm.exists()
+    assert keep_atlas.exists()
+
+    # Path traversal outside export root must fail fast with ImpostorBakeError
+    monkeypatch.setattr("core.impostor.sanitize_filename", lambda _name: "../../../outside")
+    with pytest.raises(ImpostorBakeError, match="outside export directory"):
+        clear_stale_impostor_masters(str(tmp_path), "Hero")
+
+    # Unlink failure must raise ImpostorBakeError instead of silently ignoring
+    monkeypatch.setattr("core.impostor.sanitize_filename", lambda name: name)
+    stale_orm = tmp_path / "T_Hero_Impostor_ORM_Master.png"
+    stale_orm.write_bytes(b"PNG")
+
+    def _deny_unlink(self: Path, missing_ok: bool = False) -> None:
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "unlink", _deny_unlink)
+    with pytest.raises(ImpostorBakeError, match="Failed removing stale impostor master"):
+        clear_stale_impostor_masters(str(tmp_path), "Hero")

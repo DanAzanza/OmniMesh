@@ -270,3 +270,40 @@ def test_vehicle_geometry_wheels_ground_and_negative_extrema() -> None:
     assert "WHEEL_FRONT_R" in detected
     assert "WHEEL_REAR_L" in detected
     assert "WHEEL_REAR_R" in detected
+
+
+def test_wheel_contact_z_and_static_cg_height() -> None:
+    """Verify wheel contact Z extraction and MSFS static CG height calculation including negative guards."""
+    from core.vehicle_geometry import compute_static_cg_height_ft, find_wheel_contact_z
+
+    assert find_wheel_contact_z(np.zeros((0, 3), dtype=np.float32), (0.0, 0.0)) is None
+
+    verts = np.array(
+        [
+            [0.0, 2.0, -0.45],
+            [0.1, 2.1, -0.30],
+            [5.0, 5.0, -9.0],
+        ],
+        dtype=np.float32,
+    )
+    # Local radius picks -0.45 instead of distant -9.0 vertex
+    assert find_wheel_contact_z(verts, (0.0, 2.0), radius_m=0.6) == pytest.approx(-0.45)
+    # Far wheel center with no local vertices falls back to global min Z
+    assert find_wheel_contact_z(verts, (20.0, 20.0), radius_m=0.6) == pytest.approx(-9.0)
+
+    # Empty contact heights must fail fast
+    with pytest.raises(ValueError, match="At least one wheel contact Z"):
+        compute_static_cg_height_ft([], 1.0, "COMPRESSED", 0.2, 3.28084)
+
+    compressed_ft = compute_static_cg_height_ft(
+        [-0.5, -0.5], cg_world_z=1.0, gear_state="COMPRESSED", compression_m=0.2, meters_to_feet=3.28084
+    )
+    extended_ft = compute_static_cg_height_ft(
+        [-0.5, -0.5], cg_world_z=1.0, gear_state="UNCOMPRESSED_EXTENDED", compression_m=0.2, meters_to_feet=3.28084
+    )
+    assert compressed_ft == pytest.approx(1.5 * 3.28084)
+    assert extended_ft == pytest.approx(1.3 * 3.28084)
+    # Clamps below ground plane to 0.0
+    assert compute_static_cg_height_ft(
+        [2.0], cg_world_z=1.0, gear_state="COMPRESSED", compression_m=0.0, meters_to_feet=3.28084
+    ) == pytest.approx(0.0)

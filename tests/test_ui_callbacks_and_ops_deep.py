@@ -466,12 +466,8 @@ def test_engine_import_helpers_deep(tmp_path) -> None:
         patch.object(engine_import_helpers.MSFSCSTParser, "parse_file", side_effect=[parsed_fm, parsed_lights]),
         patch.object(engine_import_helpers.MSFSCSTParser, "parse_cameras_file", return_value=parsed_cams),
         patch("ui.vehicle_lighting_ops.OMNIMESH_OT_import_msfs_lights._ensure_light_object"),
-        patch("ui.vehicle_attachment_ops.OMNIMESH_OT_import_msfs_attachments") as mock_att_cls,
+        patch("ui.vehicle_attachment_ops.import_msfs_attachments_file", return_value=3),
     ):
-        mock_att_inst = mock_att_cls.return_value
-        mock_att_inst.execute.return_value = {"FINISHED"}
-        mock_att_inst.imported_count = 3
-
         sp_count, datum = engine_import_helpers.import_spatial_points(ctx, manifest, "Aircraft", props)
         assert sp_count == 10
         assert datum is not None

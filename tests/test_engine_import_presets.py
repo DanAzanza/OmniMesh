@@ -135,6 +135,7 @@ def test_engine_import_collection_hierarchy(monkeypatch: pytest.MonkeyPatch):
 
     mock_scene_col = MockCollection("Scene Collection")
     mock_context = MagicMock()
+    mock_context.blend_data = mock_bpy.data
     mock_context.scene.collection = mock_scene_col
 
     monkeypatch.setattr(ui_utils, "bpy", mock_bpy)
@@ -223,6 +224,7 @@ def test_variante_a_multi_model_and_variant_collections(monkeypatch: pytest.Monk
 
     mock_scene_col = MockCollection("Scene Collection")
     mock_context = MagicMock()
+    mock_context.blend_data = mock_bpy.data
     mock_context.scene.collection = mock_scene_col
 
     monkeypatch.setattr(ui_utils, "bpy", mock_bpy)
