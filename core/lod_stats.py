@@ -29,6 +29,11 @@ class _PolyWithVertices(Protocol):
 
 
 @runtime_checkable
+class _FaceWithVerts(Protocol):
+    verts: Sized
+
+
+@runtime_checkable
 class _MeshWithPolygons(Protocol):
     polygons: object
 
@@ -50,7 +55,7 @@ def _count_triangles(mesh_data: object) -> int:
     if bpy is not None and isinstance(mesh_data, bpy.types.Mesh):
         return count_mesh_triangles(mesh_data)
     if bmesh is not None and isinstance(mesh_data, bmesh.types.BMesh):
-        return len(mesh_data.faces)
+        return sum(max(0, len(f.verts) - 2) for f in mesh_data.faces)
     if isinstance(mesh_data, _MeshWithPolygons):
         polys = mesh_data.polygons
         loops = mesh_data.loops if isinstance(mesh_data, _MeshWithLoops) else None
@@ -62,6 +67,8 @@ def _count_triangles(mesh_data: object) -> int:
             return sum(max(0, len(p.vertices) - 2) for p in polys if isinstance(p, _PolyWithVertices))
     if isinstance(mesh_data, _BMeshWithFaces):
         faces = mesh_data.faces
+        if isinstance(faces, Iterable):
+            return sum(max(0, len(f.verts) - 2) if isinstance(f, _FaceWithVerts) else 1 for f in faces)
         if isinstance(faces, Sized):
             return len(faces)
     return 0

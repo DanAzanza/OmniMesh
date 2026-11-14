@@ -12,6 +12,7 @@ Provides:
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import logging
 import math
 import os
@@ -656,29 +657,39 @@ class ImpostorAtlasBaker:
                     n.mute = True
 
             # 1. Bake BaseColor (Diffuse Color pass)
-            bake_slot.image = img_diff
-            bk.use_pass_direct, bk.use_pass_indirect, bk.use_pass_color = False, False, True
-            bpy.ops.object.bake(type="DIFFUSE")
-            base_path = os.path.join(output_dir, f"T_{base_name}_Impostor_BaseColor.png")
-            img_diff.filepath_raw, img_diff.file_format = base_path, "PNG"
-            img_diff.save()
-            results["BaseColor"] = base_path
+            override_ctx = (
+                ctx.temp_override(
+                    active_object=target_impostor,
+                    selected_objects=[*mesh_objs, target_impostor],
+                    selected_editable_objects=[*mesh_objs, target_impostor],
+                )
+                if ctx is not None
+                else nullcontext()
+            )
+            with override_ctx:
+                bake_slot.image = img_diff
+                bk.use_pass_direct, bk.use_pass_indirect, bk.use_pass_color = False, False, True
+                bpy.ops.object.bake(type="DIFFUSE")
+                base_path = os.path.join(output_dir, f"T_{base_name}_Impostor_BaseColor.png")
+                img_diff.filepath_raw, img_diff.file_format = base_path, "PNG"
+                img_diff.save()
+                results["BaseColor"] = base_path
 
-            # 2. Bake Tangent Normal
-            bake_slot.image, bk.normal_space = img_norm, "TANGENT"
-            bpy.ops.object.bake(type="NORMAL")
-            norm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_Normal.png")
-            img_norm.filepath_raw, img_norm.file_format = norm_path, "PNG"
-            img_norm.save()
-            results["Normal"] = norm_path
+                # 2. Bake Tangent Normal
+                bake_slot.image, bk.normal_space = img_norm, "TANGENT"
+                bpy.ops.object.bake(type="NORMAL")
+                norm_path = os.path.join(output_dir, f"T_{base_name}_Impostor_Normal.png")
+                img_norm.filepath_raw, img_norm.file_format = norm_path, "PNG"
+                img_norm.save()
+                results["Normal"] = norm_path
 
-            # 3. Bake Roughness
-            bake_slot.image = img_rough
-            bpy.ops.object.bake(type="ROUGHNESS")
+                # 3. Bake Roughness
+                bake_slot.image = img_rough
+                bpy.ops.object.bake(type="ROUGHNESS")
 
-            # 4. Bake AO
-            bake_slot.image = img_ao
-            bpy.ops.object.bake(type="AO")
+                # 4. Bake AO
+                bake_slot.image = img_ao
+                bpy.ops.object.bake(type="AO")
 
             # 5. Pack ORM (AO=Red, Roughness=Green, Metallic=Blue, Alpha=Alpha)
             base_pix, rough_pix, ao_pix = (np.empty(res * res * 4, dtype=np.float32) for _ in range(3))

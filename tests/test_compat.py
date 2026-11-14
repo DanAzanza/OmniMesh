@@ -91,3 +91,22 @@ def test_socket_and_node_compat_helpers():
     # Null socket safe
     assert get_socket_default_value(None, fallback=42.0) == 42.0
     set_socket_default_value(None, 1.0)
+
+
+def test_ensure_unique_mesh_data_isolates_shared_mesh():
+    from types import SimpleNamespace
+    from core.compat import ensure_unique_mesh_data
+
+    assert ensure_unique_mesh_data(None) is False
+    assert ensure_unique_mesh_data(SimpleNamespace(data=None)) is False  # type: ignore[arg-type]
+
+    single_mesh = SimpleNamespace(users=1, copy=lambda: SimpleNamespace(users=1))
+    obj_single = SimpleNamespace(data=single_mesh)
+    assert ensure_unique_mesh_data(obj_single) is True  # type: ignore[arg-type]
+    assert obj_single.data is single_mesh
+
+    copied_mesh = SimpleNamespace(users=1)
+    shared_mesh = SimpleNamespace(users=2, copy=lambda: copied_mesh)
+    obj_shared = SimpleNamespace(data=shared_mesh, name="SharedObj")
+    assert ensure_unique_mesh_data(obj_shared) is True  # type: ignore[arg-type]
+    assert obj_shared.data is copied_mesh

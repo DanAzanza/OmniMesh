@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from .compat import ensure_unique_mesh_data
+
 if TYPE_CHECKING:
     import bpy
     import mathutils
@@ -81,6 +83,8 @@ class NormalManager:
         tgt_polys = tgt_mesh.polygons
         if len(src_polys) == 0 or len(tgt_polys) == 0:
             return False
+
+        ensure_unique_mesh_data(lod_obj)
 
         # Detect armature if not explicitly passed
         arm = armature_obj

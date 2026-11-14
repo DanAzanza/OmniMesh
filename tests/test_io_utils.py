@@ -106,3 +106,40 @@ def test_atomic_write_logs_warning_if_temp_cleanup_fails(tmp_path: Path, caplog:
     for extra in tmp_path.iterdir():
         if extra != target:
             extra.unlink()
+
+
+def test_filename_drive_path_and_backup_helpers(tmp_path: Path) -> None:
+    from core.io_utils import (
+        create_timestamped_backup,
+        resolve_blender_path,
+        sanitize_filename,
+        split_drive_portable,
+    )
+
+    assert sanitize_filename('Bad<>:"/\\|?*Name.. ') == "Bad_________Name"
+    assert sanitize_filename("...", fallback="DefaultAsset") == "DefaultAsset"
+
+    assert split_drive_portable("C:/Art/tex.png") == ("C:", "/Art/tex.png")
+    assert split_drive_portable("/unix/path") == ("", "/unix/path")
+
+    called: list[str] = []
+
+    def _boom_abspath(_raw: str) -> str:
+        called.append(_raw)
+        raise AssertionError("abspath_fn must not run for unsaved // paths")
+
+    assert resolve_blender_path("//textures/a.png", None, abspath_fn=_boom_abspath) == ""
+    assert resolve_blender_path(
+        "//textures/a.png", "", abspath_fn=_boom_abspath, fallback_raw_on_unsaved=True
+    ).endswith("a.png")
+    assert called == []
+    resolved_saved = resolve_blender_path("//textures/a.png", str(tmp_path / "scene.blend"), abspath_fn=_boom_abspath)
+    assert resolved_saved.endswith("textures\\a.png") or resolved_saved.endswith("textures/a.png")
+
+    missing = tmp_path / "missing.cfg"
+    assert create_timestamped_backup(missing) is None
+    existing = tmp_path / "flight.cfg"
+    existing.write_text("[WEIGHT_AND_BALANCE]\n", encoding="utf-8")
+    bak = create_timestamped_backup(existing)
+    assert bak is not None and bak.exists()
+    assert bak.read_text(encoding="utf-8") == "[WEIGHT_AND_BALANCE]\n"

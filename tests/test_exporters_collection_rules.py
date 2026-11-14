@@ -333,11 +333,16 @@ def mock_hierarchy():
     ]
     mock_data_objs = MockDataObjects(all_objs)
 
+    scene_col = MockCollection("Scene Collection")
+    scene_col.add_child(root)
+    scene_col.add_child(interior_root)
+    scene_col.add_child(variant_root)
+
     mock_scene = type(
         "MockScene",
         (),
         {
-            "collection": root,
+            "collection": scene_col,
             "objects": mock_data_objs,
             "lod_tool": type(
                 "MockProps",

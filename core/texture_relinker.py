@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
+from .io_utils import resolve_blender_path, split_drive_portable
+
 if TYPE_CHECKING:
     import bpy
     from bpy.types import BlendData
@@ -135,24 +137,14 @@ class ProjectTextureRelinker:
         if not raw_filepath:
             return ""
 
-        if raw_filepath.startswith("//"):
-            base_dir = ""
-            if blend_filepath:
-                base_dir = os.path.dirname(blend_filepath)
-            elif blend_data and blend_data.filepath:
-                base_dir = os.path.dirname(blend_data.filepath)
-
-            if base_dir:
-                rel_part = raw_filepath[2:].lstrip("/\\")
-                return os.path.normpath(os.path.join(base_dir, rel_part))
-
-        if bpy:
-            try:
-                return os.path.normpath(bpy.path.abspath(raw_filepath))
-            except (RuntimeError, ValueError, TypeError, OSError) as exc:
-                logger.debug("bpy.path.abspath fallback for '%s': %s", raw_filepath, exc)
-
-        return os.path.normpath(raw_filepath)
+        effective_blend = blend_filepath or (blend_data.filepath if blend_data else "")
+        abspath_fn = bpy.path.abspath if bpy else None
+        return resolve_blender_path(
+            raw_filepath,
+            effective_blend,
+            abspath_fn=abspath_fn,
+            fallback_raw_on_unsaved=True,
+        )
 
     @staticmethod
     def build_texture_index(
@@ -264,12 +256,7 @@ class ProjectTextureRelinker:
     @staticmethod
     def _split_drive_portable(p: str) -> tuple[str, str]:
         """Splits drive letter portably across Windows and POSIX platforms."""
-        drive, rest = os.path.splitdrive(p)
-        if drive:
-            return drive, rest
-        if len(p) >= 2 and p[1] == ":" and p[0].isalpha():
-            return p[:2], p[2:]
-        return "", p
+        return split_drive_portable(p)
 
     @staticmethod
     def make_relative_path(target_path: Path, blend_filepath: str | None) -> str:

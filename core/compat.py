@@ -423,6 +423,54 @@ def import_scene_asset(filepath: str) -> bool:
     return False
 
 
+def ensure_unique_mesh_data(obj: bpy.types.Object | None) -> bool:
+    """Isolates shared multi-user mesh data (Copy-on-Write) prior to in-place mutations."""
+    if obj is None or obj.data is None:
+        return False
+    if obj.data.users <= 1:
+        return True
+    try:
+        copied = obj.data.copy()
+        if copied is None:
+            return False
+        obj.data = copied
+        logger.info("Unlinked multi-user mesh data for '%s' prior to in-place mutation", obj.name)
+        return True
+    except (RuntimeError, AttributeError) as exc:
+        logger.warning("Failed unlinking multi-user mesh for '%s': %s", obj.name, exc)
+        return False
+
+
+def recenter_pivot_stationary(obj: bpy.types.Object | None) -> None:
+    """Recenters an object's origin to its local AABB midpoint without moving world geometry."""
+    if not obj or obj.type != "MESH" or obj.data is None:
+        return
+    mesh = cast("bpy.types.Mesh", obj.data)
+    if not mesh.vertices or len(mesh.vertices) == 0:
+        return
+
+    verts = mesh.vertices
+    min_co = [min(v.co[i] for v in verts) for i in range(3)]
+    max_co = [max(v.co[i] for v in verts) for i in range(3)]
+    center_coords = [(min_co[i] + max_co[i]) * 0.5 for i in range(3)]
+    center_len = math.sqrt(sum(c * c for c in center_coords))
+    if center_len < 1e-5:
+        return
+
+    center_offset = Vector(center_coords) if Vector is not None else center_coords
+    for v in verts:
+        try:
+            v.co -= center_offset
+        except (TypeError, AttributeError):
+            v.co = type(v.co)([v.co[i] - center_coords[i] for i in range(3)])
+
+    if obj.matrix_world is not None and Matrix is not None:
+        trans_mat = Matrix.Translation((center_coords[0], center_coords[1], center_coords[2]))
+        obj.matrix_world = obj.matrix_world @ trans_mat
+
+    mesh.update()
+
+
 def run_cleanup_step(warnings: list[str], label: str, fn: Callable[[], object]) -> None:
     """Runs an isolated cleanup step and captures non-fatal Blender/runtime rollback failures."""
     try:
@@ -436,9 +484,11 @@ __all__ = [
     "Vector",
     "count_mesh_triangles",
     "ensure_action_fcurve",
+    "ensure_unique_mesh_data",
     "extract_action_fcurves",
     "get_socket_default_value",
     "import_scene_asset",
+    "recenter_pivot_stationary",
     "run_cleanup_step",
     "safe_invert_matrix",
     "set_node_prop",

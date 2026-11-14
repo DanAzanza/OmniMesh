@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 import uuid
+from xml.sax.saxutils import escape as xml_escape
 
 logger = logging.getLogger(__name__)
 
@@ -163,17 +164,25 @@ def build_msfs_animation_xml_block(actions: list[dict[str, Any]]) -> tuple[str, 
         category = item.get("category", "GENERIC")
         simvar = SIMVAR_MAPPINGS.get(category, "TIME OF DAY")
 
+        attr_escape = {'"': "&quot;", "'": "&apos;"}
+        name_attr = xml_escape(str(name), attr_escape)
+        guid_attr = xml_escape(str(guid), attr_escape)
+        length_attr = xml_escape(str(length), attr_escape)
+        name_text = xml_escape(str(name))
+        length_text = xml_escape(str(length))
+        simvar_text = xml_escape(str(simvar))
+
         anim_lines.append(
-            f'    <Animation name="{name}" guid="{guid}" length="{length}" type="Sim" typeParam="AutoPlay" />'
+            f'    <Animation name="{name_attr}" guid="{guid_attr}" length="{length_attr}" type="Sim" typeParam="AutoPlay" />'
         )
 
         part_lines.append("  <PartInfo>")
-        part_lines.append(f"    <Name>{name}</Name>")
-        part_lines.append(f"    <AnimLength>{length}</AnimLength>")
+        part_lines.append(f"    <Name>{name_text}</Name>")
+        part_lines.append(f"    <AnimLength>{length_text}</AnimLength>")
         part_lines.append("    <Animation>")
         part_lines.append("      <Parameter>")
         part_lines.append("        <Sim>")
-        part_lines.append(f"          <Variable>{simvar}</Variable>")
+        part_lines.append(f"          <Variable>{simvar_text}</Variable>")
         part_lines.append("        </Sim>")
         part_lines.append("      </Parameter>")
         part_lines.append("    </Animation>")

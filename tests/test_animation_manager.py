@@ -182,3 +182,20 @@ def test_build_msfs_animation_xml_block():
     assert "<Variable>GEAR TOTAL PCT EXTENDED</Variable>" in part_xml
     assert "<Name>Cockpit_Door_Open</Name>" in part_xml
     assert "<Variable>CANOPY OPEN</Variable>" in part_xml
+
+
+def test_build_msfs_animation_xml_block_escapes_special_chars():
+    """Verify XML attribute and element text escaping in generated MSFS ModelInfo XML."""
+    actions = [
+        {
+            "name": 'Gear & <Door> "1"',
+            "sanitized_name": 'Gear & <Door> "1"',
+            "guid": "guid&'test'",
+            "length": 42,
+            "category": "DOOR",
+        }
+    ]
+    anim_xml, part_xml = build_msfs_animation_xml_block(actions)
+    assert 'name="Gear &amp; &lt;Door&gt; &quot;1&quot;"' in anim_xml
+    assert 'guid="guid&amp;&apos;test&apos;"' in anim_xml
+    assert '<Name>Gear &amp; &lt;Door&gt; "1"</Name>' in part_xml or "<Name>Gear &amp; &lt;Door&gt;" in part_xml

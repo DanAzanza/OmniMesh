@@ -6,6 +6,7 @@ and baking decoupling for PBR texture pipelines.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import logging
 import math
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Optional, Protocol, Tuple, cast
@@ -535,13 +536,14 @@ class ShaderTracer:
         temp_img = None
 
         try:
+            if not bdata_images:
+                return None
+
             emit_node = nodes.new(type="ShaderNodeEmission")
             temp_nodes.append(emit_node)
             links.new(sock.links[0].from_socket, emit_node.inputs["Color"])
             links.new(emit_node.outputs["Emission"], surf_sock)
 
-            if not bdata_images:
-                return None
             temp_img = bdata_images.new(
                 "_OM_Bake_Temp", width=target_w, height=target_h, alpha=False, float_buffer=(bit_depth == 16)
             )
@@ -571,7 +573,17 @@ class ShaderTracer:
             bk.use_selected_to_active = False
             bk.target = "IMAGE_TEXTURES"
 
-            bpy.ops.object.bake(type="EMIT", margin=0, use_clear=True)
+            override_ctx = (
+                context.temp_override(
+                    active_object=act_obj,
+                    selected_objects=[act_obj],
+                    selected_editable_objects=[act_obj],
+                )
+                if context is not None
+                else nullcontext()
+            )
+            with override_ctx:
+                bpy.ops.object.bake(type="EMIT", margin=0, use_clear=True)
 
             raw_floats = np.empty(target_w * target_h * 4, dtype=np.float32)
             temp_img.pixels.foreach_get(raw_floats)
@@ -656,6 +668,7 @@ def _restore_socket_bake_state(
         for tn in temp_nodes:
             nodes.remove(tn)
         if temp_img and bdata_images:
+            temp_img.buffers_free()
             bdata_images.remove(temp_img, do_unlink=True)
 
     def _restore_render() -> None:

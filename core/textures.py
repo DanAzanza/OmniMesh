@@ -10,9 +10,12 @@ import concurrent.futures
 import logging
 import os
 import re
+import shutil
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Tuple, cast
 
 import numpy as np
+
+from .io_utils import resolve_blender_path
 
 
 if TYPE_CHECKING:
@@ -144,14 +147,18 @@ class TextureChannelPacker:
                 target_sock_name = channels["rgb"].get("target", "")
                 img, _, _, _ = cls.trace_upstream_channel(material, target_sock_name)
                 if bpy and img and img.filepath:
-                    src_path = bpy.path.abspath(img.filepath)
-                    if os.path.exists(src_path):
+                    blend_fp = getattr(blend_data, "filepath", "") or ""
+                    src_path = resolve_blender_path(
+                        img.filepath,
+                        blend_fp,
+                        abspath_fn=bpy.path.abspath,
+                        fallback_raw_on_unsaved=False,
+                    )
+                    if src_path and os.path.exists(src_path):
                         src_sz = tuple(cast("Iterable[int]", img.size))
                         src_w, src_h = src_sz[:2]
                         # If format and resolution match, direct copy
                         if (src_w, src_h) == (map_w, map_h) and src_path.lower().endswith(".png") and bit_depth == 8:
-                            import shutil
-
                             try:
                                 shutil.copy2(src_path, out_filepath)
                                 f = concurrent.futures.Future()
@@ -311,13 +318,13 @@ class TextureChannelPacker:
     # =========================================================================
 
     @classmethod
-    def pack_orm_ue5(
+    def _pack_legacy_orm(
         cls,
         material: bpy.types.Material | None,
         output_filepath: str,
         target_size: Tuple[int, int] = (2048, 2048),
     ) -> bool:
-        """Legacy proxy for UE5 ORM packing."""
+        """Shared R=AO, G=Roughness, B=Metallic, A=255 channel packer for UE5/MSFS."""
         w, h = target_size
         ao_u8 = cls.extract_socket_data(material, "Ambient Occlusion", target_size, default_val=1.0)
         rough_u8 = cls.extract_socket_data(material, "Roughness", target_size, default_val=0.5)
@@ -327,6 +334,16 @@ class TextureChannelPacker:
         success = write_png_direct(output_filepath, packed_rgba, bit_depth=8)
         cls.compact_memory()
         return success
+
+    @classmethod
+    def pack_orm_ue5(
+        cls,
+        material: bpy.types.Material | None,
+        output_filepath: str,
+        target_size: Tuple[int, int] = (2048, 2048),
+    ) -> bool:
+        """Legacy proxy for UE5 ORM packing."""
+        return cls._pack_legacy_orm(material, output_filepath, target_size)
 
     @classmethod
     def pack_maskmap_unity(
@@ -355,15 +372,7 @@ class TextureChannelPacker:
         target_size: Tuple[int, int] = (2048, 2048),
     ) -> bool:
         """Legacy proxy for MSFS COMP packing."""
-        w, h = target_size
-        ao_u8 = cls.extract_socket_data(material, "Ambient Occlusion", target_size, default_val=1.0)
-        rough_u8 = cls.extract_socket_data(material, "Roughness", target_size, default_val=0.5)
-        metal_u8 = cls.extract_socket_data(material, "Metallic", target_size, default_val=0.0)
-        alpha_u8 = np.full((h, w), 255, dtype=np.uint8)
-        packed_rgba = np.stack([ao_u8, rough_u8, metal_u8, alpha_u8], axis=-1)
-        success = write_png_direct(output_filepath, packed_rgba, bit_depth=8)
-        cls.compact_memory()
-        return success
+        return cls._pack_legacy_orm(material, output_filepath, target_size)
 
     @classmethod
     def convert_normal_directx(

@@ -32,7 +32,11 @@ def _make_obj(name: str, obj_type: str = "MESH", polygons: int = 10, hidden: boo
         name=name,
         type=obj_type,
         matrix_world=mat,
-        data=SimpleNamespace(vertices=verts, polygons=[None] * polygons) if obj_type == "MESH" else None,
+        data=(
+            SimpleNamespace(vertices=verts, polygons=[None] * polygons, loops=[None] * (3 * polygons))
+            if obj_type == "MESH"
+            else None
+        ),
         hide_get=hide_get,
         hide_set=hide_set,
     )

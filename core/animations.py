@@ -274,9 +274,16 @@ class AnimationRigSanitizer:
         if not bounds["valid"]:
             return None
 
-        # Bind action to armature
+        if not blend_data:
+            return None
+        bdata_actions = cast("bpy.types.BlendData", blend_data).actions
+        if not bdata_actions:
+            return None
+
+        # Bind action to armature (preserving original action & pose rotation modes for rollback)
         if not source_armature.animation_data:
             source_armature.animation_data_create()
+        orig_action = source_armature.animation_data.action if source_armature.animation_data else None
         if source_armature.animation_data:
             source_armature.animation_data.action = action
 
@@ -284,20 +291,15 @@ class AnimationRigSanitizer:
         end_f = bounds["end_frame"]
         step = max(0.01, float(bake_step)) if isinstance(bake_step, (int, float)) and math.isfinite(bake_step) else 1.0
 
-        # Ensure all deform pose bones use Quaternion rotation mode
+        # Ensure all deform pose bones use Quaternion rotation mode (saving originals)
+        orig_rot_modes: list[tuple[bpy.types.PoseBone, str]] = []
         src_pose = source_armature.pose
         if src_pose:
             for b_name in deform_bones:
                 pb = src_pose.bones.get(b_name)
                 if pb:
+                    orig_rot_modes.append((pb, pb.rotation_mode))
                     pb.rotation_mode = "QUATERNION"
-
-        if not blend_data:
-            return None
-        bdata_actions = cast("bpy.types.BlendData", blend_data).actions
-
-        if not bdata_actions:
-            return None
 
         # Create clean target action
         clean_name = cls.sanitize_action_name(f"{action.name}_Baked_Deform")
@@ -430,6 +432,16 @@ class AnimationRigSanitizer:
                     bdata_actions.remove(baked_action, do_unlink=True)
                 except (RuntimeError, ReferenceError, AttributeError) as clean_exc:
                     logger.debug("Failed removing orphaned action: %s", clean_exc)
+            for pb, orig_mode in orig_rot_modes:
+                try:
+                    pb.rotation_mode = orig_mode  # type: ignore[assignment]
+                except (RuntimeError, ReferenceError, AttributeError) as mode_exc:
+                    logger.debug("Failed restoring bone rotation_mode: %s", mode_exc)
+            if source_armature.animation_data:
+                try:
+                    source_armature.animation_data.action = orig_action
+                except (RuntimeError, ReferenceError, AttributeError) as act_exc:
+                    logger.debug("Failed restoring original armature action: %s", act_exc)
             scene.frame_set(orig_frame, subframe=orig_subframe)
 
         return baked_action

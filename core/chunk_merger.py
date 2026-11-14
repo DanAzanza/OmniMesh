@@ -8,9 +8,9 @@ material slot unification, and bone-mapped skeletal vertex weight consolidation.
 from __future__ import annotations
 
 import logging
-import math
 from typing import TYPE_CHECKING, cast
 
+from .compat import recenter_pivot_stationary
 from .normals import NormalManager
 
 if TYPE_CHECKING:
@@ -49,7 +49,8 @@ class HLODClusterMerger:
         Combines child chunk objects into a single unified mesh,
         welds seam vertices, consolidates materials, and preserves skeletal vertex groups.
         """
-        if not bpy or not bmesh or not chunk_objs:
+        bdata = blend_data
+        if not bpy or not bmesh or not chunk_objs or not bdata or bdata.meshes is None or bdata.objects is None:
             return None
 
         valid_chunks = [c for c in chunk_objs if c and c.type == "MESH" and c.data is not None]
@@ -152,10 +153,6 @@ class HLODClusterMerger:
             bmesh.ops.remove_doubles(merged_bm, verts=merged_bm.verts[:], dist=max(1e-5, weld_dist))
 
             # Create merged Blender mesh and object
-            bdata = blend_data
-            if not bdata or bdata.meshes is None or bdata.objects is None:
-                return None
-
             hlod_mesh = bdata.meshes.new(name=f"{hlod_name}_Mesh")
             merged_bm.to_mesh(hlod_mesh)
             hlod_mesh.update()
@@ -192,37 +189,5 @@ class HLODClusterMerger:
 
     @staticmethod
     def _recenter_pivot_stationary(obj: bpy.types.Object | None) -> None:
-        """
-        Recalculates object origin to its local bounding box center
-        while compensating vertex coordinates so world geometry remains stationary.
-        """
-        if not obj or obj.type != "MESH" or obj.data is None:
-            return
-        mesh = cast("bpy.types.Mesh", obj.data)
-        if not mesh.vertices or len(mesh.vertices) == 0:
-            return
-
-        verts = mesh.vertices
-        min_co = [min(v.co[i] for v in verts) for i in range(3)]
-        max_co = [max(v.co[i] for v in verts) for i in range(3)]
-        center_coords = [(min_co[i] + max_co[i]) * 0.5 for i in range(3)]
-        center_len = math.sqrt(sum(c * c for c in center_coords))
-
-        if center_len < 1e-5:
-            return
-
-        center_offset = Vector(center_coords) if Vector is not None else center_coords
-
-        # Shift all vertices by -center_offset
-        for v in verts:
-            try:
-                v.co -= center_offset
-            except (TypeError, AttributeError):
-                v.co = type(v.co)([v.co[i] - center_coords[i] for i in range(3)])
-
-        # Compensate object world transform by +center_local
-        if obj.matrix_world is not None and Matrix is not None:
-            trans_mat = Matrix.Translation((center_coords[0], center_coords[1], center_coords[2]))
-            obj.matrix_world = obj.matrix_world @ trans_mat
-
-        mesh.update()
+        """Recalculates object origin to its local AABB center while keeping geometry stationary."""
+        recenter_pivot_stationary(obj)

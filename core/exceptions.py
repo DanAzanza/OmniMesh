@@ -35,7 +35,7 @@ class RiggingError(OmniMeshError):
     """Raised when skeletal bone weight normalization, clamping, or kinematic pruning fails."""
 
 
-class DependencyInjectionError(OmniMeshError):
+class DependencyInjectionError(OmniMeshError, ValueError):
     """Raised when a required database dependency (e.g. blend_data) is missing or invalid."""
 
 

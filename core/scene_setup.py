@@ -235,8 +235,6 @@ def setup_asset_collections(
         return {}
 
     bdata = blend_data
-    if bdata is None and bpy_module is not None:
-        bdata = getattr(bpy_module, "data", None)
     if not bdata:
         return {}
     bdata_cols = bdata.collections if bdata else None

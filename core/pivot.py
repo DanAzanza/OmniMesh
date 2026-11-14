@@ -76,8 +76,6 @@ class PivotPreservationEngine:
                     has_socket_prop = bool(obj.get("is_socket", False))
                     if name_upper.startswith(cls.SOCKET_PREFIXES) or has_socket_prop:
                         sockets.append(obj)
-                    elif not pivot_obj and name_upper == "PIVOT":
-                        pivot_obj = obj
             elif obj_type == "MESH":
                 is_collider = bool(obj.get("_is_collider", False))
                 if not is_collider and not name_upper.startswith("UCX_"):
@@ -151,7 +149,8 @@ class PivotPreservationEngine:
             inv_trans_3x3 = mat3.inverted().transposed()
             transformed_no = inv_trans_3x3 @ no
             return transformed_no.normalized()
-        except (ValueError, AttributeError, ReferenceError):
+        except (ValueError, AttributeError, ReferenceError) as exc:
+            logger.debug("Normal transform to pivot space fell back to source normal: %s", exc)
             return no
 
     @classmethod

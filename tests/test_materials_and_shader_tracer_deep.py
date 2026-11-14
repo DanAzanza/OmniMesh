@@ -274,7 +274,7 @@ class TestMaterialsDeep:
 
         # Scenario 1: early exit when all slots are distinct and used
         polys_clean = [SimpleNamespace(material_index=0), SimpleNamespace(material_index=1)]
-        mesh_clean = SimpleNamespace(polygons=polys_clean, materials=_MaterialsList([mat_a, mat_b]))
+        mesh_clean = SimpleNamespace(polygons=polys_clean, materials=_MaterialsList([mat_a, mat_b]), users=1)
         obj_clean: Any = SimpleNamespace(
             data=mesh_clean,
             material_slots=_Slots([SimpleNamespace(material=mat_a), SimpleNamespace(material=mat_b)]),
@@ -291,7 +291,7 @@ class TestMaterialsDeep:
             SimpleNamespace(material_index=3),  # mat_b -> slot 1
             SimpleNamespace(material_index=99),  # out of bounds
         ]
-        mesh = SimpleNamespace(polygons=polys, materials=_PositionalMaterialsList([None, mat_a, mat_a, mat_b]))
+        mesh = SimpleNamespace(polygons=polys, materials=_PositionalMaterialsList([None, mat_a, mat_a, mat_b]), users=1)
         slots = _Slots(
             [
                 SimpleNamespace(material=None),
@@ -322,7 +322,7 @@ class TestMaterialsDeep:
             [SimpleNamespace(material=mat_a), SimpleNamespace(material=mat_a), SimpleNamespace(material=mat_b)]
         )
         res_np = HeadlessSlotCompactor.compact_slots(
-            _ns(data=SimpleNamespace(polygons=np_polys, materials=np_mats), material_slots=np_slots)
+            _ns(data=SimpleNamespace(polygons=np_polys, materials=np_mats, users=1), material_slots=np_slots)
         )
         assert res_np == {"slots_removed": 1, "faces_remapped": 2}
         assert [p.material_index for p in np_polys] == [0, 1]
@@ -436,7 +436,7 @@ class TestMaterialsDeep:
             SimpleNamespace(material_index=2, area=0.05),
             SimpleNamespace(material_index=99, area=1.0),
         ]
-        mesh = SimpleNamespace(polygons=polys, update=lambda: None, materials=[mat_big, mat_tiny, mat_glass])
+        mesh = SimpleNamespace(polygons=polys, update=lambda: None, materials=[mat_big, mat_tiny, mat_glass], users=1)
         obj: Any = SimpleNamespace(
             type="MESH",
             data=mesh,
@@ -485,7 +485,7 @@ class TestMaterialsDeep:
 
         # area_crit branch & all-protected branch
         obj_protected: Any = SimpleNamespace(
-            data=SimpleNamespace(polygons=[SimpleNamespace(material_index=0, area=1.0)], update=lambda: None),
+            data=SimpleNamespace(polygons=[SimpleNamespace(material_index=0, area=1.0)], update=lambda: None, users=1),
             matrix_world=SimpleNamespace(to_scale=lambda: (_ for _ in ()).throw(ValueError("bad mat"))),
             material_slots=[SimpleNamespace(material=mat_glass), SimpleNamespace(material=_make_material("Decal"))],
         )
@@ -513,7 +513,7 @@ class TestMaterialsDeep:
 
         dup_obj: Any = SimpleNamespace(
             type="MESH",
-            data=SimpleNamespace(polygons=[SimpleNamespace(material_index=0, area=10.0)], materials=[dup_a2]),
+            data=SimpleNamespace(polygons=[SimpleNamespace(material_index=0, area=10.0)], materials=[dup_a2], users=1),
             matrix_world=None,
             material_slots=[SimpleNamespace(material=dup_a2)],
         )

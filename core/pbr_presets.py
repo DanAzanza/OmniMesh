@@ -12,7 +12,6 @@ import logging
 import os
 from pathlib import Path
 import re
-import sys
 import threading
 import time
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
@@ -106,6 +105,7 @@ def set_pipeline_setting(key: str, value: object) -> None:
 
 
 _PRESET_CACHE: dict[str, dict[str, Any]] = {}
+_INITIALIZED_CATEGORIES: set[str] = set()
 _PRESET_LOCK = threading.Lock()
 
 
@@ -148,6 +148,14 @@ class BasePresetManager:
     @classmethod
     def _get_category_lock(cls) -> threading.Lock:
         return _PRESET_LOCK
+
+    @classmethod
+    def _is_category_initialized(cls) -> bool:
+        return cls.CATEGORY in _INITIALIZED_CATEGORIES
+
+    @classmethod
+    def _mark_category_initialized(cls) -> None:
+        _INITIALIZED_CATEGORIES.add(cls.CATEGORY)
 
     @classmethod
     def get_state_file(cls) -> Path:
@@ -318,8 +326,7 @@ class BasePresetManager:
         """Loads built-in and user presets with thread-safe caching."""
         with cls._get_category_lock():
             cache = cls._get_category_cache()
-            init_key = f"_init_{cls.CATEGORY}"
-            if cache and getattr(sys, init_key, False) and not force_reload:
+            if cache and cls._is_category_initialized() and not force_reload:
                 return cache
 
             loaded: dict[str, dict[str, Any]] = {}
@@ -348,7 +355,7 @@ class BasePresetManager:
 
             cache.clear()
             cache.update(loaded)
-            setattr(sys, init_key, True)
+            cls._mark_category_initialized()
             return cache
 
     @classmethod

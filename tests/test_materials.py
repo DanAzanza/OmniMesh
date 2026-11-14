@@ -45,6 +45,7 @@ class DummyMeshData(_MockBase):
     def __init__(self, polygons: list[DummyPolygon]):
         self.polygons = polygons
         self.materials = []
+        self.users = 1
 
 
 class DummyMeshObject(_MockBase):
@@ -298,6 +299,7 @@ def test_headless_slot_compactor_vectorized_and_in_place():
 
     # Mock mesh with 4 polygons referencing slots 0 and 2
     mesh = MagicMock()
+    mesh.users = 1
     indices = np.array([0, 2, 0, 2], dtype=np.int32)
     mesh.polygons = MagicMock()
     mesh.polygons.__len__.return_value = 4
@@ -378,3 +380,49 @@ def test_material_optimizer_pure_di():
 
     assert MaterialOptimizer.merge_duplicate_materials_scene(blend_data=cast(Any, None)) == 0
     assert MaterialOptimizer.purge_orphan_materials(blend_data=cast(Any, None)) == 0
+
+
+def test_consolidate_micro_materials_compacts_when_indexing_disabled(monkeypatch):
+    from types import SimpleNamespace
+    from typing import Any
+    import core.materials as materials_mod
+
+    mat_big = MagicMock(use_nodes=False, users=1)
+    mat_big.name = "Hull"
+    mat_tiny = MagicMock(use_nodes=False, users=1)
+    mat_tiny.name = "Bolt"
+
+    polys = [SimpleNamespace(material_index=0, area=100.0), SimpleNamespace(material_index=1, area=0.05)]
+    bm_faces = [SimpleNamespace(material_index=0), SimpleNamespace(material_index=1)]
+
+    class _Faces(list):
+        def ensure_lookup_table(self) -> None:
+            return None
+
+    class _BM:
+        def __init__(self) -> None:
+            self.faces = _Faces(bm_faces)
+
+        def from_mesh(self, _m: Any) -> None:
+            return None
+
+        def to_mesh(self, _m: Any) -> None:
+            for p, bf in zip(polys, bm_faces, strict=True):
+                p.material_index = bf.material_index
+
+        def free(self) -> None:
+            return None
+
+    mesh = SimpleNamespace(polygons=polys, materials=[mat_big, mat_tiny], users=1, update=lambda: None)
+    slots = [SimpleNamespace(material=mat_big), SimpleNamespace(material=mat_tiny)]
+    obj: Any = SimpleNamespace(type="MESH", data=mesh, matrix_world=None, material_slots=slots)
+
+    monkeypatch.setattr(materials_mod, "bpy", SimpleNamespace(path=SimpleNamespace(abspath=lambda p: p)))
+    monkeypatch.setattr(materials_mod, "bmesh", SimpleNamespace(new=lambda: _BM()))
+
+    res = MaterialOptimizer.consolidate_micro_materials(
+        obj, area_threshold_pct=1.0, protect_semantic_materials=False, preserve_slot_indexing=False
+    )
+    assert res == {"consolidated_slots": 1, "faces_reassigned": 1}
+    assert len(mesh.materials) == 1
+    assert polys[1].material_index == 0

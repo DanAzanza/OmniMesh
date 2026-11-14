@@ -364,6 +364,7 @@ def test_bake_deform_animation_guards():
 def test_bake_deform_animation_success_flow():
     bdata = MockBlendData()
     arm = MockArmatureObject("HeroArmature", bone_names=["Root", "Spine"])
+    arm.pose.bones["Root"].rotation_mode = "XYZ"
 
     # Action with integer frames 1 to 3
     fc = MockFCurve("location", 0, [(1.0, 0.0), (3.0, 10.0)])
@@ -415,7 +416,8 @@ def test_bake_deform_animation_success_flow():
 
         assert baked_act is not None
         assert "WalkAction_Baked_Deform" in baked_act.name
-        # Verify keyframes were written
+        # Verify keyframes were written and original bone rotation mode was restored
         loc_curve = created_fcurves.get(('pose.bones["Root"].location', 0))
         assert loc_curve is not None
         assert len(loc_curve.keyframe_points) > 0
+        assert arm.pose.bones["Root"].rotation_mode == "XYZ"

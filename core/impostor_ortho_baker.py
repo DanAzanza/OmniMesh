@@ -206,7 +206,10 @@ def load_rendered_tile_u8(filepath: str, bdata_imgs: bpy.types.BlendDataImages |
         img.pixels.foreach_get(arr)
         return np.ascontiguousarray((arr.reshape((h, w, 4))[::-1] * 255.0 + 0.5).clip(0, 255).astype(np.uint8))
     finally:
-        bdata_imgs.remove(img, do_unlink=True)
+        try:
+            img.buffers_free()
+        finally:
+            bdata_imgs.remove(img, do_unlink=True)
 
 
 def finalize_orm_tile(

@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Optional, Sequence, cast
 
+from .compat import ensure_unique_mesh_data
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -200,6 +202,7 @@ def assign_material_to_objects(mat: Material | None, objects: Sequence[bpy.types
     for obj in objects:
         if not obj or obj.type != "MESH" or obj.data is None:
             continue
+        ensure_unique_mesh_data(obj)
         mesh = cast("bpy.types.Mesh", obj.data)
         if mesh.materials is None:
             continue

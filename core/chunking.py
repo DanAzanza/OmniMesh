@@ -16,6 +16,8 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Sequence, cast
 
+from .compat import recenter_pivot_stationary
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -268,7 +270,10 @@ class MeshChunkSlicer:
         re-centers local pivots, marks boundary seams, and transfers exact split normals.
         Supports uniform 2.5D grid and adaptive quadtree clustering.
         """
-        if not bpy or not bmesh or not source_obj or source_obj.type != "MESH":
+        bdata = blend_data
+        bdata_meshes = bdata.meshes if bdata else None
+        bdata_objs = bdata.objects if bdata else None
+        if not bpy or not bmesh or not source_obj or source_obj.type != "MESH" or not bdata_meshes or not bdata_objs:
             return []
 
         eval_mesh, eval_obj = ModifierManager.get_evaluated_mesh(source_obj, preserve_armature=True)
@@ -290,33 +295,19 @@ class MeshChunkSlicer:
             mat_inv = mat_world.inverted()
             mat_world_trans_3x3 = mat_world.to_3x3().transposed()
 
-            # 2. Sequential X-axis planar bisects
-            for x_world in grid_spec.x_cut_planes:
-                p_world = Vector((x_world, 0.0, 0.0))
-                n_world = Vector((1.0, 0.0, 0.0))
+            # 2-4. Sequential planar bisects across X, Y, and optional Z axes
+            axis_planes: list[tuple[tuple[float, float, float], tuple[float, float, float]]] = [
+                *(((x_w, 0.0, 0.0), (1.0, 0.0, 0.0)) for x_w in grid_spec.x_cut_planes),
+                *(((0.0, y_w, 0.0), (0.0, 1.0, 0.0)) for y_w in grid_spec.y_cut_planes),
+            ]
+            if grid_spec.split_z:
+                axis_planes.extend(((0.0, 0.0, z_w), (0.0, 0.0, 1.0)) for z_w in grid_spec.z_cut_planes)
+
+            for p_coords, n_coords in axis_planes:
+                p_world = Vector(p_coords)
+                n_world = Vector(n_coords)
                 p_local = mat_inv @ p_world
                 n_local = (mat_world_trans_3x3 @ n_world).normalized()
-
-                geom: list[bmesh.types.BMVert | bmesh.types.BMEdge | bmesh.types.BMFace] = (
-                    list(bm.faces) + list(bm.edges) + list(bm.verts)
-                )
-                bmesh.ops.bisect_plane(
-                    bm,
-                    geom=geom,
-                    plane_co=(p_local.x, p_local.y, p_local.z),
-                    plane_no=(n_local.x, n_local.y, n_local.z),
-                    dist=1e-5,
-                    clear_inner=False,
-                    clear_outer=False,
-                )
-
-            # 3. Sequential Y-axis planar bisects
-            for y_world in grid_spec.y_cut_planes:
-                p_world = Vector((0.0, y_world, 0.0))
-                n_world = Vector((0.0, 1.0, 0.0))
-                p_local = mat_inv @ p_world
-                n_local = (mat_world_trans_3x3 @ n_world).normalized()
-
                 geom = bm.faces[:] + bm.edges[:] + bm.verts[:]
                 bmesh.ops.bisect_plane(
                     bm,
@@ -327,25 +318,6 @@ class MeshChunkSlicer:
                     clear_inner=False,
                     clear_outer=False,
                 )
-
-            # 4. Optional Z-axis planar bisects
-            if grid_spec.split_z:
-                for z_world in grid_spec.z_cut_planes:
-                    p_world = Vector((0.0, 0.0, z_world))
-                    n_world = Vector((0.0, 0.0, 1.0))
-                    p_local = mat_inv @ p_world
-                    n_local = (mat_world_trans_3x3 @ n_world).normalized()
-
-                    geom = bm.faces[:] + bm.edges[:] + bm.verts[:]
-                    bmesh.ops.bisect_plane(
-                        bm,
-                        geom=geom,
-                        plane_co=(p_local.x, p_local.y, p_local.z),
-                        plane_no=(n_local.x, n_local.y, n_local.z),
-                        dist=1e-5,
-                        clear_inner=False,
-                        clear_outer=False,
-                    )
 
             # 5. Weld 4-way intersection vertices to eliminate micro-slivers
             bm.verts.ensure_lookup_table()
@@ -542,40 +514,8 @@ class MeshChunkSlicer:
 
     @staticmethod
     def _recenter_pivot_stationary(obj: bpy.types.Object | None) -> None:
-        """
-        Recalculates object origin to its local bounding box center
-        while compensating vertex coordinates so world geometry remains stationary.
-        """
-        if not obj or obj.type != "MESH" or not obj.data:
-            return
-        mesh = cast("bpy.types.Mesh", obj.data)
-        if not mesh.vertices or len(mesh.vertices) == 0:
-            return
-
-        verts = mesh.vertices
-        min_co = [min(v.co[i] for v in verts) for i in range(3)]
-        max_co = [max(v.co[i] for v in verts) for i in range(3)]
-        center_coords = [(min_co[i] + max_co[i]) * 0.5 for i in range(3)]
-        center_len = math.sqrt(sum(c * c for c in center_coords))
-
-        if center_len < 1e-5:
-            return
-
-        center_offset = Vector(center_coords) if Vector is not None else center_coords
-
-        # Shift all vertices by -center_offset
-        for v in verts:
-            try:
-                v.co -= center_offset
-            except (TypeError, AttributeError):
-                v.co = type(v.co)([v.co[i] - center_coords[i] for i in range(3)])
-
-        # Compensate object world transform by +center_local
-        if obj.matrix_world is not None and Matrix is not None:
-            trans_mat = Matrix.Translation(center_coords)
-            obj.matrix_world = obj.matrix_world @ trans_mat
-
-        mesh.update()
+        """Recalculates object origin to its local AABB center while keeping geometry stationary."""
+        recenter_pivot_stationary(obj)
 
 
 from .chunk_merger import HLODClusterMerger

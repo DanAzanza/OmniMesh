@@ -224,10 +224,12 @@ def test_assign_material_to_objects():
 
     mesh_obj1 = MagicMock()
     mesh_obj1.type = "MESH"
+    mesh_obj1.data.users = 1
     mesh_obj1.data.materials = []
 
     mesh_obj2 = MagicMock()
     mesh_obj2.type = "MESH"
+    mesh_obj2.data.users = 1
     mesh_obj2.data.materials = [MockMaterial("OldMat")]
 
     empty_obj = MagicMock()

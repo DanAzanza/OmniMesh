@@ -9,6 +9,7 @@ import logging
 import math
 from typing import TYPE_CHECKING, Any, cast
 
+from .compat import ensure_unique_mesh_data, run_cleanup_step
 from .exceptions import DecimationError
 
 logger = logging.getLogger(__name__)
@@ -41,11 +42,14 @@ def temporary_vertex_group(obj: bpy.types.Object | None, group_name: str):
         if obj and obj.vertex_groups is not None:
             vg = obj.vertex_groups.get(group_name)
             if vg:
-                try:
-                    obj.vertex_groups.remove(vg)
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    vg = None
-                    logger.debug("Failed cleaning up temporary vertex group '%s': %s", group_name, exc)
+                cleanup_warnings: list[str] = []
+                run_cleanup_step(
+                    cleanup_warnings,
+                    f"remove_vg:{group_name}",
+                    lambda: obj.vertex_groups.remove(vg),
+                )
+                if cleanup_warnings:
+                    logger.debug("Temporary vertex group cleanup warnings: %s", "; ".join(cleanup_warnings))
 
 
 class MeshDecimator:
@@ -144,8 +148,8 @@ class MeshDecimator:
                                 pinned_vert_indices.add(v1.index)
                                 break
                     except (KeyError, IndexError, AttributeError, TypeError) as exc:
-                        uv1 = None
-                        logger.debug("UV seam check error: %s", exc)
+                        logger.debug("UV seam check skipped on edge: %s", exc)
+                        continue
 
         return pinned_vert_indices
 
@@ -279,8 +283,9 @@ class MeshDecimator:
                         vert[dvert_lay][vg_idx] = float(weights[vert.index])
                     return
             except (ImportError, ValueError, TypeError, IndexError) as exc:
-                weights = None
                 logger.debug("Vectorized curvature fallback to BMesh: %s", exc)
+                # Fall through to scalar BMesh dihedral calculation below
+                num_verts = len(bm.verts)
 
         # Robust scalar fallback for small meshes or environments without NumPy
         for vert in bm.verts:
@@ -310,8 +315,8 @@ class MeshDecimator:
                             if angle > max_dihedral:
                                 max_dihedral = angle
                         except (ValueError, ZeroDivisionError, AttributeError) as exc:
-                            angle = 0.0
-                            logger.debug("Dihedral angle calculation failed: %s", exc)
+                            logger.debug("Dihedral angle calculation skipped: %s", exc)
+                            continue
 
             # Strict protection for pinned boundaries / seams / non-manifold vertices
             if vert.index in pinned_vert_indices:
@@ -391,6 +396,7 @@ class MeshDecimator:
         if not bpy:
             return
 
+        ensure_unique_mesh_data(obj)
         ctx = context
         dec_mod = cast(bpy.types.DecimateModifier, obj.modifiers.new(name="OmniMesh_Decimate", type="DECIMATE"))
         orig_armature_states: dict[bpy.types.Modifier, bool] = {}
@@ -421,9 +427,6 @@ class MeshDecimator:
             if ctx:
                 with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                     bpy.ops.object.modifier_apply(modifier=dec_mod.name)
-            elif ctx and ctx.view_layer and ctx.view_layer.objects:
-                ctx.view_layer.objects.active = obj
-                bpy.ops.object.modifier_apply(modifier=dec_mod.name)
             else:
                 bpy.ops.object.modifier_apply(modifier=dec_mod.name)
 
@@ -440,12 +443,15 @@ class MeshDecimator:
             ) from exc
         finally:
             # Restore Armature modifier show_viewport states
+            restore_warnings: list[str] = []
             for m, orig_state in orig_armature_states.items():
-                try:
-                    m.show_viewport = orig_state
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    orig_state = None
-                    logger.debug("Restoring armature show_viewport failed: %s", exc)
+                run_cleanup_step(
+                    restore_warnings,
+                    "armature_show_viewport",
+                    lambda mod=m, state=orig_state: setattr(mod, "show_viewport", state),
+                )
+            if restore_warnings:
+                logger.debug("Restoring armature show_viewport warnings: %s", "; ".join(restore_warnings))
 
             # Cleanup protection vertex group if requested
             if cleanup_group and obj:
@@ -497,8 +503,7 @@ class MeshDecimator:
                 with cast(Any, ctx.temp_override)(active_object=obj, object=obj, selected_objects=[obj]):
                     obj.shape_key_clear()
                     bpy.ops.object.shape_key_remove(all=True)
-            elif ctx and ctx.view_layer and ctx.view_layer.objects:
-                ctx.view_layer.objects.active = obj
+            else:
                 obj.shape_key_clear()
                 bpy.ops.object.shape_key_remove(all=True)
         except (RuntimeError, AttributeError, TypeError) as exc:

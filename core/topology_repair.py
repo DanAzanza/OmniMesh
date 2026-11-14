@@ -6,6 +6,7 @@ boundary hole sealing with beauty triangulation, and subpixel island culling.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING
@@ -55,10 +56,10 @@ def _find_connected_face_fans(vert: bmesh.types.BMVert) -> list[list[bmesh.types
     while face_set:
         start_face = face_set.pop()
         fan = [start_face]
-        queue = [start_face]
+        queue = deque([start_face])
 
         while queue:
-            curr_face = queue.pop(0)
+            curr_face = queue.popleft()
             for edge in curr_face.edges:
                 if vert not in edge.verts:
                     continue
@@ -356,9 +357,9 @@ class TopologyRepairEngine:
         while unvisited:
             start = unvisited.pop()
             island = [start]
-            queue = [start]
+            queue = deque([start])
             while queue:
-                curr = queue.pop(0)
+                curr = queue.popleft()
                 for edge in curr.edges:
                     for nbr in edge.link_faces:
                         if nbr in unvisited:

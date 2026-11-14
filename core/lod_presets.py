@@ -10,7 +10,6 @@ import json
 import logging
 import os
 from pathlib import Path
-import sys
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
@@ -245,8 +244,7 @@ class LODPresetManager(BasePresetManager):
         """Loads presets allowing user presets to override or extend shipped factory presets."""
         with cls._get_category_lock():
             cache = cls._get_category_cache()
-            init_key = f"_init_{cls.CATEGORY}"
-            if getattr(sys, init_key, False) and not force_reload:
+            if cls._is_category_initialized() and not force_reload:
                 return cache
 
             loaded: dict[str, dict[str, Any]] = {}
@@ -269,7 +267,7 @@ class LODPresetManager(BasePresetManager):
 
             cache.clear()
             cache.update(loaded)
-            setattr(sys, init_key, True)
+            cls._mark_category_initialized()
             return cache
 
     @classmethod

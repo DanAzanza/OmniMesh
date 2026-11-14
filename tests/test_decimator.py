@@ -277,6 +277,7 @@ def test_execute_decimate_qem_raises_decimation_error_on_apply_failure(monkeypat
     mock_obj = MagicMock()
     mock_obj.name = "SM_Hero"
     mock_obj.type = "MESH"
+    mock_obj.data.users = 1
     mock_mod = MagicMock()
     mock_mod.name = "OmniMesh_Decimate"
     mock_modifiers = MagicMock()

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +198,7 @@ class LOD_OT_generate_all(Operator):
             base_name=base_name,
             only_out_of_sync=bool(self.only_out_of_sync),
             blend_data=bdata,
+            impostor_callback=lambda _ctx: cast("Any", bpy.ops).lod_tool.generate_impostor(),
         )
 
         if success:

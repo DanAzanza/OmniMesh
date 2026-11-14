@@ -188,6 +188,7 @@ class RecursiveHLODManager:
                         use_curvature_weight=False,
                         group_name="" if is_terminal_tier else "OMNIMESH_SEAM_LOCKED",
                         cleanup_group=is_terminal_tier,
+                        context=context,
                     )
                     generated_hlod_objs.append(hlod_obj)
                 continue
@@ -262,6 +263,8 @@ class RecursiveHLODManager:
         mod.adaptivity = 0.0
 
         try:
+            if context and context.view_layer:
+                context.view_layer.update()
             eval_depsgraph = context.evaluated_depsgraph_get() if context else None
             bdata = blend_data
             bdata_meshes = bdata.meshes if bdata else None

@@ -267,6 +267,7 @@ def _restore_impostor_bake_state(
         run_cleanup_step(warnings, "active_node", lambda: setattr(nodes, "active", orig_active_node))
 
     for temp_img in temp_images:
+        run_cleanup_step(warnings, "temp_image_buffers", lambda img=temp_img: img.buffers_free())
         run_cleanup_step(warnings, "temp_image", lambda img=temp_img: bdata_imgs.remove(img, do_unlink=True))
 
     for o, vis in orig_vis:

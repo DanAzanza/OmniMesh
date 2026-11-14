@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, List, Tuple, cast
 
 import numpy as np
 
-from .compat import Vector
+from .compat import Vector, run_cleanup_step
 
 if TYPE_CHECKING:
     import bmesh
@@ -426,28 +426,10 @@ class CollisionDecomposer:
 
         finally:
             if not decomposition_succeeded:
-                free_errors = 0
-                if child_a is not None:
-                    try:
-                        child_a.free()
-                    except (RuntimeError, ReferenceError, AttributeError) as exc:
-                        free_errors += 1
-                        logger.debug("Failed freeing child_a BMesh: %s", exc)
-                if child_b is not None:
-                    try:
-                        child_b.free()
-                    except (RuntimeError, ReferenceError, AttributeError) as exc:
-                        free_errors += 1
-                        logger.debug("Failed freeing child_b BMesh: %s", exc)
-                if target_cluster is not None:
-                    try:
-                        target_cluster.free()
-                    except (RuntimeError, ReferenceError, AttributeError) as exc:
-                        free_errors += 1
-                        logger.debug("Failed freeing target_cluster BMesh: %s", exc)
-                for c in clusters + completed_clusters:
-                    try:
-                        c.free()
-                    except (RuntimeError, ReferenceError, AttributeError) as exc:
-                        free_errors += 1
-                        logger.debug("Failed freeing cluster BMesh: %s", exc)
+                free_warnings: list[str] = []
+                bms_to_free = [child_a, child_b, target_cluster, *clusters, *completed_clusters]
+                for idx, bm_item in enumerate(bms_to_free):
+                    if bm_item is not None:
+                        run_cleanup_step(free_warnings, f"bmesh_{idx}", bm_item.free)
+                if free_warnings:
+                    logger.debug("Convex decomposition BMesh cleanup notices: %s", "; ".join(free_warnings))

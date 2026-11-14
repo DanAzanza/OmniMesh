@@ -153,7 +153,7 @@ def resolve_effective_asset_name(
         if active_lc and active_lc.collection:
             coll_name = active_lc.collection.name
             scene_coll = context.scene.collection if context.scene else None
-            if coll_name and coll_name != scene_coll:
+            if coll_name and (scene_coll is None or coll_name != scene_coll.name):
                 stem = _strip_collection_suffixes(coll_name)
                 if stem and stem != "Collection" and (not available or stem in available):
                     return stem

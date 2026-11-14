@@ -39,6 +39,8 @@ def test_reproject_custom_split_normals_armature_pose_lock(monkeypatch):
 
     mock_src = MagicMock(type="MESH")
     mock_tgt = MagicMock(type="MESH")
+    mock_src.data.users = 1
+    mock_tgt.data.users = 1
 
     mock_src.data.vertices = [MagicMock(co=(0, 0, 0), normal=(0, 0, 1))]
     mock_tgt.data.vertices = [MagicMock(co=(0, 0, 0), normal=(0, 0, 1))]
@@ -61,6 +63,8 @@ def test_reproject_custom_split_normals_configures_zero_ray_radius(monkeypatch):
 
     mock_src = MagicMock(type="MESH")
     mock_tgt = MagicMock(type="MESH")
+    mock_src.data.users = 1
+    mock_tgt.data.users = 1
     mock_src.data.vertices = [MagicMock(co=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0))]
     mock_tgt.data.vertices = [MagicMock(co=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0))]
     mock_src.data.polygons = [MagicMock(loop_indices=[0])]

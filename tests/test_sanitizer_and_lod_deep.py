@@ -325,6 +325,12 @@ def test_count_triangles_and_compute_lod0_stats() -> None:
     bm_like.faces = [1, 2, 3, 4, 5]
     assert _count_triangles(bm_like) == 5
 
+    bm_ngon = MagicMock()
+    del bm_ngon.loops
+    del bm_ngon.polygons
+    bm_ngon.faces = [MagicMock(verts=[0, 1, 2]), MagicMock(verts=[0, 1, 2, 3]), MagicMock(verts=[0, 1, 2, 3, 4])]
+    assert _count_triangles(bm_ngon) == 1 + 2 + 3
+
     obj_clean = MagicMock()
     obj_clean.material_slots = [MagicMock(), MagicMock()]
     obj_clean.data = mesh_fast

@@ -13,6 +13,7 @@ import os
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 from .compat import set_node_prop, set_socket_default_value
+from .io_utils import resolve_blender_path
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +41,19 @@ def safe_load_image(
         return None
 
     abs_target = os.path.abspath(filepath)
+    blend_fp = getattr(blend_data, "filepath", "") or ""
     for img in blend_data.images:
         img_fp = img.filepath
         if img_fp:
-            try:
-                existing_abs = os.path.abspath(bpy.path.abspath(img_fp))
-            except (RuntimeError, ValueError, AttributeError):
-                existing_abs = os.path.abspath(img_fp)
+            resolved_fp = resolve_blender_path(
+                img_fp,
+                blend_fp,
+                abspath_fn=bpy.path.abspath,
+                fallback_raw_on_unsaved=False,
+            )
+            if not resolved_fp:
+                continue
+            existing_abs = os.path.abspath(resolved_fp)
 
             if existing_abs == abs_target:
                 try:

@@ -100,6 +100,9 @@ class MeshMergeEngine:
         """
         if not bpy or not bmesh or not mesh_objs:
             return None
+        if not blend_data:
+            logger.error("Explicit blend_data required to create merged mesh '%s'", output_obj_name)
+            return None
 
         # Filter to valid mesh objects
         valid_objs = [obj for obj in mesh_objs if obj and obj.type == "MESH" and obj.data]
@@ -247,9 +250,6 @@ class MeshMergeEngine:
                         eval_obj.to_mesh_clear()
 
             # Build merged target mesh datablock
-            if not blend_data:
-                logger.error("Explicit blend_data required to create merged mesh '%s'", output_obj_name)
-                return None
             merged_mesh = blend_data.meshes.new(f"{output_obj_name}_Mesh")
             target_bm.to_mesh(merged_mesh)
             merged_mesh.update()

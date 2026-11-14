@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from .compat import ensure_unique_mesh_data
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -51,6 +53,7 @@ class ModifierManager:
             return 0
 
         synced_count = 0
+        sync_errors = 0
         for mod in obj.modifiers:
             mod_synced = False
 
@@ -62,7 +65,7 @@ class ModifierManager:
                         sub_mod.render_levels = sub_mod.levels
                         mod_synced = True
                 except (TypeError, ValueError, AttributeError) as exc:
-                    mod_synced = False
+                    sync_errors += 1
                     logger.debug("Could not sync render_levels on %s: %s", mod.name, exc)
 
             # 2. Screw: sync render_steps to steps
@@ -73,7 +76,7 @@ class ModifierManager:
                         screw_mod.render_steps = screw_mod.steps
                         mod_synced = True
                 except (TypeError, ValueError, AttributeError) as exc:
-                    mod_synced = False
+                    sync_errors += 1
                     logger.debug("Could not sync render_steps on %s: %s", mod.name, exc)
 
             # 3. Ocean: sync resolution to viewport_resolution
@@ -84,7 +87,7 @@ class ModifierManager:
                         ocean_mod.resolution = ocean_mod.viewport_resolution
                         mod_synced = True
                 except (TypeError, ValueError, AttributeError) as exc:
-                    mod_synced = False
+                    sync_errors += 1
                     logger.debug("Could not sync ocean resolution on %s: %s", mod.name, exc)
 
             # 4. Global visibility: sync show_render to show_viewport
@@ -93,17 +96,18 @@ class ModifierManager:
                     mod.show_render = mod.show_viewport
                     mod_synced = True
             except (TypeError, ValueError, AttributeError) as exc:
-                mod_synced = False
+                sync_errors += 1
                 logger.debug("Could not sync show_render on %s: %s", mod.name, exc)
 
             if mod_synced:
                 synced_count += 1
 
-        if synced_count > 0:
+        if synced_count > 0 or sync_errors > 0:
             logger.info(
-                "Synchronized viewport settings to render on %d modifier(s) for %s",
+                "Synchronized viewport settings to render on %d modifier(s) for %s (%d error(s))",
                 synced_count,
                 obj.name,
+                sync_errors,
             )
 
         return synced_count
@@ -127,14 +131,7 @@ class ModifierManager:
         # Synchronize viewport settings into render settings
         ModifierManager.sync_viewport_to_render_settings(obj)
 
-        ctx = context
-        if depsgraph is None and ctx:
-            depsgraph = ctx.evaluated_depsgraph_get()
-
-        if not depsgraph:
-            return cast(Any, obj.data), None
-
-        # Temporarily disable armature modifiers if requested to prevent skin deformation
+        # Temporarily disable armature modifiers BEFORE evaluating depsgraph so skin deformation is excluded
         disabled_armatures: list[bpy.types.Modifier] = []
         if preserve_armature and obj.modifiers is not None:
             for mod in obj.modifiers:
@@ -142,7 +139,16 @@ class ModifierManager:
                     mod.show_viewport = False
                     disabled_armatures.append(mod)
 
+        ctx = context
         try:
+            if depsgraph is None and ctx:
+                if ctx.view_layer is not None:
+                    ctx.view_layer.update()
+                depsgraph = ctx.evaluated_depsgraph_get()
+
+            if not depsgraph:
+                return cast(Any, obj.data), None
+
             eval_obj = obj.evaluated_get(depsgraph)
             if not eval_obj:
                 return cast(Any, obj.data), None
@@ -190,21 +196,13 @@ class ModifierManager:
         ModifierManager.sync_viewport_to_render_settings(obj)
 
         # 2. Unlink multi-user mesh data to prevent "Modifier cannot be applied to a multi-user mesh" crash
-        unlink_failed = False
-        if obj.data and obj.data.users > 1:
-            try:
-                obj.data = obj.data.copy()
-                logger.info("Unlinked multi-user mesh data for %s prior to applying modifiers", obj.name)
-            except (RuntimeError, AttributeError) as exc:
-                unlink_failed = True
-                logger.warning("Failed unlinking multi-user mesh for %s: %s", obj.name, exc)
-
-        if unlink_failed:
+        if not ensure_unique_mesh_data(obj):
             logger.warning("Aborting modifier application on multi-user mesh %s", obj.name)
             return False
 
         # 3. Iterate and apply modifiers top-to-bottom
         applied_count = 0
+        failed_count = 0
         ctx = context
         for mod in list(obj.modifiers):
             if preserve_armature and mod.type == "ARMATURE":
@@ -237,8 +235,8 @@ class ModifierManager:
                     bpy.ops.object.modifier_apply(modifier=mod_name)
                 applied_count += 1
             except (RuntimeError, AttributeError, TypeError) as exc:
-                applied_count = applied_count
+                failed_count += 1
                 logger.warning("Could not apply modifier %s on %s: %s", mod_name, obj.name, exc)
 
-        logger.info("Applied %d modifiers in-place on %s", applied_count, obj.name)
+        logger.info("Applied %d modifiers in-place on %s (%d failed)", applied_count, obj.name, failed_count)
         return True

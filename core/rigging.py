@@ -341,7 +341,7 @@ class KinematicBonePruner:
         else:
             vert_coords = [v.co for v in mesh.vertices]
 
-        bone_verts: dict[int, list[Any]] = {vg_idx: [] for vg_idx in vg_map.values()}
+        bone_verts: dict[int, list[Vector]] = {vg_idx: [] for vg_idx in vg_map.values()}
         for v in mesh.vertices:
             for g in v.groups:
                 if g.weight > 0.01 and g.group in bone_verts:
@@ -394,11 +394,13 @@ class KinematicBonePruner:
 
                 zero_vec = Vector((0.0, 0.0, 0.0)) if Vector else None
                 if zero_vec is not None:
-                    center = sum(assigned_coords, zero_vec) / len(assigned_coords)
+                    mins = Vector(tuple(min(c[i] for c in assigned_coords) for i in range(3)))
+                    maxs = Vector(tuple(max(c[i] for c in assigned_coords) for i in range(3)))
+                    center = (mins + maxs) * 0.5
                     radius = max((co - center).length for co in assigned_coords)
                 else:
-                    center = sum(assigned_coords) / len(assigned_coords)
-                    radius = max(abs(co - center) for co in assigned_coords)
+                    center_s = (min(assigned_coords) + max(assigned_coords)) * 0.5  # type: ignore[type-var]
+                    radius = max(abs(co - center_s) for co in assigned_coords)  # type: ignore[operator]
 
                 if not math.isfinite(radius) or radius < 0.0:
                     radius = 0.0

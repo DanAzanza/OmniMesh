@@ -7,6 +7,9 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any, Sequence, cast
 
+from .compat import count_mesh_triangles
+from .metrics import compute_bounding_sphere
+
 if TYPE_CHECKING:
     import bpy
     from bpy.types import BlendData, Collection, Context, Mesh, Object, Scene
@@ -244,8 +247,7 @@ class LODAssetRecord:
             self.is_valid = False
             return
 
-        center = sum(all_coords, Vector()) / len(all_coords)
-        radius = max((co - center).length for co in all_coords)
+        center, radius = compute_bounding_sphere(all_coords)
         self.center = center
         self.radius = max(0.01, radius)
         self.is_valid = True
@@ -328,8 +330,7 @@ class LODSimulatorEngine:
                                 record.tier_objects[i] = s_objs
 
                     if all_coords:
-                        center = sum(all_coords, Vector()) / len(all_coords) if Vector else (0, 0, 0)
-                        radius = max((co - center).length for co in all_coords) if Vector else 1.0
+                        center, radius = compute_bounding_sphere(all_coords)
                         record.center = center
                         record.radius = max(0.01, radius)
                         record.is_valid = True
@@ -403,7 +404,7 @@ class LODSimulatorEngine:
 
             active_objs = record.tier_objects.get(target_tier, [])
             active_tris = sum(
-                len(cast("bpy.types.Mesh", o.data).polygons)
+                count_mesh_triangles(cast("bpy.types.Mesh", o.data))
                 for o in active_objs
                 if o.type == "MESH" and o.data is not None
             )
@@ -511,7 +512,7 @@ class LODSimulatorEngine:
 
             active_objs = record.tier_objects.get(target_tier, [])
             active_tris = sum(
-                len(cast("bpy.types.Mesh", o.data).polygons)
+                count_mesh_triangles(cast("bpy.types.Mesh", o.data))
                 for o in active_objs
                 if o.type == "MESH" and o.data is not None
             )

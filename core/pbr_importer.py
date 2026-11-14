@@ -19,6 +19,7 @@ import re
 from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
 
 from .compat import set_node_prop, set_socket_default_value
+from .io_utils import resolve_blender_path, split_drive_portable
 
 if TYPE_CHECKING:
     import bpy
@@ -183,27 +184,34 @@ class ShaderGraphBuilder:
         if not raw_path or not bpy:
             return raw_path, False
 
-        # First expand Blender's relative path syntax '//' to real absolute path
-        abs_path = os.path.abspath(bpy.path.abspath(raw_path)).replace("\\", "/")
+        bdata = blend_data
+        bdata_filepath = bdata.filepath if bdata else ""
+
+        # Expand Blender's relative '//' safely without UNC stalls on unsaved scenes
+        resolved = resolve_blender_path(
+            raw_path,
+            bdata_filepath,
+            abspath_fn=bpy.path.abspath,
+            fallback_raw_on_unsaved=True,
+        )
+        abs_path = (
+            os.path.abspath(resolved).replace("\\", "/")
+            if not resolved.startswith("//")
+            else resolved.replace("\\", "/")
+        )
 
         if mode == "ABSOLUTE":
             return abs_path, False
 
         # If RELATIVE requested:
-        bdata = blend_data
-        bdata_filepath = bdata.filepath if bdata else ""
-        try:
-            is_saved = bdata.is_saved if bdata else False
-        except AttributeError:
-            is_saved = bool(bdata_filepath)
-        if not is_saved or not bdata_filepath:
+        if not bdata_filepath:
             return abs_path, False
 
         blend_dir = os.path.dirname(bpy.path.abspath(bdata_filepath))
 
-        # Check cross-drive boundary on Windows
-        abs_drive, _ = os.path.splitdrive(abs_path)
-        blend_drive, _ = os.path.splitdrive(blend_dir)
+        # Check cross-drive boundary on Windows portably
+        abs_drive, _ = split_drive_portable(abs_path)
+        blend_drive, _ = split_drive_portable(blend_dir)
         if abs_drive.lower() != blend_drive.lower():
             return abs_path, False
 

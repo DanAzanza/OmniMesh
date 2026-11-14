@@ -14,7 +14,8 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any, cast
 
-from .compat import get_socket_default_value, set_socket_default_value
+from .compat import ensure_unique_mesh_data, get_socket_default_value, set_socket_default_value
+from .io_utils import resolve_blender_path
 
 logger = logging.getLogger(__name__)
 
@@ -102,11 +103,14 @@ class DeepMaterialHasher:
                 if curr_img is not None:
                     img = curr_img
                     filepath = img.filepath
-                    if bpy and filepath:
-                        try:
-                            filepath = bpy.path.abspath(filepath)
-                        except (RuntimeError, ValueError, AttributeError) as exc:
-                            logger.debug("Failed resolving abspath for image: %s", exc)
+                    if filepath:
+                        resolved_fp = resolve_blender_path(
+                            filepath,
+                            abspath_fn=bpy.path.abspath if bpy else None,
+                            fallback_raw_on_unsaved=True,
+                        )
+                        if resolved_fp:
+                            filepath = resolved_fp
                     node_data["image_filepath"] = filepath or img.name
                     sz = list(cast("Iterable[int]", img.size)) if img.size is not None else [0, 0]
                     node_data["image_size"] = [int(sz[0]), int(sz[1])]
@@ -181,6 +185,7 @@ class HeadlessSlotCompactor:
         """
         if not obj or not obj.data:
             return {"slots_removed": 0, "faces_remapped": 0}
+        ensure_unique_mesh_data(obj)
         mesh = cast("bpy.types.Mesh", obj.data)
         if mesh.polygons is None or obj.material_slots is None:
             return {"slots_removed": 0, "faces_remapped": 0}
@@ -289,13 +294,14 @@ class SemanticTextureAuditor:
         filepath = img.filepath
         if not filepath:
             return False
-        if bpy:
-            try:
-                abs_path = bpy.path.abspath(filepath)
-                return os.path.exists(abs_path)
-            except (RuntimeError, ValueError, TypeError, OSError):
-                return os.path.exists(filepath)
-        return os.path.exists(filepath)
+        abs_path = resolve_blender_path(
+            filepath,
+            abspath_fn=bpy.path.abspath if bpy else None,
+            fallback_raw_on_unsaved=False,
+        )
+        if not abs_path:
+            return False
+        return os.path.exists(abs_path)
 
     @classmethod
     def repair_missing_textures_in_material(cls, mat: bpy.types.Material | None) -> int:
@@ -472,7 +478,8 @@ class MaterialOptimizer:
         area_threshold_pct: float = 0.5,
         protect_semantic_materials: bool = True,
         area_crit: float = 0.0,
-        **kwargs: object,
+        *,
+        preserve_slot_indexing: bool = True,
     ) -> dict[str, Any]:
         """
         Reassigns surface regions occupying < area_threshold_pct of total surface area
@@ -520,6 +527,7 @@ class MaterialOptimizer:
         if not reassigned_slots:
             return {"consolidated_slots": 0, "faces_reassigned": 0}
 
+        ensure_unique_mesh_data(obj)
         mesh_data = cast("bpy.types.Mesh", obj.data)
         bm = bmesh.new()
         faces_reassigned = 0
@@ -535,6 +543,8 @@ class MaterialOptimizer:
             bm.free()
 
         mesh_data.update()
+        if not preserve_slot_indexing:
+            HeadlessSlotCompactor.compact_slots(obj, purge_empty=True, deduplicate_identical=False)
         return {"consolidated_slots": len(reassigned_slots), "faces_reassigned": faces_reassigned}
 
     @classmethod

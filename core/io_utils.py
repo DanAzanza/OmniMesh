@@ -2,16 +2,74 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import datetime
 import logging
 import os
 from pathlib import Path
+import re
+import shutil
 import tempfile
 import time
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_RETRY_DELAYS: tuple[float, ...] = (0.05, 0.1, 0.2, 0.4)
+_INVALID_FILENAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def sanitize_filename(name: str, fallback: str = "Asset") -> str:
+    """Replaces filesystem-unsafe characters in ``name`` with underscores."""
+    cleaned = _INVALID_FILENAME_CHARS_RE.sub("_", str(name or "")).strip(" .")
+    return cleaned or fallback
+
+
+def split_drive_portable(path_str: str) -> tuple[str, str]:
+    """Splits a Windows drive letter portably across Windows and POSIX platforms."""
+    drive, rest = os.path.splitdrive(path_str)
+    if drive:
+        return drive, rest
+    if len(path_str) >= 2 and path_str[1] == ":" and path_str[0].isalpha():
+        return path_str[:2], path_str[2:]
+    return "", path_str
+
+
+def resolve_blender_path(
+    raw_filepath: str,
+    blend_filepath: str | None = None,
+    *,
+    abspath_fn: Callable[[str], str] | None = None,
+    fallback_raw_on_unsaved: bool = False,
+) -> str:
+    """Resolves a Blender relative (``//``) or standard path without Windows UNC stalls on unsaved scenes."""
+    if not raw_filepath:
+        return ""
+
+    if raw_filepath.startswith("//"):
+        base_dir = os.path.dirname(blend_filepath) if blend_filepath else ""
+        if base_dir:
+            rel_part = raw_filepath[2:].lstrip("/\\")
+            return os.path.normpath(os.path.join(base_dir, rel_part))
+        return os.path.normpath(raw_filepath) if fallback_raw_on_unsaved else ""
+
+    if abspath_fn is not None:
+        try:
+            return os.path.normpath(abspath_fn(raw_filepath))
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            logger.debug("Blender path abspath fallback for '%s': %s", raw_filepath, exc)
+
+    return os.path.normpath(raw_filepath)
+
+
+def create_timestamped_backup(file_path: Path | str) -> Path | None:
+    """Creates a timestamped ``.bak_YYYYMMDD_HHMMSS`` sibling backup if ``file_path`` exists."""
+    src = Path(file_path)
+    if not src.exists():
+        return None
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = src.with_name(f"{src.name}.bak_{stamp}")
+    shutil.copy2(src, backup_path)
+    return backup_path
 
 
 def _cleanup_temp_file(tmp_path: str) -> None:

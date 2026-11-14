@@ -28,6 +28,7 @@ else:
         Object = object
     BlendData = object
 
+from .compat import ensure_unique_mesh_data, run_cleanup_step
 from .hierarchy import get_or_create_engine_import_collection
 from .msfs.project_scanner import MSFSProjectManifest
 
@@ -186,20 +187,14 @@ class GLTFAssemblyEngine:
         effective_asset = asset_name or (target_collection.name if target_collection else "Asset").split("_")[0]
         interact_col = None
         coll_col = None
-        unlink_errors = 0
+        cleanup_warnings: list[str] = []
 
         for obj in new_objects:
             # Check classification
             mesh_role = classify_imported_mesh_node(obj, is_interior=is_interior)
 
             if mesh_role == "INTERACTION_VOLUME" and get_or_create_engine_import_collection:
-                mesh_data = obj.data
-                if mesh_data is not None and mesh_data.users > 1:
-                    try:
-                        obj.data = mesh_data.copy()
-                    except (RuntimeError, AttributeError) as exc:
-                        mesh_data = None
-                        logger.debug("Could not copy interaction mesh datablock: %s", exc)
+                ensure_unique_mesh_data(obj)
                 interact_col = get_or_create_engine_import_collection(
                     context, effective_asset, "INTERACTIONS", blend_data=bdata
                 )
@@ -210,13 +205,7 @@ class GLTFAssemblyEngine:
                 obj["_omnimesh_role"] = "INTERACTION_VOLUME"
                 obj["_is_trigger"] = True
             elif mesh_role == "PHYSICS_COLLIDER" and get_or_create_engine_import_collection:
-                mesh_data = obj.data
-                if mesh_data is not None and mesh_data.users > 1:
-                    try:
-                        obj.data = mesh_data.copy()
-                    except (RuntimeError, AttributeError) as exc:
-                        mesh_data = None
-                        logger.debug("Could not copy collider mesh datablock: %s", exc)
+                ensure_unique_mesh_data(obj)
                 coll_col = get_or_create_engine_import_collection(
                     context, effective_asset, "COLLIDERS", blend_data=bdata
                 )
@@ -231,39 +220,34 @@ class GLTFAssemblyEngine:
                     target_collection.objects.link(obj)
 
             # Unlink from other collections (e.g. scene collection or importer dummy collections)
+            keep_col = (
+                interact_col
+                if mesh_role == "INTERACTION_VOLUME"
+                else coll_col
+                if mesh_role == "PHYSICS_COLLIDER"
+                else target_collection
+            )
             for coll in list(obj.users_collection):
-                if mesh_role == "INTERACTION_VOLUME":
-                    if coll != interact_col:
-                        try:
-                            coll.objects.unlink(obj)
-                        except (RuntimeError, ReferenceError, AttributeError) as exc:
-                            unlink_errors += 1
-                            logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
-                elif mesh_role == "PHYSICS_COLLIDER":
-                    if coll != coll_col:
-                        try:
-                            coll.objects.unlink(obj)
-                        except (RuntimeError, ReferenceError, AttributeError) as exc:
-                            unlink_errors += 1
-                            logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
-                elif coll != target_collection:
-                    try:
-                        coll.objects.unlink(obj)
-                    except (RuntimeError, ReferenceError, AttributeError) as exc:
-                        unlink_errors += 1
-                        logger.debug("Could not unlink %s from %s: %s", obj.name, coll.name, exc)
+                if coll != keep_col:
+                    run_cleanup_step(
+                        cleanup_warnings,
+                        f"unlink:{obj.name}",
+                        lambda o=obj, c=coll: c.objects.unlink(o),
+                    )
 
         # Cleanup dummy collections created by glTF importer if they are now empty
         bdata_cols = bdata.collections if bdata else None
         new_collections = [c for c in bdata_cols if c not in existing_collections] if bdata_cols else []
-        coll_remove_errors = 0
         for coll in new_collections:
             if coll != target_collection and len(coll.objects) == 0 and len(coll.children) == 0 and bdata_cols:
-                try:
-                    bdata_cols.remove(coll)
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    coll_remove_errors += 1
-                    logger.debug("Failed removing empty collection %s: %s", coll.name, exc)
+                run_cleanup_step(
+                    cleanup_warnings,
+                    f"remove_collection:{coll.name}",
+                    lambda cols_col=bdata_cols, c=coll: cols_col.remove(c),
+                )
+
+        if cleanup_warnings:
+            logger.debug("glTF assembly cleanup notices: %s", "; ".join(cleanup_warnings))
 
         return new_objects
 
@@ -306,14 +290,16 @@ class GLTFAssemblyEngine:
                             remapped_count += 1
 
         # Purge unreferenced duplicate materials
-        mat_purge_errors = 0
+        purge_warnings: list[str] = []
         for dup_mat in materials_to_check:
             if dup_mat.users == 0 and bdata_mats:
-                try:
-                    bdata_mats.remove(dup_mat, do_unlink=True)
-                except (RuntimeError, ReferenceError, AttributeError) as exc:
-                    mat_purge_errors += 1
-                    logger.debug("Failed removing unreferenced duplicate material %s: %s", dup_mat.name, exc)
+                run_cleanup_step(
+                    purge_warnings,
+                    f"purge_mat:{dup_mat.name}",
+                    lambda mats=bdata_mats, m=dup_mat: mats.remove(m, do_unlink=True),
+                )
+        if purge_warnings:
+            logger.debug("Duplicate material purge notices: %s", "; ".join(purge_warnings))
 
         return remapped_count
 
