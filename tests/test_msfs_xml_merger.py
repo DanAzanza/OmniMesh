@@ -103,3 +103,13 @@ def test_merge_lods_file_atomic(tmp_path: Path):
     content = target.read_text(encoding="utf-8")
     assert '<LOD minSize="40" ModelFile="Test_LOD0.gltf"/>' in content
     assert "c_wheel" in content
+    assert len(list(tmp_path.glob("test_model.xml.bak_*"))) == 1
+
+
+def test_merge_self_closing_lods_and_xml_escaping():
+    xml_self_close = '<ModelInfo version="1.1"><LODS /></ModelInfo>'
+    tiers = [{"min_size": 25.0, "model_file": 'Plane"A&B.gltf'}]
+    merged = ModelXMLMerger.merge_lods_into_xml_content(xml_self_close, tiers)
+
+    assert "<LODS />" not in merged
+    assert 'ModelFile="Plane&quot;A&amp;B.gltf"' in merged

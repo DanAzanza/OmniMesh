@@ -6,14 +6,12 @@ in cameras.cfg with comment, GUID, and attribute preservation.
 
 from __future__ import annotations
 
-import datetime
 import logging
 import os
 import re
-import shutil
 from typing import Optional
 
-from ..io_utils import atomic_write_text
+from ..io_utils import atomic_write_text, create_timestamped_backup, detect_text_file_format
 
 from .models import CameraConfigFile, CameraDefinition
 from .transforms import (
@@ -31,28 +29,7 @@ def detect_file_format(file_path: str) -> tuple[str, bool, str]:
     Detects UTF-16 LE/BE, UTF-8 BOM, standard UTF-8, and CP1252 fallback.
     Returns (encoding, has_bom, newline_style).
     """
-    with open(file_path, "rb") as f:
-        raw_bytes = f.read()
-
-    if raw_bytes.startswith(b"\xef\xbb\xbf"):
-        has_bom = True
-        encoding = "utf-8-sig"
-    elif raw_bytes.startswith(b"\xff\xfe"):
-        has_bom = True
-        encoding = "utf-16-le"
-    elif raw_bytes.startswith(b"\xfe\xff"):
-        has_bom = True
-        encoding = "utf-16-be"
-    else:
-        has_bom = False
-        try:
-            raw_bytes.decode("utf-8")
-            encoding = "utf-8"
-        except UnicodeDecodeError:
-            encoding = "cp1252"
-
-    newline_style = "\r\n" if b"\r\n" in raw_bytes else "\n"
-    return encoding, has_bom, newline_style
+    return detect_text_file_format(file_path)
 
 
 def _parse_camera_property(
@@ -229,10 +206,9 @@ class MSFSCameraCST:
         os.makedirs(dest_dir, exist_ok=True)
 
         # 1. Pre-flight Backup
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{dest_file}.bak_{timestamp}"
-        if os.path.isfile(dest_file):
-            shutil.copy2(dest_file, backup_path)
+        backup_obj = create_timestamped_backup(dest_file)
+        backup_path = str(backup_obj) if backup_obj is not None else ""
+        if backup_path:
             logger.info("Created cameras backup: %s", backup_path)
 
         nl = config.line_ending

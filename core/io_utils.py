@@ -64,12 +64,37 @@ def resolve_blender_path(
 def create_timestamped_backup(file_path: Path | str) -> Path | None:
     """Creates a timestamped ``.bak_YYYYMMDD_HHMMSS`` sibling backup if ``file_path`` exists."""
     src = Path(file_path)
-    if not src.exists():
+    if not src.is_file():
         return None
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_path = src.with_name(f"{src.name}.bak_{stamp}")
     shutil.copy2(src, backup_path)
     return backup_path
+
+
+def detect_text_file_format(file_path: Path | str) -> tuple[str, bool, str]:
+    """Detects encoding (UTF-8/16 BOM or CP1252 fallback), BOM presence, and line ending."""
+    raw = Path(file_path).read_bytes()
+
+    if raw.startswith(b"\xef\xbb\xbf"):
+        has_bom = True
+        encoding = "utf-8-sig"
+    elif raw.startswith(b"\xff\xfe"):
+        has_bom = True
+        encoding = "utf-16-le"
+    elif raw.startswith(b"\xfe\xff"):
+        has_bom = True
+        encoding = "utf-16-be"
+    else:
+        has_bom = False
+        try:
+            raw.decode("utf-8")
+            encoding = "utf-8"
+        except UnicodeDecodeError:
+            encoding = "cp1252"
+
+    newline_style = "\r\n" if b"\r\n" in raw else "\n"
+    return encoding, has_bom, newline_style
 
 
 def _cleanup_temp_file(tmp_path: str) -> None:

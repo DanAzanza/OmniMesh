@@ -90,41 +90,85 @@ class MSFSProjectManifest:
         return self.models.get("interior")
 
 
-def resolve_path_ci(base: Path, *parts: str) -> Optional[Path]:
+_DTD_OR_ENTITY_RE = re.compile(r"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
+
+
+def _find_child_ci(directory: Path, target_lower: str) -> Optional[Path]:
+    """Finds a direct child of ``directory`` matching ``target_lower`` case-insensitively."""
+    try:
+        for entry in directory.iterdir():
+            if entry.name.lower() == target_lower:
+                return entry
+    except OSError as exc:
+        logger.debug("Failed traversing '%s': %s", directory, exc)
+    return None
+
+
+def _is_within_boundary(candidate: Path, boundary_root: Optional[Path]) -> bool:
+    """Returns True when ``candidate`` resolves inside ``boundary_root`` (or no boundary is set)."""
+    if boundary_root is None:
+        return True
+    try:
+        return candidate.resolve().is_relative_to(boundary_root.resolve())
+    except OSError:
+        return False
+
+
+def _has_unsafe_path_syntax(part_clean: str) -> bool:
+    """Rejects null bytes, UNC paths, and drive-letter prefixes in relative path segments."""
+    if "\x00" in part_clean or part_clean.startswith(("\\\\", "//")):
+        return True
+    if len(part_clean) >= 2 and part_clean[1] == ":" and part_clean[0].isalpha():
+        return True
+    return False
+
+
+def resolve_path_ci(
+    base: Path,
+    *parts: str,
+    boundary_root: Optional[Path] = None,
+) -> Optional[Path]:
     """Resolves a relative path case-insensitively across all operating systems.
 
-    Correctly resolves parent traversal ('..') and current directory ('.').
-    Returns the actual filesystem Path if found, or None if any segment does not exist.
+    Correctly resolves parent traversal ('..') and current directory ('.') while
+    enforcing optional ``boundary_root`` confinement and blocking absolute/UNC escapes.
+    Returns the actual filesystem Path if found, or None if missing or out of bounds.
     """
     current = base.resolve()
+    resolved_boundary = boundary_root.resolve() if boundary_root is not None else None
+    if not _is_within_boundary(current, resolved_boundary):
+        return None
+
     for part in parts:
         part_clean = part.strip()
         if not part_clean:
             continue
-        # Sub-split any internal slashes (both / and \)
-        subparts = re.split(r"[/\\]+", part_clean)
-        for sp in subparts:
+        if _has_unsafe_path_syntax(part_clean):
+            logger.warning("Rejected unsafe relative path segment: %r", part)
+            return None
+        for sp in re.split(r"[/\\]+", part_clean):
             if not sp or sp == ".":
                 continue
             if sp == "..":
                 current = current.parent
-                continue
-            if not current.is_dir():
+            else:
+                if not current.is_dir():
+                    return None
+                match = _find_child_ci(current, sp.lower())
+                if match is None:
+                    return None
+                current = match
+            if not _is_within_boundary(current, resolved_boundary):
+                logger.warning("Rejected path escaping package boundary '%s': %r", resolved_boundary, part)
                 return None
-            target_lower = sp.lower()
-            match = None
-            try:
-                for entry in current.iterdir():
-                    if entry.name.lower() == target_lower:
-                        match = entry
-                        break
-            except OSError as exc:
-                logger.debug("Failed traversing '%s': %s", current, exc)
-                return None
-            if match is None:
-                return None
-            current = match
     return current
+
+
+def _safe_parse_xml(xml_str: str) -> ET.Element:
+    """Parses XML while rejecting DTD/ENTITY declarations."""
+    if _DTD_OR_ENTITY_RE.search(xml_str):
+        raise ValueError("Forbidden DTD or XML entity declaration in ModelInfo XML")
+    return ET.fromstring(xml_str)  # noqa: S314
 
 
 def sanitize_asset_name(raw_name: str) -> str:
@@ -310,16 +354,31 @@ def parse_model_cfg(model_cfg_path: Path) -> dict[str, str]:
     return result
 
 
-def parse_model_xml(xml_path: Path) -> list[MSFSLODInfo]:
+def _resolve_bounded_child(base_dir: Path, rel_path: str, boundary_root: Optional[Path]) -> Optional[Path]:
+    """Resolves ``rel_path`` relative to ``base_dir`` (with CI match fallback) inside ``boundary_root``."""
+    cleaned = rel_path.strip()
+    if not cleaned or _has_unsafe_path_syntax(cleaned):
+        return None
+    resolved_ci = resolve_path_ci(base_dir, cleaned, boundary_root=boundary_root)
+    if resolved_ci is not None:
+        return resolved_ci
+    candidate = (base_dir / cleaned).resolve()
+    if not _is_within_boundary(candidate, boundary_root):
+        logger.warning("Rejected path outside package boundary '%s': %r", boundary_root, rel_path)
+        return None
+    return candidate
+
+
+def parse_model_xml(xml_path: Path, *, boundary_root: Optional[Path] = None) -> list[MSFSLODInfo]:
     """Parses ModelInfo XML file and extracts <LODS> entries with minSize and glTF file paths."""
     if not xml_path.is_file():
         return []
 
     lods: list[MSFSLODInfo] = []
     xml_dir = xml_path.parent
+    eff_boundary = boundary_root if boundary_root is not None else xml_dir.parent
 
     try:
-        # Parse XML with BOM and encoding tolerance
         raw_bytes = xml_path.read_bytes()
         if raw_bytes.startswith(b"\xef\xbb\xbf"):
             raw_bytes = raw_bytes[3:]
@@ -327,133 +386,119 @@ def parse_model_xml(xml_path: Path) -> list[MSFSLODInfo]:
             xml_str = raw_bytes.decode("utf-8")
         except UnicodeDecodeError:
             xml_str = raw_bytes.decode("cp1252", errors="replace")
-        root = ET.fromstring(xml_str)  # noqa: S314
+        root = _safe_parse_xml(xml_str)
 
-        # Find LODS section (case-insensitive)
-        lods_elem = None
-        for elem in root.iter():
-            if elem.tag.lower() == "lods":
-                lods_elem = elem
-                break
-
+        lods_elem = next((elem for elem in root.iter() if elem.tag.lower() == "lods"), None)
         if lods_elem is not None:
-            lod_index = 0
             for child in lods_elem:
-                if child.tag.lower() == "lod":
-                    # Extract minSize
-                    raw_min = child.attrib.get("minSize") or child.attrib.get("minsize") or "0"
-                    try:
-                        min_size = float(raw_min)
-                    except ValueError:
-                        min_size = 0.0
+                if child.tag.lower() != "lod":
+                    continue
+                raw_min = child.attrib.get("minSize") or child.attrib.get("minsize") or "0"
+                try:
+                    min_size = float(raw_min)
+                except ValueError:
+                    min_size = 0.0
 
-                    # Extract ModelFile
-                    model_file = (
-                        child.attrib.get("ModelFile")
-                        or child.attrib.get("modelfile")
-                        or child.attrib.get("modelFile")
-                        or ""
-                    )
-                    if model_file:
-                        # Case-insensitive resolution relative to xml_dir
-                        resolved_gltf = resolve_path_ci(xml_dir, model_file)
-                        target_path = resolved_gltf if resolved_gltf else (xml_dir / model_file)
-                        exists = target_path.is_file()
-
-                        lods.append(
-                            MSFSLODInfo(
-                                index=lod_index,
-                                min_size=min_size,
-                                gltf_path=target_path,
-                                exists=exists,
-                            )
+                model_file = (
+                    child.attrib.get("ModelFile")
+                    or child.attrib.get("modelfile")
+                    or child.attrib.get("modelFile")
+                    or ""
+                )
+                target_path = _resolve_bounded_child(xml_dir, model_file, eff_boundary) if model_file else None
+                if target_path is not None:
+                    lods.append(
+                        MSFSLODInfo(
+                            index=len(lods),
+                            min_size=min_size,
+                            gltf_path=target_path,
+                            exists=target_path.is_file(),
                         )
-                        lod_index += 1
+                    )
 
     except (ET.ParseError, OSError, ValueError) as exc:
         logger.warning("Failed parsing ModelInfo XML '%s': %s", xml_path, exc)
 
-    # Sort descending by min_size to guarantee highest LOD first
+    # Sort descending by min_size to guarantee highest LOD first, then re-index 0..N
     lods.sort(key=lambda item: item.min_size, reverse=True)
-    # Re-index to be 0..N strictly sequential
-    reindexed = [
+    return [
         MSFSLODInfo(index=i, min_size=lod_item.min_size, gltf_path=lod_item.gltf_path, exists=lod_item.exists)
         for i, lod_item in enumerate(lods)
     ]
-    return reindexed
 
 
 class MSFSProjectScanner:
     """High-level scanner that resolves an MSFS aircraft package and yields a typed project manifest."""
 
     @classmethod
-    def scan(cls, folder_path: Path | str) -> MSFSProjectManifest:
-        """Scans the given folder or auto-discovered package root and builds an MSFSProjectManifest."""
-        root = find_package_root(folder_path)
-        if root is None:
-            root = Path(folder_path).resolve()
-
-        asset_name = sanitize_asset_name(root.name)
-
-        # 1. Locate model.cfg
-        model_cfg_path = (
-            resolve_path_ci(root, "common", "model", "model.cfg")
-            or resolve_path_ci(root, "model", "model.cfg")
-            or resolve_path_ci(root, "model.cfg")
+    def _discover_model_cfg(cls, root: Path) -> Optional[Path]:
+        """Finds the primary model.cfg within ``root``."""
+        cfg = (
+            resolve_path_ci(root, "common", "model", "model.cfg", boundary_root=root)
+            or resolve_path_ci(root, "model", "model.cfg", boundary_root=root)
+            or resolve_path_ci(root, "model.cfg", boundary_root=root)
         )
+        if cfg is not None:
+            return cfg
+        for candidate in _safe_glob(root, "model.cfg", recursive=True):
+            if candidate.is_file() and _is_within_boundary(candidate, root):
+                return candidate
+        return None
 
-        # If model_cfg_path not found, search first matching model.cfg in subdirectories
-        if model_cfg_path is None:
-            for candidate in _safe_glob(root, "model.cfg", recursive=True):
-                if candidate.is_file():
-                    model_cfg_path = candidate
-                    break
-
-        # 2. Parse model.cfg targets and options
+    @classmethod
+    def _scan_base_models(
+        cls,
+        root: Path,
+        model_cfg_path: Optional[Path],
+    ) -> tuple[dict[str, MSFSModelTargetInfo], MSFSModelOptions]:
+        """Loads primary model targets and [model.options] from ``model.cfg`` or fallback XMLs."""
         models_dict: dict[str, MSFSModelTargetInfo] = {}
         model_options = MSFSModelOptions(has_explicit_section=False)
+
         if model_cfg_path and model_cfg_path.is_file():
             model_dir = model_cfg_path.parent
             model_options = parse_model_options(model_cfg_path)
-            model_targets = parse_model_cfg(model_cfg_path)
-            for target_type, xml_rel in model_targets.items():
-                xml_path = resolve_path_ci(model_dir, xml_rel) or (model_dir / xml_rel)
-                lods = parse_model_xml(xml_path) if xml_path.is_file() else []
+            for target_type, xml_rel in parse_model_cfg(model_cfg_path).items():
+                xml_path = _resolve_bounded_child(model_dir, xml_rel, root)
+                if xml_path is None:
+                    continue
+                lods = parse_model_xml(xml_path, boundary_root=root) if xml_path.is_file() else []
                 models_dict[target_type] = MSFSModelTargetInfo(
                     target_type=target_type,
                     xml_path=xml_path if xml_path.is_file() else None,
                     lods=lods,
                 )
+            return models_dict, model_options
 
-        # Fallback if no model.cfg: search for any .xml containing <LODS> in model/ or root
-        if not models_dict:
-            search_dirs = [root / "common" / "model", root / "model", root]
-            for sdir in search_dirs:
-                if sdir.is_dir():
-                    for xf in sdir.glob("*.xml"):
-                        lods = parse_model_xml(xf)
-                        if lods:
-                            models_dict["normal"] = MSFSModelTargetInfo(
-                                target_type="normal",
-                                xml_path=xf,
-                                lods=lods,
-                            )
-                            break
-                if models_dict:
-                    break
+        for sdir in (root / "common" / "model", root / "model", root):
+            if not sdir.is_dir():
+                continue
+            for xf in _safe_glob(sdir, "*.xml"):
+                lods = parse_model_xml(xf, boundary_root=root)
+                if lods:
+                    models_dict["normal"] = MSFSModelTargetInfo(target_type="normal", xml_path=xf, lods=lods)
+                    return models_dict, model_options
+        return models_dict, model_options
 
-        # 3. Discover sibling variant model folders (e.g. model.floats, model.skis)
+    @classmethod
+    def _scan_variant_models(
+        cls,
+        root: Path,
+        model_cfg_path: Optional[Path],
+        models_dict: dict[str, MSFSModelTargetInfo],
+    ) -> dict[str, MSFSModelTargetInfo]:
+        """Discovers sibling ``model.<variant>`` directories and classifies base vs variant targets."""
         variants_dict: dict[str, MSFSModelTargetInfo] = {}
-        variant_dirs: list[Path] = []
         search_roots = [root]
-        common_dir = resolve_path_ci(root, "common")
+        common_dir = resolve_path_ci(root, "common", boundary_root=root)
         if common_dir and common_dir.is_dir():
             search_roots.append(common_dir)
         if model_cfg_path and model_cfg_path.is_file():
             for p_dir in (model_cfg_path.parent, model_cfg_path.parent.parent):
-                if p_dir.is_dir() and p_dir not in search_roots:
+                if p_dir.is_dir() and _is_within_boundary(p_dir, root) and p_dir not in search_roots:
                     search_roots.append(p_dir)
 
+        variant_dirs: list[Path] = []
         for sroot in search_roots:
             for entry in _safe_glob(sroot, "*"):
                 if entry.is_dir() and entry.name.lower().startswith("model."):
@@ -463,73 +508,78 @@ class MSFSProjectScanner:
 
         for vdir in variant_dirs:
             variant_key = vdir.name.split(".", 1)[1].strip().lower()
-            v_cfg = resolve_path_ci(vdir, "model.cfg") or (vdir / "model.cfg")
-            if v_cfg.is_file():
-                v_targets = parse_model_cfg(v_cfg)
-                v_xml_rel = v_targets.get("normal") or v_targets.get("exterior") or v_targets.get("interior")
-                if v_xml_rel:
-                    v_xml_path = resolve_path_ci(vdir, v_xml_rel) or (vdir / v_xml_rel)
-                    v_lods = parse_model_xml(v_xml_path) if v_xml_path.is_file() else []
-                    if variant_key in ("interior", "cockpit") or (
-                        "interior" in v_targets and "normal" not in v_targets and "exterior" not in v_targets
-                    ):
-                        models_dict["interior"] = MSFSModelTargetInfo(
-                            target_type="interior",
-                            xml_path=v_xml_path if v_xml_path.is_file() else None,
-                            lods=v_lods,
-                        )
-                    elif variant_key in ("exterior", "normal", "base") and "normal" not in models_dict:
-                        models_dict["normal"] = MSFSModelTargetInfo(
-                            target_type="normal",
-                            xml_path=v_xml_path if v_xml_path.is_file() else None,
-                            lods=v_lods,
-                        )
-                    else:
-                        variants_dict[variant_key] = MSFSModelTargetInfo(
-                            target_type="variant",
-                            xml_path=v_xml_path if v_xml_path.is_file() else None,
-                            lods=v_lods,
-                        )
+            v_cfg = resolve_path_ci(vdir, "model.cfg", boundary_root=root) or (vdir / "model.cfg")
+            if not v_cfg.is_file():
+                continue
+            v_targets = parse_model_cfg(v_cfg)
+            v_xml_rel = v_targets.get("normal") or v_targets.get("exterior") or v_targets.get("interior")
+            if not v_xml_rel:
+                continue
+            v_xml_path = _resolve_bounded_child(vdir, v_xml_rel, root)
+            if v_xml_path is None:
+                continue
+            v_lods = parse_model_xml(v_xml_path, boundary_root=root) if v_xml_path.is_file() else []
+            xml_if_exists = v_xml_path if v_xml_path.is_file() else None
+            if variant_key in ("interior", "cockpit") or (
+                "interior" in v_targets and "normal" not in v_targets and "exterior" not in v_targets
+            ):
+                models_dict["interior"] = MSFSModelTargetInfo(
+                    target_type="interior", xml_path=xml_if_exists, lods=v_lods
+                )
+            elif variant_key in ("exterior", "normal", "base") and "normal" not in models_dict:
+                models_dict["normal"] = MSFSModelTargetInfo(target_type="normal", xml_path=xml_if_exists, lods=v_lods)
+            else:
+                variants_dict[variant_key] = MSFSModelTargetInfo(
+                    target_type="variant", xml_path=xml_if_exists, lods=v_lods
+                )
+        return variants_dict
 
-        # 4. Locate flight_model.cfg
+    @classmethod
+    def _discover_attached_objects_cfg(cls, root: Path) -> Optional[Path]:
+        """Finds MSFS 2024 ``attached_objects.cfg`` or ``attachment.cfg`` within ``root``."""
+        direct = (
+            resolve_path_ci(root, "common", "config", "attached_objects.cfg", boundary_root=root)
+            or resolve_path_ci(root, "config", "attached_objects.cfg", boundary_root=root)
+            or resolve_path_ci(root, "attached_objects.cfg", boundary_root=root)
+        )
+        if direct is not None:
+            return direct
+        att_root = resolve_path_ci(root, "attachments", boundary_root=root)
+        if att_root and att_root.is_dir():
+            for cand in _safe_glob(att_root, "*.cfg", recursive=True):
+                if cand.name.lower() in ("attached_objects.cfg", "attachment.cfg") and cand.is_file():
+                    return cand
+        return None
+
+    @classmethod
+    def scan(cls, folder_path: Path | str) -> MSFSProjectManifest:
+        """Scans the given folder or auto-discovered package root and builds an MSFSProjectManifest."""
+        root = find_package_root(folder_path) or Path(folder_path).resolve()
+        asset_name = sanitize_asset_name(root.name)
+
+        model_cfg_path = cls._discover_model_cfg(root)
+        models_dict, model_options = cls._scan_base_models(root, model_cfg_path)
+        variants_dict = cls._scan_variant_models(root, model_cfg_path, models_dict)
+
         flight_model_cfg = (
-            resolve_path_ci(root, "common", "config", "flight_model.cfg")
-            or resolve_path_ci(root, "config", "flight_model.cfg")
-            or resolve_path_ci(root, "flight_model.cfg")
+            resolve_path_ci(root, "common", "config", "flight_model.cfg", boundary_root=root)
+            or resolve_path_ci(root, "config", "flight_model.cfg", boundary_root=root)
+            or resolve_path_ci(root, "flight_model.cfg", boundary_root=root)
         )
-
-        # 5. Locate systems.cfg or light.cfg
         systems_cfg = (
-            resolve_path_ci(root, "common", "config", "systems.cfg")
-            or resolve_path_ci(root, "config", "systems.cfg")
-            or resolve_path_ci(root, "systems.cfg")
-            or resolve_path_ci(root, "common", "config", "light.cfg")
-            or resolve_path_ci(root, "config", "light.cfg")
-            or resolve_path_ci(root, "light.cfg")
+            resolve_path_ci(root, "common", "config", "systems.cfg", boundary_root=root)
+            or resolve_path_ci(root, "config", "systems.cfg", boundary_root=root)
+            or resolve_path_ci(root, "systems.cfg", boundary_root=root)
+            or resolve_path_ci(root, "common", "config", "light.cfg", boundary_root=root)
+            or resolve_path_ci(root, "config", "light.cfg", boundary_root=root)
+            or resolve_path_ci(root, "light.cfg", boundary_root=root)
         )
-
-        # 6. Locate cameras.cfg
         cameras_cfg = (
-            resolve_path_ci(root, "common", "config", "cameras.cfg")
-            or resolve_path_ci(root, "config", "cameras.cfg")
-            or resolve_path_ci(root, "cameras.cfg")
+            resolve_path_ci(root, "common", "config", "cameras.cfg", boundary_root=root)
+            or resolve_path_ci(root, "config", "cameras.cfg", boundary_root=root)
+            or resolve_path_ci(root, "cameras.cfg", boundary_root=root)
         )
-
-        # 7. Locate attached_objects.cfg (MSFS 2024 modular submodels and attachments)
-        attached_objects_cfg = (
-            resolve_path_ci(root, "common", "config", "attached_objects.cfg")
-            or resolve_path_ci(root, "config", "attached_objects.cfg")
-            or resolve_path_ci(root, "attached_objects.cfg")
-        )
-        if attached_objects_cfg is None:
-            # Check attachments/**/config/attached_objects.cfg or attachments/**/attachment.cfg
-            att_root = resolve_path_ci(root, "attachments")
-            if att_root and att_root.is_dir():
-                for cand in _safe_glob(att_root, "*.cfg", recursive=True):
-                    c_name = cand.name.lower()
-                    if c_name in ("attached_objects.cfg", "attachment.cfg") and cand.is_file():
-                        attached_objects_cfg = cand
-                        break
+        attached_objects_cfg = cls._discover_attached_objects_cfg(root)
 
         return MSFSProjectManifest(
             package_root=root,

@@ -6,13 +6,11 @@ for MSFS 2024 attached_objects.cfg files.
 
 from __future__ import annotations
 
-import datetime
 import logging
 import os
-import shutil
 from typing import Optional
 
-from ..io_utils import atomic_write_text
+from ..io_utils import atomic_write_text, create_timestamped_backup
 
 from .camera_cst import detect_file_format
 from .models import (
@@ -325,10 +323,9 @@ class MSFSAttachmentsCST:
         rots_lower = {k.lower(): v for k, v in rots.items()}
 
         # 1. Pre-flight Backup
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{dest_file}.bak_{timestamp}"
-        if os.path.isfile(dest_file):
-            shutil.copy2(dest_file, backup_path)
+        backup_obj = create_timestamped_backup(dest_file)
+        backup_path = str(backup_obj) if backup_obj is not None else ""
+        if backup_path:
             logger.info("Created attached_objects.cfg backup: %s", backup_path)
 
         # 2. Serialize lines

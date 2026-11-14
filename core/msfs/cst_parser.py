@@ -6,14 +6,12 @@ with atomic disk writes, section record insertion, and timestamped pre-flight ba
 
 from __future__ import annotations
 
-import datetime
 import logging
 import os
 import re
-import shutil
 from typing import Optional
 
-from ..io_utils import atomic_write_text
+from ..io_utils import atomic_write_text, create_timestamped_backup
 
 from .models import (
     AircraftSpatialConfig,
@@ -267,10 +265,9 @@ class MSFSCSTParser:
         rotations = updated_rotations or {}
 
         # 1. Pre-flight Snapshot Backup
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{dest_file}.bak_{timestamp}"
-        if os.path.isfile(dest_file):
-            shutil.copy2(dest_file, backup_path)
+        backup_obj = create_timestamped_backup(dest_file)
+        backup_path = str(backup_obj) if backup_obj is not None else ""
+        if backup_path:
             logger.info("Created MSFS spatial backup: %s", backup_path)
 
         # 2. Reconstruct lines with modified coordinates
@@ -397,10 +394,9 @@ class MSFSCSTParser:
         os.makedirs(dest_dir, exist_ok=True)
 
         # 1. Pre-flight Snapshot Backup
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{dest_file}.bak_{timestamp}"
-        if os.path.isfile(dest_file):
-            shutil.copy2(dest_file, backup_path)
+        backup_obj = create_timestamped_backup(dest_file)
+        backup_path = str(backup_obj) if backup_obj is not None else ""
+        if backup_path:
             logger.info("Created MSFS spatial backup: %s", backup_path)
 
         # 2. Look for existing record matching section and key

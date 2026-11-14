@@ -14,8 +14,9 @@ import logging
 from pathlib import Path
 import re
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape
 
-from ..io_utils import atomic_write_bytes
+from ..io_utils import atomic_write_bytes, create_timestamped_backup
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class ModelXMLMerger:
     """Surgically updates or injects <LODS> into existing MSFS ModelInfo XML documents."""
 
     _LODS_REGEX = re.compile(
-        r"([ \t]*)<LODS(?:\s+[^>]*)?>.*?</LODS>",
+        r"([ \t]*)<LODS(?:\s+[^>]*)?(?:/>|>.*?</LODS>)",
         re.DOTALL | re.IGNORECASE,
     )
     _MODEL_INFO_OPEN_REGEX = re.compile(
@@ -47,11 +48,13 @@ class ModelXMLMerger:
         lines = [f"{base_indent}<LODS>"]
 
         for tier in tiers:
-            min_size = tier.get("min_size", tier.get("screen_size_pct", 0.0))
+            min_size = float(tier.get("min_size", tier.get("screen_size_pct", 0.0)))
             # Format minSize cleanly (strip trailing zeroes if integer)
             size_str = f"{min_size:.4f}".rstrip("0").rstrip(".") if min_size != int(min_size) else str(int(min_size))
-            model_file = tier.get("model_file", "")
-            lines.append(f'{inner_indent}<LOD minSize="{size_str}" ModelFile="{model_file}"/>')
+            model_file = xml_escape(str(tier.get("model_file", "")), {'"': "&quot;"})
+            lines.append(
+                f'{inner_indent}<LOD minSize="{xml_escape(size_str, {'"': "&quot;"})}" ModelFile="{model_file}"/>'
+            )
 
         lines.append(f"{base_indent}</LODS>")
         return line_ending.join(lines)
@@ -119,8 +122,9 @@ class ModelXMLMerger:
 
         merged = cls.merge_lods_into_xml_content(xml_str, tiers)
 
-        # Atomic write
+        # Atomic write with sibling timestamped backup
         try:
+            create_timestamped_backup(path)
             encoded = merged.encode("utf-8")
             if has_bom:
                 encoded = b"\xef\xbb\xbf" + encoded

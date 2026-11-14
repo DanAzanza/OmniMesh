@@ -216,3 +216,36 @@ def test_scanner_with_interior_and_variants(tmp_path: Path):
     variant_floats = manifest.variants["floats"]
     assert len(variant_floats.lods) == 1
     assert variant_floats.lods[0].gltf_path.name == "Twin_Floats_LOD0.gltf"
+
+
+def test_scanner_blocks_path_traversal_and_dtd_xml(tmp_path: Path):
+    """Negative security boundary: rejects out-of-root glTF traversal, drive prefixes, and DTD entities."""
+    outside_gltf = tmp_path / "secret.gltf"
+    outside_gltf.write_text("{}", encoding="utf-8")
+
+    pkg = tmp_path / "UntrustedPkg"
+    model_dir = pkg / "model"
+    model_dir.mkdir(parents=True)
+    (model_dir / "model.cfg").write_text("[models]\nnormal=Evil.xml\n", encoding="utf-8")
+
+    # 1. XML with path traversal and Windows drive prefix is rejected by _resolve_bounded_child
+    (model_dir / "Evil.xml").write_text(
+        "<ModelInfo><LODS>"
+        '<LOD minSize="50" ModelFile="../../secret.gltf"/>'
+        '<LOD minSize="25" ModelFile="C:/Windows/win.gltf"/>'
+        "</LODS></ModelInfo>",
+        encoding="utf-8",
+    )
+    manifest = MSFSProjectScanner.scan(pkg)
+    assert manifest.exterior_model is not None
+    assert manifest.exterior_model.lods == []
+
+    # 2. XML with <!DOCTYPE / <!ENTITY declaration fails closed
+    dtd_xml = model_dir / "Dtd.xml"
+    dtd_xml.write_text(
+        '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY x "bomb">]>'
+        '<ModelInfo><LODS><LOD minSize="50" ModelFile="Safe.gltf"/></LODS></ModelInfo>',
+        encoding="utf-8",
+    )
+    assert parse_model_xml(dtd_xml, boundary_root=pkg) == []
+    assert resolve_path_ci(pkg, "..", "secret.gltf", boundary_root=pkg) is None
