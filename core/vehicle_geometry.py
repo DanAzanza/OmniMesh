@@ -447,3 +447,35 @@ def detect_ground_vehicle_extrema(
         "Scrape_Keel": (center_x, center_y, min_z),
         "Scrape_Fin": (center_x, center_y, max_z),
     }
+
+
+def find_wheel_contact_z(
+    vertices: np.ndarray,
+    wheel_xy: tuple[float, float],
+    radius_m: float = 0.6,
+) -> float | None:
+    """Return lowest world-Z vertex near a wheel contact point within ``radius_m``."""
+    if vertices.shape[0] == 0:
+        return None
+    dx = vertices[:, 0] - wheel_xy[0]
+    dy = vertices[:, 1] - wheel_xy[1]
+    r_sq = dx**2 + dy**2
+    local_tire_verts = vertices[r_sq <= radius_m**2]
+    target_verts = local_tire_verts if local_tire_verts.shape[0] > 0 else vertices
+    return float(np.min(target_verts[:, 2]))
+
+
+def compute_static_cg_height_ft(
+    contact_z_values: Sequence[float],
+    cg_world_z: float,
+    gear_state: str,
+    compression_m: float,
+    meters_to_feet: float,
+) -> float:
+    """Compute MSFS static_cg_height (in feet) from wheel contact heights and CG Z."""
+    if not contact_z_values:
+        raise ValueError("At least one wheel contact Z height is required to compute static CG height.")
+    ground_plane_z = float(np.mean(contact_z_values))
+    effective_ground_z = ground_plane_z + compression_m if gear_state == "UNCOMPRESSED_EXTENDED" else ground_plane_z
+    cg_height_m = max(0.0, cg_world_z - effective_ground_z)
+    return cg_height_m * meters_to_feet

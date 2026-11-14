@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Tuple, cast
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ else:
 from .exceptions import ImpostorBakeError
 from .impostor_math import ImpostorMath, Vector, normalize_impostor_grid_size
 from .impostor_preview_material import create_octahedral_preview_material
+from .io_utils import sanitize_filename
 from .metrics import compute_bounding_sphere
 
 __all__ = [
@@ -46,6 +48,7 @@ __all__ = [
     "Vector",
     "ImpostorMeshBuilder",
     "ImpostorManager",
+    "clear_stale_impostor_masters",
     "resolve_impostor_export_dir",
 ]
 
@@ -681,3 +684,21 @@ def resolve_impostor_export_dir(
         os.makedirs(clean_path, exist_ok=True)
 
     return clean_path
+
+
+def clear_stale_impostor_masters(export_dir: str, base_name: str) -> int:
+    """Remove stale canonical ``*_Master.png`` impostor textures under ``export_dir``."""
+    safe_base = sanitize_filename(base_name) or "Asset"
+    root = Path(export_dir).resolve()
+    removed = 0
+    for master_sfx in ("_BaseColor_Master.png", "_Normal_Master.png", "_ORM_Master.png"):
+        candidate = (root / f"T_{safe_base}_Impostor{master_sfx}").resolve()
+        if not candidate.is_relative_to(root):
+            raise ImpostorBakeError(f"Refusing to delete impostor master outside export directory: {candidate}")
+        if candidate.is_file():
+            try:
+                candidate.unlink()
+                removed += 1
+            except OSError as exc:
+                raise ImpostorBakeError(f"Failed removing stale impostor master '{candidate.name}': {exc}") from exc
+    return removed

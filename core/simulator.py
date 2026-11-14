@@ -31,6 +31,20 @@ else:
     BlendData = object
 
 
+def compute_virtual_screen_override_pct(
+    radius: float,
+    virtual_distance_m: float,
+    fov_v_rad: float,
+    is_perspective: bool,
+) -> float:
+    """Convert a virtual camera distance into a clamped screen-size percentage."""
+    if is_perspective:
+        s_frac = radius / max(0.001, virtual_distance_m * math.tan(fov_v_rad / 2.0))
+    else:
+        s_frac = (2.0 * radius) / max(0.01, fov_v_rad)
+    return min(100.0, max(0.01, s_frac * 100.0))
+
+
 def calculate_effective_distance_pure(
     cam_pos: Sequence[float] | Vector | object,
     center: Sequence[float] | Vector | object,
